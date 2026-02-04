@@ -1,6 +1,6 @@
 [package]
 name = "simplex-simplicity"
-version = "0.4.2"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
 description = "High-level helpers for compiling and executing Simplicity programs on Liquid"
