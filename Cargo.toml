@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/*"
+]
+
+[workspace.package]
+license = "MIT OR Apache-2.0"
+edition = "2024"
+
+[workspace.lints.clippy]
+multiple_crate_versions = "allow"
+
+[workspace.dependencies]
+ring = "0.17.14"
+sha2 = { version = "0.10.9", features = ["compress"] }
+
+hex = "0.4.3"
+tracing = { version = "0.1.41" }
+
+minreq = { version = "2.14.1", features = ["https", "json-using-serde"]}
+
+simplicityhl = { version = "0.4.0" }
+simplicityhl-core = { version = "0.4.2", features = ["encoding"] }
+
+[patch.crates-io]
+simplicity-sys = { git = "https://github.com/BlockstreamResearch/rust-simplicity", tag = "simplicity-sys-0.6.1" }

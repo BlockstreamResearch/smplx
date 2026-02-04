@@ -1,0 +1,31 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+description = "Simplicity helper CLI for Liquid testnet"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+publish = false
+
+[[bin]]
+name = "simplex"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+
+sled = "0.34.7"
+
+dotenvy = "0.15"
+clap = { version = "4.5", features = ["derive"] }
+config = { version = "0.15.16", default-features = true }
+
+minreq = { version = "2.14", features = ["https"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "sync"] }
+
+hex = { workspace = true }
+simplex-simplicity = { path = "../sdk" }

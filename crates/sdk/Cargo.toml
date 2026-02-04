@@ -1,0 +1,32 @@
+[package]
+name = "simplex-simplicity"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "High-level helpers for compiling and executing Simplicity programs on Liquid"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/BlockstreamResearch/simplicity-contracts"
+homepage = "https://github.com/BlockstreamResearch/simplicity-contracts/tree/dev/crates/simplicityhl-core"
+readme = "README.md"
+documentation = "https://docs.rs/simplicityhl-core"
+keywords = ["simplicity", "liquid", "bitcoin", "elements", "taproot"]
+categories = ["cryptography::cryptocurrencies"]
+
+[lints]
+workspace = true
+
+[features]
+encoding = ["dep:bincode"]
+
+[dependencies]
+thiserror = "2"
+
+bincode = { version = "2.0.1", optional = true }
+
+sha2 = { workspace = true }
+
+hex = { workspace = true }
+
+simplicityhl = { workspace = true }
+
+minreq = { workspace = true }
