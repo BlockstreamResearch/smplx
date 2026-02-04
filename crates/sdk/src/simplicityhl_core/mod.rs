@@ -13,7 +13,7 @@ mod scripts;
 pub mod encoding {
     pub use bincode::{Decode, Encode};
 
-    use crate::error::EncodingError;
+    use crate::simplicityhl_core::error::EncodingError;
 
     /// Trait for binary encoding/decoding with hex string support.
     pub trait Encodable {
