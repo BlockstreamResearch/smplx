@@ -65,8 +65,7 @@ pub trait SyncFeeFetcher {
         // Fall back to higher targets (lower fee rates)
         // Available targets: 1-25, 144, 504, 1008
         let fallback_targets = [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 144, 504, 1008,
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 144, 504, 1008,
         ];
 
         for &target in fallback_targets.iter().filter(|&&t| t >= target_blocks) {
@@ -84,11 +83,13 @@ pub trait SyncFeeFetcher {
             }
         }
 
-        Err(FeeFetcherError::Request(
-            "No fee estimates available".to_string(),
-        ))
+        Err(FeeFetcherError::Request("No fee estimates available".to_string()))
     }
 }
+
+// todo: provider
+//  take from config, esplora
+//  take Olegs code
 
 pub struct EsploraFeeFetcher;
 

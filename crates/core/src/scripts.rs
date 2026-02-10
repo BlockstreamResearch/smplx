@@ -2,23 +2,20 @@
 
 use sha2::{Digest, Sha256};
 
-use simplicityhl::elements::{
-    Address, AddressParams, AssetId, ContractHash, OutPoint, Script, script, taproot,
-};
+use simplicityhl::elements::{Address, AddressParams, AssetId, ContractHash, OutPoint, Script, script, taproot};
 
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::hashes::{Hash, sha256};
 use simplicityhl::{Arguments, CompiledProgram};
 
-use crate::simplicityhl_core::error::ProgramError;
+use crate::error::ProgramError;
 
 /// Load program source and compile it to a Simplicity program.
 ///
 /// # Errors
 /// Returns error if the program fails to compile.
 pub fn load_program(source: &str, arguments: Arguments) -> Result<CompiledProgram, ProgramError> {
-    let compiled =
-        CompiledProgram::new(source, arguments, true).map_err(ProgramError::Compilation)?;
+    let compiled = CompiledProgram::new(source, arguments, true).map_err(ProgramError::Compilation)?;
     Ok(compiled)
 }
 
@@ -64,14 +61,10 @@ fn taproot_spending_info(
 /// # Panics
 /// Panics if the taproot tree is invalid (should never happen with valid CMR).
 #[must_use]
-pub fn control_block(
-    cmr: simplicityhl::simplicity::Cmr,
-    internal_key: XOnlyPublicKey,
-) -> taproot::ControlBlock {
+pub fn control_block(cmr: simplicityhl::simplicity::Cmr, internal_key: XOnlyPublicKey) -> taproot::ControlBlock {
     let info = taproot_spending_info(cmr, internal_key);
     let script_ver = script_version(cmr);
-    info.control_block(&script_ver)
-        .expect("control block should exist")
+    info.control_block(&script_ver).expect("control block should exist")
 }
 
 /// SHA256 hash of an address's scriptPubKey bytes.

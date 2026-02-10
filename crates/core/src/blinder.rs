@@ -1,4 +1,4 @@
-use crate::simplicityhl_core::PUBLIC_SECRET_BLINDER_KEY;
+use crate::PUBLIC_SECRET_BLINDER_KEY;
 
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::SecretKey;

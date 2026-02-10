@@ -11,9 +11,8 @@ mod scripts;
 
 #[cfg(feature = "encoding")]
 pub mod encoding {
+    use crate::EncodingError;
     pub use bincode::{Decode, Encode};
-
-    use crate::simplicityhl_core::error::EncodingError;
 
     /// Trait for binary encoding/decoding with hex string support.
     pub trait Encodable {
@@ -23,9 +22,9 @@ pub mod encoding {
         /// Returns error if encoding fails.
         fn encode(&self) -> Result<Vec<u8>, EncodingError>
         where
-            Self: Encode,
+            Self: serde::Serialize,
         {
-            Ok(bincode::encode_to_vec(self, bincode::config::standard())?)
+            Ok(bincode::serde::encode_to_vec(self, bincode::config::standard())?)
         }
 
         /// Decode from binary bytes.
@@ -34,9 +33,9 @@ pub mod encoding {
         /// Returns error if decoding fails.
         fn decode(buf: &[u8]) -> Result<Self, EncodingError>
         where
-            Self: Sized + Decode<()>,
+            Self: Sized + serde::de::DeserializeOwned,
         {
-            Ok(bincode::decode_from_slice(buf, bincode::config::standard())?.0)
+            Ok(bincode::serde::decode_from_slice(buf, bincode::config::standard())?.0)
         }
 
         /// Encode to hex string.
@@ -45,7 +44,7 @@ pub mod encoding {
         /// Returns error if encoding fails.
         fn to_hex(&self) -> Result<String, EncodingError>
         where
-            Self: Encode,
+            Self: serde::Serialize,
         {
             Ok(hex::encode(Encodable::encode(self)?))
         }
@@ -56,7 +55,7 @@ pub mod encoding {
         /// Returns error if hex decoding or binary decoding fails.
         fn from_hex(hex: &str) -> Result<Self, EncodingError>
         where
-            Self: bincode::Decode<()>,
+            Self: serde::de::DeserializeOwned,
         {
             Encodable::decode(&hex::decode(hex)?)
         }
@@ -116,9 +115,7 @@ pub fn get_p2pk_address(
 ///
 /// # Errors
 /// Returns error if program compilation fails.
-pub fn get_p2pk_program(
-    account_public_key: &XOnlyPublicKey,
-) -> Result<CompiledProgram, ProgramError> {
+pub fn get_p2pk_program(account_public_key: &XOnlyPublicKey) -> Result<CompiledProgram, ProgramError> {
     let arguments = simplicityhl::Arguments::from(HashMap::from([(
         WitnessName::from_str_unchecked("PUBLIC_KEY"),
         Value::u256(U256::from_byte_array(account_public_key.serialize())),
@@ -169,17 +166,9 @@ pub fn create_p2pk_signature(
     let x_only_public_key = keypair.x_only_public_key().0;
     let p2pk_program = get_p2pk_program(&x_only_public_key)?;
 
-    let env = get_and_verify_env(
-        tx,
-        &p2pk_program,
-        &x_only_public_key,
-        utxos,
-        network,
-        input_index,
-    )?;
+    let env = get_and_verify_env(tx, &p2pk_program, &x_only_public_key, utxos, network, input_index)?;
 
-    let sighash_all =
-        elements::secp256k1_zkp::Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
+    let sighash_all = elements::secp256k1_zkp::Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
     Ok(keypair.sign_schnorr(sighash_all))
 }
 
@@ -209,14 +198,7 @@ pub fn finalize_p2pk_transaction(
 ) -> Result<Transaction, ProgramError> {
     let p2pk_program = get_p2pk_program(x_only_public_key)?;
 
-    let env = get_and_verify_env(
-        &tx,
-        &p2pk_program,
-        x_only_public_key,
-        utxos,
-        network,
-        input_index,
-    )?;
+    let env = get_and_verify_env(&tx, &p2pk_program, x_only_public_key, utxos, network, input_index)?;
 
     let pruned = execute_p2pk_program(&p2pk_program, schnorr_signature, &env, log_level)?;
 
@@ -253,14 +235,7 @@ pub fn finalize_transaction(
     network: SimplicityNetwork,
     log_level: TrackerLogLevel,
 ) -> Result<Transaction, ProgramError> {
-    let env = get_and_verify_env(
-        &tx,
-        program,
-        program_public_key,
-        utxos,
-        network,
-        input_index,
-    )?;
+    let env = get_and_verify_env(&tx, program, program_public_key, utxos, network, input_index)?;
 
     let pruned = run_program(program, witness_values, &env, log_level)?.0;
 

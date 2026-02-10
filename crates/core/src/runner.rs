@@ -12,7 +12,7 @@ use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use simplicityhl::{CompiledProgram, WitnessValues};
 
-use crate::simplicityhl_core::error::ProgramError;
+use crate::error::ProgramError;
 
 /// Satisfy and execute a compiled program in the provided environment.
 /// Returns the pruned program and the resulting value.

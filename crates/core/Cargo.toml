@@ -1,5 +1,5 @@
 [package]
-name = "simplex-simplicity"
+name = "simplex-core"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.90"
@@ -19,14 +19,10 @@ workspace = true
 encoding = ["dep:bincode"]
 
 [dependencies]
-thiserror = "2"
-
-bincode = { version = "2.0.1", optional = true }
-
+thiserror = { version = "2.0.18" }
+bincode = { workspace = true, optional = true }
 sha2 = { workspace = true }
-
 hex = { workspace = true }
-
 simplicityhl = { workspace = true }
-
 minreq = { workspace = true }
+serde = { version = "1.0.228" }
