@@ -8,6 +8,7 @@ mod error;
 mod fee_rate_fetcher;
 mod runner;
 mod scripts;
+mod tx_inclusion;
 
 #[cfg(feature = "encoding")]
 pub mod encoding {
@@ -71,6 +72,7 @@ pub use error::EncodingError;
 
 pub use runner::*;
 pub use scripts::*;
+pub use tx_inclusion::*;
 
 pub use fee_rate_fetcher::*;
 

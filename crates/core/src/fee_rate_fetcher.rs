@@ -87,10 +87,6 @@ pub trait SyncFeeFetcher {
     }
 }
 
-// todo: provider
-//  take from config, esplora
-//  take Olegs code
-
 pub struct EsploraFeeFetcher;
 
 impl SyncFeeFetcher for EsploraFeeFetcher {
