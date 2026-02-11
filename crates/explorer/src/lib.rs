@@ -4,4 +4,4 @@ mod traits;
 pub mod waterfall;
 
 pub use esplora::EsploraClient;
-pub use waterfall::WaterfallClient;
+// pub use waterfall::WaterfallClient;

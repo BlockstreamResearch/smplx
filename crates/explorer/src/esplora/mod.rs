@@ -1,9 +1,11 @@
 mod types;
 
+// TODO(Illia): remove #[allow(dead_code)]
+
 use crate::error::ExplorerError;
 use crate::esplora::deserializable::TypeConversion;
-use simplicityhl::elements::Txid;
 use simplicityhl::elements::pset::serialize::Deserialize;
+use simplicityhl::elements::{BlockHash, Txid};
 use std::str::FromStr;
 
 const ESPLORA_LIQUID_TESTNET: &str = "https://blockstream.info/liquidtestnet/api";
@@ -19,11 +21,13 @@ pub struct EsploraClientBuilder {
     url: Option<String>,
 }
 
-struct EsploraConfig {
+#[allow(dead_code)]
+pub struct EsploraConfig {
     url: String,
 }
 
 // TODO: Illia add caching as optional parameter
+// TODO: Add api backend trait implementation
 impl EsploraClientBuilder {
     fn default_url() -> String {
         ESPLORA_LIQUID_TESTNET.to_string()
@@ -62,129 +66,17 @@ impl Default for EsploraClientBuilder {
 
 impl Default for EsploraClient {
     fn default() -> Self {
-        crate::esplora::EsploraClientBuilder::default().build()
-    }
-}
-
-// TODO: add batching with 25 requests
-
-#[cfg(test)]
-mod tests {
-    use crate::esplora::EsploraClientBuilder;
-
-    #[tokio::test]
-    async fn test1() {
-        let client = EsploraClientBuilder::liquid_testnet().build();
-        println!(
-            "== get_tx: {:?}",
-            client
-                .get_tx("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_status: {:?}",
-            client
-                .get_tx_status("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_raw: {:?}",
-            client
-                .get_tx_raw("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_hex: {:?}",
-            client
-                .get_tx_hex("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_elements: {:?}",
-            client
-                .get_tx_elements("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_elements: {:?}",
-            client
-                .get_tx_elements("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_merkleblock_proof: {:?}",
-            client
-                .get_tx_merkleblock_proof("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_merkle_proof: {:?}",
-            client
-                .get_tx_merkle_proof("785c3bddbaf2bda8469415c911a407ae8f7b2c1d48883fa7a3d05934ed5454f3")
-                .await
-        );
-        println!(
-            "== get_tx_merkle_proof: {:?}",
-            client
-                .get_tx_merkle_proof("3d2a1d39ca6b82b215bd2ad5a7594f8a10850db435ec2e8b801c10a74388ccd3")
-                .await
-        );
-        // println!(
-        //     "== get_tx_outspend: {:?}",
-        //     client
-        //         .get_tx_outspend("3d2a1d39ca6b82b215bd2ad5a7594f8a10850db435ec2e8b801c10a74388ccd3", 0)
-        //         .await
-        // );
-        // println!(
-        //     "== get_tx_outspends: {:?}",
-        //     client
-        //         .get_tx_outspends("3d2a1d39ca6b82b215bd2ad5a7594f8a10850db435ec2e8b801c10a74388ccd3")
-        //         .await
-        // );
-        println!(
-            "== get_address_txs_mempool: {:?}",
-            client
-                .get_address_txs_mempool("tex1pyzkfajdprt6gl6288z54c6m4lrg3vp32cajmqrh5kfaegydyrv0qtcg6lm")
-                .await
-        );
-        println!(
-            "== get_address: {:?}",
-            client
-                .get_address("tex1pyzkfajdprt6gl6288z54c6m4lrg3vp32cajmqrh5kfaegydyrv0qtcg6lm")
-                .await
-        );
-        println!(
-            "== get_address_txs_chain: {:?}",
-            client
-                .get_address_txs_chain("tex1pyzkfajdprt6gl6288z54c6m4lrg3vp32cajmqrh5kfaegydyrv0qtcg6lm", None)
-                .await
-        );
-        println!(
-            "== get_address_utxo: {:?}",
-            client
-                .get_address_utxo("tex1pyzkfajdprt6gl6288z54c6m4lrg3vp32cajmqrh5kfaegydyrv0qtcg6lm")
-                .await
-        );
-        println!(
-            "== search_address_prefix: {:?}",
-            client
-                .search_address_prefix("tex1pyzkfajdprt6gl6288z54c6m4lrg3vp32cajmqrh5kfaegydyrv")
-                .await
-        );
-        println!("== get_mempool: {:?}", client.get_mempool().await);
-        println!("== get_mempool_txids: {:?}", client.get_mempool_txids().await);
-        println!("== get_mempool_recent: {:?}", client.get_mempool_recent().await);
-        println!("== get_fee_estimates: {:?}", client.get_fee_estimates().await);
+        EsploraClientBuilder::default().build()
     }
 }
 
 mod deserializable {
     use crate::error::{CommitmentType, ExplorerError};
     use crate::esplora::types;
+    use crate::esplora::types::Stats;
     use bitcoin_hashes::sha256d::Hash;
-    use serde::Deserialize;
     use simplicityhl::elements::confidential::{Asset, Nonce, Value};
-    use simplicityhl::elements::{Address, AssetId, BlockHash, OutPoint, Script, Txid};
+    use simplicityhl::elements::{Address, AssetId, BlockHash, OutPoint, Script, TxMerkleNode, Txid};
     use std::str::FromStr;
 
     pub(crate) trait TypeConversion<T> {
@@ -202,8 +94,11 @@ mod deserializable {
         pub vin: Vec<Vin>,
         pub vout: Vec<Vout>,
         pub status: TxStatus,
+        pub discount_vsize: u64,
+        pub discount_weight: u64,
     }
 
+    #[allow(dead_code)]
     #[derive(serde::Deserialize)]
     pub struct Vin {
         pub txid: String,
@@ -211,14 +106,11 @@ mod deserializable {
         pub is_coinbase: bool,
         pub scriptsig: String,
         pub scriptsig_asm: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub inner_redeemscript_asm: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub inner_witnessscript_asm: Option<String>,
         pub sequence: u32,
         #[serde(default)]
         pub witness: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub prevout: Option<Vout>,
     }
 
@@ -227,20 +119,15 @@ mod deserializable {
         pub scriptpubkey: String,
         pub scriptpubkey_asm: String,
         pub scriptpubkey_type: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub scriptpubkey_address: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub value: Option<u64>,
     }
 
     #[derive(serde::Deserialize)]
     pub struct TxStatus {
         pub confirmed: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub block_height: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub block_hash: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub block_time: Option<u64>,
     }
 
@@ -248,7 +135,6 @@ mod deserializable {
     pub struct AddressUtxo {
         pub txid: String,
         pub vout: u32,
-        pub value: u64,
         pub status: TxStatus,
         #[serde(flatten)]
         pub utxo_info: UtxoInfo,
@@ -290,12 +176,62 @@ mod deserializable {
         pub status: Option<TxStatus>,
     }
 
-    #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
+    #[allow(dead_code)]
+    #[derive(serde::Deserialize)]
     pub struct MempoolRecent {
         pub txid: String,
         pub fee: u64,
         pub vsize: u64,
         pub discount_vsize: u64,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub struct ScripthashInfo {
+        pub scripthash: String,
+        pub chain_stats: Stats,
+        pub mempool_stats: Stats,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub struct Block {
+        pub id: String,
+        pub height: u64,
+        pub version: u32,
+        pub timestamp: u64,
+        pub mediantime: u64,
+        pub merkle_root: String,
+        pub tx_count: u64,
+        pub size: u64,
+        pub weight: u64,
+        pub previousblockhash: String,
+        pub ext: Option<BlockExtDataRaw>,
+    }
+
+    #[allow(dead_code)]
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    pub enum BlockExtDataRaw {
+        Proof {
+            challenge: String,
+            solution: String,
+        },
+        Dynafed {
+            current: DynafedParamsRaw,
+            proposed: DynafedParamsRaw,
+            signblock_witness: Vec<Vec<u8>>,
+        },
+    }
+
+    #[allow(dead_code)]
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    pub enum DynafedParamsRaw {
+        Null {},
+        Compact {
+            signblockscript: String,
+            signblock_witness_limit: u32,
+            elided_root: String,
+        },
     }
 
     impl TypeConversion<types::TxStatus> for TxStatus {
@@ -357,7 +293,7 @@ mod deserializable {
                 },
                 UtxoInfo::Explicit { asset, value } => types::UtxoInfo::Explicit {
                     value,
-                    asset: AssetId::from_str(&asset).map_err(|err| ExplorerError::BitcoinHashesHex(err))?,
+                    asset: AssetId::from_str(&asset).map_err(ExplorerError::BitcoinHashesHex)?,
                 },
             };
 
@@ -379,12 +315,9 @@ mod deserializable {
             let hashes = self
                 .merkle
                 .into_iter()
-                .map(|x| Ok(Hash::from_str(&x)?))
+                .map(|x| Hash::from_str(&x))
                 .collect::<Result<Vec<Hash>, bitcoin_hashes::hex::HexToArrayError>>()?;
-            let merkle_proofs = hashes
-                .into_iter()
-                .map(|hash| simplicityhl::elements::TxMerkleNode::from_raw_hash(hash))
-                .collect();
+            let merkle_proofs = hashes.into_iter().map(TxMerkleNode::from_raw_hash).collect();
             Ok(types::MerkleProof {
                 block_height: self.block_height,
                 merkle: merkle_proofs,
@@ -420,6 +353,8 @@ mod deserializable {
                 vin,
                 vout,
                 status,
+                discount_vsize: self.discount_vsize,
+                discount_weight: self.discount_weight,
             })
         }
     }
@@ -427,7 +362,7 @@ mod deserializable {
     impl TypeConversion<types::Vout> for Vout {
         fn convert(self) -> Result<types::Vout, ExplorerError> {
             Ok(types::Vout {
-                scriptpubkey: Script::from_str(&self.scriptpubkey).map_err(|e| ExplorerError::ElementsHex(e))?,
+                scriptpubkey: Script::from_str(&self.scriptpubkey).map_err(ExplorerError::ElementsHex)?,
                 scriptpubkey_asm: self.scriptpubkey_asm,
                 scriptpubkey_type: self.scriptpubkey_type,
                 scriptpubkey_address: self.scriptpubkey_address,
@@ -486,6 +421,44 @@ mod deserializable {
             })
         }
     }
+
+    impl TypeConversion<types::ScripthashInfo> for ScripthashInfo {
+        fn convert(self) -> Result<types::ScripthashInfo, ExplorerError> {
+            Ok(types::ScripthashInfo {
+                scripthash: Script::from_str(&self.scripthash).map_err(ExplorerError::ElementsHex)?,
+                chain_stats: self.chain_stats,
+                mempool_stats: self.mempool_stats,
+            })
+        }
+    }
+
+    impl TypeConversion<types::Block> for Block {
+        fn convert(self) -> Result<types::Block, ExplorerError> {
+            let ext = match self.ext {
+                None => None,
+                Some(val) => Some(val.convert()?),
+            };
+            Ok(types::Block {
+                id: self.id,
+                height: self.height,
+                version: self.version,
+                timestamp: self.timestamp,
+                tx_count: self.tx_count,
+                size: self.size,
+                weight: self.weight,
+                merkle_root: TxMerkleNode::from_str(&self.merkle_root)?,
+                mediantime: self.mediantime,
+                previousblockhash: BlockHash::from_str(&self.previousblockhash)?,
+                ext,
+            })
+        }
+    }
+
+    impl TypeConversion<simplicityhl::elements::BlockExtData> for BlockExtDataRaw {
+        fn convert(self) -> Result<simplicityhl::elements::BlockExtData, ExplorerError> {
+            todo!()
+        }
+    }
 }
 
 impl EsploraClient {
@@ -503,7 +476,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx(&self, txid: &str) -> Result<types::EsploraTransaction, ExplorerError> {
-        let url = self.join_url(&format!("/tx/{txid}"))?;
+        let url = self.join_url(format!("/tx/{txid}"))?;
         let resp = self
             .client
             .get(url)
@@ -522,7 +495,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx_status(&self, txid: &str) -> Result<types::TxStatus, ExplorerError> {
-        let url = self.join_url(&format!("tx/{txid}/status"))?;
+        let url = self.join_url(format!("tx/{txid}/status"))?;
         let resp = self
             .client
             .get(url)
@@ -540,7 +513,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx_hex(&self, txid: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/hex", txid))?;
+        let url = self.join_url(format!("tx/{txid}/hex"))?;
         let resp = self
             .client
             .get(url)
@@ -553,7 +526,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx_raw(&self, txid: &str) -> Result<Vec<u8>, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/raw", txid))?;
+        let url = self.join_url(format!("tx/{txid}/raw"))?;
         let resp = self
             .client
             .get(url)
@@ -570,25 +543,12 @@ impl EsploraClient {
 
     pub async fn get_tx_elements(&self, txid: &str) -> Result<simplicityhl::elements::Transaction, ExplorerError> {
         let bytes = self.get_tx_raw(txid).await?;
-        Ok(simplicityhl::elements::Transaction::deserialize(&bytes).unwrap())
-    }
-
-    // TODO: erroneous
-    pub async fn get_tx_merkleblock_proof(&self, txid: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/merkleblock-proof", txid))?;
-        let resp = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        Self::filter_resp(&resp)?;
-
-        resp.text().await.map_err(|e| ExplorerError::deserialize(&e))
+        simplicityhl::elements::Transaction::deserialize(&bytes)
+            .map_err(|e| ExplorerError::TransactionDecode(e.to_string()))
     }
 
     pub async fn get_tx_merkle_proof(&self, txid: &str) -> Result<types::MerkleProof, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/merkle-proof", txid))?;
+        let url = self.join_url(format!("tx/{txid}/merkle-proof"))?;
         let resp = self
             .client
             .get(url)
@@ -606,7 +566,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx_outspend(&self, txid: &str, vout: u32) -> Result<types::Outspend, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/outspend/{}", txid, vout))?;
+        let url = self.join_url(format!("tx/{txid}/outspend/{vout}"))?;
         let resp = self
             .client
             .get(url)
@@ -624,7 +584,7 @@ impl EsploraClient {
     }
 
     pub async fn get_tx_outspends(&self, txid: &str) -> Result<Vec<types::Outspend>, ExplorerError> {
-        let url = self.join_url(&format!("tx/{}/outspends", txid))?;
+        let url = self.join_url(format!("tx/{txid}/outspends"))?;
         let resp = self
             .client
             .get(url)
@@ -655,7 +615,7 @@ impl EsploraClient {
         resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
     }
 
-    // TODO: add batch execution with 25 elements
+    // TODO: add batch execution with 10 elements
     pub async fn broadcast_tx_package(
         &self,
         txs: &[simplicityhl::elements::Transaction],
@@ -663,7 +623,7 @@ impl EsploraClient {
         let url = self.join_url("txs/package")?;
         let tx_hexes = txs
             .iter()
-            .map(|tx| simplicityhl::elements::encode::serialize_hex(tx))
+            .map(simplicityhl::elements::encode::serialize_hex)
             .collect::<Vec<_>>();
 
         let resp = self
@@ -679,7 +639,7 @@ impl EsploraClient {
     }
 
     pub async fn get_address(&self, address: &str) -> Result<types::AddressInfo, ExplorerError> {
-        let url = self.join_url(&format!("address/{}", address))?;
+        let url = self.join_url(format!("address/{address}"))?;
         let resp = self
             .client
             .get(url)
@@ -698,7 +658,7 @@ impl EsploraClient {
     }
 
     pub async fn get_address_txs(&self, address: &str) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = self.join_url(&format!("address/{}/txs", address))?;
+        let url = self.join_url(format!("address/{address}/txs"))?;
         let resp = self
             .client
             .get(url)
@@ -720,9 +680,9 @@ impl EsploraClient {
         last_seen_txid: Option<&str>,
     ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
         let url = if let Some(txid) = last_seen_txid {
-            self.join_url(&format!("address/{}/txs/chain/{}", address, txid))?
+            self.join_url(format!("address/{address}/txs/chain/{txid}"))?
         } else {
-            self.join_url(&format!("address/{}/txs/chain", address))?
+            self.join_url(format!("address/{address}/txs/chain"))?
         };
         let resp = self
             .client
@@ -744,7 +704,7 @@ impl EsploraClient {
         &self,
         address: &str,
     ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = self.join_url(&format!("address/{}/txs/mempool", address))?;
+        let url = self.join_url(format!("address/{address}/txs/mempool"))?;
         let resp = self
             .client
             .get(url)
@@ -762,8 +722,7 @@ impl EsploraClient {
     }
 
     pub async fn get_address_utxo(&self, address: &str) -> Result<Vec<types::AddressUtxo>, ExplorerError> {
-        let url = self.join_url(&format!("address/{}/utxo", address))?;
-        println!("{url}");
+        let url = self.join_url(format!("address/{address}/utxo"))?;
         let resp = self
             .client
             .get(url)
@@ -779,9 +738,8 @@ impl EsploraClient {
         resp.into_iter().map(|x| x.convert()).collect::<Result<Vec<_>, _>>()
     }
 
-    pub async fn search_address_prefix(&self, prefix: &str) -> Result<Vec<String>, ExplorerError> {
-        let url = self.join_url(&format!("address-prefix/{}", prefix))?;
-        println!("{url}");
+    pub async fn get_scripthash(&self, hash: &str) -> Result<types::ScripthashInfo, ExplorerError> {
+        let url = self.join_url(format!("scripthash/{hash}"))?;
         let resp = self
             .client
             .get(url)
@@ -790,142 +748,262 @@ impl EsploraClient {
             .map_err(|e| ExplorerError::response_failed(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.json().await.map_err(|e| ExplorerError::response_failed(&e))
+        let resp = resp
+            .json::<deserializable::ScripthashInfo>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.convert()?;
+        Ok(resp)
     }
 
-    // pub async fn get_scripthash(&self, hash: &str) -> Result<ScripthashInfo, ExplorerError> {
-    //     let url = self.join_url(&format!("scripthash/{}", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_scripthash_txs(&self, hash: &str) -> Result<Vec<Transaction>, ExplorerError> {
-    //     let url = self.join_url(&format!("scripthash/{}/txs", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_scripthash_txs_chain(
-    //     &self,
-    //     hash: &str,
-    //     last_seen_txid: Option<&str>,
-    // ) -> Result<Vec<Transaction>, ExplorerError> {
-    //     let url = if let Some(txid) = last_seen_txid {
-    //         self.join_url(&format!("scripthash/{}/txs/chain/{}", hash, txid))?
-    //     } else {
-    //         self.join_url(&format!("scripthash/{}/txs/chain", hash))?
-    //     };
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_scripthash_txs_mempool(&self, hash: &str) -> Result<Vec<Transaction>, ExplorerError> {
-    //     let url = self.join_url(&format!("scripthash/{}/txs/mempool", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_scripthash_utxo(&self, hash: &str) -> Result<Vec<Utxo>, ExplorerError> {
-    //     let url = self.join_url(&format!("scripthash/{}/utxo", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // // Block endpoints
-    // pub async fn get_block(&self, hash: &str) -> Result<Block, ExplorerError> {
-    // #[derive(serde::Deserialize)]
-    // pub struct Block {
-    //     pub id: String,
-    //     pub height: u64,
-    //     pub version: u32,
-    //     pub timestamp: u64,
-    //     pub mediantime: u64,
-    //     pub bits: u32,
-    //     pub nonce: u32,
-    //     pub merkle_root: String,
-    //     pub tx_count: u64,
-    //     pub size: u64,
-    //     pub weight: u64,
-    //     pub previousblockhash: String,
-    //     #[serde(skip_serializing_if = "Option::is_none")]
-    //     pub difficulty: Option<f64>,
-    // }
-    //     let url = self.join_url(&format!("block/{}", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_header(&self, hash: &str) -> Result<String, ExplorerError> {
-    //     let url = self.join_url(&format!("block/{}/header", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.text().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_status(&self, hash: &str) -> Result<BlockStatus, ExplorerError> {
-    //     let url = self.join_url(&format!("block/{}/status", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_txs(&self, hash: &str, start_index: Option<u32>) -> Result<Vec<Transaction>, ExplorerError> {
-    //     let url = if let Some(index) = start_index {
-    //         self.join_url(&format!("block/{}/txs/{}", hash, index))?
-    //     } else {
-    //         self.join_url(&format!("block/{}/txs", hash))?
-    //     };
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_txids(&self, hash: &str) -> Result<Vec<String>, ExplorerError> {
-    //     let url = self.join_url(&format!("block/{}/txids", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_txid(&self, hash: &str, index: u32) -> Result<String, ExplorerError> {
-    //     let url = self.join_url(&format!("block/{}/txid/{}", hash, index))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.text().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_raw(&self, hash: &str) -> Result<Vec<u8>, ExplorerError> {
-    //     let url = self.join_url(&format!("block/{}/raw", hash))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.bytes().await.map(|b| b.to_vec()).map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_block_height(&self, height: u64) -> Result<String, ExplorerError> {
-    //     let url = self.join_url(&format!("block-height/{}", height))?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.text().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_blocks(&self, start_height: Option<u64>) -> Result<Vec<Block>, ExplorerError> {
-    //     let url = if let Some(height) = start_height {
-    //         self.join_url(&format!("blocks/{}", height))?
-    //     } else {
-    //         self.join_url("blocks")?
-    //     };
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.json().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
-    // pub async fn get_blocks_tip_height(&self) -> Result<u64, ExplorerError> {
-    //     let url = self.join_url("blocks/tip/height")?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     let text = resp.text().await.map_err(ExplorerError::from_reqwest)?;
-    //     text.parse().map_err(|_| {
-    //         ExplorerError::from_reqwest(reqwest::Error::from(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid height")))
-    //     })
-    // }
-    //
-    // pub async fn get_blocks_tip_hash(&self) -> Result<String, ExplorerError> {
-    //     let url = self.join_url("blocks/tip/hash")?;
-    //     let resp = self.client.get(url).send().await.map_err(ExplorerError::from_reqwest)?;
-    //     resp.text().await.map_err(ExplorerError::from_reqwest)
-    // }
-    //
+    // TODO: check output
+    pub async fn get_scripthash_txs(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url = self.join_url(format!("scripthash/{hash}/txs"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    // TODO: check output
+    pub async fn get_scripthash_txs_chain(
+        &self,
+        hash: &str,
+        last_seen_txid: Option<&str>,
+    ) -> Result<String, ExplorerError> {
+        let url = if let Some(txid) = last_seen_txid {
+            self.join_url(format!("scripthash/{hash}/txs/chain/{txid}"))?
+        } else {
+            self.join_url(format!("scripthash/{hash}/txs/chain"))?
+        };
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    // TODO: check output
+    pub async fn get_scripthash_txs_mempool(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url = self.join_url(format!("scripthash/{hash}/txs/mempool"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    // TODO: check output
+    pub async fn get_scripthash_utxo(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url = self.join_url(format!("scripthash/{hash}/utxo"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    pub async fn get_block(&self, hash: &str) -> Result<types::Block, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::Block>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    // TODO: decode hex into elements::BlockHeader (no method to do this)
+    pub async fn get_block_header(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}/header"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+        Ok(resp)
+    }
+
+    pub async fn get_block_status(&self, hash: &str) -> Result<types::BlockStatus, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}/status"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        resp.json::<types::BlockStatus>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    pub async fn get_block_txs(
+        &self,
+        hash: &str,
+        start_index: Option<u32>,
+    ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
+        let url = if let Some(index) = start_index {
+            self.join_url(format!("block/{hash}/txs/{index}"))?
+        } else {
+            self.join_url(format!("block/{hash}/txs"))?
+        };
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp
+            .json::<Vec<deserializable::EsploraTransaction>>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.into_iter().map(|val| val.convert()).collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    pub async fn get_block_txids(&self, hash: &str) -> Result<Vec<Txid>, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}/txids"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp
+            .json::<Vec<String>>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+
+        let resp = resp
+            .into_iter()
+            .map(|val| Txid::from_str(&val))
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    pub async fn get_block_txid(&self, hash: &str, index: u32) -> Result<Txid, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}/txid/{index}"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+
+        Ok(Txid::from_str(&resp)?)
+    }
+
+    pub async fn get_block_raw(&self, hash: &str) -> Result<Vec<u8>, ExplorerError> {
+        let url = self.join_url(format!("block/{hash}/raw"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        resp.bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| ExplorerError::response_failed(&e))
+    }
+
+    pub async fn get_block_height(&self, height: u64) -> Result<BlockHash, ExplorerError> {
+        let url = self.join_url(format!("block-height/{height}"))?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = BlockHash::from_str(&resp)?;
+        Ok(resp)
+    }
+
+    pub async fn get_blocks(&self, start_height: Option<u64>) -> Result<Vec<types::Block>, ExplorerError> {
+        let url = if let Some(height) = start_height {
+            self.join_url(format!("blocks/{}", height))?
+        } else {
+            self.join_url("blocks")?
+        };
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::Block>>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.into_iter().map(|val| val.convert()).collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    pub async fn get_blocks_tip_height(&self) -> Result<u64, ExplorerError> {
+        let url = self.join_url("blocks/tip/height")?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<u64>()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Ok(resp)
+    }
+
+    pub async fn get_blocks_tip_hash(&self) -> Result<BlockHash, ExplorerError> {
+        let url = self.join_url("blocks/tip/hash")?;
+        let resp = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| ExplorerError::response_failed(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = BlockHash::from_str(&resp)?;
+        Ok(resp)
+    }
+
     pub async fn get_mempool(&self) -> Result<types::MempoolInfo, ExplorerError> {
         let url = self.join_url("mempool")?;
         let resp = self
@@ -962,7 +1040,6 @@ impl EsploraClient {
 
     pub async fn get_mempool_recent(&self) -> Result<Vec<types::MempoolRecent>, ExplorerError> {
         let url = self.join_url("mempool/recent")?;
-        println!("{url}");
         let resp = self
             .client
             .get(url)

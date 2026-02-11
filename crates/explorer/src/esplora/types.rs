@@ -7,12 +7,14 @@ pub struct EsploraTransaction {
     pub txid: Txid,
     pub version: u32,
     pub locktime: u32,
+    pub vin: Vec<Vin>,
+    pub vout: Vec<Vout>,
     pub size: u64,
     pub weight: u64,
     pub fee: u64,
-    pub vin: Vec<Vin>,
-    pub vout: Vec<Vout>,
     pub status: TxStatus,
+    pub discount_vsize: u64,
+    pub discount_weight: u64,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -60,9 +62,9 @@ pub struct AddressInfo {
     pub mempool_stats: MempoolStats,
 }
 
-#[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct ScripthashInfo {
-    pub scripthash: String,
+    pub scripthash: Script,
     pub chain_stats: Stats,
     pub mempool_stats: Stats,
 }
@@ -80,11 +82,10 @@ pub struct ChainStats {
 pub struct Stats {
     pub tx_count: u64,
     pub funded_txo_count: u64,
-    pub funded_txo_sum: u64,
     pub spent_txo_count: u64,
-    pub spent_txo_sum: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Utxo {
     pub outpoint: OutPoint,
@@ -118,21 +119,19 @@ pub struct Block {
     pub height: u64,
     pub version: u32,
     pub timestamp: u64,
-    pub mediantime: u64,
-    pub bits: u32,
-    pub nonce: u32,
-    pub merkle_root: TxMerkleNode,
     pub tx_count: u64,
     pub size: u64,
     pub weight: u64,
+    pub merkle_root: TxMerkleNode,
+    pub mediantime: u64,
     pub previousblockhash: BlockHash,
-    pub difficulty: Option<f64>,
+    pub ext: Option<simplicityhl::elements::BlockExtData>,
 }
 
 #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
 pub struct BlockStatus {
     pub in_best_chain: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: u64,
     pub next_best: Option<String>,
 }
 

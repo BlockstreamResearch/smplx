@@ -1,11 +1,9 @@
 mod types;
 
-use std::collections::HashMap;
-
-pub struct WaterfallClient {
-    base_url: String,
-    client: reqwest::Client,
-}
+// pub struct WaterfallClient {
+//     base_url: String,
+//     client: reqwest::Client,
+// }
 
 // impl WaterfallClient {
 //     pub fn new(base_url: impl Into<String>) -> Self {
@@ -319,10 +317,3 @@ pub struct WaterfallClient {
 //         self.client.get(&self.url("metrics")).send().await?.text().await
 //     }
 // }
-
-// Helper module for URL encoding
-mod urlencoding {
-    pub fn encode(s: &str) -> String {
-        url_escape::encode_component(s).to_string()
-    }
-}

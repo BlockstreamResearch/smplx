@@ -47,6 +47,9 @@ pub enum ExplorerError {
 
     #[error("Failed to decode hex string using hex_simd, error: {0}")]
     HexSimdDecode(String),
+
+    #[error("Failed to deserialize Transaction from hex, error: {0}")]
+    TransactionDecode(String),
 }
 
 #[derive(Debug, Clone)]
