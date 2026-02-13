@@ -1,0 +1,27 @@
+# WARNING: Formatting in this project is non-standard and unfortunetely `cargo fmt` does not support "out of the box" formatting.
+# Here you can find the closest possible set of settings for `cargo fmt`, but it is not even close to desirable.
+# use '+nightly' option for formatting (cargo +nightly fmt)
+
+edition = "2024"
+style_edition = "2024"
+max_width = 120
+tab_spaces = 4
+newline_style = "Unix"
+fn_params_layout = "Tall"
+match_arm_leading_pipes = "Preserve"
+reorder_imports = true
+reorder_modules = true
+# unstable features below
+# unstable_features = true
+# format_code_in_doc_comments = true
+# imports_granularity = "Crate"
+# group_imports = "StdExternalCrate"
+
+#wrap_comments = true
+#where_single_line = false
+#blank_lines_upper_bound = 2
+#brace_style = "AlwaysNextLine"
+#control_brace_style = "AlwaysNextLine"
+#empty_item_single_line = true
+#use_small_heuristics = "Off"
+

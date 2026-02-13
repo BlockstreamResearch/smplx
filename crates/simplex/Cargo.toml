@@ -1,0 +1,33 @@
+[package]
+name = "simplex"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+description = "High-level helpers for compiling and executing Simplicity programs on Liquid"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/BlockstreamResearch/simplex"
+readme = "README.md"
+documentation = "https://docs.rs/simplex"
+keywords = ["simplicity", "liquid", "bitcoin", "elements", "taproot"]
+categories = ["cryptography::cryptocurrencies"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["macros", "encoding", "core"]
+encoding = ["dep:bincode"]
+macros = ["dep:simplex-macros"]
+core = ["dep:simplex-core"]
+
+[dependencies]
+simplex-macros = { path = "../macros", features = [], optional = true }
+simplex-core = { path = "../core", features = ["encoding"], optional = true }
+
+bincode = { workspace = true, optional = true }
+simplicityhl = { workspace = true, features = ["serde"] }
+serde = { version = "1.0.228" }
+either = { version = "1.15.0", features = ["serde"] }
+
+[dev-dependencies]
+trybuild = { version = "1.0.115" }
