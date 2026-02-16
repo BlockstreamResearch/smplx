@@ -13,7 +13,6 @@ bincode = []
 serde = ["bincode"]
 default = ["bincode", "serde"]
 
-
 [dependencies]
 proc-macro-error = { version = "1.0" }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
