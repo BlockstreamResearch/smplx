@@ -8,21 +8,24 @@ use crate::error::SignerError;
 use crate::program::{ProgramTrait, WitnessTrait};
 use crate::signer::SignerTrait;
 
-struct SignedInput<'a> {
+struct SignedInput<'a, T> {
     program: &'a dyn ProgramTrait,
     witness: &'a dyn WitnessTrait,
     signer: Option<&'a dyn SignerTrait>,
-    signer_lambda: Option<&'a dyn FnOnce(WitnessValues, Signature) -> Result<WitnessValues, SignerError>>,
+    signer_lambda: Option<T>,
 }
 
-pub struct SignedTransaction<'a> {
+pub struct SignedTransaction<'a, T> {
     tx: Transaction,
     utxos: &'a [TxOut],
     network: SimplicityNetwork,
-    inputs: Vec<SignedInput<'a>>,
+    inputs: Vec<SignedInput<'a, T>>,
 }
 
-impl<'a> SignedTransaction<'a> {
+impl<'a, T> SignedTransaction<'a, T>
+where
+    T: Fn(WitnessValues, Signature) -> Result<WitnessValues, SignerError> + Clone,
+{
     pub fn new(tx: Transaction, utxos: &'a [TxOut], network: SimplicityNetwork) -> Self {
         Self {
             tx: tx,
@@ -48,7 +51,7 @@ impl<'a> SignedTransaction<'a> {
         program: &'a dyn ProgramTrait,
         witness: &'a dyn WitnessTrait,
         signer: &'a dyn SignerTrait,
-        signer_lambda: &'a dyn FnOnce(WitnessValues, Signature) -> Result<WitnessValues, SignerError>,
+        signer_lambda: T,
     ) {
         let signed_input = SignedInput {
             program: program,
@@ -64,13 +67,19 @@ impl<'a> SignedTransaction<'a> {
         for index in 0..self.inputs.len() {
             let (program, witness, signer, signer_lambda) = {
                 let input = &self.inputs[index];
-                (input.program, input.witness, input.signer, input.signer_lambda)
+                (input.program, input.witness, input.signer, input.signer_lambda.clone())
             };
 
             if signer.is_some() {
-                self.finalize_with_signer(program, witness, index, signer.unwrap(), signer_lambda.unwrap())?;
+                self.finalize_with_signer(
+                    program,
+                    witness.build_witness(),
+                    index,
+                    signer.unwrap(),
+                    signer_lambda.unwrap(),
+                )?;
             } else {
-                self.finalize_as_is(program, witness, index)?;
+                self.finalize_as_is(program, witness.build_witness(), index)?;
             }
         }
 
@@ -80,21 +89,21 @@ impl<'a> SignedTransaction<'a> {
     fn finalize_with_signer(
         &mut self,
         program: &dyn ProgramTrait,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         index: usize,
         signer: &dyn SignerTrait,
-        signer_lambda: &'a dyn FnOnce(WitnessValues, Signature) -> Result<WitnessValues, SignerError>,
+        signer_lambda: T,
     ) -> Result<(), SignerError> {
         let signature = signer.sign(program, &self.tx, self.utxos, index, self.network)?;
-        let new_witness = signer_lambda(witness.build_witness(), signature)?;
+        let new_witness = signer_lambda(witness, signature)?;
 
-        self.finalize_as_is(program, WitnessTrait::from_witness(new_witness), index)
+        self.finalize_as_is(program, new_witness, index)
     }
 
     fn finalize_as_is(
         &mut self,
         program: &dyn ProgramTrait,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         index: usize,
     ) -> Result<(), SignerError> {
         self.tx = program.finalize(witness, self.tx.clone(), self.utxos, index, self.network)?;

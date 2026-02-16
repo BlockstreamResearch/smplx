@@ -9,16 +9,17 @@ use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
+use simplicityhl::{Arguments, WitnessValues};
 
 use crate::constants::SimplicityNetwork;
 use crate::error::ProgramError;
 
 pub trait ArgumentsTrait {
-    fn build_arguments(&self) -> simplicityhl::Arguments;
+    fn build_arguments(&self) -> Arguments;
 }
 
 pub trait WitnessTrait {
-    fn build_witness(&self) -> simplicityhl::WitnessValues;
+    fn build_witness(&self) -> WitnessValues;
 }
 
 pub trait ProgramTrait {
@@ -32,7 +33,7 @@ pub trait ProgramTrait {
 
     fn execute(
         &self,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         tx: &Transaction,
         utxos: &[TxOut],
         input_index: usize,
@@ -41,7 +42,7 @@ pub trait ProgramTrait {
 
     fn finalize(
         &self,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         tx: Transaction,
         utxos: &[TxOut],
         input_index: usize,
@@ -103,7 +104,7 @@ impl<'a> ProgramTrait for Program<'a> {
 
     fn execute(
         &self,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         tx: &Transaction,
         utxos: &[TxOut],
         input_index: usize,
@@ -111,7 +112,7 @@ impl<'a> ProgramTrait for Program<'a> {
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError> {
         let satisfied = self
             .load()?
-            .satisfy(witness.build_witness())
+            .satisfy(witness)
             .map_err(ProgramError::WitnessSatisfaction)?;
 
         let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
@@ -128,7 +129,7 @@ impl<'a> ProgramTrait for Program<'a> {
 
     fn finalize(
         &self,
-        witness: &dyn WitnessTrait,
+        witness: WitnessValues,
         mut tx: Transaction,
         utxos: &[TxOut],
         input_index: usize,
