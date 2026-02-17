@@ -1,7 +1,10 @@
+mod elements_rpc;
 pub mod error;
-pub mod esplora;
+mod esplora;
 mod traits;
-pub mod waterfall;
+mod waterfall;
 
-pub use esplora::EsploraClient;
-// pub use waterfall::WaterfallClient;
+pub use elements_rpc::*;
+pub use esplora::*;
+pub use traits::*;
+// pub use waterfall::*;

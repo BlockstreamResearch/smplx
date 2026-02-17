@@ -13,6 +13,11 @@ multiple_crate_versions = "allow"
 
 [workspace.dependencies]
 simplex-core = { path = "./crates/core" }
+simplex-explorer = { path = "./crates/explorer" }
+simplex-macros = { path = "./crates/macros" }
+simplex-macros-core = { path = "./crates/macros-core" }
+simplex-test = { path = "./crates/test" }
+simplex = { path = "./crates/simplex" }
 
 bincode = { version = "2.0.1", features = ["serde"] }
 ring = { version = "0.17.14" }
@@ -22,6 +27,7 @@ hex = { version = "0.4.3" }
 tracing = { version = "0.1.41" }
 
 minreq = { version = "2.14.1", features = ["https", "json-using-serde"] }
+corepc-node = { version = "0.10.1" }
 
 simplicityhl = { git = "https://github.com/ikripaka/SimplicityHL/", branch = "feature/rich-params" }
 

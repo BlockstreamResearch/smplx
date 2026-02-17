@@ -1,13 +1,9 @@
-use reqwest::StatusCode;
-use url::Url;
+use reqwest::{StatusCode, Url};
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 pub enum ExplorerError {
     #[error("Failed to type to Url, {0}")]
     UrlConversion(String),
-
-    #[error("url")]
-    UrlParsing(#[from] url::ParseError),
 
     #[error("Failed to send request, [url: '{url:?}', code: {status:?}, text: '{text}']")]
     Request {
@@ -42,14 +38,22 @@ pub enum ExplorerError {
     #[error("Failed to decode commitment, type: {commitment_type:?}, error: {error}")]
     CommitmentDecode {
         commitment_type: CommitmentType,
-        error: String,
+        error: simplicityhl::elements::encode::Error,
     },
 
     #[error("Failed to decode hex string using hex_simd, error: {0}")]
-    HexSimdDecode(String),
+    HexSimdDecode(
+        hex_simd::Error
+    ),
 
     #[error("Failed to deserialize Transaction from hex, error: {0}")]
     TransactionDecode(String),
+
+    #[error(transparent)]
+    ElementsRpcError(#[from] corepc_client::client_sync::Error),
+
+    #[error("Elements RPC returned an unexpected value for call {0}")]
+    ElementsRpcUnexpectedReturn(String),
 }
 
 #[derive(Debug, Clone)]

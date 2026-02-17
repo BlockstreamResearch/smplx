@@ -1,0 +1,17 @@
+[package]
+name = "simplex-test"
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+
+[dependencies]
+thiserror = { version = "2.0.18" }
+simplicityhl = { workspace = true }
+rand = { version = "0.10.0" }
+simplex-explorer = { workspace = true }
+corepc-node = { workspace = true }
+simplex-core = { workspace = true }

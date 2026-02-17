@@ -267,28 +267,25 @@ mod deserializable {
                     valuecommitment,
                 } => types::UtxoInfo::Confidential {
                     asset_comm: Asset::from_commitment(
-                        &hex_simd::decode_to_vec(assetcommitment)
-                            .map_err(|e| ExplorerError::HexSimdDecode(e.to_string()))?,
+                        &hex_simd::decode_to_vec(assetcommitment).map_err(ExplorerError::HexSimdDecode)?,
                     )
                     .map_err(|e| ExplorerError::CommitmentDecode {
                         commitment_type: CommitmentType::Asset,
-                        error: e.to_string(),
+                        error: e,
                     })?,
                     value_comm: Value::from_commitment(
-                        &hex_simd::decode_to_vec(valuecommitment)
-                            .map_err(|e| ExplorerError::HexSimdDecode(e.to_string()))?,
+                        &hex_simd::decode_to_vec(valuecommitment).map_err( ExplorerError::HexSimdDecode)?,
                     )
                     .map_err(|e| ExplorerError::CommitmentDecode {
                         commitment_type: CommitmentType::Asset,
-                        error: e.to_string(),
+                        error: e,
                     })?,
                     nonce_comm: Nonce::from_commitment(
-                        &hex_simd::decode_to_vec(noncecommitment)
-                            .map_err(|e| ExplorerError::HexSimdDecode(e.to_string()))?,
+                        &hex_simd::decode_to_vec(noncecommitment).map_err(ExplorerError::HexSimdDecode)?,
                     )
                     .map_err(|e| ExplorerError::CommitmentDecode {
                         commitment_type: CommitmentType::Asset,
-                        error: e.to_string(),
+                        error: e,
                     })?,
                 },
                 UtxoInfo::Explicit { asset, value } => types::UtxoInfo::Explicit {

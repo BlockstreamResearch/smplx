@@ -22,4 +22,8 @@ pub enum Error {
     /// Errors when converting hex strings to byte arrays.
     #[error("Hex to array error: {0}")]
     HexToArray(#[from] HexToArrayError),
+
+    /// Errors when converting hex strings to byte arrays.
+    #[error("Occurred error with test suite, error: {0}")]
+    Test(#[from] Box<simplex_test::TestError>),
 }
