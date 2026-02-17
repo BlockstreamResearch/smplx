@@ -1,6 +1,9 @@
-pub mod program;
-pub mod signer;
 pub mod signed_transaction;
+pub mod program;
+pub mod arguments;
+pub mod witness;
+pub mod signer;
+pub mod provider;
 pub mod utils;
 pub mod constants;
 pub mod error;

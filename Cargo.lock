@@ -1769,6 +1769,7 @@ dependencies = [
 name = "simplex-sdk"
 version = "0.1.0"
 dependencies = [
+ "minreq",
  "sha2",
  "simplicityhl",
  "thiserror",

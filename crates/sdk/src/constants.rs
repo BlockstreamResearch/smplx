@@ -1,16 +1,14 @@
-//! Common Liquid network constants and helpers.
-//!
-//! Exposes policy asset identifiers and the Liquid testnet genesis hash.
-//!
-//! These are used throughout the CLI and examples to ensure consistent
-//! parameters when constructing Elements transactions.
-
 use simplicityhl::simplicity::elements;
 use simplicityhl::simplicity::hashes::{Hash, sha256};
 
 use std::str::FromStr;
 
 pub const PUBLIC_SECRET_BLINDER_KEY: [u8; 32] = [1; 32];
+
+pub const DEFAULT_TARGET_BLOCKS: u32 = 0;
+pub const DEFAULT_FEE_RATE: f32 = 100.0;
+pub const WITNESS_SCALE_FACTOR: usize = 4;
+pub const PLACEHOLDER_FEE: u64 = 1;
 
 /// Policy asset id (hex, BE) for Liquid mainnet.
 pub const LIQUID_POLICY_ASSET_STR: &str =
@@ -28,7 +26,6 @@ pub const LIQUID_DEFAULT_REGTEST_ASSET_STR: &str =
 pub static LIQUID_TESTNET_TEST_ASSET_ID_STR: &str =
     "38fca2d939696061a8f76d4e6b5eecd54e3b4221c846f24a6b279e79952850a5";
 
-/// LBTC asset id for Liquid testnet.
 pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> =
     std::sync::LazyLock::new(|| {
         elements::AssetId::from_inner(sha256::Midstate([
@@ -38,7 +35,6 @@ pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> 
         ]))
     });
 
-/// Genesis block hash for Liquid mainnet.
 pub static LIQUID_MAINNET_GENESIS: std::sync::LazyLock<elements::BlockHash> =
     std::sync::LazyLock::new(|| {
         elements::BlockHash::from_byte_array([
@@ -48,7 +44,6 @@ pub static LIQUID_MAINNET_GENESIS: std::sync::LazyLock<elements::BlockHash> =
         ])
     });
 
-/// Genesis block hash for Liquid testnet.
 pub static LIQUID_TESTNET_GENESIS: std::sync::LazyLock<elements::BlockHash> =
     std::sync::LazyLock::new(|| {
         elements::BlockHash::from_byte_array([
@@ -58,7 +53,6 @@ pub static LIQUID_TESTNET_GENESIS: std::sync::LazyLock<elements::BlockHash> =
         ])
     });
 
-/// Genesis block hash for Liquid regtest.
 pub static LIQUID_REGTEST_GENESIS: std::sync::LazyLock<elements::BlockHash> =
     std::sync::LazyLock::new(|| {
         elements::BlockHash::from_byte_array([
@@ -68,39 +62,21 @@ pub static LIQUID_REGTEST_GENESIS: std::sync::LazyLock<elements::BlockHash> =
         ])
     });
 
-/// The network of the elements blockchain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimplicityNetwork {
-    // Liquid mainnet policy asset
     Liquid,
-    // Liquid testnet policy asset
     LiquidTestnet,
-    /// Liquid regtest with a custom policy asset.
     ElementsRegtest {
-        /// The policy asset to use for this regtest network.
-        /// You can use the default one using [`SimplicityNetwork::default_regtest()`].
         policy_asset: elements::AssetId,
     },
 }
 
 impl SimplicityNetwork {
-    /// Return the default policy asset for regtest network.
-    ///
-    /// # Panics
-    ///
-    /// Doesn't panic as constants are defined correctly.
-    #[must_use]
     pub fn default_regtest() -> Self {
         let policy_asset = elements::AssetId::from_str(LIQUID_DEFAULT_REGTEST_ASSET_STR).unwrap();
         Self::ElementsRegtest { policy_asset }
     }
 
-    /// Return the policy asset for specific network.
-    ///
-    /// # Panics
-    ///
-    /// Doesn't panic as constants are defined correctly.
-    #[must_use]
     pub fn policy_asset(&self) -> elements::AssetId {
         match self {
             Self::Liquid => elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).unwrap(),
@@ -111,8 +87,6 @@ impl SimplicityNetwork {
         }
     }
 
-    /// Return the genesis block hash for this network.
-    #[must_use]
     pub fn genesis_block_hash(&self) -> elements::BlockHash {
         match self {
             Self::Liquid => *LIQUID_MAINNET_GENESIS,
@@ -121,8 +95,6 @@ impl SimplicityNetwork {
         }
     }
 
-    /// Return the address parameters for this network to generate addresses compatible for this network.
-    #[must_use]
     pub const fn address_params(&self) -> &'static elements::AddressParams {
         match self {
             Self::Liquid => &elements::AddressParams::LIQUID,
