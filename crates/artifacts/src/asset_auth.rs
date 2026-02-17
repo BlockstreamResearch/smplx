@@ -1,4 +1,4 @@
-use simplex_sdk::program::{Arguments, Program};
+use simplex_sdk::program::{ArgumentsTrait, Program};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 
 // use simplex_macros::simplex_build;
@@ -14,7 +14,7 @@ impl<'a> AssetAuth<'a> {
     pub const SOURCE: &'static str = "";
         // include_str!("../../contracts/src/asset_auth/source_simf/asset_auth.simf");
 
-    pub fn new(public_key: &'a XOnlyPublicKey, arguments: &'a impl Arguments) -> Self {
+    pub fn new(public_key: &'a XOnlyPublicKey, arguments: &'a impl ArgumentsTrait) -> Self {
         Self {
             program: Program::new(Self::SOURCE, public_key, arguments),
         }
@@ -28,8 +28,8 @@ impl<'a> AssetAuth<'a> {
 // Expanded by macro
 
 pub mod asset_auth_build {
-    use simplex_sdk::program::Witness;
-    use simplex_sdk::program::Arguments;
+    use simplex_sdk::program::WitnessTrait;
+    use simplex_sdk::program::ArgumentsTrait;
     use simplicityhl::value::UIntValue;
     use simplicityhl::value::ValueConstructible;
     use simplicityhl::{Value, WitnessValues};
@@ -44,7 +44,7 @@ pub mod asset_auth_build {
         pub second: bool,
     }
 
-    impl Witness for AssetAuthWitness {
+    impl WitnessTrait for AssetAuthWitness {
         fn build_witness(&self) -> WitnessValues {
             WitnessValues::from(HashMap::from([(
                 simplicityhl::str::WitnessName::from_str_unchecked("PATH"),
@@ -56,14 +56,14 @@ pub mod asset_auth_build {
             )]))
         }
 
-        fn from_witness(_witness: &::simplicityhl::WitnessValues) -> Self {
-            Self {
-                path: (false, 0, 0),
-            }
-        }
+        // fn from_witness(_witness: &::simplicityhl::WitnessValues) -> Self {
+        //     Self {
+        //         path: (false, 0, 0),
+        //     }
+        // }
     }
 
-    impl Arguments for AssetAuthArguments {
+    impl ArgumentsTrait for AssetAuthArguments {
         fn build_arguments(&self) -> simplicityhl::Arguments {
             simplicityhl::Arguments::from(HashMap::from([
                 (
@@ -77,11 +77,11 @@ pub mod asset_auth_build {
             ]))
         }
 
-        fn from_arguments(_args: &simplicityhl::Arguments) -> Self {
-            Self {
-                first: 0,
-                second: false,
-            }
-        }
+        // fn from_arguments(_args: &simplicityhl::Arguments) -> Self {
+        //     Self {
+        //         first: 0,
+        //         second: false,
+        //     }
+        // }
     }
 }
