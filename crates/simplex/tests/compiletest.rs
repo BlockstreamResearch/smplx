@@ -5,9 +5,3 @@ fn ui() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/*.rs");
 }
-
-#[simplex::simplex_macros::test]
-// #[test]
-fn test_execution() {
-    // assert!(true);
-}

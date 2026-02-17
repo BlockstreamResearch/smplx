@@ -28,4 +28,4 @@ thiserror = { version = "2.0.18" }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 simplex-test = { workspace = true }
 ctrlc = { version =  "3.5.2", features = ["termination"] }
-corepc-node = { workspace = true }
+electrsd = { workspace = true }

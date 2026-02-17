@@ -1,3 +1,5 @@
+pub const DEFAULT_SAT_AMOUNT_FAUCET: u64 = 100000;
+
 pub trait ElementsdParams {
     fn get_bin_args(&self) -> Vec<String>;
 }
@@ -9,7 +11,6 @@ impl ElementsdParams for DefaultElementsdParams {
         vec![
             "-fallbackfee=0.0001".to_string(),
             "-dustrelayfee=0.00000001".to_string(),
-            "-initialfreecoins=2100000000".to_string(),
             "-acceptdiscountct=1".to_string(),
             "-rest".to_string(),
             "-evbparams=simplicity:-1:::".to_string(), // Enable Simplicity from block 0
@@ -21,6 +22,7 @@ impl ElementsdParams for DefaultElementsdParams {
             "-initialfreecoins=2100000000000000".to_string(),
             "-listen=1".to_string(),
             "-txindex=1".to_string(),
+            // "-disablewallet=0".to_string(),
         ]
     }
 }

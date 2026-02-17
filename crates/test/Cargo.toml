@@ -13,5 +13,5 @@ thiserror = { version = "2.0.18" }
 simplicityhl = { workspace = true }
 rand = { version = "0.10.0" }
 simplex-explorer = { workspace = true }
-corepc-node = { workspace = true }
 simplex-core = { workspace = true }
+electrsd = { workspace = true }

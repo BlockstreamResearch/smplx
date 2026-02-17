@@ -74,3 +74,24 @@
 //     /// Any network and blockchain warnings. In later versions of bitcoind, it's an array of strings.
 //     pub warnings: StringOrStringArray,
 // }
+
+#[derive(Default, Debug, Clone, Copy)]
+pub enum AddressType {
+    Legacy,
+    #[default]
+    P2shSegwit,
+    Bech32,
+    Bech32m,
+}
+
+impl std::fmt::Display for AddressType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            AddressType::Legacy => "legacy".to_string(),
+            AddressType::P2shSegwit => "p2sh-segwit".to_string(),
+            AddressType::Bech32 => "bech32".to_string(),
+            AddressType::Bech32m => "bech32m".to_string(),
+        };
+        write!(f, "{}", str)
+    }
+}
