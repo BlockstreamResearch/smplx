@@ -274,7 +274,7 @@ mod deserializable {
                         error: e,
                     })?,
                     value_comm: Value::from_commitment(
-                        &hex_simd::decode_to_vec(valuecommitment).map_err( ExplorerError::HexSimdDecode)?,
+                        &hex_simd::decode_to_vec(valuecommitment).map_err(ExplorerError::HexSimdDecode)?,
                     )
                     .map_err(|e| ExplorerError::CommitmentDecode {
                         commitment_type: CommitmentType::Asset,

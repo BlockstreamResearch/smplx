@@ -25,7 +25,6 @@ pub fn expand_test(_args: &proc_macro2::TokenStream, input: &syn::ItemFn) -> syn
     Ok(expand_simple(input))
 }
 
-
 fn expand_simple(input: &syn::ItemFn) -> proc_macro2::TokenStream {
     let ret = &input.sig.output;
     let name = &input.sig.ident;

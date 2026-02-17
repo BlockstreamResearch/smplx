@@ -1,4 +1,3 @@
-
 pub trait ElementsdParams {
     fn get_bin_args(&self) -> Vec<String>;
 }

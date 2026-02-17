@@ -5,12 +5,12 @@ pub use common::*;
 pub use error::*;
 
 use corepc_node::client::client_sync::Auth;
-use corepc_node::{ Conf, Node};
+use corepc_node::{Conf, Node};
 use simplex_explorer::ElementsRpcClient;
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::schnorr::Keypair;
-use simplicityhl::elements::secp256k1_zkp::rand::thread_rng;
 use simplicityhl::elements::secp256k1_zkp::PublicKey;
+use simplicityhl::elements::secp256k1_zkp::rand::thread_rng;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -79,11 +79,7 @@ impl ElementsRpc {
                 auth,
                 simplicity_network: network,
                 url: rpc_url,
-            } => {
-                println!(" == Rpc url: {}", rpc_url);
-
-                ElementsRpcClient::new(network, &rpc_url, auth)?
-            }
+            } => ElementsRpcClient::new(network, &rpc_url, auth)?,
         };
         if let Err(e) = client.blockchain_info() {
             return Err(TestError::UnhealthyRpc(e));
@@ -100,7 +96,7 @@ impl ElementsRpc {
 
     pub fn create_default_node() -> Node {
         let mut conf = Conf::default();
-        let bin_args = common::DefaultElementsdParams{}.get_bin_args();
+        let bin_args = common::DefaultElementsdParams {}.get_bin_args();
 
         conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
         conf.wallet = None;
@@ -108,7 +104,7 @@ impl ElementsRpc {
         Node::with_conf(Self::get_bin_path(), &conf).unwrap()
     }
 
-     fn create_node(conf: Conf, bin_path: PathBuf) -> Result<Node, TestError> {
+    fn create_node(conf: Conf, bin_path: PathBuf) -> Result<Node, TestError> {
         Node::with_conf(bin_path, &conf).map_err(|e| TestError::NodeFailedToStart(e.to_string()))
     }
 
@@ -125,7 +121,6 @@ impl ElementsRpc {
     fn spawn_elements_rpc(node: Node) -> Result<Self, TestError> {
         Ok(ElementsRpc { elementsd: node })
     }
-
 
     pub fn node(&self) -> &Node {
         &self.elementsd

@@ -1,6 +1,6 @@
-use crate::error::ExplorerError;
 use crate::Network;
-use corepc_client::client_sync::{v23::Client, Auth};
+use crate::error::ExplorerError;
+use corepc_client::client_sync::{Auth, v23::Client};
 
 mod types;
 
@@ -46,7 +46,7 @@ impl ElementsRpcClient {
         Ok(self.inner.call::<corepc_types::v23::GetBlockchainInfo>(METHOD, &[])?)
     }
 
-    pub fn inner(&self) -> &Client{
+    pub fn inner(&self) -> &Client {
         &self.inner
     }
 }

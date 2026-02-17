@@ -2,15 +2,15 @@ pub mod commands;
 
 use crate::error::Error;
 
-use crate::config::{default_config_path, Config};
+use crate::config::{Config, default_config_path};
 
 use clap::Parser;
 use corepc_node::client::client_sync::Auth;
 use simplex_test::{DefaultElementsdParams, ElementsRpc, ElementsdParams};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Parser)]
 #[command(name = "simplicity-dex")]
@@ -57,7 +57,6 @@ impl Cli {
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
                     .spawn()?;
-
 
                 // TODO: maybe check connection?
                 println!("======================================");
