@@ -1,79 +1,105 @@
-// pub mod serde_hex {
-//     use bitcoin_hashes::hex::{DisplayHex, FromHex};
-//     use serde::de::Error;
-//     use serde::{Deserializer, Serializer};
-//
-//     pub fn serialize<S: Serializer>(b: &Vec<u8>, s: S) -> Result<S::Ok, S::Error> {
-//         s.serialize_str(&b.to_lower_hex_string())
-//     }
-//
-//     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
-//         let hex_str: String = ::serde::Deserialize::deserialize(d)?;
-//         Ok(FromHex::from_hex(&hex_str).map_err(D::Error::custom)?)
-//     }
-//
-//     pub mod opt {
-//         use serde::de::Error;
-//         use serde::{Deserializer, Serializer};
-//         use simplicityhl::elements::hex::FromHex;
-//         use simplicityhl::simplicity::hex::DisplayHex;
-//
-//         pub fn serialize<S: Serializer>(b: &Option<Vec<u8>>, s: S) -> Result<S::Ok, S::Error> {
-//             match *b {
-//                 None => s.serialize_none(),
-//                 Some(ref b) => s.serialize_str(&b.to_lower_hex_string()),
-//             }
-//         }
-//
-//         pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Vec<u8>>, D::Error> {
-//             let hex_str: String = ::serde::Deserialize::deserialize(d)?;
-//             Ok(Some(FromHex::from_hex(&hex_str).map_err(D::Error::custom)?))
-//         }
-//     }
-// }
+use serde_json::Value;
+use std::collections::HashMap;
 
-// #[derive(Clone, Debug, serde::Deserialize)]
-// pub struct GetBlockchainInfoResult {
-//     /// Current network name as defined in BIP70 (main, test, signet, regtest)
-//     pub chain: types::Network,
-//     /// The current number of blocks processed in the server
-//     pub blocks: u64,
-//     /// The current number of headers we have validated
-//     pub headers: u64,
-//     /// The hash of the currently best block
-//     #[serde(rename = "bestblockhash")]
-//     pub best_block_hash: bitcoin::BlockHash,
-//     /// The current difficulty
-//     pub difficulty: f64,
-//     /// Median time for the current best block
-//     #[serde(rename = "mediantime")]
-//     pub median_time: u64,
-//     /// Estimate of verification progress [0..1]
-//     #[serde(rename = "verificationprogress")]
-//     pub verification_progress: f64,
-//     /// Estimate of whether this node is in Initial Block Download mode
-//     #[serde(rename = "initialblockdownload")]
-//     pub initial_block_download: bool,
-//     /// Total amount of work in active chain, in hexadecimal
-//     #[serde(rename = "chainwork", with = "serde_hex")]
-//     pub chain_work: Vec<u8>,
-//     /// The estimated size of the block and undo files on disk
-//     pub size_on_disk: u64,
-//     /// If the blocks are subject to pruning
-//     pub pruned: bool,
-//     /// Lowest-height complete block stored (only present if pruning is enabled)
-//     #[serde(rename = "pruneheight")]
-//     pub prune_height: Option<u64>,
-//     /// Whether automatic pruning is enabled (only present if pruning is enabled)
-//     pub automatic_pruning: Option<bool>,
-//     /// The target size used by pruning (only present if automatic pruning is enabled)
-//     pub prune_target_size: Option<u64>,
-//     /// Status of softforks in progress
-//     #[serde(default)]
-//     pub softforks: HashMap<String, Softfork>,
-//     /// Any network and blockchain warnings. In later versions of bitcoind, it's an array of strings.
-//     pub warnings: StringOrStringArray,
-// }
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GetBlockchainInfo {
+    pub chain: String,
+    pub blocks: u64,
+    pub headers: u64,
+    pub bestblockhash: String,
+    // pub difficulty: f64,
+    pub time: u64,
+    pub mediantime: u64,
+    pub verificationprogress: f64,
+    pub initialblockdownload: bool,
+    // pub chainwork: String,
+    pub size_on_disk: u64,
+    pub pruned: bool,
+
+    // Elements specific fields
+    pub current_params_root: String,
+    // pub signblock_asm: String,
+    // pub signblock_hex: String,
+    pub current_signblock_asm: String,
+    pub current_signblock_hex: String,
+    pub max_block_witness: u64,
+    pub epoch_length: u64,
+    pub total_valid_epochs: u64,
+    pub epoch_age: u64,
+
+    // Using Value here as the documentation describes it generically as "extension fields"
+    pub extension_space: Vec<Value>,
+
+    // Optional pruning fields (only present if pruning is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pruneheight: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automatic_pruning: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prune_target_size: Option<u64>,
+
+    // Softforks are deprecated but might still be present if configured
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub softforks: Option<HashMap<String, Softfork>>,
+
+    pub warnings: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Softfork {
+    #[serde(rename = "type")]
+    pub fork_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u64>,
+    pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bip9: Option<SoftforkBip9>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SoftforkBip9 {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bit: Option<u8>,
+    pub start_time: u64,
+    pub timeout: u64,
+    pub min_activation_height: u64,
+    pub status: String,
+    pub since: u64,
+    pub status_next: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<SoftforkStatistics>,
+    pub signalling: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SoftforkStatistics {
+    pub period: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<u64>,
+    pub elapsed: u64,
+    pub count: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub possible: Option<bool>,
+}
+
+pub struct WalletMeta {
+    pub name: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GetBalance {
+    #[serde(rename = "mine")]
+    pub mine: BalanceDetails,
+    #[serde(rename = "watchonly")]
+    pub watchonly: Option<BalanceDetails>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct BalanceDetails {
+    pub trusted: f64,
+    pub untrusted_pending: f64,
+    pub immature: f64,
+}
 
 #[derive(Default, Debug, Clone, Copy)]
 pub enum AddressType {
@@ -94,4 +120,35 @@ impl std::fmt::Display for AddressType {
         };
         write!(f, "{}", str)
     }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ListUnspent {
+    pub txid: String,
+    pub vout: u32,
+    pub address: String,
+    pub label: Option<String>,
+    #[serde(rename = "scriptPubKey")]
+    pub script_pubkey: String,
+    pub amount: f64,
+    pub amountcommitment: Option<String>,
+    pub asset: Option<String>,
+    pub assetcommitment: Option<String>,
+    pub confirmations: u64,
+    pub bcconfirmations: Option<u64>,
+    pub spendable: bool,
+    pub solvable: bool,
+    pub safe: bool,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct QueryOptions {
+    #[serde(rename = "minimumAmount")]
+    pub minimum_amount: Option<f64>,
+    #[serde(rename = "maximumAmount")]
+    pub maximum_amount: Option<f64>,
+    #[serde(rename = "maximumCount")]
+    pub maximum_count: Option<u64>,
+    #[serde(rename = "minimumSumAmount")]
+    pub minimum_sum_amount: Option<f64>,
 }
