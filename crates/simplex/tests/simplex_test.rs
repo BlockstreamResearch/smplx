@@ -23,14 +23,17 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
 
             dbg!(p2pk.to_string());
 
+            // simplex runtime
+            // - test provider
+            // - fields from config
+            // -
+            // p2tr
+
             // TODO: uncomment and fix
-            // ElementsRpcClient::importaddress(
-            //     rpc.as_ref(),
-            //     &p2pk.to_string(),
-            //     None,
-            //     None,
-            //     None,
-            // )?;
+            dbg!(ElementsRpcClient::validateaddress(rpc.as_ref(), &p2pk.to_string())?);
+            // ElementsRpcClient::importaddress(rpc.as_ref(), &p2pk.to_string(), None, None, None)?;
+
+            // broadcast, fetch fee transaction
 
             ElementsRpcClient::sendtoaddress(
                 rpc.as_ref(),
@@ -48,6 +51,12 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
                 Some(vec![p2pk.to_string()]),
                 None,
                 None,
+            )?,);
+
+            dbg!(ElementsRpcClient::scantxoutset(
+                rpc.as_ref(),
+                "start",
+                Some(vec![format!("addr({})", p2pk)]),
             )?,);
 
             Ok(())
@@ -88,6 +97,5 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
         None,
         None,
     )?,);
-    test_invocation_tx_tracking(rpc, user1_addr, user2_addr)?;
-    Ok(())
+    test_invocation_tx_tracking(rpc, user1_addr, user2_addr)
 }

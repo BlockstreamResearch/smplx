@@ -1,3 +1,4 @@
+use serde::ser::Error;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -151,4 +152,81 @@ pub struct QueryOptions {
     pub maximum_count: Option<u64>,
     #[serde(rename = "minimumSumAmount")]
     pub minimum_sum_amount: Option<f64>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+pub enum ScantxoutsetResult {
+    Start {
+        bestblock: String,
+        height: u64,
+        success: bool,
+        total_unblinded_bitcoin_amount: f64,
+        txouts: u32,
+        unspents: Vec<ScantxoutsetUtxo>,
+    },
+    Abort {
+        success: bool,
+    },
+    Status {
+        progress: f64,
+        searched_items: Option<u64>,
+    },
+}
+
+impl ScantxoutsetResult {
+    /// Parse the RPC response based on the action that was sent
+    pub fn from_value(value: serde_json::Value, action: &str) -> Result<Self, serde_json::Error> {
+        match action {
+            "start" => serde_json::from_value(value).map(|start_data: StartData| ScantxoutsetResult::Start {
+                bestblock: start_data.bestblock,
+                height: start_data.height,
+                success: start_data.success,
+                total_unblinded_bitcoin_amount: start_data.total_unblinded_bitcoin_amount,
+                txouts: start_data.txouts,
+                unspents: start_data.unspents,
+            }),
+            "abort" => serde_json::from_value(value).map(|abort_data: AbortData| ScantxoutsetResult::Abort {
+                success: abort_data.success,
+            }),
+            "status" => serde_json::from_value(value).map(|status_data: StatusData| ScantxoutsetResult::Status {
+                progress: status_data.progress,
+                searched_items: status_data.searched_items,
+            }),
+            _ => Err(serde_json::Error::custom(format!("unknown action: {}", action))),
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StartData {
+    bestblock: String,
+    height: u64,
+    success: bool,
+    total_unblinded_bitcoin_amount: f64,
+    txouts: u32,
+    unspents: Vec<ScantxoutsetUtxo>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AbortData {
+    success: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StatusData {
+    progress: f64,
+    searched_items: Option<u64>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ScantxoutsetUtxo {
+    pub amount: f64,
+    pub asset: String,
+    pub desc: String,
+    pub height: u64,
+    #[serde(rename = "scriptPubKey")]
+    pub scriptpubkey: String,
+    pub txid: String,
+    pub vout: u32,
 }

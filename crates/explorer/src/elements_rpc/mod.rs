@@ -317,6 +317,57 @@ impl ElementsRpcClient {
         client.call::<serde_json::Value>(METHOD, &args)?;
         Ok(())
     }
+
+    pub fn validateaddress(client: &Client, address: &str) -> Result<bool, ExplorerError> {
+        const METHOD: &str = "validateaddress";
+
+        let value: serde_json::Value = client.call(METHOD, &[address.into()])?;
+        Ok(value
+            .get("isvalid")
+            .and_then(|v| v.as_bool())
+            .ok_or_else(|| ExplorerError::ElementsRpcUnexpectedReturn(METHOD.into()))?)
+    }
+
+    pub fn scantxoutset(
+        client: &Client,
+        action: &str,
+        scanobjects: Option<Vec<String>>,
+    ) -> Result<ScantxoutsetResult, ExplorerError> {
+        const METHOD: &str = "scantxoutset";
+
+        let mut args = vec![action.into()];
+
+        match action {
+            "start" => {
+                if let Some(objects) = scanobjects {
+                    args.push(serde_json::to_value(objects).unwrap());
+                } else {
+                    return Err(ExplorerError::InvalidInput(
+                        "scantxoutset 'start' action requires scanobjects".to_string(),
+                    ));
+                }
+            }
+            "abort" | "status" => {
+                if scanobjects.is_some() {
+                    return Err(ExplorerError::InvalidInput(format!(
+                        "scantxoutset '{}' action does not accept scanobjects",
+                        action
+                    )));
+                }
+            }
+            _ => {
+                return Err(ExplorerError::InvalidInput(format!(
+                    "unknown scantxoutset action: {}",
+                    action
+                )));
+            }
+        }
+
+        let response = client.call::<serde_json::Value>(METHOD, &args)?;
+        dbg!("response: {}", response.to_string());
+        ScantxoutsetResult::from_value(response, action)
+            .map_err(|e| ExplorerError::ElementsRpcUnexpectedReturn(e.to_string()))
+    }
 }
 
 fn sat2btc(sat: u64) -> String {

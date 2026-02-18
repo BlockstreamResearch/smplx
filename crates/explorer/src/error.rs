@@ -52,6 +52,9 @@ pub enum ExplorerError {
 
     #[error("Elements RPC returned an unexpected value for call {0}")]
     ElementsRpcUnexpectedReturn(String),
+
+    #[error("Invalid input, err: {0}")]
+    InvalidInput(String),
 }
 
 #[derive(Debug, Clone)]
