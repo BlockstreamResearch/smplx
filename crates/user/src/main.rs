@@ -1,17 +1,27 @@
-use simplex_build::asset_auth::AssetAuth;
-use simplex_build::asset_auth::asset_auth_build::{AssetAuthArguments, AssetAuthWitness};
+use simplex_sdk::presets::p2pk::P2PK;
+use simplex_sdk::presets::p2pk::p2pk_build::{P2PKArguments, P2PKWitness};
 
+use simplex_sdk::signer::{Signer, SignerTrait};
+
+use simplex_sdk::constants::DUMMY_SIGNATURE;
 use simplex_sdk::utils::tr_unspendable_key;
 
 fn main() {
-    let witness = AssetAuthWitness {
-        path: (false, 1, 1),
+    let signer = Signer::from_seed(
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            .as_bytes()
+            .try_into()
+            .unwrap(),
+    )
+    .unwrap();
+
+    let witness = P2PKWitness {
+        signature: DUMMY_SIGNATURE,
     };
 
-    let arguments = AssetAuthArguments {
-        first: 1,
-        second: false,
-    };
+    // let arguments = P2PKArguments {
+    //     public_key: signer.public_key(),
+    // };
 
-    let asset_auth = AssetAuth::new(&tr_unspendable_key(), &arguments);
+    // let p2pk = P2PK::new(&tr_unspendable_key(), &arguments);
 }

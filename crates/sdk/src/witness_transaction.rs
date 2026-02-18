@@ -16,16 +16,16 @@ struct SignedInput<'a, T> {
     signer_lambda: Option<T>,
 }
 
-pub struct SignedTransaction<'a, T> {
+pub struct WitnessTransaction<'a, T> {
     tx: Transaction,
     utxos: &'a [TxOut],
     network: SimplicityNetwork,
     inputs: Vec<SignedInput<'a, T>>,
 }
 
-impl<'a, T> SignedTransaction<'a, T>
+impl<'a, T> WitnessTransaction<'a, T>
 where
-    T: Fn(WitnessValues, Signature) -> Result<WitnessValues, SimplexError> + Clone,
+    T: Fn(&WitnessValues, &Signature) -> Result<WitnessValues, SimplexError> + Clone,
 {
     pub fn new(tx: Transaction, utxos: &'a [TxOut], network: SimplicityNetwork) -> Self {
         Self {
@@ -113,7 +113,7 @@ where
         signer_lambda: T,
     ) -> Result<Transaction, SimplexError> {
         let signature = signer.sign(program, &final_tx, self.utxos, index, self.network)?;
-        let new_witness = signer_lambda(witness, signature)?;
+        let new_witness = signer_lambda(&witness, &signature)?;
 
         Ok(self.finalize_as_is(final_tx, program, new_witness, index)?)
     }

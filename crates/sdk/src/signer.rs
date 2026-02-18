@@ -31,6 +31,7 @@ impl SignerTrait for Signer {
         self.keypair.x_only_public_key().0
     }
 
+    // TODO EIP-191 or EIP-712 messages
     fn personal_sign(&self, message: Message) -> Result<Signature, SimplexError> {
         Ok(self.keypair.sign_schnorr(message))
     }

@@ -7,6 +7,7 @@ use simplicityhl::elements::{Transaction, Txid};
 use crate::constants::DEFAULT_FEE_RATE;
 use crate::error::SimplexError;
 
+// TODO make everything async
 pub trait Provider {
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError>;
 
@@ -75,7 +76,6 @@ impl Provider for EsploraProvider {
         let body = response.as_str().unwrap_or("").trim().to_owned();
 
         if !(200..300).contains(&status) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             return Err(SimplexError::BroadcastRejected {
                 status: status as u16,
                 url: format!("{}/tx", self.esplora_url),
