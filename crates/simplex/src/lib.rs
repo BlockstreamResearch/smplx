@@ -15,4 +15,4 @@ pub extern crate simplex_core;
 pub extern crate simplex_test;
 
 #[cfg(feature = "macros")]
-pub extern crate simplex_explorer;
+pub extern crate simplex_runtime;

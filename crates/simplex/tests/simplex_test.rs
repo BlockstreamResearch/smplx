@@ -1,4 +1,4 @@
-use simplex_explorer::{AddressType, ElementsRpcClient};
+use simplex_runtime::{AddressType, ElementsRpcClient};
 use simplex_test::DEFAULT_SAT_AMOUNT_FAUCET;
 use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;
@@ -12,9 +12,9 @@ fn test_execution() {
 
 #[test]
 fn test_invocation_tx_tracking() -> anyhow::Result<()> {
-    use simplex_test::{ConfigOption, ElementsRpc};
+    use simplex_test::{ConfigOption, TestProvider};
 
-    fn test_invocation_tx_tracking(rpc: ElementsRpc, user1_addr: Address, user2_addr: Address) -> anyhow::Result<()> {
+    fn test_invocation_tx_tracking(rpc: TestProvider, user1_addr: Address, user2_addr: Address) -> anyhow::Result<()> {
         // user input code
         {
             let network = rpc.network();
@@ -62,7 +62,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
             Ok(())
         }
     }
-    let rpc = ElementsRpc::init(ConfigOption::DefaultRegtest).unwrap();
+    let rpc = TestProvider::init(ConfigOption::DefaultRegtest).unwrap();
     {
         ElementsRpcClient::generate_blocks(rpc.as_ref(), 1).unwrap();
         ElementsRpcClient::rescanblockchain(rpc.as_ref(), None, None).unwrap();

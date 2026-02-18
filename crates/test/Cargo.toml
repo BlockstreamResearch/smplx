@@ -12,6 +12,6 @@ workspace = true
 thiserror = { version = "2.0.18" }
 simplicityhl = { workspace = true }
 rand = { version = "0.10.0" }
-simplex-explorer = { workspace = true }
+simplex-runtime = { workspace = true }
 simplex-core = { workspace = true }
 electrsd = { workspace = true }

@@ -1,14 +1,14 @@
 pub mod commands;
 
 use crate::error::Error;
-
-use crate::config::{Config, default_config_path};
-
 use clap::Parser;
-use simplex_test::ElementsRpc;
+use simplex_config::Config;
+use simplex_test::TestProvider;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+const DEFAULT_CONFIG_PATH: &str = "config.toml";
 
 #[derive(Debug, Parser)]
 #[command(name = "simplicity-dex")]
@@ -48,7 +48,7 @@ impl Cli {
                 })
                 .expect("Error setting Ctrl-C handler");
 
-                let mut node = ElementsRpc::create_default_node_with_stdin();
+                let mut node = TestProvider::create_default_node_with_stdin();
 
                 println!("======================================");
                 println!("Waiting for Ctrl-C...");
@@ -64,4 +64,9 @@ impl Cli {
             }
         }
     }
+}
+
+#[must_use]
+pub fn default_config_path() -> PathBuf {
+    PathBuf::from(DEFAULT_CONFIG_PATH)
 }

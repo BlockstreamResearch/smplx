@@ -24,7 +24,7 @@ core = ["dep:simplex-core"]
 simplex-macros = { workspace = true, features = [], optional = true }
 simplex-core = { workspace = true, features = ["encoding"], optional = true }
 simplex-test = { workspace = true }
-simplex-explorer = { workspace = true }
+simplex-runtime = { workspace = true }
 
 bincode = { workspace = true, optional = true }
 simplicityhl = { workspace = true, features = ["serde"] }

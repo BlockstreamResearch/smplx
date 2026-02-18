@@ -1,5 +1,6 @@
 mod common;
 mod error;
+mod provider;
 
 pub use common::*;
 pub use error::*;
@@ -8,7 +9,7 @@ use bitcoind::bitcoincore_rpc::{Auth, Client};
 use bitcoind::{BitcoinD, Conf};
 use electrsd::bitcoind;
 use simplex_core::SimplicityNetwork;
-use simplex_explorer::ElementsRpcClient;
+use simplex_runtime::ElementsRpcClient;
 use simplicityhl::elements::secp256k1_zkp::PublicKey;
 use simplicityhl::elements::{Address, AssetId};
 use std::path::{Path, PathBuf};
@@ -18,7 +19,7 @@ pub struct User {
     pubkey: PublicKey,
 }
 
-pub enum ElementsRpc {
+pub enum TestProvider {
     ConfiguredNode { node: BitcoinD, network: SimplicityNetwork },
     CustomRpc(ElementsRpcClient),
 }
@@ -31,7 +32,7 @@ pub enum ConfigOption<'a> {
 
 pub struct SimplexUser {}
 
-impl ElementsRpc {
+impl TestProvider {
     pub fn init(init_option: ConfigOption) -> Result<Self, TestError> {
         let rpc = match init_option {
             ConfigOption::DefaultRegtest => {
@@ -93,20 +94,20 @@ impl ElementsRpc {
 
     pub fn client(&self) -> &Client {
         match self {
-            ElementsRpc::ConfiguredNode { node, .. } => &node.client,
-            ElementsRpc::CustomRpc(x) => x.client(),
+            TestProvider::ConfiguredNode { node, .. } => &node.client,
+            TestProvider::CustomRpc(x) => x.client(),
         }
     }
 
     pub fn network(&self) -> SimplicityNetwork {
         match self {
-            ElementsRpc::ConfiguredNode { network, .. } => *network,
-            ElementsRpc::CustomRpc(x) => x.network(),
+            TestProvider::ConfiguredNode { network, .. } => *network,
+            TestProvider::CustomRpc(x) => x.network(),
         }
     }
 }
 
-impl ElementsRpc {
+impl TestProvider {
     pub fn fund(satoshi: u64, address: Option<Address>, asset: Option<AssetId>) {
         todo!()
     }
@@ -118,7 +119,7 @@ impl ElementsRpc {
     }
 }
 
-impl AsRef<Client> for ElementsRpc {
+impl AsRef<Client> for TestProvider {
     fn as_ref(&self) -> &Client {
         self.client()
     }

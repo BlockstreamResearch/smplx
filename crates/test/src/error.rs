@@ -1,4 +1,4 @@
-use simplex_explorer::error::ExplorerError;
+use simplex_runtime::error::ExplorerError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
