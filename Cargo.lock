@@ -2005,6 +2005,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplex-build"
+version = "0.1.0"
+dependencies = [
+ "simplex-sdk",
+ "simplicityhl",
+ "thiserror",
+]
+
+[[package]]
 name = "simplex-cli"
 version = "0.1.0"
 dependencies = [
@@ -2076,6 +2085,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplex-sdk"
+version = "0.1.0"
+dependencies = [
+ "minreq",
+ "sha2",
+ "simplicityhl",
+ "thiserror",
+]
+
+[[package]]
 name = "simplex-test"
 version = "0.1.0"
 dependencies = [
@@ -2084,6 +2103,15 @@ dependencies = [
  "simplex-core",
  "simplex-explorer",
  "simplicityhl",
+ "thiserror",
+]
+
+[[package]]
+name = "simplex-user"
+version = "0.1.0"
+dependencies = [
+ "simplex-build",
+ "simplex-sdk",
  "thiserror",
 ]
 

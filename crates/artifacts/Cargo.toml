@@ -1,0 +1,16 @@
+[package]
+name = "simplex-build"
+version = "0.1.0"
+edition = "2024"
+description = "Simplex Build"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = "2"
+
+simplex-sdk = { workspace = true }
+simplicityhl = { workspace = true }

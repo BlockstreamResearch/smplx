@@ -17,6 +17,7 @@ simplex-explorer = { path = "./crates/explorer" }
 simplex-macros = { path = "./crates/macros" }
 simplex-macros-core = { path = "./crates/macros-core" }
 simplex-test = { path = "./crates/test" }
+simplex-sdk = { path = "./crates/sdk" }
 simplex = { path = "./crates/simplex" }
 
 bincode = { version = "2.0.1", features = ["serde"] }
