@@ -8,6 +8,7 @@ pub const DUMMY_SIGNATURE: [u8; 64] = [1; 64];
 
 pub const DEFAULT_TARGET_BLOCKS: u32 = 0;
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
+pub const MIN_FEE: u64 = 10;
 pub const PLACEHOLDER_FEE: u64 = 1;
 
 pub const WITNESS_SCALE_FACTOR: usize = 4;
