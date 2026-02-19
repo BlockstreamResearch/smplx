@@ -13,4 +13,3 @@ workspace = true
 thiserror = "2"
 
 simplex-sdk = { path = "../sdk" }
-simplex-build = { path = "../artifacts" }
