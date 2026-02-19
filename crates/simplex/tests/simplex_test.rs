@@ -40,8 +40,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
                 &p2pk,
                 DEFAULT_SAT_AMOUNT_FAUCET,
                 Some(rpc.network().policy_asset()),
-            );
-            result?;
+            )?;
 
             ElementsRpcClient::generate_blocks(rpc.as_ref(), 5)?;
 
