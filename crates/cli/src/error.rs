@@ -25,5 +25,5 @@ pub enum Error {
 
     /// Errors when building config.
     #[error("Occurred error with config building, error: {0}")]
-    ConfigError(#[from] simplex_config::ConfigError),
+    ConfigError(#[from] crate::config::ConfigError),
 }

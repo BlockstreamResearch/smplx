@@ -8,7 +8,6 @@ pub use error::*;
 use bitcoind::bitcoincore_rpc::{Auth, Client};
 use bitcoind::{BitcoinD, Conf};
 use electrsd::bitcoind;
-use simplex_config::Config;
 use simplex_core::SimplicityNetwork;
 use simplex_runtime::elements_rpc::ElementsRpcClient;
 use simplicityhl::elements::secp256k1_zkp::PublicKey;
@@ -54,11 +53,6 @@ impl TestProvider {
             return Err(TestError::UnhealthyRpc(e));
         }
         Ok(rpc)
-    }
-
-    // TODO: is it ok?
-    pub fn obtain_test_config() -> Config {
-        todo!()
     }
 
     pub fn get_bin_path() -> PathBuf {

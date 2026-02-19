@@ -16,7 +16,10 @@ workspace = true
 
 [dependencies]
 simplex-test = { workspace = true }
-simplex-config = { workspace = true }
+simplex-core = { workspace = true }
+
+serde = { version = "1.0.228" }
+toml = { version = "0.9.8" }
 
 anyhow = "1"
 dotenvy = "0.15"

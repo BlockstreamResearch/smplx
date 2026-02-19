@@ -1,8 +1,8 @@
 pub mod commands;
 
+use crate::config::Config;
 use crate::error::Error;
 use clap::Parser;
-use simplex_config::Config;
 use simplex_test::TestProvider;
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -100,9 +100,8 @@ impl Config {
     }
 
     fn _discover() -> Result<Option<Config>, ConfigError> {
-        let path = std::env::var(MANIFEST_DIR)?;
-        let path = PathBuf::from_str(&path).unwrap();
-        let path = path.join(CONFIG_FILENAME);
+        let cwd = std::env::current_dir()?;
+        let path = cwd.join(CONFIG_FILENAME);
         dbg!(&path);
         if !path.is_file() {
             return Err(ConfigError::PathIsNotFile(path));
@@ -110,7 +109,6 @@ impl Config {
         if !path.exists() {
             return Err(ConfigError::PathIsNotEsixt(path));
         }
-        dbg!(3);
         Ok(Some(Config::from_path(&path)?))
     }
 

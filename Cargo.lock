@@ -1813,24 +1813,15 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "electrsd",
- "simplex-config",
+ "serde",
+ "simplex-core",
  "simplex-test",
  "simplicityhl",
  "thiserror",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "simplex-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "simplex-core",
- "simplicityhl",
- "thiserror",
- "toml",
 ]
 
 [[package]]
@@ -1900,7 +1891,6 @@ name = "simplex-test"
 version = "0.1.0"
 dependencies = [
  "electrsd",
- "simplex-config",
  "simplex-core",
  "simplex-runtime",
  "simplex-sdk",
