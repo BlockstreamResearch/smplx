@@ -1,5 +1,5 @@
-use crate::attr::SimfContent;
-use crate::attr::types::RustType;
+use crate::macros_core::attr::SimfContent;
+use crate::macros_core::attr::types::RustType;
 use quote::{format_ident, quote};
 use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
@@ -158,7 +158,7 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex_core::Encodable for #struct_name {}
+                // impl ::simplex_core::Encodable for #struct_name {}
             },
         })
     }
@@ -230,7 +230,7 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex_core::Encodable for #struct_name {}
+                // impl ::simplex_core::Encodable for #struct_name {}
             },
         })
     }

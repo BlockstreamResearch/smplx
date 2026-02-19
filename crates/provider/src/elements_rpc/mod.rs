@@ -6,14 +6,11 @@ use crate::error::ExplorerError;
 use bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi, bitcoin};
 use electrsd::bitcoind;
 use serde_json::Value;
-use simplex_core::SimplicityNetwork;
 use simplicityhl::elements::{Address, AssetId, BlockHash, Txid};
 use std::str::FromStr;
 
 pub struct ElementsRpcClient {
     inner: Client,
-    #[allow(unused)]
-    network: SimplicityNetwork,
     #[allow(unused)]
     auth: Auth,
     #[allow(unused)]
@@ -21,33 +18,23 @@ pub struct ElementsRpcClient {
 }
 
 impl ElementsRpcClient {
-    pub fn new(network: SimplicityNetwork, url: &str, auth: Auth) -> Result<Self, ExplorerError> {
+    pub fn new(url: &str, auth: Auth) -> Result<Self, ExplorerError> {
         let inner = Client::new(url, auth.clone())?;
         inner.ping()?;
         Ok(Self {
             inner,
-            network,
             auth,
             url: url.to_string(),
         })
     }
 
-    pub fn new_from_credentials(
-        network: SimplicityNetwork,
-        url: &str,
-        user: &str,
-        pass: &str,
-    ) -> Result<Self, ExplorerError> {
+    pub fn new_from_credentials(url: &str, user: &str, pass: &str) -> Result<Self, ExplorerError> {
         let auth = Auth::UserPass(user.to_string(), pass.to_string());
-        Self::new(network, url, auth)
+        Self::new(url, auth)
     }
 
     pub fn client(&self) -> &Client {
         &self.inner
-    }
-
-    pub fn network(&self) -> SimplicityNetwork {
-        self.network
     }
 }
 

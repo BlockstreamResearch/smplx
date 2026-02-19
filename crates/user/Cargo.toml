@@ -10,6 +10,6 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-thiserror = "2"
+simplex-sdk = { workspace = true }
 
-simplex-sdk = { path = "../sdk" }
+thiserror = "2"

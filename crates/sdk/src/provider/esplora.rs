@@ -3,7 +3,7 @@ use crate::provider::Provider;
 use simplicityhl::elements::{Transaction, Txid};
 use std::collections::HashMap;
 
-pub use simplex_runtime::esplora::*;
+pub use simplex_provider::esplora::*;
 
 impl Provider for EsploraClient {
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError> {

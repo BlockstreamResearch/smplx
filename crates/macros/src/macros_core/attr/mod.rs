@@ -4,7 +4,7 @@ mod types;
 
 pub use parse::SimfContent;
 
-use crate::attr::codegen::{GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta};
+use crate::macros_core::attr::codegen::{GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta};
 use proc_macro2::Span;
 use quote::{format_ident, quote};
 use simplicityhl::AbiMeta;
@@ -54,63 +54,63 @@ fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::To
     let contract_arguments_struct_name = &derived_meta.args_struct.struct_name;
 
     quote! {
-        use simplicityhl::elements::Address;
-        use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
-        use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
-        use simplicityhl::CompiledProgram;
+        // use simplicityhl::elements::Address;
+        // use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
+        // use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
+        // use simplicityhl::CompiledProgram;
 
-        pub const #contract_source_name: &str = #contract_content;
+        // pub const #contract_source_name: &str = #contract_content;
 
         /// Get the options template program for instantiation.
         ///
         /// # Panics
         /// - if the embedded source fails to compile (should never happen).
-        #[must_use]
-        pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
-            ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
-        }
+        // #[must_use]
+        // pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
+        //     ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
+        // }
 
         /// Derive P2TR address for an option offer contract.
         ///
         /// # Errors
         ///
         /// Returns error if program compilation fails.
-        pub fn get_option_offer_address(
-            x_only_public_key: &XOnlyPublicKey,
-            arguments: &#contract_arguments_struct_name,
-            network: SimplicityNetwork,
-        ) -> Result<Address, ProgramError> {
-            Ok(create_p2tr_address(
-                get_loaded_program(arguments)?.commit().cmr(),
-                x_only_public_key,
-                network.address_params(),
-            ))
-        }
+        // pub fn get_option_offer_address(
+        //     x_only_public_key: &XOnlyPublicKey,
+        //     arguments: &#contract_arguments_struct_name,
+        //     network: SimplicityNetwork,
+        // ) -> Result<Address, ProgramError> {
+        //     Ok(create_p2tr_address(
+        //         get_loaded_program(arguments)?.commit().cmr(),
+        //         x_only_public_key,
+        //         network.address_params(),
+        //     ))
+        // }
 
         /// Compile option offer program with the given arguments.
         ///
         /// # Errors
         ///
         /// Returns error if compilation fails.
-        pub fn get_loaded_program(
-            arguments: &#contract_arguments_struct_name,
-        ) -> Result<CompiledProgram, ProgramError> {
-            load_program(#contract_source_name, arguments.build_arguments())
-        }
+        // pub fn get_loaded_program(
+        //     arguments: &#contract_arguments_struct_name,
+        // ) -> Result<CompiledProgram, ProgramError> {
+        //     load_program(#contract_source_name, arguments.build_arguments())
+        // }
 
         /// Get compiled option offer program, panicking on failure.
         ///
         /// # Panics
         ///
         /// Panics if program instantiation fails.
-        #[must_use]
-        pub fn get_compiled_program(arguments: &#contract_arguments_struct_name) -> CompiledProgram {
-            let program = get_template_program();
+        // #[must_use]
+        // pub fn get_compiled_program(arguments: &#contract_arguments_struct_name) -> CompiledProgram {
+        //     let program = get_template_program();
 
-            program
-                .instantiate(arguments.build_arguments(), true)
-                .unwrap()
-        }
+        //     program
+        //         .instantiate(arguments.build_arguments(), true)
+        //         .unwrap()
+        // }
     }
 }
 

@@ -83,7 +83,6 @@ where
             change_recipient_script.clone(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
-            
             None,
         ));
 

@@ -9,10 +9,8 @@ workspace = true
 
 
 [dependencies]
-simplex-runtime = { workspace = true }
-simplex-core = { workspace = true }
+simplex-provider = { workspace = true }
 simplex-sdk = { workspace = true }
-simplex-config = { workspace = true }
 
 thiserror = { workspace = true }
 simplicityhl = { workspace = true }

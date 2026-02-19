@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use simplex_core::SimplicityNetwork;
-use std::fmt::Display;
+use simplex_sdk::constants::SimplicityNetwork;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 

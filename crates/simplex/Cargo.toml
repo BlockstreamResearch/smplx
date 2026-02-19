@@ -15,22 +15,21 @@ categories = ["cryptography::cryptocurrencies"]
 workspace = true
 
 [features]
-default = ["macros", "encoding", "core"]
-encoding = ["dep:bincode"]
+default = ["macros", "encoding", "sdk"]
 macros = ["dep:simplex-macros"]
-core = ["dep:simplex-core"]
+encoding = ["dep:bincode"]
+sdk = ["dep:simplex-sdk"]
 
 [dependencies]
 simplex-macros = { workspace = true, features = [], optional = true }
-simplex-core = { workspace = true, features = ["encoding"], optional = true }
 simplex-test = { workspace = true }
-simplex-runtime = { workspace = true }
+simplex-provider = { workspace = true }
+simplex-sdk = { workspace = true, optional = true }
 
 bincode = { workspace = true, optional = true }
 simplicityhl = { workspace = true, features = ["serde"] }
 serde = { version = "1.0.228" }
 either = { version = "1.15.0", features = ["serde"] }
-
 tokio = { version = "1.49.0", features = ["full"]}
 
 [dev-dependencies]

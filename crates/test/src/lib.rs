@@ -8,9 +8,8 @@ pub use error::*;
 use bitcoind::bitcoincore_rpc::{Auth, Client};
 use bitcoind::{BitcoinD, Conf};
 use electrsd::bitcoind;
-use simplex_config::Config;
-use simplex_core::SimplicityNetwork;
-use simplex_runtime::elements_rpc::ElementsRpcClient;
+use simplex_provider::elements_rpc::ElementsRpcClient;
+use simplex_sdk::constants::SimplicityNetwork;
 use simplicityhl::elements::secp256k1_zkp::PublicKey;
 use simplicityhl::elements::{Address, AssetId};
 use std::path::{Path, PathBuf};
@@ -45,8 +44,7 @@ impl TestProvider {
                 Self::ConfiguredNode { node, network }
             }
             ConfigOption::CustomRpcUrlRegtest { auth, url: rpc_url } => {
-                let network = SimplicityNetwork::default_regtest();
-                Self::CustomRpc(ElementsRpcClient::new(network, &rpc_url, auth)?)
+                Self::CustomRpc(ElementsRpcClient::new(&rpc_url, auth)?)
             }
         };
 
@@ -54,11 +52,6 @@ impl TestProvider {
             return Err(TestError::UnhealthyRpc(e));
         }
         Ok(rpc)
-    }
-
-    // TODO: is it ok?
-    pub fn obtain_test_config() -> Config {
-        todo!()
     }
 
     pub fn get_bin_path() -> PathBuf {
@@ -101,13 +94,6 @@ impl TestProvider {
         match self {
             TestProvider::ConfiguredNode { node, .. } => &node.client,
             TestProvider::CustomRpc(x) => x.client(),
-        }
-    }
-
-    pub fn network(&self) -> SimplicityNetwork {
-        match self {
-            TestProvider::ConfiguredNode { network, .. } => *network,
-            TestProvider::CustomRpc(x) => x.network(),
         }
     }
 }
