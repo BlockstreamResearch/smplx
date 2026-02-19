@@ -1,0 +1,18 @@
+[package]
+name = "simplex-config"
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+
+[lints]
+workspace = true
+
+
+[dependencies]
+simplex-core = { workspace = true }
+
+simplicityhl = { workspace = true }
+serde = { version = "1.0.228" }
+thiserror = { workspace = true }
+toml = { version = "0.9.8" }
