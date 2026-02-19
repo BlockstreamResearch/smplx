@@ -9,9 +9,11 @@ workspace = true
 
 
 [dependencies]
-thiserror = { version = "2.0.18" }
-simplicityhl = { workspace = true }
-rand = { version = "0.10.0" }
 simplex-runtime = { workspace = true }
 simplex-core = { workspace = true }
+simplex-sdk = { workspace = true }
+simplex-config = { workspace = true }
+
+thiserror = { workspace = true }
+simplicityhl = { workspace = true }
 electrsd = { workspace = true }

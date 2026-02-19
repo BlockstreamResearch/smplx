@@ -1,4 +1,4 @@
-use simplex_runtime::{AddressType, ElementsRpcClient};
+use simplex_runtime::elements_rpc::{AddressType, ElementsRpcClient};
 use simplex_test::DEFAULT_SAT_AMOUNT_FAUCET;
 use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;

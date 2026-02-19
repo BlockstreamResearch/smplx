@@ -29,19 +29,19 @@ where
 {
     pub fn new(tx: Transaction, utxos: &'a [TxOut], network: SimplicityNetwork) -> Self {
         Self {
-            tx: tx,
-            utxos: utxos,
-            network: network,
+            tx,
+            utxos,
+            network,
             inputs: Vec::new(),
         }
     }
 
     pub fn add_input(&mut self, program: &'a dyn ProgramTrait, witness: &'a dyn WitnessTrait) {
         let signed_input = SignedInput {
-            program: program,
-            witness: witness,
-            signer: Option::None,
-            signer_lambda: Option::None,
+            program,
+            witness,
+            signer: None,
+            signer_lambda: None,
         };
 
         self.inputs.push(signed_input);
@@ -55,10 +55,10 @@ where
         signer_lambda: T,
     ) {
         let signed_input = SignedInput {
-            program: program,
-            witness: witness,
-            signer: Option::Some(signer),
-            signer_lambda: Option::Some(signer_lambda),
+            program,
+            witness,
+            signer: Some(signer),
+            signer_lambda: Some(signer_lambda),
         };
 
         self.inputs.push(signed_input);

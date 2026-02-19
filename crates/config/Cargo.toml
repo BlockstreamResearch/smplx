@@ -14,5 +14,5 @@ simplex-core = { workspace = true }
 
 simplicityhl = { workspace = true }
 serde = { version = "1.0.228" }
-thiserror = { version = "2.0.18" }
+thiserror = { workspace = true }
 toml = { version = "0.9.8" }

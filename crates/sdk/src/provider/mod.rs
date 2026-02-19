@@ -1,3 +1,5 @@
+mod esplora;
+
 use std::collections::HashMap;
 
 use simplicityhl::elements::encode;

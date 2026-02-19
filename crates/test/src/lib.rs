@@ -1,6 +1,6 @@
 mod common;
 mod error;
-mod provider;
+mod testing;
 
 pub use common::*;
 pub use error::*;
@@ -8,8 +8,9 @@ pub use error::*;
 use bitcoind::bitcoincore_rpc::{Auth, Client};
 use bitcoind::{BitcoinD, Conf};
 use electrsd::bitcoind;
+use simplex_config::Config;
 use simplex_core::SimplicityNetwork;
-use simplex_runtime::ElementsRpcClient;
+use simplex_runtime::elements_rpc::ElementsRpcClient;
 use simplicityhl::elements::secp256k1_zkp::PublicKey;
 use simplicityhl::elements::{Address, AssetId};
 use std::path::{Path, PathBuf};
@@ -29,8 +30,6 @@ pub enum ConfigOption<'a> {
     CustomConfRegtest { conf: Conf<'a> },
     CustomRpcUrlRegtest { url: String, auth: Auth },
 }
-
-pub struct SimplexUser {}
 
 impl TestProvider {
     pub fn init(init_option: ConfigOption) -> Result<Self, TestError> {
@@ -57,7 +56,13 @@ impl TestProvider {
         Ok(rpc)
     }
 
+    // TODO: is it ok?
+    pub fn obtain_test_config() -> Config {
+        todo!()
+    }
+
     pub fn get_bin_path() -> PathBuf {
+        // TODO: change binary into installed one in $HOME dir
         const ELEMENTSD_BIN_PATH: &str = "../../assets/elementsd";
         const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 

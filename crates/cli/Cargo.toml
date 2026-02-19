@@ -24,7 +24,7 @@ clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 simplicityhl = { workspace = true }
 tracing = { version = "0.1.44" }
-thiserror = { version = "2.0.18" }
+thiserror = { workspace = true }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 ctrlc = { version =  "3.5.2", features = ["termination"] }
 electrsd = { workspace = true }

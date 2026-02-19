@@ -10,7 +10,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-thiserror = "2"
+thiserror = { workspace = true }
 
 simplex-sdk = { workspace = true }
 simplicityhl = { workspace = true }
