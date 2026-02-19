@@ -35,7 +35,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
 
             // broadcast, fetch fee transaction
 
-            ElementsRpcClient::sendtoaddress(
+            let result = ElementsRpcClient::sendtoaddress(
                 rpc.as_ref(),
                 &p2pk,
                 DEFAULT_SAT_AMOUNT_FAUCET,

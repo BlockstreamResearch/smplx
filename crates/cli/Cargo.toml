@@ -18,6 +18,9 @@ workspace = true
 simplex-test = { workspace = true }
 simplex-config = { workspace = true }
 
+serde = { version = "1.0.228" }
+toml = { version = "0.9.8" }
+
 anyhow = "1"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }

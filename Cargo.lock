@@ -1819,6 +1819,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplex-build"
+version = "0.1.0"
+dependencies = [
+ "simplex-sdk",
+ "simplicityhl",
+ "thiserror",
+]
+
+[[package]]
 name = "simplex-cli"
 version = "0.1.0"
 dependencies = [
@@ -1827,11 +1836,13 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "electrsd",
+ "serde",
  "simplex-config",
  "simplex-test",
  "simplicityhl",
  "thiserror",
  "tokio",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
 ]
