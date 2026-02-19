@@ -21,13 +21,18 @@ macros = ["dep:simplex-macros"]
 core = ["dep:simplex-core"]
 
 [dependencies]
-simplex-macros = { path = "../macros", features = [], optional = true }
-simplex-core = { path = "../core", features = ["encoding"], optional = true }
+simplex-macros = { workspace = true, features = [], optional = true }
+simplex-core = { workspace = true, features = ["encoding"], optional = true }
+simplex-test = { workspace = true }
+simplex-runtime = { workspace = true }
 
 bincode = { workspace = true, optional = true }
 simplicityhl = { workspace = true, features = ["serde"] }
 serde = { version = "1.0.228" }
 either = { version = "1.15.0", features = ["serde"] }
 
+tokio = { version = "1.49.0", features = ["full"]}
+
 [dev-dependencies]
 trybuild = { version = "1.0.115" }
+anyhow = { version = "1.0.101" }

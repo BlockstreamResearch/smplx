@@ -1,0 +1,19 @@
+[package]
+name = "simplex-test"
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+
+[dependencies]
+simplex-runtime = { workspace = true }
+simplex-core = { workspace = true }
+simplex-sdk = { workspace = true }
+simplex-config = { workspace = true }
+
+thiserror = { workspace = true }
+simplicityhl = { workspace = true }
+electrsd = { workspace = true }

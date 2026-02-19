@@ -10,8 +10,9 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-thiserror = "2"
+simplex-runtime = { workspace = true }
 
+thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true }
 simplicityhl = { workspace = true }
