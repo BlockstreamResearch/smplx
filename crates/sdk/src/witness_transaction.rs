@@ -10,7 +10,6 @@ use crate::provider::Provider;
 use crate::signer::SignerTrait;
 use crate::witness::WitnessTrait;
 
-
 struct SignedInput<'a, T> {
     program: &'a dyn ProgramTrait,
     witness: &'a dyn WitnessTrait,
@@ -76,12 +75,15 @@ where
             return Err(SimplexError::DustAmount(policy_amount_delta));
         }
 
+        // estimate the tx fee with the change
+        let fee_rate = provider.get_fee_rate(target_blocks)?;
         let mut fee_pst = self.pst.clone();
 
         fee_pst.add_output(Output::new_explicit(
             change_recipient_script.clone(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
+            
             None,
         ));
 
@@ -94,22 +96,53 @@ where
 
         let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
         let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
-
-        let fee_rate = provider.get_fee_rate(target_blocks)?;
         let fee = self.calculate_fee(final_tx.weight(), fee_rate);
 
-        if policy_amount_delta < fee || policy_amount_delta - fee < MIN_FEE {
-            return Err(SimplexError::NotEnoughFeeAmount(policy_amount_delta, fee));
+        if policy_amount_delta > fee && policy_amount_delta - fee >= MIN_FEE {
+            // we have enough funds to cover change UTXO
+            let mut fee_pst = self.pst.clone();
+
+            fee_pst.add_output(Output::new_explicit(
+                change_recipient_script,
+                policy_amount_delta - fee,
+                self.network.policy_asset(),
+                None,
+            ));
+
+            fee_pst.add_output(Output::new_explicit(
+                Script::new(),
+                fee,
+                self.network.policy_asset(),
+                None,
+            ));
+
+            let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
+            let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+
+            return Ok((final_tx, fee));
         }
 
+        // not enough funds, so we need to estimate without the change
         let mut fee_pst = self.pst.clone();
 
         fee_pst.add_output(Output::new_explicit(
-            change_recipient_script,
-            policy_amount_delta - fee,
+            Script::new(),
+            PLACEHOLDER_FEE,
             self.network.policy_asset(),
             None,
         ));
+
+        let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
+        let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+        let fee = self.calculate_fee(final_tx.weight(), fee_rate);
+
+        // policy amount is not exact
+        if policy_amount_delta != fee {
+            return Err(SimplexError::NotEnoughFeeAmount(policy_amount_delta, fee));
+        }
+
+        // finalize the tx with fee and without the change
+        let mut fee_pst = self.pst.clone();
 
         fee_pst.add_output(Output::new_explicit(
             Script::new(),
