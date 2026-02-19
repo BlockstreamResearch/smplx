@@ -4,11 +4,14 @@ use simplicityhl::simplicity::hashes::{Hash, sha256};
 use std::str::FromStr;
 
 pub const PUBLIC_SECRET_BLINDER_KEY: [u8; 32] = [1; 32];
+pub const DUMMY_SIGNATURE: [u8; 64] = [1; 64];
 
 pub const DEFAULT_TARGET_BLOCKS: u32 = 0;
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
-pub const WITNESS_SCALE_FACTOR: usize = 4;
+pub const MIN_FEE: u64 = 10;
 pub const PLACEHOLDER_FEE: u64 = 1;
+
+pub const WITNESS_SCALE_FACTOR: usize = 4;
 
 /// Policy asset id (hex, BE) for Liquid mainnet.
 pub const LIQUID_POLICY_ASSET_STR: &str = "6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d";

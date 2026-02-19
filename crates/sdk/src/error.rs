@@ -2,6 +2,15 @@ use simplicityhl::elements::secp256k1_zkp;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimplexError {
+    #[error("Fee amount is too low: {0}")]
+    PstFailure(#[from] simplicityhl::elements::pset::Error),
+
+    #[error("Fee amount is too low: {0}")]
+    DustAmount(u64),
+
+    #[error("Not enough fee amount {0} to cover transaction costs: {1}")]
+    NotEnoughFeeAmount(u64, u64),
+
     #[error("Failed to compile Simplicity program: {0}")]
     Compilation(String),
 
