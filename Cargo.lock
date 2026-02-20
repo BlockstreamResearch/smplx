@@ -166,12 +166,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bip39"
+version = "2.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90dbd31c98227229239363921e60fcf5e558e43ec69094d46fc4996f08d1d5bc"
+dependencies = [
+ "bitcoin_hashes",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "bitcoin"
 version = "0.32.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
 dependencies = [
  "base58ck",
+ "base64 0.21.7",
  "bech32",
  "bitcoin-internals",
  "bitcoin-io",
@@ -504,6 +518,20 @@ dependencies = [
  "bech32",
  "bitcoin",
  "secp256k1-zkp",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "elements-miniscript"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "571fa105690f83c7833df2109eb2e14ca0e62d633d2624ffcb166ff18a3da870"
+dependencies = [
+ "bitcoin",
+ "elements",
+ "miniscript",
+ "serde",
 ]
 
 [[package]]
@@ -1677,6 +1705,7 @@ dependencies = [
  "rand 0.8.5",
  "secp256k1",
  "secp256k1-zkp-sys",
+ "serde",
 ]
 
 [[package]]
@@ -1864,7 +1893,10 @@ dependencies = [
 name = "simplex-sdk"
 version = "0.1.0"
 dependencies = [
+ "bip39",
+ "elements-miniscript",
  "minreq",
+ "serde",
  "sha2",
  "simplex-provider",
  "simplicityhl",
@@ -2349,6 +2381,15 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-segmentation"

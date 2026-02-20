@@ -6,6 +6,8 @@ use simplicityhl::elements::encode;
 use simplicityhl::elements::hex::ToHex;
 use simplicityhl::elements::{Transaction, Txid};
 
+use serde::Deserialize;
+
 use crate::constants::DEFAULT_FEE_RATE;
 use crate::error::SimplexError;
 
@@ -57,10 +59,74 @@ pub struct EsploraProvider {
     esplora_url: String,
 }
 
+#[derive(Clone, Deserialize)]
+struct UtxoStatus {
+    pub confirmed: bool,
+    #[serde(default)]
+    pub block_height: Option<u64>,
+    #[serde(default)]
+    pub block_hash: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+struct EsploraUtxo {
+    pub txid: String,
+    pub vout: u32,
+    #[serde(default)]
+    pub value: Option<u64>,
+    #[serde(default)]
+    pub valuecommitment: Option<String>,
+    #[serde(default)]
+    pub asset: Option<String>,
+    #[serde(default)]
+    pub assetcommitment: Option<String>,
+    pub status: UtxoStatus,
+}
+
 impl EsploraProvider {
     pub fn new(url: String) -> Self {
         Self { esplora_url: url }
     }
+
+    // pub fn fetch_address_utxos(address: &Address) -> Result<Vec<EsploraUtxo>, SimplexError> {
+    //     let url = format!("{ESPLORA_URL}/address/{address}/utxo");
+    //     let response = minreq::get(&url)
+    //         .send()
+    //         .map_err(|e| SimplexError::Request(e.to_string()))?;
+
+    //     if response.status_code != 200 {
+    //         return Err(SimplexError::Request(format!(
+    //             "HTTP {}: {}",
+    //             response.status_code, response.reason_phrase
+    //         )));
+    //     }
+
+    //     let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+
+    //     Ok(utxos)
+    // }
+
+    // pub fn fetch_scripthash_utxos(script: &Script) -> Result<Vec<EsploraUtxo>, SimplexError> {
+    //     let hash = sha256::Hash::hash(script.as_bytes());
+    //     let hash_bytes = hash.to_byte_array();
+    //     let scripthash = hex::encode(hash_bytes);
+
+    //     let url = format!("{ESPLORA_URL}/scripthash/{scripthash}/utxo");
+    //     let response = minreq::get(&url)
+    //         .send()
+    //         .map_err(|e| SimplexError::Request(e.to_string()))?;
+
+    //     if response.status_code != 200 {
+    //         return Err(SimplexError::Request(format!(
+    //             "HTTP {}: {}",
+    //             response.status_code, response.reason_phrase
+    //         )));
+    //     }
+
+    //     let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+
+    //     Ok(utxos)
+    // }
 }
 
 impl Provider for EsploraProvider {
@@ -77,7 +143,6 @@ impl Provider for EsploraProvider {
         let body = response.as_str().unwrap_or("").trim().to_owned();
 
         if !(200..300).contains(&status) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             return Err(SimplexError::BroadcastRejected {
                 status: status as u16,
                 url: format!("{}/tx", self.esplora_url),
