@@ -3,6 +3,7 @@ use simplex_sdk::constants::SimplicityNetwork;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+pub const DEFAULT_CONFIG: &str = include_str!("../../../Simplex.example.toml");
 const MANIFEST_DIR: &str = "CARGO_MANIFEST_DIR";
 const CONFIG_FILENAME: &str = "Simplex.toml";
 
@@ -78,6 +79,11 @@ impl Default for ProviderConfig {
 }
 
 impl Config {
+    pub fn get_path() -> Result<PathBuf, ConfigError> {
+        let cwd = std::env::current_dir()?;
+        Ok(cwd.join(CONFIG_FILENAME))
+    }
+
     pub fn discover(cfg_override: Option<&ConfigOverride>) -> Result<Config, ConfigError> {
         match Config::_discover() {
             Ok(mut cfg) => {
@@ -117,8 +123,7 @@ impl Config {
     }
 
     fn _discover() -> Result<Config, ConfigError> {
-        let cwd = std::env::current_dir()?;
-        let path = cwd.join(CONFIG_FILENAME);
+        let path = Self::get_path()?;
         dbg!(&path);
         if !path.is_file() {
             return Err(ConfigError::PathIsNotFile(path));

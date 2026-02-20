@@ -7,7 +7,7 @@
 .vscode/
 .cache
 .env
-Simplex4.toml
+Simplex.toml
 config.toml
 
 # Debugging data

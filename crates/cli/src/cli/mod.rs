@@ -1,6 +1,6 @@
 pub mod commands;
 
-use crate::config::Config;
+use crate::config::{Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
 use simplex_test::TestProvider;
@@ -22,21 +22,22 @@ pub struct Cli {
 }
 
 impl Cli {
-    #[must_use]
-    pub fn load_config(&self) -> Result<Config, Error> {
-        Ok(Config::load_or_discover(&self.config)?)
-    }
-
     /// Runs the CLI command.
     ///
     /// # Errors
     /// Returns an error if the command execution fails.
     pub async fn run(&self) -> Result<(), Error> {
-        let config = self.load_config();
-
         match &self.command {
+            commands::Command::Init => {
+                let config_path = Config::get_path()?;
+                std::fs::write(&config_path, DEFAULT_CONFIG)?;
+                println!("Config written to: '{}'", config_path.display());
+                Ok(())
+            }
             commands::Command::Config => {
-                println!("{config:#?}");
+                let loaded_config =
+                    Config::load_or_discover(&self.config).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                println!("{loaded_config:#?}");
                 Ok(())
             }
             commands::Command::Regtest => {

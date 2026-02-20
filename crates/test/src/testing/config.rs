@@ -1,1 +1,1 @@
-pub struct ConfigBuilder {}
+pub struct TestingConfig {}
