@@ -80,41 +80,38 @@ where
         let mut fee_pst = self.pst.clone();
 
         fee_pst.add_output(Output::new_explicit(
-            Script::new(),
-            PLACEHOLDER_FEE,
-            self.network.policy_asset(),
-            None,
-        ));
-
-        fee_pst.add_output(Output::new_explicit(
             change_recipient_script.clone(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
             None,
         ));
 
-        let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
-        let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+        fee_pst.add_output(Output::new_explicit(
+            Script::new(),
+            PLACEHOLDER_FEE,
+            self.network.policy_asset(),
+            None,
+        ));
+
+        let final_tx = self.finalize_tx(&fee_pst)?;
         let fee = self.calculate_fee(final_tx.weight(), fee_rate);
 
         if policy_amount_delta > fee && policy_amount_delta - fee >= MIN_FEE {
             // we have enough funds to cover change UTXO
             let outputs = fee_pst.outputs_mut();
 
-            outputs[outputs.len() - 2].amount = Some(fee);
-            outputs[outputs.len() - 1].amount = Some(policy_amount_delta - fee);
+            outputs[outputs.len() - 2].amount = Some(policy_amount_delta - fee);
+            outputs[outputs.len() - 1].amount = Some(fee);
 
-            let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
-            let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+            let final_tx = self.finalize_tx(&fee_pst)?;
 
             return Ok((final_tx, fee));
         }
 
         // not enough funds, so we need to estimate without the change
-        fee_pst.remove_output(fee_pst.n_outputs() - 1);
+        fee_pst.remove_output(fee_pst.n_outputs() - 2);
 
-        let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
-        let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+        let final_tx = self.finalize_tx(&fee_pst)?;
         let fee = self.calculate_fee(final_tx.weight(), fee_rate);
 
         if policy_amount_delta < fee {
@@ -127,19 +124,18 @@ where
         outputs[outputs.len() - 1].amount = Some(policy_amount_delta);
 
         // finalize the tx with fee and without the change
-        let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
-        let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
+        let final_tx = self.finalize_tx(&fee_pst)?;
 
         Ok((final_tx, fee))
     }
 
     pub fn finalize(&self) -> Result<Transaction, SimplexError> {
-        let (final_tx, utxos) = self.extract_tx_and_utxos(&self.pst)?;
-
-        Ok(self.finalize_tx(final_tx, utxos.as_slice())?)
+        Ok(self.finalize_tx(&self.pst)?)
     }
 
-    fn finalize_tx(&self, mut final_tx: Transaction, utxos: &[TxOut]) -> Result<Transaction, SimplexError> {
+    fn finalize_tx(&self, pst: &PartiallySignedTransaction) -> Result<Transaction, SimplexError> {
+        let (mut final_tx, utxos) = self.extract_tx_and_utxos(&pst)?;
+
         for index in 0..self.inputs.len() {
             let (program, witness, signer, signer_lambda) = {
                 let input = &self.inputs[index];
@@ -149,7 +145,7 @@ where
             if signer.is_some() {
                 final_tx = self.finalize_tx_with_signer(
                     final_tx,
-                    utxos,
+                    utxos.as_slice(),
                     program,
                     witness.build_witness(),
                     index,
@@ -157,7 +153,8 @@ where
                     signer_lambda.unwrap(),
                 )?;
             } else {
-                final_tx = self.finalize_tx_as_is(final_tx, utxos, program, witness.build_witness(), index)?;
+                final_tx =
+                    self.finalize_tx_as_is(final_tx, utxos.as_slice(), program, witness.build_witness(), index)?;
             }
         }
 
@@ -211,6 +208,7 @@ where
 
     fn calculate_fee(&self, weight: usize, fee_rate: f32) -> u64 {
         let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+
         (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
