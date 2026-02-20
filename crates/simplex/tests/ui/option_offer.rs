@@ -23,8 +23,5 @@ fn main() -> Result<(), String> {
     let recovered_witness = derived_option_offer::OptionOfferArguments::from_arguments(&witness_values)?;
     assert_eq!(original_arguments, recovered_witness);
 
-    let _template = derived_option_offer::get_template_program();
-    let _compiled = derived_option_offer::get_compiled_program(&original_arguments);
-
     Ok(())
 }

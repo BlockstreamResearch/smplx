@@ -43,8 +43,5 @@ fn main() -> Result<(), String> {
         derived_dual_currency_deposit::DualCurrencyDepositArguments::from_arguments(&witness_values)?;
     assert_eq!(original_arguments, recovered_witness);
 
-    let _template = derived_dual_currency_deposit::get_template_program();
-    let _compiled = derived_dual_currency_deposit::get_compiled_program(&original_arguments);
-
     Ok(())
 }

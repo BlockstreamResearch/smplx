@@ -30,7 +30,11 @@ pub enum ConfigError {
 
     /// Errors when getting a path to config.
     #[error("Path doesn't exist: '{0}'")]
-    PathIsNotEsixt(PathBuf),
+    PathNotExist(PathBuf),
+
+    /// Config is missing.
+    #[error("Config is missing in path: '{0}'")]
+    MissingConfig(PathBuf),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -74,23 +78,37 @@ impl Default for ProviderConfig {
 }
 
 impl Config {
-    pub fn discover(cfg_override: &ConfigOverride) -> Result<Option<Config>, ConfigError> {
-        Config::_discover().map(|opt| {
-            opt.map(|mut cfg| {
-                if let Some(test_conf) = cfg_override.rpc_creds.clone() {
-                    cfg.test_config = test_conf;
+    pub fn discover(cfg_override: Option<&ConfigOverride>) -> Result<Config, ConfigError> {
+        match Config::_discover() {
+            Ok(mut cfg) => {
+                if let Some(cfg_override) = cfg_override {
+                    if let Some(test_conf) = cfg_override.rpc_creds.clone() {
+                        cfg.test_config = test_conf;
+                    }
+                    if let Some(network) = cfg_override.network {
+                        cfg.provider_config.simplicity_network = network;
+                    }
                 }
-                if let Some(network) = cfg_override.network {
-                    cfg.provider_config.simplicity_network = network;
-                }
-                cfg
-            })
-        })
+                Ok(cfg)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn load(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        Self::from_path(&path_buf)
+    }
+
+    pub fn load_or_discover(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        match Self::load(path_buf) {
+            Ok(cfg) => Ok(cfg),
+            Err(_) => Self::_discover(),
+        }
     }
 
     pub fn load_or_default(path_buf: impl AsRef<Path>) -> Self {
-        Self::from_path(path_buf).unwrap_or_else(|_| {
-            if let Ok(Some(conf)) = Self::_discover() {
+        Self::load(path_buf).unwrap_or_else(|_| {
+            if let Ok(conf) = Self::_discover() {
                 conf
             } else {
                 Self::default()
@@ -98,7 +116,7 @@ impl Config {
         })
     }
 
-    fn _discover() -> Result<Option<Config>, ConfigError> {
+    fn _discover() -> Result<Config, ConfigError> {
         let cwd = std::env::current_dir()?;
         let path = cwd.join(CONFIG_FILENAME);
         dbg!(&path);
@@ -106,9 +124,9 @@ impl Config {
             return Err(ConfigError::PathIsNotFile(path));
         }
         if !path.exists() {
-            return Err(ConfigError::PathIsNotEsixt(path));
+            return Err(ConfigError::PathNotExist(path));
         }
-        Ok(Some(Config::from_path(&path)?))
+        Ok(Config::from_path(&path)?)
     }
 
     fn from_path(p: impl AsRef<Path>) -> Result<Self, ConfigError> {

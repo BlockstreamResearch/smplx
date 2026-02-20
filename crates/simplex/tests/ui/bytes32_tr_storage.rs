@@ -17,8 +17,5 @@ fn main() -> Result<(), String> {
     let recovered_witness = derived_bytes32_tr_storage::Bytes32TrStorageArguments::from_arguments(&witness_values)?;
     assert_eq!(original_arguments, recovered_witness);
 
-    let _template = derived_bytes32_tr_storage::get_template_program();
-    let _compiled = derived_bytes32_tr_storage::get_compiled_program(&original_arguments);
-
     Ok(())
 }

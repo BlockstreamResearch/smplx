@@ -23,8 +23,8 @@ pub struct Cli {
 
 impl Cli {
     #[must_use]
-    pub fn load_config(&self) -> Config {
-        Config::load_or_default(&self.config)
+    pub fn load_config(&self) -> Result<Config, Error> {
+        Ok(Config::load_or_discover(&self.config)?)
     }
 
     /// Runs the CLI command.
