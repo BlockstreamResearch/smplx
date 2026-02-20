@@ -80,14 +80,14 @@ where
         let mut fee_pst = self.pst.clone();
 
         fee_pst.add_output(Output::new_explicit(
-            change_recipient_script.clone(),
+            Script::new(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
             None,
         ));
 
         fee_pst.add_output(Output::new_explicit(
-            Script::new(),
+            change_recipient_script.clone(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
             None,
@@ -99,21 +99,10 @@ where
 
         if policy_amount_delta > fee && policy_amount_delta - fee >= MIN_FEE {
             // we have enough funds to cover change UTXO
-            let mut fee_pst = self.pst.clone();
+            let outputs = fee_pst.outputs_mut();
 
-            fee_pst.add_output(Output::new_explicit(
-                change_recipient_script,
-                policy_amount_delta - fee,
-                self.network.policy_asset(),
-                None,
-            ));
-
-            fee_pst.add_output(Output::new_explicit(
-                Script::new(),
-                fee,
-                self.network.policy_asset(),
-                None,
-            ));
+            outputs[outputs.len() - 2].amount = Some(fee);
+            outputs[outputs.len() - 1].amount = Some(policy_amount_delta - fee);
 
             let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
             let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
@@ -122,34 +111,22 @@ where
         }
 
         // not enough funds, so we need to estimate without the change
-        let mut fee_pst = self.pst.clone();
-
-        fee_pst.add_output(Output::new_explicit(
-            Script::new(),
-            PLACEHOLDER_FEE,
-            self.network.policy_asset(),
-            None,
-        ));
+        fee_pst.remove_output(fee_pst.n_outputs() - 1);
 
         let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
         let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
         let fee = self.calculate_fee(final_tx.weight(), fee_rate);
 
-        // policy amount is not exact
-        if policy_amount_delta != fee {
+        if policy_amount_delta < fee {
             return Err(SimplexError::NotEnoughFeeAmount(policy_amount_delta, fee));
         }
 
+        let outputs = fee_pst.outputs_mut();
+
+        // change fee output amount
+        outputs[outputs.len() - 1].amount = Some(policy_amount_delta);
+
         // finalize the tx with fee and without the change
-        let mut fee_pst = self.pst.clone();
-
-        fee_pst.add_output(Output::new_explicit(
-            Script::new(),
-            fee,
-            self.network.policy_asset(),
-            None,
-        ));
-
         let (final_tx, utxos) = self.extract_tx_and_utxos(&fee_pst)?;
         let final_tx = self.finalize_tx(final_tx, utxos.as_slice())?;
 
