@@ -1,10 +1,14 @@
 mod esplora;
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
-use simplicityhl::elements::encode;
+use simplicityhl::elements::confidential::{Asset, Nonce, Value};
+use simplicityhl::elements::hashes::{Hash, sha256};
+
 use simplicityhl::elements::hex::ToHex;
-use simplicityhl::elements::{Transaction, Txid};
+use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, TxOutWitness, Txid};
+use simplicityhl::elements::{AssetId, encode};
 
 use serde::Deserialize;
 
@@ -106,27 +110,68 @@ impl EsploraProvider {
     //     Ok(utxos)
     // }
 
-    // pub fn fetch_scripthash_utxos(script: &Script) -> Result<Vec<EsploraUtxo>, SimplexError> {
-    //     let hash = sha256::Hash::hash(script.as_bytes());
-    //     let hash_bytes = hash.to_byte_array();
-    //     let scripthash = hex::encode(hash_bytes);
+    pub fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
+        let hash = sha256::Hash::hash(script.as_bytes());
+        let hash_bytes = hash.to_byte_array();
+        let scripthash = hex::encode(hash_bytes);
 
-    //     let url = format!("{ESPLORA_URL}/scripthash/{scripthash}/utxo");
-    //     let response = minreq::get(&url)
-    //         .send()
-    //         .map_err(|e| SimplexError::Request(e.to_string()))?;
+        let url = self.esplora_url.clone() + "/scripthash/" + scripthash.as_str() + "/utxo";
+        let response = minreq::get(&url)
+            .send()
+            .map_err(|e| SimplexError::Request(e.to_string()))?;
 
-    //     if response.status_code != 200 {
-    //         return Err(SimplexError::Request(format!(
-    //             "HTTP {}: {}",
-    //             response.status_code, response.reason_phrase
-    //         )));
-    //     }
+        if response.status_code != 200 {
+            return Err(SimplexError::Request(format!(
+                "HTTP {}: {}",
+                response.status_code, response.reason_phrase
+            )));
+        }
 
-    //     let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+        let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
 
-    //     Ok(utxos)
-    // }
+        Ok(utxos
+            .iter()
+            .map(|utxo| {
+                Ok((
+                    self.esplora_utxo_to_outpoint(&utxo)?,
+                    self.esplora_utxo_to_txout(&utxo)?,
+                ))
+            })
+            .collect::<Result<Vec<(OutPoint, TxOut)>, SimplexError>>()?)
+    }
+
+    fn esplora_utxo_to_outpoint(&self, utxo: &EsploraUtxo) -> Result<OutPoint, SimplexError> {
+        let txid = Txid::from_str(&utxo.txid).map_err(|e| SimplexError::InvalidTxid(e.to_string()))?;
+
+        Ok(OutPoint::new(txid, utxo.vout))
+    }
+
+    fn esplora_utxo_to_txout(&self, utxo: &EsploraUtxo) -> Result<TxOut, SimplexError> {
+        let asset = match &utxo.assetcommitment {
+            Some(commitment) => {
+                Asset::from_commitment(commitment.as_bytes()).map_err(|e| SimplexError::Deserialize(e.to_string()))?
+            }
+            None => Asset::Explicit(
+                AssetId::from_slice(utxo.asset.clone().unwrap().as_bytes())
+                    .map_err(|e| SimplexError::Deserialize(e.to_string()))?,
+            ),
+        };
+
+        let value = match &utxo.valuecommitment {
+            Some(commitment) => {
+                Value::from_commitment(commitment.as_bytes()).map_err(|e| SimplexError::Deserialize(e.to_string()))?
+            }
+            None => Value::Explicit(utxo.value.unwrap()),
+        };
+
+        Ok(TxOut {
+            asset: asset,
+            value: value,
+            nonce: Nonce::Null,
+            script_pubkey: Script::new(),
+            witness: TxOutWitness::empty(),
+        })
+    }
 }
 
 impl Provider for EsploraProvider {

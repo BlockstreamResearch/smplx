@@ -169,13 +169,15 @@ mod tests {
     #[test]
     fn descriptor() {
         let signer = Signer::new(
-            "prosper short ramp prepare exchange stove life snack client enough purpose fold",
+            "exist carry drive collect lend cereal occur much tiger just involve mean",
             SimplicityNetwork::Liquid,
         )
         .unwrap();
 
         let address = signer.get_address().unwrap();
+        let pk = address.script_pubkey();
 
         println!("{address}");
+        println!("{pk}");
     }
 }
