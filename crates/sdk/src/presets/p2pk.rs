@@ -1,34 +1,34 @@
-use crate::arguments::ArgumentsTrait;
-use crate::program::Program;
+use crate::program::arguments::ArgumentsTrait;
+use crate::program::program::Program;
 
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 
 // TODO macro
-pub struct P2PK<'a> {
-    program: Program<'a>,
+pub struct P2PK {
+    program: Program,
 }
 
-impl<'a> P2PK<'a> {
+impl P2PK {
     pub const SOURCE: &'static str = include_str!("./simf/p2pk.simf");
 
-    pub fn new(public_key: &'a XOnlyPublicKey, arguments: &'a impl ArgumentsTrait) -> Self {
+    pub fn new(public_key: XOnlyPublicKey, arguments: impl ArgumentsTrait + 'static) -> Self {
         Self {
-            program: Program::new(Self::SOURCE, public_key, arguments),
+            program: Program::new(Self::SOURCE, public_key, Box::new(arguments)),
         }
     }
 
-    pub fn get_program(&self) -> &Program<'a> {
+    pub fn get_program(&self) -> &Program {
         &self.program
     }
 
-    pub fn get_program_mut(&mut self) -> &mut Program<'a> {
+    pub fn get_program_mut(&mut self) -> &mut Program {
         &mut self.program
     }
 }
 
 pub mod p2pk_build {
-    use crate::arguments::ArgumentsTrait;
-    use crate::witness::WitnessTrait;
+    use crate::program::arguments::ArgumentsTrait;
+    use crate::program::witness::WitnessTrait;
     use simplicityhl::num::U256;
     use simplicityhl::str::WitnessName;
     use simplicityhl::types::TypeConstructible;
@@ -37,10 +37,12 @@ pub mod p2pk_build {
     use simplicityhl::{Arguments, ResolvedType, Value, WitnessValues};
     use std::collections::HashMap;
 
+    #[derive(Clone)]
     pub struct P2PKWitness {
         pub signature: [u8; 64usize],
     }
 
+    #[derive(Clone)]
     pub struct P2PKArguments {
         pub public_key: [u8; 32],
     }

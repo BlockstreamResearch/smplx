@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
+use dyn_clone::DynClone;
+
 use simplicityhl::CompiledProgram;
 use simplicityhl::WitnessValues;
+use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxInWitness, TxOut, script, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
@@ -11,54 +14,54 @@ use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
-use crate::arguments::ArgumentsTrait;
+use super::arguments::ArgumentsTrait;
 use crate::constants::SimplicityNetwork;
 use crate::error::SimplexError;
 
-pub trait ProgramTrait {
+pub trait ProgramTrait: DynClone {
     fn get_env(
         &self,
-        tx: &Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
         input_index: usize,
         network: SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError>;
 
     fn execute(
         &self,
-        witness: WitnessValues,
-        tx: &Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
         input_index: usize,
         network: SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError>;
 
     fn finalize(
         &self,
-        witness: WitnessValues,
-        tx: Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
         input_index: usize,
         network: SimplicityNetwork,
-    ) -> Result<Transaction, SimplexError>;
+    ) -> Result<Vec<Vec<u8>>, SimplexError>;
 }
 
-pub struct Program<'a> {
+#[derive(Clone)]
+pub struct Program {
     source: &'static str,
-    pub_key: &'a XOnlyPublicKey,
-    arguments: &'a dyn ArgumentsTrait,
+    pub_key: XOnlyPublicKey,
+    arguments: Box<dyn ArgumentsTrait>,
 }
 
-impl<'a> ProgramTrait for Program<'a> {
+dyn_clone::clone_trait_object!(ProgramTrait);
+
+impl ProgramTrait for Program {
     fn get_env(
         &self,
-        tx: &Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
         input_index: usize,
         network: SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError> {
         let genesis_hash = network.genesis_block_hash();
         let cmr = self.load()?.commit().cmr();
+        let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
             return Err(SimplexError::UtxoIndexOutOfBounds {
@@ -78,7 +81,7 @@ impl<'a> ProgramTrait for Program<'a> {
         }
 
         Ok(ElementsEnv::new(
-            Arc::new(tx.clone()),
+            Arc::new(pst.extract_tx()?),
             utxos
                 .iter()
                 .map(|utxo| ElementsUtxo {
@@ -97,20 +100,19 @@ impl<'a> ProgramTrait for Program<'a> {
 
     fn execute(
         &self,
-        witness: WitnessValues,
-        tx: &Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
         input_index: usize,
         network: SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError> {
         let satisfied = self
             .load()?
-            .satisfy(witness)
+            .satisfy(witness.clone())
             .map_err(SimplexError::WitnessSatisfaction)?;
 
         let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
 
-        let env = self.get_env(tx, utxos, input_index, network)?;
+        let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
         let mut mac = BitMachine::for_program(&pruned)?;
@@ -122,35 +124,27 @@ impl<'a> ProgramTrait for Program<'a> {
 
     fn finalize(
         &self,
-        witness: WitnessValues,
-        mut tx: Transaction,
-        utxos: &[TxOut],
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
         input_index: usize,
         network: SimplicityNetwork,
-    ) -> Result<Transaction, SimplexError> {
-        let pruned = self.execute(witness, &tx, utxos, input_index, network)?.0;
+    ) -> Result<Vec<Vec<u8>>, SimplexError> {
+        let pruned = self.execute(&pst, witness, input_index, network)?.0;
 
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
         let cmr = pruned.cmr();
 
-        tx.input[input_index].witness = TxInWitness {
-            amount_rangeproof: None,
-            inflation_keys_rangeproof: None,
-            script_witness: vec![
-                simplicity_witness_bytes,
-                simplicity_program_bytes,
-                cmr.as_ref().to_vec(),
-                self.control_block()?.serialize(),
-            ],
-            pegin_witness: vec![],
-        };
-
-        Ok(tx)
+        Ok(vec![
+            simplicity_witness_bytes,
+            simplicity_program_bytes,
+            cmr.as_ref().to_vec(),
+            self.control_block()?.serialize(),
+        ])
     }
 }
 
-impl<'a> Program<'a> {
-    pub fn new(source: &'static str, pub_key: &'a XOnlyPublicKey, arguments: &'a impl ArgumentsTrait) -> Self {
+impl Program {
+    pub fn new(source: &'static str, pub_key: XOnlyPublicKey, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
             source: source,
             pub_key: pub_key,
@@ -204,7 +198,7 @@ impl<'a> Program<'a> {
             .expect("tap tree should be valid");
 
         Ok(builder
-            .finalize(secp256k1::SECP256K1, *self.pub_key)
+            .finalize(secp256k1::SECP256K1, self.pub_key)
             .expect("tap tree should be valid"))
     }
 

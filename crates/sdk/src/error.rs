@@ -5,6 +5,9 @@ pub enum SimplexError {
     #[error("Fee amount is too low: {0}")]
     PstFailure(#[from] simplicityhl::elements::pset::Error),
 
+    #[error("Failed to produce a signature: {0}")]
+    SigningFailed(String),
+
     #[error("Fee amount is too low: {0}")]
     DustAmount(u64),
 

@@ -3,7 +3,7 @@
 use simplex_sdk::presets::p2pk::P2PK;
 use simplex_sdk::presets::p2pk::p2pk_build::{P2PKArguments, P2PKWitness};
 
-use simplex_sdk::signer::{Signer, SignerTrait};
+use simplex_sdk::signer::signer::{Signer, SignerTrait};
 
 use simplex_sdk::constants::DUMMY_SIGNATURE;
 use simplex_sdk::utils::tr_unspendable_key;
