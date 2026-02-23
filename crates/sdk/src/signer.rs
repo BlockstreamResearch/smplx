@@ -2,23 +2,28 @@ use elements_miniscript::Descriptor;
 use elements_miniscript::bitcoin::PublicKey;
 use elements_miniscript::descriptor::Wpkh;
 use simplicityhl::elements::Address;
+use simplicityhl::elements::pset::{Output, PartiallySignedTransaction};
+use simplicityhl::elements::secp256k1_zkp::All;
 use simplicityhl::elements::secp256k1_zkp::{self as secp256k1, Keypair, Message, Secp256k1, schnorr::Signature};
 use simplicityhl::elements::{Transaction, TxOut};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
+use simplicityhl::simplicity::hashes::Hash;
 
 use bip39::Mnemonic;
 use elements_miniscript::{
     DescriptorPublicKey,
     bitcoin::{
-        self, NetworkKind, PrivateKey,
+        NetworkKind, PrivateKey,
         bip32::DerivationPath,
         sign_message::{MessageSignature, MessageSignatureError},
     },
-    descriptor,
-    elements::bitcoin::{
-        Network,
-        bip32::{self, Fingerprint, Xpriv, Xpub},
+    elements::{
+        EcdsaSighashType,
+        bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
+        sighash::SighashCache,
     },
+    elementssig_to_rawsig,
+    psbt::PsbtExt,
 };
 use std::str::FromStr;
 
@@ -27,11 +32,7 @@ use crate::error::SimplexError;
 use crate::program::ProgramTrait;
 
 pub trait SignerTrait {
-    fn public_key(&self) -> XOnlyPublicKey;
-
-    fn personal_sign(&self, message: Message) -> Result<Signature, SimplexError>;
-
-    fn sign<'a>(
+    fn sign_program(
         &self,
         program: &dyn ProgramTrait,
         tx: &Transaction,
@@ -43,40 +44,36 @@ pub trait SignerTrait {
 
 pub struct Signer {
     xprv: Xpriv,
-    mnemonic: Mnemonic,
     network: SimplicityNetwork,
+    secp: Secp256k1<All>,
 }
 
-// impl SignerTrait for Signer {
-//     fn public_key(&self) -> XOnlyPublicKey {
-//         // self.keypair.x_only_public_key().0
+impl SignerTrait for Signer {
+    fn sign_program(
+        &self,
+        program: &dyn ProgramTrait,
+        tx: &Transaction,
+        utxos: &[TxOut],
+        input_index: usize,
+        network: SimplicityNetwork,
+    ) -> Result<Signature, SimplexError> {
+        let env = program.get_env(tx, utxos, input_index, network)?;
+        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
 
-//     }
+        let private_key = self
+            .get_private_key()
+            .map_err(|e| SimplexError::WitnessSatisfaction(format!("{e:?}")))?;
+        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
-//     fn personal_sign(&self, message: Message) -> Result<Signature, SimplexError> {
-//         // Ok(self.keypair.sign_schnorr(message))
-//     }
-
-//     fn sign<'a>(
-//         &self,
-//         program: &dyn ProgramTrait,
-//         tx: &Transaction,
-//         utxos: &[TxOut],
-//         input_index: usize,
-//         network: SimplicityNetwork,
-//     ) -> Result<Signature, SimplexError> {
-//         // let env = program.get_env(tx, utxos, input_index, network)?;
-
-//         // let sighash_all = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
-
-//         // Ok(self.keypair.sign_schnorr(sighash_all))
-//     }
-// }
+        Ok(self.secp.sign_schnorr(&msg, &keypair))
+    }
+}
 
 impl Signer {
     pub const SEED_LEN: usize = secp256k1::constants::SECRET_KEY_SIZE;
 
     pub fn new(mnemonic: &str, network: SimplicityNetwork) -> Result<Self, String> {
+        let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic.parse().map_err(|e| format!("{e:?}"))?;
         let seed = mnemonic.to_seed("");
 
@@ -84,12 +81,12 @@ impl Signer {
 
         Ok(Self {
             xprv,
-            mnemonic: mnemonic,
             network: network,
+            secp: secp,
         })
     }
 
-    pub fn get_address(&self) -> Result<Address, String> {
+    pub fn get_wpkh_address(&self) -> Result<Address, String> {
         let fingerprint = self.fingerprint()?;
         let path = self.get_derivation_path()?;
         let xpub = self.derive_xpub(&path)?;
@@ -111,24 +108,64 @@ impl Signer {
             .map_err(|e| format!("{e:?}"))?)
     }
 
-    pub fn get_private_key(&self) -> Result<Xpriv, String> {
-        let secp = Secp256k1::new();
+    pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, String> {
+        let private_key = self.get_private_key()?;
+        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
+        Ok(keypair.x_only_public_key().0)
+    }
+
+    pub fn get_ecdsa_public_key(&self) -> Result<PublicKey, String> {
+        Ok(self.get_private_key()?.public_key(&self.secp))
+    }
+
+    pub fn get_private_key(&self) -> Result<PrivateKey, String> {
         let master_xprv = self.master_xpriv()?;
         let full_path = self.get_derivation_path()?;
 
         let derived =
             full_path.extend(DerivationPath::from_str("0/1").map_err(|e| format!("Derivation error: {e:?}"))?);
 
-        Ok(master_xprv
-            .derive_priv(&secp, &derived)
-            .map_err(|e| format!("Derivation error: {e:?}"))?)
+        let ext_derived = master_xprv
+            .derive_priv(&self.secp, &derived)
+            .map_err(|e| format!("Derivation error: {e:?}"))?;
+
+        Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
+    }
+
+    pub fn sign_pst(&self, pst: &PartiallySignedTransaction) -> Result<PartiallySignedTransaction, String> {
+        let mut signed_pst = pst.clone();
+        let tx = signed_pst.extract_tx().map_err(|e| format!("Sighash error: {e:?}"))?;
+
+        let mut sighash_cache = SighashCache::new(&tx);
+        let mut messages = vec![];
+
+        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
+
+        for (i, _) in signed_pst.inputs().iter().enumerate() {
+            messages.push(
+                signed_pst
+                    .sighash_msg(i, &mut sighash_cache, None, genesis_hash)
+                    .map_err(|e| format!("Sighash error: {e:?}"))?
+                    .to_secp_msg(),
+            )
+        }
+
+        for (input, msg) in signed_pst.inputs_mut().iter_mut().zip(messages) {
+            let private_key = self.get_private_key()?;
+            let public_key = private_key.public_key(&self.secp);
+
+            let sig = self.secp.sign_ecdsa_low_r(&msg, &private_key.inner);
+            let sig = elementssig_to_rawsig(&(sig, EcdsaSighashType::All));
+
+            input.partial_sigs.insert(public_key, sig);
+        }
+
+        Ok(signed_pst)
     }
 
     fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, String> {
-        let secp = Secp256k1::new();
-
-        Ok(self.xprv.derive_priv(&secp, &path).map_err(|e| format!("{e:?}"))?)
+        Ok(self.xprv.derive_priv(&self.secp, &path).map_err(|e| format!("{e:?}"))?)
     }
 
     fn master_xpriv(&self) -> Result<Xpriv, String> {
@@ -138,10 +175,9 @@ impl Signer {
     }
 
     fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, String> {
-        let secp = Secp256k1::new();
         let derived = self.derive_xpriv(path)?;
 
-        Ok(Xpub::from_priv(&secp, &derived))
+        Ok(Xpub::from_priv(&self.secp, &derived))
     }
 
     fn master_xpub(&self) -> Result<Xpub, String> {
@@ -174,7 +210,7 @@ mod tests {
         )
         .unwrap();
 
-        let address = signer.get_address().unwrap();
+        let address = signer.get_wpkh_address().unwrap();
         let pk = address.script_pubkey();
 
         println!("{address}");

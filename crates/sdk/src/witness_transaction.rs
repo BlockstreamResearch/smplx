@@ -171,7 +171,7 @@ where
         signer: &dyn SignerTrait,
         signer_lambda: T,
     ) -> Result<Transaction, SimplexError> {
-        let signature = signer.sign(program, &final_tx, utxos, index, self.network)?;
+        let signature = signer.sign_program(program, &final_tx, utxos, index, self.network)?;
         let new_witness = signer_lambda(&witness, &signature)?;
 
         Ok(self.finalize_tx_as_is(final_tx, utxos, program, new_witness, index)?)
