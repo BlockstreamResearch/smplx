@@ -230,3 +230,98 @@ pub struct ScantxoutsetUtxo {
     pub txid: String,
     pub vout: u32,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GetTransaction {
+    pub amount: f64,
+    pub fee: Option<f64>,
+    pub confirmations: i32,
+    pub blockhash: Option<String>,
+    pub blockindex: Option<u32>,
+    pub blocktime: Option<u64>,
+    pub txid: String,
+    pub time: u64,
+    pub timereceived: u64,
+    #[serde(default)]
+    pub bip125_replaceable: String,
+    pub details: Vec<TransactionDetail>,
+    pub hex: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TransactionDetail {
+    pub involveswatchonly: Option<bool>,
+    pub address: Option<String>,
+    pub category: String,
+    pub amount: f64,
+    pub label: Option<String>,
+    pub vout: u32,
+    #[serde(default)]
+    pub fee: Option<f64>,
+    pub abandoned: Option<bool>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SendRawTransaction {
+    pub txid: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GetRawTransaction {
+    pub in_active_chain: Option<bool>,
+    pub hex: String,
+    pub txid: String,
+    pub hash: String,
+    pub size: u32,
+    pub vsize: u32,
+    pub weight: u32,
+    pub version: u32,
+    pub locktime: u32,
+    pub vin: Vec<RawTransactionInput>,
+    pub vout: Vec<RawTransactionOutput>,
+    pub blockhash: Option<String>,
+    pub confirmations: Option<u32>,
+    pub time: Option<u64>,
+    pub blocktime: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RawTransactionInput {
+    pub txid: String,
+    pub vout: u32,
+    #[serde(rename = "scriptSig")]
+    pub script_sig: ScriptSig,
+    #[serde(default)]
+    pub txinwitness: Vec<String>,
+    pub sequence: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScriptSig {
+    pub asm: String,
+    pub hex: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RawTransactionOutput {
+    pub value: f64,
+    pub n: u32,
+    pub scriptPubKey: ScriptPubKey,
+    #[serde(default)]
+    pub asset: Option<String>,
+    #[serde(default)]
+    pub assetcommitment: Option<String>,
+    #[serde(default)]
+    pub valuecommitment: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScriptPubKey {
+    pub asm: String,
+    pub hex: String,
+    #[serde(rename = "reqSigs")]
+    pub req_sigs: Option<u32>,
+    #[serde(rename = "type")]
+    pub script_type: String,
+    pub addresses: Option<Vec<String>>,
+}

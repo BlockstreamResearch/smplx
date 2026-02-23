@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
+use simplex_test::TestConfig;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub const DEFAULT_CONFIG: &str = include_str!("../../../Simplex.example.toml");
-const MANIFEST_DIR: &str = "CARGO_MANIFEST_DIR";
 const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(thiserror::Error, Debug)]
@@ -49,21 +49,6 @@ pub struct ProviderConfig {
     simplicity_network: SimplicityNetwork,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct TestConfig {
-    pub rpc_creds: RpcCreds,
-}
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub enum RpcCreds {
-    Auth {
-        rpc_username: String,
-        rpc_password: String,
-    },
-    #[default]
-    None,
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct ConfigOverride {
     pub rpc_creds: Option<TestConfig>,
@@ -105,21 +90,19 @@ impl Config {
         Self::from_path(&path_buf)
     }
 
-    pub fn load_or_discover(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
-        match Self::load(path_buf) {
-            Ok(cfg) => Ok(cfg),
-            Err(_) => Self::_discover(),
+    pub fn load_or_discover(path_buf: Option<impl AsRef<Path>>) -> Result<Self, ConfigError> {
+        match path_buf {
+            Some(path) => Self::load(path),
+            None => Self::_discover(),
         }
     }
 
-    pub fn load_or_default(path_buf: impl AsRef<Path>) -> Self {
-        Self::load(path_buf).unwrap_or_else(|_| {
-            if let Ok(conf) = Self::_discover() {
-                conf
-            } else {
-                Self::default()
-            }
-        })
+    pub fn load_or_default(path_buf: Option<impl AsRef<Path>>) -> Self {
+        let x = match path_buf {
+            Some(path) => Self::load(path),
+            None => Self::_discover(),
+        };
+        x.unwrap_or_else(|_| Self::default())
     }
 
     fn _discover() -> Result<Config, ConfigError> {

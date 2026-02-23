@@ -200,7 +200,16 @@ impl ElementsRpcClient {
         Ok(value.get("hex").unwrap().as_str().unwrap().to_string())
     }
 
-    pub fn sendrawtransaction(client: &Client, tx: &str) -> Result<String, ExplorerError> {
+    pub fn sendrawtransaction(client: &Client, tx: &str) -> Result<SendRawTransaction, ExplorerError> {
+        const METHOD: &str = "sendrawtransaction";
+
+        let value: serde_json::Value = client.call(METHOD, &[tx.into()])?;
+        Ok(SendRawTransaction {
+            txid: value.as_str().unwrap().to_string(),
+        })
+    }
+
+    pub fn sendrawtransaction_txid(client: &Client, tx: &str) -> Result<String, ExplorerError> {
         const METHOD: &str = "sendrawtransaction";
 
         let value: serde_json::Value = client.call(METHOD, &[tx.into()])?;
@@ -354,6 +363,47 @@ impl ElementsRpcClient {
         dbg!("response: {}", response.to_string());
         ScantxoutsetResult::from_value(response, action)
             .map_err(|e| ExplorerError::ElementsRpcUnexpectedReturn(e.to_string()))
+    }
+
+    pub fn gettransaction(
+        client: &Client,
+        txid: &str,
+        include_watchonly: Option<bool>,
+    ) -> Result<GetTransaction, ExplorerError> {
+        const METHOD: &str = "gettransaction";
+
+        let mut args = vec![txid.into()];
+
+        if let Some(watchonly) = include_watchonly {
+            args.push(watchonly.into());
+        }
+
+        Ok(client.call::<GetTransaction>(METHOD, &args)?)
+    }
+
+    pub fn getrawtransaction(
+        client: &Client,
+        txid: &str,
+        verbose: Option<bool>,
+    ) -> Result<GetRawTransaction, ExplorerError> {
+        const METHOD: &str = "getrawtransaction";
+
+        let mut args = vec![txid.into()];
+
+        if let Some(v) = verbose {
+            args.push(v.into());
+        } else {
+            args.push(true.into());
+        }
+
+        Ok(client.call::<GetRawTransaction>(METHOD, &args)?)
+    }
+
+    pub fn getrawtransaction_hex(client: &Client, txid: &str) -> Result<String, ExplorerError> {
+        const METHOD: &str = "getrawtransaction";
+
+        let value: serde_json::Value = client.call(METHOD, &[txid.into(), false.into()])?;
+        Ok(value.as_str().unwrap().to_string())
     }
 }
 

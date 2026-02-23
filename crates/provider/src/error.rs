@@ -1,3 +1,4 @@
+use electrsd::bitcoind::bitcoincore_rpc::jsonrpc::minreq;
 use reqwest::{StatusCode, Url};
 
 #[derive(thiserror::Error, Debug)]
@@ -7,17 +8,23 @@ pub enum ExplorerError {
 
     #[error("Failed to send request, [url: '{url:?}', code: {status:?}, text: '{text}']")]
     Request {
-        url: Option<Url>,
+        url: Option<String>,
         status: Option<StatusCode>,
         text: String,
     },
 
+    #[error("Failed to minreq send request, [err: '{err}']")]
+    RequestMinreq { err: minreq::Error },
+
     #[error("Erroneous response, [url: '{url:?}', code: {status:?}, text: '{text}']")]
     ErroneousRequest {
-        url: Option<Url>,
+        url: Option<String>,
         status: Option<StatusCode>,
         text: String,
     },
+
+    #[error("Erroneous minreq response, [err: '{err}']")]
+    ErroneousRequestMinreq { err: minreq::Error },
 
     #[error("Failed to deserialize response, [url: '{url:?}', code: {status:?}, text: '{text}']")]
     Deserialize {
@@ -25,6 +32,9 @@ pub enum ExplorerError {
         status: Option<StatusCode>,
         text: String,
     },
+
+    #[error("Failed to deserialize minreq response, [err: '{err}']")]
+    DeserializeMinreq { err: minreq::Error },
 
     #[error("Failed to decode hex value to array, {0}")]
     BitcoinHashesHex(#[from] bitcoin_hashes::hex::HexToArrayError),
@@ -66,29 +76,48 @@ pub enum CommitmentType {
 
 impl ExplorerError {
     #[inline]
-    pub(crate) fn response_failed(e: &reqwest::Error) -> Self {
+    pub(crate) fn response_failed_reqwest(e: &reqwest::Error) -> Self {
         ExplorerError::Request {
-            url: e.url().cloned(),
+            url: e.url().cloned().map(|x| x.to_string()),
             status: e.status(),
             text: e.to_string(),
         }
     }
 
     #[inline]
-    pub(crate) fn erroneous_response(e: &reqwest::Response) -> Self {
+    pub(crate) fn erroneous_response_reqwest(e: &reqwest::Response) -> Self {
         ExplorerError::ErroneousRequest {
-            url: Some(e.url().clone()),
+            url: Some(e.url().clone().to_string()),
             status: Some(e.status()),
             text: String::new(),
         }
     }
 
     #[inline]
-    pub(crate) fn deserialize(e: &reqwest::Error) -> Self {
+    pub(crate) fn response_failed_minreq(e: minreq::Error) -> Self {
+        ExplorerError::RequestMinreq { err: e }
+    }
+
+    #[inline]
+    pub(crate) fn erroneous_response_minreq(e: &minreq::Response) -> Self {
+        ExplorerError::ErroneousRequest {
+            url: Some(e.url.clone()),
+            status: Some(StatusCode::from_u16(e.status_code as u16).unwrap()),
+            text: e.reason_phrase.clone(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn deserialize_reqwest(e: &reqwest::Error) -> Self {
         ExplorerError::Deserialize {
             url: e.url().cloned(),
             status: e.status(),
             text: e.to_string(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn deserialize_minreq(e: minreq::Error) -> Self {
+        ExplorerError::DeserializeMinreq { err: e }
     }
 }

@@ -6,7 +6,7 @@ use simplicityhl::elements::{Script, Transaction, TxOut};
 use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork, WITNESS_SCALE_FACTOR};
 use crate::error::SimplexError;
 use crate::program::ProgramTrait;
-use crate::provider::Provider;
+use crate::provider::ProviderSync;
 use crate::signer::SignerTrait;
 use crate::witness::WitnessTrait;
 
@@ -67,7 +67,7 @@ where
         &self,
         target_blocks: u32,
         change_recipient_script: Script,
-        provider: impl Provider,
+        provider: impl ProviderSync,
     ) -> Result<(Transaction, u64), SimplexError> {
         let policy_amount_delta = self.calculate_fee_delta();
 

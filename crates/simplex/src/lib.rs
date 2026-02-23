@@ -9,3 +9,6 @@ pub extern crate simplex_sdk;
 
 #[cfg(feature = "macros")]
 pub extern crate simplex_test;
+
+#[cfg(feature = "macros")]
+pub extern crate tracing;

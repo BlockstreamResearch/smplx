@@ -4,6 +4,7 @@ mod testing;
 
 pub use common::*;
 pub use error::*;
+pub use testing::*;
 
 use bitcoind::bitcoincore_rpc::{Auth, Client};
 use bitcoind::{BitcoinD, Conf};
@@ -19,7 +20,7 @@ pub struct User {
     pubkey: PublicKey,
 }
 
-pub enum TestProvider {
+pub enum TestClientProvider {
     ConfiguredNode { node: BitcoinD, network: SimplicityNetwork },
     CustomRpc(ElementsRpcClient),
 }
@@ -30,7 +31,7 @@ pub enum ConfigOption<'a> {
     CustomRpcUrlRegtest { url: String, auth: Auth },
 }
 
-impl TestProvider {
+impl TestClientProvider {
     pub fn init(init_option: ConfigOption) -> Result<Self, TestError> {
         let rpc = match init_option {
             ConfigOption::DefaultRegtest => {
@@ -92,13 +93,13 @@ impl TestProvider {
 
     pub fn client(&self) -> &Client {
         match self {
-            TestProvider::ConfiguredNode { node, .. } => &node.client,
-            TestProvider::CustomRpc(x) => x.client(),
+            TestClientProvider::ConfiguredNode { node, .. } => &node.client,
+            TestClientProvider::CustomRpc(x) => x.client(),
         }
     }
 }
 
-impl TestProvider {
+impl TestClientProvider {
     pub fn fund(satoshi: u64, address: Option<Address>, asset: Option<AssetId>) {
         todo!()
     }
@@ -110,7 +111,7 @@ impl TestProvider {
     }
 }
 
-impl AsRef<Client> for TestProvider {
+impl AsRef<Client> for TestClientProvider {
     fn as_ref(&self) -> &Client {
         self.client()
     }

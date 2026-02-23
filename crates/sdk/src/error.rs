@@ -1,4 +1,6 @@
+use simplex_provider::ExplorerError;
 use simplicityhl::elements::secp256k1_zkp;
+use simplicityhl::simplicity::hex::HexToArrayError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimplexError {
@@ -52,4 +54,13 @@ pub enum SimplexError {
 
     #[error("Invalid txid format: {0}")]
     InvalidTxid(String),
+
+    #[error("Failed to execute rpc query, err: '{0}'")]
+    RpcExecution(String),
+
+    #[error("Hex to array error: '{0}'")]
+    HexToArray(#[from] HexToArrayError),
+
+    #[error("Failed to execute provider method: '{method}', err: '{err}'")]
+    ProviderError { method: String, err: ExplorerError },
 }

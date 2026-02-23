@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 electrsd = { workspace = true }
 async-trait = { version = "0.1.89" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+minreq = { version = "2.14", features = ["https", "json-using-serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 hex-simd = "0.8.0"
