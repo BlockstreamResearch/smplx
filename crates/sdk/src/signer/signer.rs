@@ -42,7 +42,7 @@ pub trait SignerTrait {
         pst: &PartiallySignedTransaction,
         program: &Box<dyn ProgramTrait>,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<schnorr::Signature, SimplexError>;
 
     fn sign_input(
@@ -65,7 +65,7 @@ impl SignerTrait for Signer {
         pst: &PartiallySignedTransaction,
         program: &Box<dyn ProgramTrait>,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<schnorr::Signature, SimplexError> {
         let env = program.get_env(&pst, input_index, network)?;
         let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
@@ -255,7 +255,7 @@ impl Signer {
                 };
                 let pruned_witness = program
                     .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, self.network)
+                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
                     .unwrap();
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
@@ -280,7 +280,7 @@ impl Signer {
         witness_name: &String,
         index: usize,
     ) -> Result<WitnessValues, SimplexError> {
-        let signature = self.sign_program(pst, program, index, self.network)?;
+        let signature = self.sign_program(pst, program, index, &self.network)?;
 
         let mut hm = HashMap::new();
 

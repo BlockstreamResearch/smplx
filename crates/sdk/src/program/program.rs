@@ -23,7 +23,7 @@ pub trait ProgramTrait: DynClone {
         &self,
         pst: &PartiallySignedTransaction,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError>;
 
     fn execute(
@@ -31,7 +31,7 @@ pub trait ProgramTrait: DynClone {
         pst: &PartiallySignedTransaction,
         witness: &WitnessValues,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError>;
 
     fn finalize(
@@ -39,7 +39,7 @@ pub trait ProgramTrait: DynClone {
         pst: &PartiallySignedTransaction,
         witness: &WitnessValues,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, SimplexError>;
 }
 
@@ -57,7 +57,7 @@ impl ProgramTrait for Program {
         &self,
         pst: &PartiallySignedTransaction,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError> {
         let genesis_hash = network.genesis_block_hash();
         let cmr = self.load()?.commit().cmr();
@@ -103,7 +103,7 @@ impl ProgramTrait for Program {
         pst: &PartiallySignedTransaction,
         witness: &WitnessValues,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError> {
         let satisfied = self
             .load()?
@@ -127,7 +127,7 @@ impl ProgramTrait for Program {
         pst: &PartiallySignedTransaction,
         witness: &WitnessValues,
         input_index: usize,
-        network: SimplicityNetwork,
+        network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, SimplexError> {
         let pruned = self.execute(&pst, witness, input_index, network)?.0;
 
@@ -152,7 +152,7 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: SimplicityNetwork) -> Result<Address, SimplexError> {
+    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Result<Address, SimplexError> {
         let spend_info = self.taproot_spending_info()?;
 
         Ok(Address::p2tr(
@@ -164,11 +164,11 @@ impl Program {
         ))
     }
 
-    pub fn get_script_pubkey(&self, network: SimplicityNetwork) -> Result<Script, SimplexError> {
+    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Result<Script, SimplexError> {
         Ok(self.get_tr_address(network)?.script_pubkey())
     }
 
-    pub fn get_script_hash(&self, network: SimplicityNetwork) -> Result<[u8; 32], SimplexError> {
+    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> Result<[u8; 32], SimplexError> {
         let script = self.get_script_pubkey(network)?;
         let mut hasher = Sha256::new();
 
