@@ -1,13 +1,12 @@
 pub mod commands;
 
+use crate::cache_storage::CacheStorage;
 use crate::cli::commands::{TestCommand, TestFlags};
 use crate::config::{Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
-use simplex_test::{TestClientProvider, TestConfig};
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use simplex_test::TestClientProvider;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,14 +96,14 @@ impl Cli {
         command: &TestCommand,
         test_flags: &TestFlags,
     ) -> Result<(), Error> {
-        let cache_path = Self::save_cached_test_config(&config.test_config)?;
+        let cache_path = CacheStorage::save_cached_test_config(&config.test_config)?;
         let mut test_command = match command {
-            TestCommand::Tests => Self::form_test_command(TestParams {
+            TestCommand::Integration => Self::form_test_command(TestParams {
                 cache_path,
                 test_path: TestPaths::AllIntegration,
                 test_flags: *test_flags,
             }),
-            TestCommand::Test { tests } => {
+            TestCommand::Run { tests: tests } => {
                 let test_path = if tests.is_empty() {
                     TestPaths::AllIntegration
                 } else {
@@ -136,70 +135,44 @@ impl Cli {
     fn form_test_command(params: TestParams) -> std::process::Command {
         let mut test_command = std::process::Command::new("sh");
         test_command.arg("-c");
+        let mut command_as_arg = String::new();
         match params.test_path {
             TestPaths::AllIntegration => {
-                test_command.args(["cargo test --tests"]);
+                command_as_arg.push_str("cargo test --tests");
             }
             TestPaths::Names(names) => {
-                let mut args: Vec<String> = Vec::with_capacity(1 + names.len());
-                args.push("cargo test".to_string());
+                let mut arg = "cargo test".to_string();
                 for test_name in names {
-                    args.push(format!("--test {test_name}"));
+                    arg.push_str(&format!(" --test {test_name}"));
                 }
-                test_command.args(args.into_iter());
+                command_as_arg.push_str(&arg);
             }
         }
         {
             match params.test_flags.show_output {
                 true => match params.test_flags.nocapture {
                     true => {
-                        test_command.args(["--", "--nocapture", "--show-output"]);
+                        command_as_arg.push_str(&"-- --nocapture --show-output");
                     }
                     false => {
-                        test_command.args(["--", "--show-output"]);
+                        command_as_arg.push_str(&"-- --show-output");
                     }
                 },
                 false => match params.test_flags.nocapture {
                     true => {
-                        test_command.args(["--", "--nocapture"]);
+                        command_as_arg.push_str(&"-- --nocapture");
                     }
                     false => {}
                 },
             }
         }
+        test_command.args([command_as_arg]);
+        dbg!(test_command.get_args());
         test_command
             .env(simplex_test::TEST_ENV_NAME, params.cache_path)
             .stdin(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit());
         test_command
-    }
-
-    fn save_cached_test_config(test_config: &TestConfig) -> Result<PathBuf, Error> {
-        let cache_dir = Self::get_cache_dir()?;
-        std::fs::create_dir_all(&cache_dir)?;
-        let test_config_cache_name = Self::create_cache_name(&cache_dir);
-
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&test_config_cache_name)?;
-        file.write(toml::to_string_pretty(&test_config).unwrap().as_bytes())?;
-        file.flush()?;
-        Ok(test_config_cache_name)
-    }
-
-    fn get_cache_dir() -> Result<PathBuf, Error> {
-        const TARGET_DIR_NAME: &str = "target";
-        const SIMPLEX_CACHE_DIR_NAME: &str = "simplex";
-
-        let cwd = std::env::current_dir()?;
-        Ok(cwd.join(TARGET_DIR_NAME).join(SIMPLEX_CACHE_DIR_NAME))
-    }
-
-    fn create_cache_name(path: impl AsRef<Path>) -> PathBuf {
-        const TEST_CACHE_NAME: &str = "test_config.toml";
-
-        path.as_ref().join(TEST_CACHE_NAME)
     }
 }

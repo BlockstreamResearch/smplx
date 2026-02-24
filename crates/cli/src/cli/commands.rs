@@ -21,9 +21,9 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum TestCommand {
     /// Run integration tests using simplex conventions
-    Tests,
+    Integration,
     /// Run only specific files by path for testing
-    Test {
+    Run {
         #[arg(short = 't', long)]
         tests: Vec<String>,
     },
