@@ -1933,6 +1933,7 @@ name = "simplex-user"
 version = "0.1.0"
 dependencies = [
  "simplex-sdk",
+ "simplicityhl",
  "thiserror",
 ]
 

@@ -17,6 +17,7 @@ simplex-macros = { path = "./crates/macros" }
 simplex-test = { path = "./crates/test" }
 simplex-sdk = { path = "./crates/sdk" }
 simplex = { path = "./crates/simplex" }
+simplex-user = { path = "./crates/user" }
 
 bincode = { version = "2.0.1", features = ["serde"] }
 ring = { version = "0.17.14" }

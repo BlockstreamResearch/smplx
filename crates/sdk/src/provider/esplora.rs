@@ -1,12 +1,12 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str::FromStr;
 
-use simplicityhl::elements::confidential::{Asset, Nonce, Value};
 use simplicityhl::elements::hashes::{Hash, sha256};
 
+use simplicityhl::elements::encode;
 use simplicityhl::elements::hex::ToHex;
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, TxOutWitness, Txid};
-use simplicityhl::elements::{AssetId, encode};
+use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
 use serde::Deserialize;
 
@@ -20,15 +20,19 @@ pub struct EsploraProvider {
 }
 
 #[derive(Clone, Deserialize)]
+#[allow(dead_code)]
 struct UtxoStatus {
     pub confirmed: bool,
     #[serde(default)]
     pub block_height: Option<u64>,
     #[serde(default)]
     pub block_hash: Option<String>,
+    #[serde(default)]
+    pub block_time: Option<u64>,
 }
 
 #[derive(Clone, Deserialize)]
+#[allow(dead_code)]
 struct EsploraUtxo {
     pub txid: String,
     pub vout: u32,
@@ -54,31 +58,29 @@ impl EsploraProvider {
         Ok(OutPoint::new(txid, utxo.vout))
     }
 
-    fn esplora_utxo_to_txout(&self, utxo: &EsploraUtxo) -> Result<TxOut, SimplexError> {
-        let asset = match &utxo.assetcommitment {
-            Some(commitment) => {
-                Asset::from_commitment(commitment.as_bytes()).map_err(|e| SimplexError::Deserialize(e.to_string()))?
-            }
-            None => Asset::Explicit(
-                AssetId::from_slice(utxo.asset.clone().unwrap().as_bytes())
-                    .map_err(|e| SimplexError::Deserialize(e.to_string()))?,
-            ),
-        };
+    fn populate_txouts_from_outpoints(
+        &self,
+        outpoints: &Vec<OutPoint>,
+    ) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
+        let set: HashSet<_> = outpoints.into_iter().collect();
+        let mut map = HashMap::new();
 
-        let value = match &utxo.valuecommitment {
-            Some(commitment) => {
-                Value::from_commitment(commitment.as_bytes()).map_err(|e| SimplexError::Deserialize(e.to_string()))?
-            }
-            None => Value::Explicit(utxo.value.unwrap()),
-        };
+        // filter unique transactions
+        for point in set {
+            let tx = self.fetch_transaction(point.txid)?;
+            map.insert(point.txid, tx);
+        }
 
-        Ok(TxOut {
-            asset: asset,
-            value: value,
-            nonce: Nonce::Null,
-            script_pubkey: Script::new(),
-            witness: TxOutWitness::empty(),
-        })
+        // populate TxOuts
+        Ok(outpoints
+            .iter()
+            .map(|point| {
+                (
+                    *point,
+                    map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
+                )
+            })
+            .collect())
     }
 }
 
@@ -140,16 +142,12 @@ impl ProviderTrait for EsploraProvider {
         }
 
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
-
-        Ok(utxos
+        let outpoints = utxos
             .iter()
-            .map(|utxo| {
-                Ok((
-                    self.esplora_utxo_to_outpoint(&utxo)?,
-                    self.esplora_utxo_to_txout(&utxo)?,
-                ))
-            })
-            .collect::<Result<Vec<(OutPoint, TxOut)>, SimplexError>>()?)
+            .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
+            .collect::<Result<Vec<OutPoint>, SimplexError>>()?;
+
+        Ok(self.populate_txouts_from_outpoints(&outpoints)?)
     }
 
     fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
@@ -170,16 +168,12 @@ impl ProviderTrait for EsploraProvider {
         }
 
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
-
-        Ok(utxos
+        let outpoints = utxos
             .iter()
-            .map(|utxo| {
-                Ok((
-                    self.esplora_utxo_to_outpoint(&utxo)?,
-                    self.esplora_utxo_to_txout(&utxo)?,
-                ))
-            })
-            .collect::<Result<Vec<(OutPoint, TxOut)>, SimplexError>>()?)
+            .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
+            .collect::<Result<Vec<OutPoint>, SimplexError>>()?;
+
+        Ok(self.populate_txouts_from_outpoints(&outpoints)?)
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {

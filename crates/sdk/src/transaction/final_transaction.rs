@@ -2,24 +2,9 @@ use simplicityhl::elements::pset::PartiallySignedTransaction;
 
 use crate::constants::{SimplicityNetwork, WITNESS_SCALE_FACTOR};
 use crate::error::SimplexError;
-use crate::program::program::ProgramTrait;
-use crate::program::witness::WitnessTrait;
 
-use super::partial_input::PartialInput;
+use super::partial_input::{PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
-
-#[derive(Clone)]
-pub enum RequiredSignature {
-    None,
-    NativeEcdsa,
-    Witness(String),
-}
-
-#[derive(Clone)]
-pub struct ProgramInput {
-    pub program: Box<dyn ProgramTrait>,
-    pub witness: Box<dyn WitnessTrait>,
-}
 
 #[derive(Clone)]
 pub struct FinalInput {
@@ -114,8 +99,8 @@ impl FinalTransaction {
         let available_amount = self
             .inputs
             .iter()
-            .filter(|input| input.partial_input.asset.unwrap() == self.network.policy_asset())
-            .fold(0 as u64, |acc, input| acc + input.partial_input.amount.unwrap());
+            .filter(|input| input.partial_input.asset.clone().unwrap() == self.network.policy_asset())
+            .fold(0 as u64, |acc, input| acc + input.partial_input.amount.clone().unwrap());
 
         let consumed_amount = self
             .outputs

@@ -7,7 +7,7 @@ use dyn_clone::DynClone;
 use simplicityhl::CompiledProgram;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::{Address, Script, Transaction, TxInWitness, TxOut, script, taproot};
+use simplicityhl::elements::{Address, Script, Transaction, TxOut, script, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
@@ -71,7 +71,7 @@ impl ProgramTrait for Program {
         }
 
         let target_utxo = &utxos[input_index];
-        let script_pubkey = self.get_tr_address(network)?.script_pubkey();
+        let script_pubkey = self.get_tr_address(network.clone())?.script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
             return Err(SimplexError::ScriptPubkeyMismatch {
@@ -152,7 +152,7 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Result<Address, SimplexError> {
+    pub fn get_tr_address(&self, network: SimplicityNetwork) -> Result<Address, SimplexError> {
         let spend_info = self.taproot_spending_info()?;
 
         Ok(Address::p2tr(
@@ -164,11 +164,11 @@ impl Program {
         ))
     }
 
-    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Result<Script, SimplexError> {
+    pub fn get_script_pubkey(&self, network: SimplicityNetwork) -> Result<Script, SimplexError> {
         Ok(self.get_tr_address(network)?.script_pubkey())
     }
 
-    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> Result<[u8; 32], SimplexError> {
+    pub fn get_script_hash(&self, network: SimplicityNetwork) -> Result<[u8; 32], SimplexError> {
         let script = self.get_script_pubkey(network)?;
         let mut hasher = Sha256::new();
 

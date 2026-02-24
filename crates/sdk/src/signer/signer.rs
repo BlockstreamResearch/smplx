@@ -33,7 +33,7 @@ use crate::error::SimplexError;
 use crate::program::program::ProgramTrait;
 use crate::provider::provider::ProviderTrait;
 use crate::transaction::final_transaction::FinalTransaction;
-use crate::transaction::final_transaction::RequiredSignature;
+use crate::transaction::partial_input::RequiredSignature;
 use crate::transaction::partial_output::PartialOutput;
 
 pub trait SignerTrait {
@@ -204,8 +204,7 @@ impl Signer {
             .map_err(|e| format!("{e:?}"))?)
     }
 
-    
-    pub fn get_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, String> {
+    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, String> {
         Ok(self
             .provider
             .fetch_address_utxos(&self.get_wpkh_address()?)
@@ -338,20 +337,25 @@ impl Signer {
 
 #[cfg(test)]
 mod tests {
+    use crate::provider::esplora::EsploraProvider;
+
     use super::*;
 
     #[test]
-    fn descriptor() {
-        //     let signer = Signer::new(
-        //         "exist carry drive collect lend cereal occur much tiger just involve mean",
-        //         SimplicityNetwork::Liquid,
-        //     )
-        //     .unwrap();
+    fn keys_correspond_to_address() {
+        let provider = EsploraProvider::new("https://blockstream.info/liquidtestnet/api".to_string());
+        let signer = Signer::new(
+            "exist carry drive collect lend cereal occur much tiger just involve mean",
+            Box::new(provider.clone()),
+            SimplicityNetwork::LiquidTestnet,
+        )
+        .unwrap();
 
-        //     let address = signer.get_wpkh_address().unwrap();
-        //     let pk = address.script_pubkey();
+        let address = signer.get_wpkh_address().unwrap();
+        let pubkey = signer.get_ecdsa_public_key().unwrap();
 
-        //     println!("{address}");
-        //     println!("{pk}");
+        let derived_addr = Address::p2wpkh(&pubkey, None, SimplicityNetwork::LiquidTestnet.address_params());
+
+        assert_eq!(derived_addr.to_string(), address.to_string());
     }
 }
