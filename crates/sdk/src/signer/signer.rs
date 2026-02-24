@@ -191,8 +191,6 @@ impl Signer {
 
         let desc = format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)");
 
-        println!("{desc}");
-
         let descriptor: Descriptor<DescriptorPublicKey> =
             Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| format!("{e:?}"))?);
 
@@ -265,7 +263,7 @@ impl Signer {
                 let signed_witness = self.sign_input(&pst, index)?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
 
-                pst.inputs_mut()[index].partial_sigs.insert(signed_witness.0, raw_sig);
+                pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
             }
         }
 
