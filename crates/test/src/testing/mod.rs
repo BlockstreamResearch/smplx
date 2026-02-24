@@ -13,12 +13,20 @@ pub struct TestContext {
 }
 
 pub enum TestContextBuilder {
+    Default,
     FromConfigPath(PathBuf),
 }
 
 impl TestContextBuilder {
     pub fn build(self) -> Result<TestContext, TestError> {
         let context = match self {
+            Self::Default => {
+                let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest)?;
+                TestContext {
+                    config: TestConfig::default(),
+                    rpc,
+                }
+            }
             Self::FromConfigPath(path) => {
                 let config: TestConfig = TestConfig::from_file(&path)?;
                 match &config.rpc_creds {

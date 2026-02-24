@@ -6,8 +6,14 @@ use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
 
 #[ignore]
-#[simplex::simplex_macros::test(hello = "hi")]
+#[simplex::simplex_macros::test(default_rpc)]
 fn test_execution(x: TestContext) {
+    assert!(true)
+}
+
+#[ignore]
+#[simplex::simplex_macros::test]
+fn test_execution3(x: TestContext) {
     assert!(true)
 }
 
