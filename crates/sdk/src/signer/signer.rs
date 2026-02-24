@@ -8,7 +8,7 @@ use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{self as secp256k1, All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, Script, Transaction};
+use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
@@ -31,7 +31,7 @@ use elements_miniscript::{
 use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork};
 use crate::error::SimplexError;
 use crate::program::program::ProgramTrait;
-use crate::provider::Provider;
+use crate::provider::provider::ProviderTrait;
 use crate::transaction::final_transaction::FinalTransaction;
 use crate::transaction::final_transaction::RequiredSignature;
 use crate::transaction::partial_output::PartialOutput;
@@ -54,7 +54,7 @@ pub trait SignerTrait {
 
 pub struct Signer {
     xprv: Xpriv,
-    provider: Box<dyn Provider>,
+    provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
 }
@@ -107,7 +107,7 @@ impl SignerTrait for Signer {
 impl Signer {
     pub const SEED_LEN: usize = secp256k1::constants::SECRET_KEY_SIZE;
 
-    pub fn new(mnemonic: &str, provider: Box<dyn Provider>, network: SimplicityNetwork) -> Result<Self, String> {
+    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>, network: SimplicityNetwork) -> Result<Self, String> {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic.parse().map_err(|e| format!("{e:?}"))?;
         let seed = mnemonic.to_seed("");
@@ -201,6 +201,14 @@ impl Signer {
             .at_derivation_index(1)
             .map_err(|e| format!("{e:?}"))?
             .address(self.network.address_params())
+            .map_err(|e| format!("{e:?}"))?)
+    }
+
+    
+    pub fn get_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, String> {
+        Ok(self
+            .provider
+            .fetch_address_utxos(&self.get_wpkh_address()?)
             .map_err(|e| format!("{e:?}"))?)
     }
 
