@@ -8,8 +8,8 @@ use clap::Parser;
 use simplex_test::TestClientProvider;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Parser)]
 #[command(name = "simplicity-dex")]
@@ -144,21 +144,19 @@ impl Cli {
             }
         }
         {
-            match params.test_flags.show_output {
-                true => match params.test_flags.nocapture {
-                    true => {
-                        command_as_arg.push_str(&" -- --nocapture --show-output");
-                    }
-                    false => {
-                        command_as_arg.push_str(&" -- --show-output");
-                    }
-                },
-                false => match params.test_flags.nocapture {
-                    true => {
-                        command_as_arg.push_str(&" -- --nocapture");
-                    }
-                    false => {}
-                },
+            let mut opt_params = String::new();
+            if params.test_flags.show_output {
+                opt_params.push_str(" --show-output");
+            }
+            if params.test_flags.nocapture {
+                opt_params.push_str(" --nocapture");
+            }
+            if params.test_flags.ignored {
+                opt_params.push_str(" --ignored");
+            }
+            if params.test_flags.show_output || params.test_flags.nocapture || params.test_flags.ignored {
+                command_as_arg.push_str(" --");
+                command_as_arg.push_str(&opt_params);
             }
         }
         test_command.args([command_as_arg]);

@@ -41,4 +41,7 @@ pub struct TestFlags {
     /// Show output
     #[arg(long = "show-output")]
     pub show_output: bool,
+    /// Run ignored tests
+    #[arg(long = "ignored")]
+    pub ignored: bool,
 }

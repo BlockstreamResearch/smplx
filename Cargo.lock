@@ -1870,6 +1870,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "simplex-test",
  "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "syn 2.0.116",
  "thiserror",

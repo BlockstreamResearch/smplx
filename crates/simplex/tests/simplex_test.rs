@@ -1,12 +1,46 @@
 use simplex_provider::elements_rpc::{AddressType, ElementsRpcClient};
 use simplex_sdk::constants::SimplicityNetwork;
-use simplex_test::DEFAULT_SAT_AMOUNT_FAUCET;
-use simplicityhl::elements::Address;
+use simplex_test::{TestContext, DEFAULT_SAT_AMOUNT_FAUCET};
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
+use simplicityhl::elements::Address;
 
-#[simplex::simplex_macros::test]
-fn test_execution() {}
+#[ignore]
+#[simplex::simplex_macros::test(hello = "hi")]
+fn test_execution(x: TestContext) {
+    assert!(true)
+}
+
+#[ignore]
+#[test]
+fn test_execution2() {
+    use ::simplex::tracing;
+    use simplex_test::TestContextBuilder;
+    use std::path::PathBuf;
+
+    fn test_execution2(x: TestContext) {
+        assert!(true);
+    }
+
+    let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
+        Err(e) => {
+            tracing::trace!(
+                "Test 'test_in_custom_folder_custom_333' connected with simplex is disabled, run `simplex test` in order to test it, err: '{e}'"
+            );
+            panic!("Failed to run this test, required to use `simplex test`");
+        }
+        Ok(path) => {
+            let path = PathBuf::from(path);
+            let test_context = TestContextBuilder::FromConfigPath(path).build().unwrap();
+            tracing::trace!("Running 'test_in_custom_folder_custom_333' with simplex configuration");
+            test_context
+        }
+    };
+    println!("fn name: {}, \n ident: {}", "test_execution2", "#ident");
+    println!("input: {}, \n AttributeArgs: {}", "#input", "#args");
+
+    test_execution2(test_context)
+}
 
 #[test]
 fn test_invocation_tx_tracking() -> anyhow::Result<()> {

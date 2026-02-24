@@ -25,6 +25,7 @@ derive = []
 workspace = true
 
 [dependencies]
+simplex-test = { workspace = true }
 thiserror = { workspace = true }
 simplicityhl = { workspace = true }
 
