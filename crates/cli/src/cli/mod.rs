@@ -52,15 +52,12 @@ impl Cli {
                 println!("{loaded_config:#?}");
                 Ok(())
             }
-            commands::Command::Test {
-                command,
-                additional_flags,
-            } => {
+            commands::Command::Test { command } => {
                 let loaded_config =
                     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
                 println!("{loaded_config:#?}");
 
-                self.run_test_command(loaded_config, command, additional_flags)?;
+                self.run_test_command(loaded_config, command)?;
 
                 Ok(())
             }
@@ -90,20 +87,18 @@ impl Cli {
         }
     }
 
-    pub(crate) fn run_test_command(
-        &self,
-        config: Config,
-        command: &TestCommand,
-        test_flags: &TestFlags,
-    ) -> Result<(), Error> {
+    pub(crate) fn run_test_command(&self, config: Config, command: &TestCommand) -> Result<(), Error> {
         let cache_path = CacheStorage::save_cached_test_config(&config.test_config)?;
         let mut test_command = match command {
-            TestCommand::Integration => Self::form_test_command(TestParams {
+            TestCommand::Integration { additional_flags } => Self::form_test_command(TestParams {
                 cache_path,
                 test_path: TestPaths::AllIntegration,
-                test_flags: *test_flags,
+                test_flags: *additional_flags,
             }),
-            TestCommand::Run { tests: tests } => {
+            TestCommand::Run {
+                tests,
+                additional_flags,
+            } => {
                 let test_path = if tests.is_empty() {
                     TestPaths::AllIntegration
                 } else {
@@ -112,7 +107,7 @@ impl Cli {
                 Self::form_test_command(TestParams {
                     cache_path,
                     test_path,
-                    test_flags: *test_flags,
+                    test_flags: *additional_flags,
                 })
             }
         };
@@ -152,15 +147,15 @@ impl Cli {
             match params.test_flags.show_output {
                 true => match params.test_flags.nocapture {
                     true => {
-                        command_as_arg.push_str(&"-- --nocapture --show-output");
+                        command_as_arg.push_str(&" -- --nocapture --show-output");
                     }
                     false => {
-                        command_as_arg.push_str(&"-- --show-output");
+                        command_as_arg.push_str(&" -- --show-output");
                     }
                 },
                 false => match params.test_flags.nocapture {
                     true => {
-                        command_as_arg.push_str(&"-- --nocapture");
+                        command_as_arg.push_str(&" -- --nocapture");
                     }
                     false => {}
                 },

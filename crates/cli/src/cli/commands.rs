@@ -12,8 +12,6 @@ pub enum Command {
     Test {
         #[command(subcommand)]
         command: TestCommand,
-        #[command(flatten)]
-        additional_flags: TestFlags,
     },
 }
 
@@ -21,11 +19,16 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum TestCommand {
     /// Run integration tests using simplex conventions
-    Integration,
+    Integration {
+        #[command(flatten)]
+        additional_flags: TestFlags,
+    },
     /// Run only specific files by path for testing
     Run {
         #[arg(short = 't', long)]
         tests: Vec<String>,
+        #[command(flatten)]
+        additional_flags: TestFlags,
     },
 }
 

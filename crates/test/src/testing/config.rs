@@ -1,4 +1,8 @@
+use crate::TestError;
 use electrsd::bitcoind::bitcoincore_rpc::jsonrpc::serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::path::Path;
 
 pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
 
@@ -10,9 +14,19 @@ pub struct TestConfig {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub enum RpcCreds {
     Auth {
-        rpc_username: String,
-        rpc_password: String,
+        url: String,
+        username: String,
+        password: String,
     },
     #[default]
     None,
+}
+
+impl TestConfig {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, TestError> {
+        let mut content = String::new();
+        let mut file = OpenOptions::new().read(true).open(path)?;
+        file.read_to_string(&mut content)?;
+        Ok(toml::from_str(&content)?)
+    }
 }

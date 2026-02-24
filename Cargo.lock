@@ -1913,6 +1913,7 @@ dependencies = [
  "simplex-sdk",
  "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "thiserror",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

@@ -1,6 +1,7 @@
 use std::env;
 
 mod hello;
+
 #[test]
 fn test_in_custom_folder_integration() {
     if let Ok(value) = env::var("SIMPLEX_TEST_RUN") {
