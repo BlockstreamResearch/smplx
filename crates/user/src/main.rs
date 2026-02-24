@@ -50,7 +50,7 @@ fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) {
     let mut ft = FinalTransaction::new(SimplicityNetwork::LiquidTestnet);
 
     ft.add_input(
-        PartialInput::new(signer_utxos[0].0, signer_utxos[0].1.clone()),
+        PartialInput::new(signer_utxos[0].0.clone(), signer_utxos[0].1.clone()),
         RequiredSignature::NativeEcdsa,
     );
     ft.add_output(PartialOutput::new(
@@ -71,7 +71,7 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) {
     let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
 
     for el in &p2pk_utxos {
-        let outpoint = el.0;
+        let outpoint = &el.0;
 
         println!("{outpoint}");
     }
@@ -85,7 +85,7 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) {
     };
 
     ft.add_program_input(
-        PartialInput::new(p2pk_utxos[0].0, p2pk_utxos[0].1.clone()),
+        PartialInput::new(p2pk_utxos[0].0.clone(), p2pk_utxos[0].1.clone()),
         ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
