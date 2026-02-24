@@ -1,7 +1,7 @@
 pub mod codegen;
 pub mod parse;
-mod types;
 pub(crate) mod program;
+mod types;
 
 pub use parse::SimfContent;
 

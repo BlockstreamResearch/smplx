@@ -1,4 +1,6 @@
 use simplex_macros::*;
+use simplex_sdk::witness::WitnessTrait;
+use simplex_sdk::arguments::ArgumentsTrait;
 
 include_simf!("../../../../crates/simplex/tests/ui/bytes32_tr_storage.simf");
 

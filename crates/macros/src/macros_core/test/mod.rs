@@ -18,8 +18,8 @@ pub(crate) fn expand_simple(input: &syn::ItemFn, args: AttributeArgs) -> proc_ma
         #(#attrs)*
         fn #name() #ret {
             use ::simplex::tracing;
-            use std::path::PathBuf;
-            use simplex_test::TestContextBuilder;
+            use ::std::path::PathBuf;
+            use ::simplex_test::TestContextBuilder;
 
             fn #name(#inputs) #ret {
                 #body
@@ -28,14 +28,14 @@ pub(crate) fn expand_simple(input: &syn::ItemFn, args: AttributeArgs) -> proc_ma
             let test_context = match std::env::var(#simplex_test_env) {
                 Err(e) => {
                     tracing::trace!(
-                        "Test 'test_in_custom_folder_custom_333' connected with simplex is disabled, run `simplex test` in order to test it, err: '{e}'"
+                        "Test '{}' connected with simplex is disabled, run `simplex test` in order to test it, err: '{e}'", #fn_name_str
                     );
                     panic!("Failed to run this test, required to use `simplex test`");
                 }
                 Ok(path) => {
                     let path = PathBuf::from(path);
                     let test_context = TestContextBuilder::FromConfigPath(path).build().unwrap();
-                    tracing::trace!("Running 'test_in_custom_folder_custom_333' with simplex configuration");
+                    tracing::trace!("Running '{}' with simplex configuration", #fn_name_str);
                     test_context
                 }
             };

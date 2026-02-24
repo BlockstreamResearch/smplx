@@ -1,9 +1,9 @@
 use simplex_provider::elements_rpc::{AddressType, ElementsRpcClient};
 use simplex_sdk::constants::SimplicityNetwork;
-use simplex_test::{TestContext, DEFAULT_SAT_AMOUNT_FAUCET};
+use simplex_test::{DEFAULT_SAT_AMOUNT_FAUCET, TestContext};
+use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
-use simplicityhl::elements::Address;
 
 #[ignore]
 #[simplex::simplex_macros::test(hello = "hi")]

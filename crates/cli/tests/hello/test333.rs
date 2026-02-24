@@ -4,7 +4,7 @@ use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::Subs
 
 #[ignore]
 #[test]
-fn test_in_custom_folder_custom_333() -> anyhow::Result<()>{
+fn test_in_custom_folder_custom_333() -> anyhow::Result<()> {
     fn test_in_custom_folder_custom_333(test_context: TestContext) -> anyhow::Result<()> {
         assert_eq!(2 + 2, 4);
         Ok(())

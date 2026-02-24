@@ -112,6 +112,7 @@ impl WitnessStruct {
                     use simplicityhl::str::WitnessName;
                     use simplicityhl::types::TypeConstructible;
                     use simplicityhl::value::ValueConstructible;
+                    use simplex_sdk::arguments::ArgumentsTrait;
                     use bincode::*;
             },
             struct_token_stream: quote! {
@@ -119,14 +120,6 @@ impl WitnessStruct {
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build Simplicity arguments for contract instantiation.
-                    #[must_use]
-                    pub fn build_arguments(&self) -> ::simplicityhl::Arguments {
-                        ::simplicityhl::Arguments::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-
                     /// Build struct from Simplicity Arguments.
                     ///
                     /// # Errors
@@ -140,6 +133,16 @@ impl WitnessStruct {
 
                 }
 
+                impl ::simplex_sdk::arguments::ArgumentsTrait for #struct_name {
+                    /// Build Simplicity arguments for contract instantiation.
+                    #[must_use]
+                    fn build_arguments(&self) -> ::simplicityhl::Arguments {
+                        ::simplicityhl::Arguments::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
+                    }
+                }
+
                 impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
@@ -148,6 +151,7 @@ impl WitnessStruct {
                         self.build_arguments().serialize(serializer)
                     }
                 }
+
                 impl<'de> simplex::serde::Deserialize<'de> for #struct_name {
                     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                     where
@@ -185,29 +189,32 @@ impl WitnessStruct {
                     use simplicityhl::str::WitnessName;
                     use simplicityhl::types::TypeConstructible;
                     use simplicityhl::value::ValueConstructible;
+                    use simplex_sdk::witness::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build Simplicity witness values for contract execution.
-                    #[must_use]
-                    pub fn build_witness(&self) -> ::simplicityhl::WitnessValues {
-                        ::simplicityhl::WitnessValues::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-
                     /// Build struct from Simplicity WitnessValues.
                     ///
                     /// # Errors
                     ///
-                    /// Returns error if any required witness is missing, has wrong type, or has invalid value.
+                    /// Returns error if any required witness is missing, has the wrong type, or has an invalid value.
                     pub fn from_witness(witness: &WitnessValues) -> Result<Self, String> {
                         #arguments_conversion_from_args_map
 
                         Ok(#struct_to_return)
+                    }
+                }
+
+                impl ::simplex_sdk::witness::WitnessTrait for #struct_name {
+                     /// Build Simplicity witness values for contract execution.
+                    #[must_use]
+                    fn build_witness(&self) -> ::simplicityhl::WitnessValues {
+                        ::simplicityhl::WitnessValues::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
                     }
                 }
 
