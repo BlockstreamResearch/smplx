@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.101"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "ar_archive_writer"
@@ -484,6 +484,16 @@ name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
+name = "draft_example"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "simplex",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
+ "simplicityhl-core",
+]
 
 [[package]]
 name = "either"
@@ -1866,6 +1876,7 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "electrsd",
+ "glob",
  "serde",
  "simplex-sdk",
  "simplex-test",

@@ -10,6 +10,6 @@ workspace = true
 
 
 [dependencies]
-simplex = { path = "./../../crates/simplex" }
+simplex = { workspace = true}
 
-simplicityhl = { git = "https://github.com/ikripaka/SimplicityHL/", branch = "feature/rich-params" }
+simplicityhl = { workspace = true }

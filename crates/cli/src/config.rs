@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
 use simplex_test::{ElementsDConf, RpcCreds};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -40,12 +41,13 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub provider_config: ProviderConfig,
+    pub provider_config: ProviderConf,
     pub test_config: ElementsDConf,
+    pub build_config: Option<BuildConf>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ProviderConfig {
+pub struct ProviderConf {
     simplicity_network: SimplicityNetwork,
 }
 
@@ -55,9 +57,21 @@ pub struct ConfigOverride {
     pub network: Option<SimplicityNetwork>,
 }
 
-impl Default for ProviderConfig {
+#[derive(Debug, Clone)]
+pub struct BuildConf {
+    compile_simf: Vec<PathBuf>,
+    out_dir: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct _BuildConf {
+    compile_simf: Vec<String>,
+    out_dir: PathBuf,
+}
+
+impl Default for ProviderConf {
     fn default() -> Self {
-        ProviderConfig {
+        ProviderConf {
             simplicity_network: SimplicityNetwork::LiquidTestnet,
         }
     }
@@ -120,7 +134,7 @@ impl FromStr for Config {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let cfg: _Config = toml::from_str(s).map_err(ConfigError::UnableToDeserialize)?;
         Ok(Config {
-            provider_config: ProviderConfig {
+            provider_config: ProviderConf {
                 simplicity_network: cfg.network.unwrap_or_default().into(),
             },
             test_config: cfg
@@ -135,6 +149,13 @@ impl FromStr for Config {
                     elemendsd_path: ElementsDConf::obtain_default_elementsd_path(),
                     rpc_creds: RpcCreds::None,
                 }),
+            build_config: match cfg.build {
+                None => None,
+                Some(x) => Some(BuildConf {
+                    compile_simf: resolve_glob_paths(&x.compile_simf)?,
+                    out_dir: resolve_dir_path(x.out_dir)?,
+                }),
+            },
         })
     }
 }
@@ -143,6 +164,7 @@ impl FromStr for Config {
 struct _Config {
     network: Option<_NetworkName>,
     test: Option<TestingConfig>,
+    build: Option<_BuildConf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -168,4 +190,52 @@ impl Into<SimplicityNetwork> for _NetworkName {
             _NetworkName::ElementsRegtest => SimplicityNetwork::default_regtest(),
         }
     }
+}
+
+fn resolve_glob_paths(pattern: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for path in pattern.iter().map(|x| resolve_glob_path(x.as_ref())) {
+        let path = path?;
+        paths.extend_from_slice(&path);
+    }
+    Ok(paths)
+}
+
+fn resolve_glob_path(pattern: impl AsRef<str>) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for path in glob::glob(pattern.as_ref())
+        .map_err(|e| io::Error::other(e.to_string()))?
+        .filter_map(Result::ok)
+    {
+        println!("path: '{}', pattern: '{}'", path.display(), pattern.as_ref());
+        paths.push(path);
+    }
+    Ok(paths)
+}
+
+fn resolve_dir_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    let mut path_outer = PathBuf::from(path.as_ref());
+
+    if !path_outer.is_absolute() {
+        let manifest_dir = std::env::current_dir()?;
+
+        let mut path_local = PathBuf::from(manifest_dir);
+        path_local.push(path_outer);
+
+        path_outer = path_local;
+    }
+
+    if path_outer.extension().is_some() {
+        return Err(io::Error::other(format!(
+            "Folder can't have an extension, path: '{}'",
+            path_outer.display()
+        )));
+    }
+    if path_outer.is_file() {
+        return Err(io::Error::other(format!(
+            "Folder can't be a path, path: '{}'",
+            path_outer.display()
+        )));
+    }
+    Ok(path_outer)
 }

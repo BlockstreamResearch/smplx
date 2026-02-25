@@ -1,8 +1,4 @@
 network = "liquidtestnet"
 
-[build]
-compile_simf = ["simf/*.simf"]
-out_dir = "./out_dir"
-
 [tests]
 elementsd_path = "../../assets/elementsd"

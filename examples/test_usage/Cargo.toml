@@ -1,9 +1,8 @@
 [package]
-name = "options"
+name = "draft_example"
 version = "0.1.0"
 license.workspace = true
 edition.workspace = true
-
 
 [lints]
 workspace = true
@@ -12,3 +11,7 @@ workspace = true
 simplex = { workspace = true }
 
 simplicityhl = { workspace = true }
+
+[dev-dependencies]
+anyhow = { version = "1.0.102" }
+simplicityhl-core = { version =  "0.4.2" }

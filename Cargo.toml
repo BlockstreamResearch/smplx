@@ -3,7 +3,8 @@ resolver = "3"
 members = [
     "crates/*",
     "examples/options",
-    "examples/p2pk"
+    "examples/p2pk",
+    "examples/test_usage",
 ]
 
 [workspace.package]

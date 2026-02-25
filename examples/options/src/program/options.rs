@@ -1,7 +1,7 @@
 use simplex::simplex_macros::include_simf;
 use simplex::simplex_sdk::arguments::ArgumentsTrait;
 use simplex::simplex_sdk::program::Program;
-use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
+use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
 pub struct Options<'a> {
     program: Program<'a>,
@@ -25,4 +25,4 @@ impl<'a> Options<'a> {
     }
 }
 
-include_simf!("./simf/options.simf");
+include_simf!("simf/options.simf");

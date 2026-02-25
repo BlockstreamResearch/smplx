@@ -42,7 +42,7 @@ pub(crate) fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Res
         fn #name() #ret {
             use ::simplex::tracing;
             use ::std::path::PathBuf;
-            use ::simplex_test::TestContextBuilder;
+            use ::simplex::simplex_test::TestContextBuilder;
 
             fn #name(#inputs) #ret {
                 #body

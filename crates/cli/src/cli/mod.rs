@@ -1,7 +1,7 @@
 pub mod commands;
 
 use crate::cache_storage::CacheStorage;
-use crate::cli::commands::{TestCommand, TestFlags};
+use crate::cli::commands::{Command, TestCommand, TestFlags};
 use crate::config::{Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
@@ -87,6 +87,12 @@ impl Cli {
                 while running.load(Ordering::SeqCst) {}
                 let _ = node.stop();
                 println!("Exiting...");
+                Ok(())
+            }
+            Command::Build => {
+                let loaded_config =
+                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                println!("{loaded_config:#?}");
                 Ok(())
             }
         }

@@ -2,7 +2,7 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Initialize project wiht default configuration
+    /// Initialize a project with the default configuration
     Init,
     /// Show the current configuration
     Config,
@@ -13,6 +13,7 @@ pub enum Command {
         #[command(subcommand)]
         command: TestCommand,
     },
+    Build,
 }
 
 /// Test management commands
