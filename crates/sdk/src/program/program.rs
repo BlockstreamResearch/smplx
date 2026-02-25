@@ -15,8 +15,8 @@ use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 use super::arguments::ArgumentsTrait;
+use super::error::ProgramError;
 use crate::constants::SimplicityNetwork;
-use crate::error::SimplexError;
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -24,7 +24,7 @@ pub trait ProgramTrait: DynClone {
         pst: &PartiallySignedTransaction,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError>;
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError>;
 
     fn execute(
         &self,
@@ -32,7 +32,7 @@ pub trait ProgramTrait: DynClone {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError>;
+    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError>;
 
     fn finalize(
         &self,
@@ -40,7 +40,7 @@ pub trait ProgramTrait: DynClone {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<Vec<Vec<u8>>, SimplexError>;
+    ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
 #[derive(Clone)]
@@ -58,13 +58,13 @@ impl ProgramTrait for Program {
         pst: &PartiallySignedTransaction,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<ElementsEnv<Arc<Transaction>>, SimplexError> {
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
         let cmr = self.load()?.commit().cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
-            return Err(SimplexError::UtxoIndexOutOfBounds {
+            return Err(ProgramError::UtxoIndexOutOfBounds {
                 input_index,
                 utxo_count: utxos.len(),
             });
@@ -74,7 +74,7 @@ impl ProgramTrait for Program {
         let script_pubkey = self.get_tr_address(network.clone())?.script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
-            return Err(SimplexError::ScriptPubkeyMismatch {
+            return Err(ProgramError::ScriptPubkeyMismatch {
                 expected_hash: script_pubkey.script_hash().to_string(),
                 actual_hash: target_utxo.script_pubkey.script_hash().to_string(),
             });
@@ -104,11 +104,11 @@ impl ProgramTrait for Program {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode<Elements>>, Value), SimplexError> {
+    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError> {
         let satisfied = self
             .load()?
             .satisfy(witness.clone())
-            .map_err(SimplexError::WitnessSatisfaction)?;
+            .map_err(ProgramError::WitnessSatisfaction)?;
 
         let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
 
@@ -117,7 +117,7 @@ impl ProgramTrait for Program {
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
         let mut mac = BitMachine::for_program(&pruned)?;
 
-        let result = mac.exec(&pruned, &env).map_err(SimplexError::Execution)?;
+        let result = mac.exec(&pruned, &env)?;
 
         Ok((pruned, result))
     }
@@ -128,7 +128,7 @@ impl ProgramTrait for Program {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<Vec<Vec<u8>>, SimplexError> {
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
         let pruned = self.execute(&pst, witness, input_index, network)?.0;
 
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
@@ -152,7 +152,7 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: SimplicityNetwork) -> Result<Address, SimplexError> {
+    pub fn get_tr_address(&self, network: SimplicityNetwork) -> Result<Address, ProgramError> {
         let spend_info = self.taproot_spending_info()?;
 
         Ok(Address::p2tr(
@@ -164,11 +164,11 @@ impl Program {
         ))
     }
 
-    pub fn get_script_pubkey(&self, network: SimplicityNetwork) -> Result<Script, SimplexError> {
+    pub fn get_script_pubkey(&self, network: SimplicityNetwork) -> Result<Script, ProgramError> {
         Ok(self.get_tr_address(network)?.script_pubkey())
     }
 
-    pub fn get_script_hash(&self, network: SimplicityNetwork) -> Result<[u8; 32], SimplexError> {
+    pub fn get_script_hash(&self, network: SimplicityNetwork) -> Result<[u8; 32], ProgramError> {
         let script = self.get_script_pubkey(network)?;
         let mut hasher = Sha256::new();
 
@@ -176,20 +176,20 @@ impl Program {
         Ok(hasher.finalize().into())
     }
 
-    fn load(&self) -> Result<CompiledProgram, SimplexError> {
+    fn load(&self) -> Result<CompiledProgram, ProgramError> {
         let compiled = CompiledProgram::new(self.source, self.arguments.build_arguments(), true)
-            .map_err(SimplexError::Compilation)?;
+            .map_err(ProgramError::Compilation)?;
         Ok(compiled)
     }
 
-    fn script_version(&self) -> Result<(Script, taproot::LeafVersion), SimplexError> {
+    fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
         let cmr = self.load()?.commit().cmr();
         let script = script::Script::from(cmr.as_ref().to_vec());
 
         Ok((script, simplicityhl::simplicity::leaf_version()))
     }
 
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, SimplexError> {
+    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;
 
@@ -202,7 +202,7 @@ impl Program {
             .expect("tap tree should be valid"))
     }
 
-    fn control_block(&self) -> Result<taproot::ControlBlock, SimplexError> {
+    fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {
         let info = self.taproot_spending_info()?;
         let script_ver = self.script_version()?;
 

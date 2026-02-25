@@ -10,9 +10,8 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid
 
 use serde::Deserialize;
 
+use super::error::ProviderError;
 use super::provider::ProviderTrait;
-
-use crate::error::SimplexError;
 
 #[derive(Clone)]
 pub struct EsploraProvider {
@@ -52,8 +51,8 @@ impl EsploraProvider {
         Self { esplora_url: url }
     }
 
-    fn esplora_utxo_to_outpoint(&self, utxo: &EsploraUtxo) -> Result<OutPoint, SimplexError> {
-        let txid = Txid::from_str(&utxo.txid).map_err(|e| SimplexError::InvalidTxid(e.to_string()))?;
+    fn esplora_utxo_to_outpoint(&self, utxo: &EsploraUtxo) -> Result<OutPoint, ProviderError> {
+        let txid = Txid::from_str(&utxo.txid).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?;
 
         Ok(OutPoint::new(txid, utxo.vout))
     }
@@ -61,7 +60,7 @@ impl EsploraProvider {
     fn populate_txouts_from_outpoints(
         &self,
         outpoints: &Vec<OutPoint>,
-    ) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
+    ) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
         let set: HashSet<_> = outpoints.into_iter().collect();
         let mut map = HashMap::new();
 
@@ -85,20 +84,20 @@ impl EsploraProvider {
 }
 
 impl ProviderTrait for EsploraProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError> {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
 
         let response = minreq::post(&url)
             .with_body(tx_hex)
             .send()
-            .map_err(|e| SimplexError::Request(e.to_string()))?;
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         let status = response.status_code;
         let body = response.as_str().unwrap_or("").trim().to_owned();
 
         if !(200..300).contains(&status) {
-            return Err(SimplexError::BroadcastRejected {
+            return Err(ProviderError::BroadcastRejected {
                 status: status as u16,
                 url: format!("{}/tx", self.esplora_url),
                 message: body,
@@ -108,49 +107,49 @@ impl ProviderTrait for EsploraProvider {
         Ok(body)
     }
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, SimplexError> {
+    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, ProviderError> {
         let url = self.esplora_url.clone() + "/tx/" + txid.to_hex().as_str() + "/raw";
         let response = minreq::get(&url)
             .send()
-            .map_err(|e| SimplexError::Request(e.to_string()))?;
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         if response.status_code != 200 {
-            return Err(SimplexError::Request(format!(
+            return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
                 response.status_code, response.reason_phrase
             )));
         }
 
         let bytes = response.as_bytes();
-        let tx: Transaction = encode::deserialize(bytes).map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+        let tx: Transaction = encode::deserialize(bytes).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
         Ok(tx)
     }
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
         let esplora = self.esplora_url.clone();
         let url = format!("{esplora}/address/{address}/utxo");
         let response = minreq::get(&url)
             .send()
-            .map_err(|e| SimplexError::Request(e.to_string()))?;
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         if response.status_code != 200 {
-            return Err(SimplexError::Request(format!(
+            return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
                 response.status_code, response.reason_phrase
             )));
         }
 
-        let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+        let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
             .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
-            .collect::<Result<Vec<OutPoint>, SimplexError>>()?;
+            .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
         Ok(self.populate_txouts_from_outpoints(&outpoints)?)
     }
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, SimplexError> {
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
         let hash = sha256::Hash::hash(script.as_bytes());
         let hash_bytes = hash.to_byte_array();
         let scripthash = hex::encode(hash_bytes);
@@ -158,38 +157,38 @@ impl ProviderTrait for EsploraProvider {
         let url = self.esplora_url.clone() + "/scripthash/" + scripthash.as_str() + "/utxo";
         let response = minreq::get(&url)
             .send()
-            .map_err(|e| SimplexError::Request(e.to_string()))?;
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         if response.status_code != 200 {
-            return Err(SimplexError::Request(format!(
+            return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
                 response.status_code, response.reason_phrase
             )));
         }
 
-        let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+        let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
             .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
-            .collect::<Result<Vec<OutPoint>, SimplexError>>()?;
+            .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
         Ok(self.populate_txouts_from_outpoints(&outpoints)?)
     }
 
-    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {
+    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
         let url = self.esplora_url.clone() + "/fee-estimates";
         let response = minreq::get(&url)
             .send()
-            .map_err(|e| SimplexError::Request(e.to_string()))?;
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
 
         if response.status_code != 200 {
-            return Err(SimplexError::Request(format!(
+            return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
                 response.status_code, response.reason_phrase
             )));
         }
 
-        let estimates: HashMap<String, f64> = response.json().map_err(|e| SimplexError::Deserialize(e.to_string()))?;
+        let estimates: HashMap<String, f64> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
         Ok(estimates)
     }

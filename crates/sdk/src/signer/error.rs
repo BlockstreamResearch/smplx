@@ -1,0 +1,44 @@
+use crate::program::ProgramError;
+use crate::provider::ProviderError;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SignerError {
+    #[error(transparent)]
+    Program(#[from] ProgramError),
+
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
+
+    #[error("Failed to parse a mnemonic: {0}")]
+    Mnemonic(String),
+
+    #[error("Failed to extract tx from pst: {0}")]
+    TxExtraction(#[from] simplicityhl::elements::pset::Error),
+
+    #[error("Failed to construct a message for the input spending: {0}")]
+    SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
+
+    #[error("Fee amount is too low: {0}")]
+    DustAmount(u64),
+
+    #[error("Not enough fee amount {0} to cover transaction costs: {1}")]
+    NotEnoughFeeAmount(u64, u64),
+
+    #[error("Invalid secret key")]
+    InvalidSecretKey(#[from] simplicityhl::elements::secp256k1_zkp::UpstreamError),
+
+    #[error("Failed to derive a private key: {0}")]
+    PrivateKeyDerivation(#[from] elements_miniscript::bitcoin::bip32::Error),
+
+    #[error("Failed to construct a derivation path: {0}")]
+    DerivationPath(String),
+
+    #[error("Failed to construct a wpkh descriptor: {0}")]
+    WpkhDescriptor(String),
+
+    #[error("Failed to convert a descriptor: {0}")]
+    DescriptorConversion(#[from] elements_miniscript::descriptor::ConversionError),
+
+    #[error("Failed to construct a wpkh address: {0}")]
+    WpkhAddressConstruction(#[from] elements_miniscript::Error),
+}

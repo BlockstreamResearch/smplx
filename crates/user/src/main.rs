@@ -1,15 +1,11 @@
-use simplex_sdk::provider::provider::ProviderTrait;
 use simplicityhl::elements::Script;
 
-use simplex_sdk::presets::p2pk::P2PK;
-use simplex_sdk::presets::p2pk::p2pk_build::{P2PKArguments, P2PKWitness};
+use simplex_sdk::presets::{P2PK, P2PKArguments, P2PKWitness};
 
 use simplex_sdk::constants::{DUMMY_SIGNATURE, SimplicityNetwork};
-use simplex_sdk::provider::esplora::EsploraProvider;
-use simplex_sdk::signer::signer::Signer;
-use simplex_sdk::transaction::final_transaction::FinalTransaction;
-use simplex_sdk::transaction::partial_input::{PartialInput, ProgramInput, RequiredSignature};
-use simplex_sdk::transaction::partial_output::PartialOutput;
+use simplex_sdk::provider::{EsploraProvider, ProviderTrait};
+use simplex_sdk::signer::Signer;
+use simplex_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature};
 use simplex_sdk::utils::tr_unspendable_key;
 
 const ESPLORA_URL: &str = "https://blockstream.info/liquidtestnet/api";
@@ -52,7 +48,8 @@ fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) {
     ft.add_input(
         PartialInput::new(signer_utxos[0].0.clone(), signer_utxos[0].1.clone()),
         RequiredSignature::NativeEcdsa,
-    );
+    )
+    .unwrap();
     ft.add_output(PartialOutput::new(
         p2pk_script.clone(),
         50,
@@ -88,7 +85,8 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) {
         PartialInput::new(p2pk_utxos[0].0.clone(), p2pk_utxos[0].1.clone()),
         ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
-    );
+    )
+    .unwrap();
     ft.add_output(PartialOutput::new(
         signer.get_wpkh_address().unwrap().script_pubkey(),
         20,

@@ -2,8 +2,8 @@ use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
 use simplicityhl::elements::{AssetId, OutPoint, Sequence, TxOut, Txid};
 
-use crate::program::program::ProgramTrait;
-use crate::program::witness::WitnessTrait;
+use crate::program::ProgramTrait;
+use crate::program::WitnessTrait;
 
 #[derive(Clone)]
 pub enum RequiredSignature {

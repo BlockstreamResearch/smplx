@@ -1,5 +1,5 @@
-use crate::program::arguments::ArgumentsTrait;
-use crate::program::program::Program;
+use crate::program::ArgumentsTrait;
+use crate::program::Program;
 
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 
@@ -27,8 +27,8 @@ impl P2PK {
 }
 
 pub mod p2pk_build {
-    use crate::program::arguments::ArgumentsTrait;
-    use crate::program::witness::WitnessTrait;
+    use crate::program::ArgumentsTrait;
+    use crate::program::WitnessTrait;
     use simplicityhl::num::U256;
     use simplicityhl::str::WitnessName;
     use simplicityhl::types::TypeConstructible;

@@ -1,8 +1,8 @@
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 
 use crate::constants::{SimplicityNetwork, WITNESS_SCALE_FACTOR};
-use crate::error::SimplexError;
 
+use super::error::TransactionError;
 use super::partial_input::{PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
 
@@ -30,12 +30,27 @@ impl FinalTransaction {
     }
 
     // TODO: require required_sig != Witness(String)
-    pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
+    pub fn add_input(
+        &mut self,
+        partial_input: PartialInput,
+        required_sig: RequiredSignature,
+    ) -> Result<(), TransactionError> {
+        match required_sig {
+            RequiredSignature::Witness(_) => {
+                return Err(TransactionError::SignatureRequest(
+                    "Requested signature is not NativeEcdsa or None".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
         self.inputs.push(FinalInput {
             partial_input: partial_input,
             program_input: None,
             required_sig: required_sig,
-        })
+        });
+
+        Ok(())
     }
 
     pub fn add_program_input(
@@ -43,12 +58,23 @@ impl FinalTransaction {
         partial_input: PartialInput,
         program_input: ProgramInput,
         required_sig: RequiredSignature,
-    ) {
+    ) -> Result<(), TransactionError> {
+        match required_sig {
+            RequiredSignature::NativeEcdsa => {
+                return Err(TransactionError::SignatureRequest(
+                    "Requested signature is not Witness or None".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
         self.inputs.push(FinalInput {
             partial_input: partial_input,
             program_input: Some(program_input),
             required_sig: required_sig,
-        })
+        });
+
+        Ok(())
     }
 
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {

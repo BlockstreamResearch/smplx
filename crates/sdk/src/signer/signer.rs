@@ -7,7 +7,7 @@ use elements_miniscript::descriptor::Wpkh;
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::secp256k1_zkp::{self as secp256k1, All, Keypair, Message, Secp256k1, ecdsa, schnorr};
+use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
@@ -28,13 +28,13 @@ use elements_miniscript::{
     psbt::PsbtExt,
 };
 
+use super::error::SignerError;
 use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork};
-use crate::error::SimplexError;
-use crate::program::program::ProgramTrait;
-use crate::provider::provider::ProviderTrait;
-use crate::transaction::final_transaction::FinalTransaction;
-use crate::transaction::partial_input::RequiredSignature;
-use crate::transaction::partial_output::PartialOutput;
+use crate::program::ProgramTrait;
+use crate::provider::ProviderTrait;
+use crate::transaction::FinalTransaction;
+use crate::transaction::RequiredSignature;
+use crate::transaction::PartialOutput;
 
 pub trait SignerTrait {
     fn sign_program(
@@ -43,13 +43,13 @@ pub trait SignerTrait {
         program: &Box<dyn ProgramTrait>,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<schnorr::Signature, SimplexError>;
+    ) -> Result<schnorr::Signature, SignerError>;
 
     fn sign_input(
         &self,
         pst: &PartiallySignedTransaction,
         input_index: usize,
-    ) -> Result<(PublicKey, ecdsa::Signature), SimplexError>;
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError>;
 }
 
 pub struct Signer {
@@ -66,13 +66,11 @@ impl SignerTrait for Signer {
         program: &Box<dyn ProgramTrait>,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<schnorr::Signature, SimplexError> {
+    ) -> Result<schnorr::Signature, SignerError> {
         let env = program.get_env(&pst, input_index, network)?;
         let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
 
-        let private_key = self
-            .get_private_key()
-            .map_err(|e| SimplexError::SigningFailed(format!("{e:?}")))?;
+        let private_key = self.get_private_key()?;
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
         Ok(self.secp.sign_schnorr(&msg, &keypair))
@@ -82,20 +80,17 @@ impl SignerTrait for Signer {
         &self,
         pst: &PartiallySignedTransaction,
         input_index: usize,
-    ) -> Result<(PublicKey, ecdsa::Signature), SimplexError> {
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
         let tx = pst.extract_tx()?;
 
         let mut sighash_cache = SighashCache::new(&tx);
         let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
 
         let message = pst
-            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)
-            .map_err(|e| SimplexError::SigningFailed(format!("{e:?}")))?
+            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
             .to_secp_msg();
 
-        let private_key = self
-            .get_private_key()
-            .map_err(|e| SimplexError::SigningFailed(format!("{e:?}")))?;
+        let private_key = self.get_private_key()?;
         let public_key = private_key.public_key(&self.secp);
 
         let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
@@ -105,14 +100,18 @@ impl SignerTrait for Signer {
 }
 
 impl Signer {
-    pub const SEED_LEN: usize = secp256k1::constants::SECRET_KEY_SIZE;
-
-    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>, network: SimplicityNetwork) -> Result<Self, String> {
+    pub fn new(
+        mnemonic: &str,
+        provider: Box<dyn ProviderTrait>,
+        network: SimplicityNetwork,
+    ) -> Result<Self, SignerError> {
         let secp = Secp256k1::new();
-        let mnemonic: Mnemonic = mnemonic.parse().map_err(|e| format!("{e:?}"))?;
+        let mnemonic: Mnemonic = mnemonic
+            .parse()
+            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))?;
         let seed = mnemonic.to_seed("");
 
-        let xprv = Xpriv::new_master(NetworkKind::Test, &seed).map_err(|e| format!("{e:?}"))?;
+        let xprv = Xpriv::new_master(NetworkKind::Test, &seed)?;
 
         Ok(Self {
             xprv,
@@ -122,11 +121,11 @@ impl Signer {
         })
     }
 
-    pub fn finalize(&self, tx: &FinalTransaction, target_blocks: u32) -> Result<(Transaction, u64), SimplexError> {
+    pub fn finalize(&self, tx: &FinalTransaction, target_blocks: u32) -> Result<(Transaction, u64), SignerError> {
         let policy_amount_delta = tx.calculate_fee_delta();
 
         if policy_amount_delta < MIN_FEE {
-            return Err(SimplexError::DustAmount(policy_amount_delta));
+            return Err(SignerError::DustAmount(policy_amount_delta));
         }
 
         // estimate the tx fee with the change
@@ -135,9 +134,7 @@ impl Signer {
 
         // use this wpkh address as a change script
         fee_tx.add_output(PartialOutput::new(
-            self.get_wpkh_address()
-                .map_err(|e| SimplexError::SigningFailed(format!("{e:?}")))?
-                .script_pubkey(),
+            self.get_wpkh_address()?.script_pubkey(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
         ));
@@ -170,7 +167,7 @@ impl Signer {
         let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
 
         if policy_amount_delta < fee {
-            return Err(SimplexError::NotEnoughFeeAmount(policy_amount_delta, fee));
+            return Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, fee));
         }
 
         let outputs = fee_tx.outputs_mut();
@@ -184,7 +181,7 @@ impl Signer {
         Ok((final_tx, fee))
     }
 
-    pub fn get_wpkh_address(&self) -> Result<Address, String> {
+    pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
         let fingerprint = self.fingerprint()?;
         let path = self.get_derivation_path()?;
         let xpub = self.derive_xpub(&path)?;
@@ -192,51 +189,41 @@ impl Signer {
         let desc = format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)");
 
         let descriptor: Descriptor<DescriptorPublicKey> =
-            Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| format!("{e:?}"))?);
+            Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?);
 
-        Ok(descriptor
-            .clone()
-            .into_single_descriptors()
-            .map_err(|e| format!("{e:?}"))?[0]
-            .at_derivation_index(1)
-            .map_err(|e| format!("{e:?}"))?
-            .address(self.network.address_params())
-            .map_err(|e| format!("{e:?}"))?)
+        Ok(descriptor.clone().into_single_descriptors()?[0]
+            .at_derivation_index(1)?
+            .address(self.network.address_params())?)
     }
 
-    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, String> {
-        Ok(self
-            .provider
-            .fetch_address_utxos(&self.get_wpkh_address()?)
-            .map_err(|e| format!("{e:?}"))?)
+    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
+        Ok(self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?)
     }
 
-    pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, String> {
+    pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
         let private_key = self.get_private_key()?;
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
         Ok(keypair.x_only_public_key().0)
     }
 
-    pub fn get_ecdsa_public_key(&self) -> Result<PublicKey, String> {
+    pub fn get_ecdsa_public_key(&self) -> Result<PublicKey, SignerError> {
         Ok(self.get_private_key()?.public_key(&self.secp))
     }
 
-    pub fn get_private_key(&self) -> Result<PrivateKey, String> {
+    pub fn get_private_key(&self) -> Result<PrivateKey, SignerError> {
         let master_xprv = self.master_xpriv()?;
         let full_path = self.get_derivation_path()?;
 
         let derived =
-            full_path.extend(DerivationPath::from_str("0/1").map_err(|e| format!("Derivation error: {e:?}"))?);
+            full_path.extend(DerivationPath::from_str("0/1").map_err(|e| SignerError::DerivationPath(e.to_string()))?);
 
-        let ext_derived = master_xprv
-            .derive_priv(&self.secp, &derived)
-            .map_err(|e| format!("Derivation error: {e:?}"))?;
+        let ext_derived = master_xprv.derive_priv(&self.secp, &derived)?;
 
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
     }
 
-    fn finalize_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SimplexError> {
+    fn finalize_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
         let mut pst = tx.extract_pst();
         let inputs = tx.inputs();
 
@@ -246,7 +233,7 @@ impl Signer {
             // we need to prune the program
             if input.program_input.is_some() {
                 let program = input.program_input.unwrap();
-                let signed_witness: Result<WitnessValues, SimplexError> = match input.required_sig {
+                let signed_witness: Result<WitnessValues, SignerError> = match input.required_sig {
                     // sign the program and insert the signature into the witness
                     RequiredSignature::Witness(witness_name) => Ok(self.get_signed_program_witness(
                         &pst,
@@ -284,7 +271,7 @@ impl Signer {
         witness: &WitnessValues,
         witness_name: &String,
         index: usize,
-    ) -> Result<WitnessValues, SimplexError> {
+    ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
         let mut hm = HashMap::new();
@@ -301,43 +288,39 @@ impl Signer {
         Ok(WitnessValues::from(hm))
     }
 
-    fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, String> {
-        Ok(self.xprv.derive_priv(&self.secp, &path).map_err(|e| format!("{e:?}"))?)
+    fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
+        Ok(self.xprv.derive_priv(&self.secp, &path)?)
     }
 
-    fn master_xpriv(&self) -> Result<Xpriv, String> {
-        Ok(self
-            .derive_xpriv(&DerivationPath::master())
-            .map_err(|e| format!("{e:?}"))?)
+    fn master_xpriv(&self) -> Result<Xpriv, SignerError> {
+        Ok(self.derive_xpriv(&DerivationPath::master())?)
     }
 
-    fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, String> {
+    fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, SignerError> {
         let derived = self.derive_xpriv(path)?;
 
         Ok(Xpub::from_priv(&self.secp, &derived))
     }
 
-    fn master_xpub(&self) -> Result<Xpub, String> {
-        Ok(self
-            .derive_xpub(&DerivationPath::master())
-            .map_err(|e| format!("{e:?}"))?)
+    fn master_xpub(&self) -> Result<Xpub, SignerError> {
+        Ok(self.derive_xpub(&DerivationPath::master())?)
     }
 
-    fn fingerprint(&self) -> Result<Fingerprint, String> {
+    fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
         Ok(self.master_xpub()?.fingerprint())
     }
 
-    fn get_derivation_path(&self) -> Result<DerivationPath, String> {
+    fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
 
-        Ok(DerivationPath::from_str(&format!("m/{path}")).map_err(|e| format!("{e:?}"))?)
+        Ok(DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::esplora::EsploraProvider;
+    use crate::provider::EsploraProvider;
 
     use super::*;
 

@@ -2,21 +2,21 @@ use std::collections::HashMap;
 
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
+use super::error::ProviderError;
 use crate::constants::DEFAULT_FEE_RATE;
-use crate::error::SimplexError;
 
 pub trait ProviderTrait {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError>;
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, ProviderError>;
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, SimplexError>;
+    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, ProviderError>;
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, SimplexError>;
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, SimplexError>;
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
 
-    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError>;
+    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 
-    fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, SimplexError> {
+    fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, ProviderError> {
         if target_blocks == 0 {
             return Ok(DEFAULT_FEE_RATE);
         }
@@ -49,6 +49,6 @@ pub trait ProviderTrait {
             }
         }
 
-        Err(SimplexError::Request("No fee estimates available".to_string()))
+        Err(ProviderError::Request("No fee estimates available".to_string()))
     }
 }
