@@ -1,4 +1,4 @@
-use crate::macros_core::attr::parse::SimfContent;
+use crate::attr::parse::SimfContent;
 use proc_macro2::Span;
 use simplicityhl::{AbiMeta, TemplateProgram};
 use std::error::Error;

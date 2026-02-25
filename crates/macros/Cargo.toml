@@ -25,12 +25,6 @@ derive = []
 workspace = true
 
 [dependencies]
-simplex-test = { workspace = true }
-thiserror = { workspace = true }
-simplicityhl = { workspace = true }
-
+simplex-macros-core = { workspace = true }
 serde = { version = "1.0.228", optional = true }
-proc-macro-error = { version = "1.0" }
-proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
-syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
-quote = { version = "1.0.44" }
+syn = { version = "2.0.114", default-features = false, features = ["parsing", "proc-macro"] }

@@ -30,4 +30,8 @@ pub enum Error {
     /// Errors when building config.
     #[error("Failed to discover config, check existence or create new one with `simplex init`, error: '{0}'")]
     ConfigDiscoveryFailure(crate::config::ConfigError),
+
+    /// Errors when generating code for simplicity environment.
+    #[error("Occurred code generation error, error: '{0}'")]
+    CodeGenerator(#[from] simplex_macros_core::env::CodeGeneratorError),
 }

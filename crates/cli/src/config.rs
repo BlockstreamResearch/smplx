@@ -57,10 +57,10 @@ pub struct ConfigOverride {
     pub network: Option<SimplicityNetwork>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BuildConf {
-    compile_simf: Vec<PathBuf>,
-    out_dir: PathBuf,
+    pub compile_simf: Vec<PathBuf>,
+    pub out_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

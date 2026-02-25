@@ -5,9 +5,11 @@ mod types;
 
 pub use parse::SimfContent;
 
-use crate::macros_core::attr::codegen::{GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta};
+use crate::attr::codegen::{
+    GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta, convert_contract_name_to_contract_module,
+};
 use proc_macro2::Span;
-use quote::{format_ident, quote};
+use quote::quote;
 use simplicityhl::AbiMeta;
 use std::error::Error;
 // TODO(Illia): add bincode generation feature (i.e. require bincode dependencies)
@@ -26,7 +28,7 @@ pub fn expand_helpers(simf_content: SimfContent, meta: AbiMeta) -> syn::Result<p
 }
 
 fn gen_helpers_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2::TokenStream, Box<dyn Error>> {
-    let mod_ident = format_ident!("derived_{}", simf_content.contract_name);
+    let mod_ident = convert_contract_name_to_contract_module(&simf_content.contract_name);
 
     let derived_meta = SimfContractMeta::try_from(simf_content, meta)?;
 

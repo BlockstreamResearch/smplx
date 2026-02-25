@@ -154,7 +154,7 @@ impl SimfContent {
         syn::parse_str::<syn::Ident>(s).is_err()
     }
 
-    fn extract_content_from_path(path: &PathBuf) -> std::io::Result<SimfContent> {
+    pub fn extract_content_from_path(path: &PathBuf) -> std::io::Result<SimfContent> {
         let contract_name = {
             let name = path
                 .file_prefix()

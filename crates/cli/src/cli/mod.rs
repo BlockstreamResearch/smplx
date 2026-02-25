@@ -5,6 +5,7 @@ use crate::cli::commands::{Command, TestCommand, TestFlags};
 use crate::config::{Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
+use simplex_macros_core::env::CodeGenerator;
 use simplex_test::TestClientProvider;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -89,10 +90,25 @@ impl Cli {
                 println!("Exiting...");
                 Ok(())
             }
-            Command::Build => {
+            // TODO: add overriding of value or delete
+            Command::Build { out_dir: _out_dir } => {
                 let loaded_config =
                     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
-                println!("{loaded_config:#?}");
+
+                if loaded_config.build_config.is_none() {
+                    return Err(Error::Config(
+                        "No build config to build contracts environment, please add appropriate config".to_string(),
+                    ));
+                }
+
+                let build_config = loaded_config.build_config.unwrap();
+                if build_config.compile_simf.is_empty() {
+                    return Err(Error::Config("No files listed to build contracts environment, please check glob patterns or 'compile_simf' field in config.".to_string()));
+                }
+
+                CodeGenerator::generate_files(&build_config.out_dir, &build_config.compile_simf)?;
+
+                println!("{build_config:#?}");
                 Ok(())
             }
         }

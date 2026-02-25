@@ -1,5 +1,6 @@
-use crate::macros_core::attr::SimfContent;
-use crate::macros_core::attr::types::RustType;
+use crate::attr::SimfContent;
+use crate::attr::types::RustType;
+use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
@@ -44,7 +45,7 @@ impl SimfContractMeta {
         let args_struct = WitnessStruct::generate_args_struct(&simf_content.contract_name, &abi_meta.param_types)?;
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
-        let contract_source_const_name = format_ident!("{}_CONTRACT_SOURCE", simf_content.contract_name.to_uppercase());
+        let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
         Ok(SimfContractMeta {
             contract_source_const_name,
             args_struct,
@@ -242,23 +243,8 @@ impl WitnessStruct {
         })
     }
 
-    fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
-        let words: Vec<String> = contract_name
-            .split('_')
-            .filter(|w| !w.is_empty())
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                }
-            })
-            .collect();
-        words.join("")
-    }
-
     fn generate_args_struct(contract_name: &str, meta: &Parameters) -> syn::Result<WitnessStruct> {
-        let base_name = Self::convert_contract_name_to_struct_name(contract_name);
+        let base_name = convert_contract_name_to_struct_name(contract_name);
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Arguments", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -266,7 +252,7 @@ impl WitnessStruct {
     }
 
     fn generate_witness_struct(contract_name: &str, meta: &WitnessTypes) -> syn::Result<WitnessStruct> {
-        let base_name = Self::convert_contract_name_to_struct_name(contract_name);
+        let base_name = convert_contract_name_to_struct_name(contract_name);
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Witness", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -343,4 +329,27 @@ impl WitnessStruct {
 
         (extractions, struct_init)
     }
+}
+
+pub(crate) fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
+    let words: Vec<String> = contract_name
+        .split('_')
+        .filter(|w| !w.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect();
+    words.join("")
+}
+
+pub(crate) fn convert_contract_name_to_contract_source_const(contract_name: &str) -> Ident {
+    format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
+}
+
+pub(crate) fn convert_contract_name_to_contract_module(contract_name: &str) -> Ident {
+    format_ident!("derived_{}", contract_name)
 }

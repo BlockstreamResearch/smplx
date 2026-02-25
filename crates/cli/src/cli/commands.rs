@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -13,7 +14,10 @@ pub enum Command {
         #[command(subcommand)]
         command: TestCommand,
     },
-    Build,
+    Build {
+        #[arg(env = "OUT_DIR")]
+        out_dir: Option<PathBuf>,
+    },
 }
 
 /// Test management commands

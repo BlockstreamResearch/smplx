@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 simplex-test = { workspace = true }
 simplex-sdk = { workspace = true }
+simplex-macros-core = { workspace = true }
 
 simplicityhl = { workspace = true }
 electrsd = { workspace = true }

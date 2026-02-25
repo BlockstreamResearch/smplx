@@ -1,0 +1,27 @@
+[package]
+name = "simplex-macros-core"
+description = "Macro support core for Simplex, the Rust SimplicityHl toolkit. Not intended to be used directly."
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+bincode = []
+serde = ["bincode", "dep:serde"]
+default = ["bincode", "serde"]
+
+[dependencies]
+proc-macro-error = { version = "1.0" }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
+syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
+thiserror = { workspace = true }
+quote = { version = "1.0.44" }
+simplicityhl = { workspace = true }
+simplex-test = { workspace = true }
+serde = { version = "1.0.228", optional = true }
+pathdiff = { version = "0.2.3" }
+prettyplease = { version = "0.2.37" }
+

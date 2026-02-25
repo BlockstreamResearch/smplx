@@ -2,7 +2,6 @@ use simplex::simplex_sdk::constants::SimplicityNetwork;
 use simplex::simplex_test::{AddressType, ElementsRpcClient};
 use simplex::simplex_test::{ConfigOption, TestClientProvider};
 use simplex::simplex_test::{DEFAULT_SAT_AMOUNT_FAUCET, ElementsDConf};
-use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
 
