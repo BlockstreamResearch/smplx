@@ -12,3 +12,6 @@ pub extern crate simplex_test;
 
 #[cfg(feature = "macros")]
 pub extern crate tracing;
+
+#[cfg(feature = "encoding")]
+pub extern crate bincode;

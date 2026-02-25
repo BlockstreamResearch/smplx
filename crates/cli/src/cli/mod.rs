@@ -62,6 +62,10 @@ impl Cli {
                 Ok(())
             }
             commands::Command::Regtest => {
+                let loaded_config =
+                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                println!("{loaded_config:#?}");
+
                 let running = Arc::new(AtomicBool::new(true));
                 let r = running.clone();
 
@@ -70,7 +74,8 @@ impl Cli {
                 })
                 .expect("Error setting Ctrl-C handler");
 
-                let mut node = TestClientProvider::create_default_node_with_stdin();
+                let mut node =
+                    TestClientProvider::create_default_node_with_stdin(loaded_config.test_config.elemendsd_path);
 
                 println!("======================================");
                 println!("Waiting for Ctrl-C...");

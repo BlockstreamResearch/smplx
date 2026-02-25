@@ -1,0 +1,15 @@
+[package]
+name = "p2pk"
+version = "0.1.0"
+license.workspace = true
+edition.workspace = true
+
+
+[lints]
+workspace = true
+
+
+[dependencies]
+simplex = { path = "./../../crates/simplex" }
+
+simplicityhl = { git = "https://github.com/ikripaka/SimplicityHL/", branch = "feature/rich-params" }

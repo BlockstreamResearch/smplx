@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
-use simplex_test::TestConfig;
+use simplex_test::{ElementsDConf, RpcCreds};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -38,10 +38,10 @@ pub enum ConfigError {
     MissingConfig(PathBuf),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub provider_config: ProviderConfig,
-    pub test_config: TestConfig,
+    pub test_config: ElementsDConf,
 }
 
 #[derive(Debug, Clone)]
@@ -51,7 +51,7 @@ pub struct ProviderConfig {
 
 #[derive(Debug, Default, Clone)]
 pub struct ConfigOverride {
-    pub rpc_creds: Option<TestConfig>,
+    pub rpc_creds: Option<ElementsDConf>,
     pub network: Option<SimplicityNetwork>,
 }
 
@@ -97,14 +97,6 @@ impl Config {
         }
     }
 
-    pub fn load_or_default(path_buf: Option<impl AsRef<Path>>) -> Self {
-        let x = match path_buf {
-            Some(path) => Self::load(path),
-            None => Self::_discover(),
-        };
-        x.unwrap_or_else(|_| Self::default())
-    }
-
     fn _discover() -> Result<Config, ConfigError> {
         let path = Self::get_path()?;
         dbg!(&path);
@@ -131,7 +123,18 @@ impl FromStr for Config {
             provider_config: ProviderConfig {
                 simplicity_network: cfg.network.unwrap_or_default().into(),
             },
-            test_config: cfg.test.unwrap_or_default(),
+            test_config: cfg
+                .test
+                .map(|x| ElementsDConf {
+                    elemendsd_path: x
+                        .elementsd_path
+                        .unwrap_or(ElementsDConf::obtain_default_elementsd_path()),
+                    rpc_creds: x.rpc_creds.unwrap_or_default(),
+                })
+                .unwrap_or(ElementsDConf {
+                    elemendsd_path: ElementsDConf::obtain_default_elementsd_path(),
+                    rpc_creds: RpcCreds::None,
+                }),
         })
     }
 }
@@ -139,7 +142,13 @@ impl FromStr for Config {
 #[derive(Debug, Serialize, Deserialize)]
 struct _Config {
     network: Option<_NetworkName>,
-    test: Option<TestConfig>,
+    test: Option<TestingConfig>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TestingConfig {
+    elementsd_path: Option<PathBuf>,
+    rpc_creds: Option<RpcCreds>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

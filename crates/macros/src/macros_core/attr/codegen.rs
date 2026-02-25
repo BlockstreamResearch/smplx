@@ -105,15 +105,15 @@ impl WitnessStruct {
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
-                    use std::collections::HashMap;
-                    use simplicityhl::{Arguments, Value, ResolvedType};
-                    use simplicityhl::value::{UIntValue, ValueInner};
-                    use simplicityhl::num::U256;
-                    use simplicityhl::str::WitnessName;
-                    use simplicityhl::types::TypeConstructible;
-                    use simplicityhl::value::ValueConstructible;
-                    use simplex_sdk::arguments::ArgumentsTrait;
-                    use bincode::*;
+                    use ::std::collections::HashMap;
+                    use ::simplicityhl::{Arguments, Value, ResolvedType};
+                    use ::simplicityhl::value::{UIntValue, ValueInner};
+                    use ::simplicityhl::num::U256;
+                    use ::simplicityhl::str::WitnessName;
+                    use ::simplicityhl::types::TypeConstructible;
+                    use ::simplicityhl::value::ValueConstructible;
+                    use ::simplex::simplex_sdk::arguments::ArgumentsTrait;
+                    use ::simplex::bincode::*;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -133,7 +133,7 @@ impl WitnessStruct {
 
                 }
 
-                impl ::simplex_sdk::arguments::ArgumentsTrait for #struct_name {
+                impl ::simplex::simplex_sdk::arguments::ArgumentsTrait for #struct_name {
                     /// Build Simplicity arguments for contract instantiation.
                     #[must_use]
                     fn build_arguments(&self) -> ::simplicityhl::Arguments {
@@ -189,7 +189,7 @@ impl WitnessStruct {
                     use simplicityhl::str::WitnessName;
                     use simplicityhl::types::TypeConstructible;
                     use simplicityhl::value::ValueConstructible;
-                    use simplex_sdk::witness::WitnessTrait;
+                    use ::simplex::simplex_sdk::witness::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -208,7 +208,7 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex_sdk::witness::WitnessTrait for #struct_name {
+                impl ::simplex::simplex_sdk::witness::WitnessTrait for #struct_name {
                      /// Build Simplicity witness values for contract execution.
                     #[must_use]
                     fn build_witness(&self) -> ::simplicityhl::WitnessValues {

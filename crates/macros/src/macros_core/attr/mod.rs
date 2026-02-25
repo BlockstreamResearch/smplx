@@ -47,12 +47,7 @@ fn gen_helpers_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_ma
 
 fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::TokenStream {
     let contract_content = &derived_meta.simf_content.content;
-    let error_msg = format!(
-        "INTERNAL: expected '{}' Program to compile successfully.",
-        derived_meta.simf_content.contract_name
-    );
     let contract_source_name = &derived_meta.contract_source_const_name;
-    let contract_arguments_struct_name = &derived_meta.args_struct.struct_name;
 
     quote! {
         // use simplicityhl::elements::Address;
@@ -60,7 +55,7 @@ fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::To
         // use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
         // use simplicityhl::CompiledProgram;
 
-        // pub const #contract_source_name: &str = #contract_content;
+        pub const #contract_source_name: &str = #contract_content;
 
         /// Get the options template program for instantiation.
         ///
@@ -69,23 +64,6 @@ fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::To
         // #[must_use]
         // pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
         //     ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
-        // }
-
-        /// Derive P2TR address for an option offer contract.
-        ///
-        /// # Errors
-        ///
-        /// Returns error if program compilation fails.
-        // pub fn get_option_offer_address(
-        //     x_only_public_key: &XOnlyPublicKey,
-        //     arguments: &#contract_arguments_struct_name,
-        //     network: SimplicityNetwork,
-        // ) -> Result<Address, ProgramError> {
-        //     Ok(create_p2tr_address(
-        //         get_loaded_program(arguments)?.commit().cmr(),
-        //         x_only_public_key,
-        //         network.address_params(),
-        //     ))
         // }
 
         /// Compile option offer program with the given arguments.

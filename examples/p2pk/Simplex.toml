@@ -1,0 +1,5 @@
+network = "liquidtestnet"
+
+[build]
+compile-simf = ["simf/p2pk.simf"]
+out_dir = "./out_dir"

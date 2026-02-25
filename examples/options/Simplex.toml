@@ -1,0 +1,5 @@
+network = "liquidtestnet"
+
+[build]
+compile-simf = ["simf/options.simf"]
+out_dir = "./src/program"

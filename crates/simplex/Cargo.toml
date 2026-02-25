@@ -16,7 +16,7 @@ workspace = true
 
 [features]
 default = ["macros", "encoding", "sdk"]
-macros = ["dep:simplex-macros", "tracing"]
+macros = ["dep:simplex-macros", "tracing", "encoding"]
 encoding = ["dep:bincode"]
 sdk = ["dep:simplex-sdk"]
 

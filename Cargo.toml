@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/*"
+    "crates/*",
+    "examples/options",
+    "examples/p2pk"
 ]
 
 [workspace.package]

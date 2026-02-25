@@ -1,5 +1,5 @@
 use crate::error::Error;
-use simplex_test::TestConfig;
+use simplex_test::ElementsDConf;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct CacheStorage {}
 
 impl CacheStorage {
-    pub fn save_cached_test_config(test_config: &TestConfig) -> Result<PathBuf, Error> {
+    pub fn save_cached_test_config(test_config: &ElementsDConf) -> Result<PathBuf, Error> {
         let cache_dir = Self::get_cache_dir()?;
         std::fs::create_dir_all(&cache_dir)?;
         let test_config_cache_name = Self::create_test_cache_name(&cache_dir);

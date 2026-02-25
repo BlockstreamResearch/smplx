@@ -5,10 +5,11 @@ use crate::TestError;
 pub use config::*;
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 pub use rpc_provider::*;
+use std::io;
 use std::path::PathBuf;
 
 pub struct TestContext {
-    config: TestConfig,
+    config: ElementsDConf,
     rpc: TestRpcProvider,
 }
 
@@ -21,28 +22,35 @@ impl TestContextBuilder {
     pub fn build(self) -> Result<TestContext, TestError> {
         let context = match self {
             Self::Default => {
-                let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest)?;
+                let elementsd_path = ElementsDConf::obtain_default_elementsd_path();
+                let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest, &elementsd_path)?;
                 TestContext {
-                    config: TestConfig::default(),
+                    config: ElementsDConf {
+                        elemendsd_path: elementsd_path,
+                        rpc_creds: RpcCreds::None,
+                    },
                     rpc,
                 }
             }
             Self::FromConfigPath(path) => {
-                let config: TestConfig = TestConfig::from_file(&path)?;
+                let config: ElementsDConf = ElementsDConf::from_file(&path)?;
                 match &config.rpc_creds {
                     RpcCreds::Auth {
                         url,
                         username,
                         password,
                     } => {
-                        let rpc = TestRpcProvider::init(ConfigOption::CustomRpcUrlRegtest {
-                            url: url.clone(),
-                            auth: Auth::UserPass(username.clone(), password.clone()),
-                        })?;
+                        let rpc = TestRpcProvider::init(
+                            ConfigOption::CustomRpcUrlRegtest {
+                                url: url.clone(),
+                                auth: Auth::UserPass(username.clone(), password.clone()),
+                            },
+                            &config.elemendsd_path,
+                        )?;
                         TestContext { config, rpc }
                     }
                     RpcCreds::None => {
-                        let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest)?;
+                        let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest, &config.elemendsd_path)?;
                         TestContext { config, rpc }
                     }
                 }
@@ -53,7 +61,7 @@ impl TestContextBuilder {
 }
 
 impl TestContext {
-    pub fn get_config(&self) -> &TestConfig {
+    pub fn get_config(&self) -> &ElementsDConf {
         &self.config
     }
 

@@ -12,7 +12,7 @@ use simplicityhl::elements::Transaction;
 use simplicityhl::elements::hex::ToHex;
 use simplicityhl::elements::{Address, AssetId, BlockHash, Txid};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
 pub enum TestClientProvider {
@@ -27,15 +27,15 @@ pub enum ConfigOption<'a> {
 }
 
 impl TestClientProvider {
-    pub fn init(init_option: ConfigOption) -> Result<Self, TestError> {
+    pub fn init(init_option: ConfigOption, elementsd_path: impl AsRef<Path>) -> Result<Self, TestError> {
         let rpc = match init_option {
             ConfigOption::DefaultRegtest => {
-                let node = Self::create_default_node();
+                let node = Self::create_default_node(elementsd_path);
                 let network = SimplicityNetwork::default_regtest();
                 Self::ConfiguredNode { node, network }
             }
             ConfigOption::CustomConfRegtest { conf } => {
-                let node = Self::create_node(conf, Self::get_bin_path())?;
+                let node = Self::create_node(conf, elementsd_path)?;
                 let network = SimplicityNetwork::default_regtest();
                 Self::ConfiguredNode { node, network }
             }
@@ -50,15 +50,7 @@ impl TestClientProvider {
         Ok(rpc)
     }
 
-    pub fn get_bin_path() -> PathBuf {
-        // TODO: change binary into installed one in $HOME dir
-        const ELEMENTSD_BIN_PATH: &str = "../../assets/elementsd";
-        const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-
-        Path::new(MANIFEST_DIR).join(ELEMENTSD_BIN_PATH)
-    }
-
-    fn create_default_node() -> BitcoinD {
+    fn create_default_node(bin_path: impl AsRef<Path>) -> BitcoinD {
         let mut conf = Conf::default();
         let bin_args = common::DefaultElementsdParams {}.get_bin_args();
 
@@ -66,10 +58,10 @@ impl TestClientProvider {
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
 
-        BitcoinD::with_conf(Self::get_bin_path(), &conf).unwrap()
+        BitcoinD::with_conf(bin_path.as_ref(), &conf).unwrap()
     }
 
-    pub fn create_default_node_with_stdin() -> BitcoinD {
+    pub fn create_default_node_with_stdin(bin_path: impl AsRef<Path>) -> BitcoinD {
         let mut conf = Conf::default();
         let bin_args = common::DefaultElementsdParams {}.get_bin_args();
 
@@ -79,11 +71,11 @@ impl TestClientProvider {
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
 
-        BitcoinD::with_conf(Self::get_bin_path(), &conf).unwrap()
+        BitcoinD::with_conf(bin_path.as_ref(), &conf).unwrap()
     }
 
-    fn create_node(conf: Conf, bin_path: PathBuf) -> Result<BitcoinD, TestError> {
-        BitcoinD::with_conf(bin_path, &conf).map_err(|e| TestError::NodeFailedToStart(e.to_string()))
+    fn create_node(conf: Conf, bin_path: impl AsRef<Path>) -> Result<BitcoinD, TestError> {
+        BitcoinD::with_conf(bin_path.as_ref(), &conf).map_err(|e| TestError::NodeFailedToStart(e.to_string()))
     }
 
     pub fn client(&self) -> &Client {
@@ -91,18 +83,6 @@ impl TestClientProvider {
             TestClientProvider::ConfiguredNode { node, .. } => &node.client,
             TestClientProvider::CustomRpc(x) => x.client(),
         }
-    }
-}
-
-impl TestClientProvider {
-    pub fn fund(satoshi: u64, address: Option<Address>, asset: Option<AssetId>) {
-        todo!()
-    }
-
-    pub fn get_height() {}
-
-    pub fn get_blockchain_info() {
-        todo!()
     }
 }
 
@@ -138,9 +118,9 @@ impl ProviderSync for TestRpcProvider {
 }
 
 impl TestRpcProvider {
-    pub fn init(init_option: ConfigOption) -> Result<Self, TestError> {
+    pub fn init(init_option: ConfigOption, bin_path: impl AsRef<Path>) -> Result<Self, TestError> {
         Ok(Self {
-            provider: TestClientProvider::init(init_option)?,
+            provider: TestClientProvider::init(init_option, bin_path)?,
         })
     }
 
