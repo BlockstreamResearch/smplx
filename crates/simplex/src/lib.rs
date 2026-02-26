@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 pub extern crate either;
 pub extern crate serde;
 

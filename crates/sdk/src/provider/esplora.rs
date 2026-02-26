@@ -9,14 +9,14 @@ impl ProviderSync for EsploraClientSync {
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError> {
         self.broadcast_tx(tx).map_err(|e| SimplexError::ProviderError {
             method: "broadcast_tx".to_string(),
-            err: e,
+            err: Box::new(e),
         })
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {
         self.get_fee_estimates().map_err(|e| SimplexError::ProviderError {
             method: "get_fee_estimates".to_string(),
-            err: e,
+            err: Box::new(e),
         })
     }
 
@@ -24,7 +24,7 @@ impl ProviderSync for EsploraClientSync {
         self.get_tx_elements(&txid.to_hex())
             .map_err(|e| SimplexError::ProviderError {
                 method: "get_tx_elements".to_string(),
-                err: e,
+                err: Box::new(e),
             })
     }
 }
@@ -34,14 +34,14 @@ impl ProviderAsync for EsploraClientAsync {
     async fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError> {
         self.broadcast_tx(tx).await.map_err(|e| SimplexError::ProviderError {
             method: "broadcast_tx".to_string(),
-            err: e,
+            err: Box::new(e),
         })
     }
 
     async fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {
         self.get_fee_estimates().await.map_err(|e| SimplexError::ProviderError {
             method: "get_fee_estimates".to_string(),
-            err: e,
+            err: Box::new(e),
         })
     }
 
@@ -50,7 +50,7 @@ impl ProviderAsync for EsploraClientAsync {
             .await
             .map_err(|e| SimplexError::ProviderError {
                 method: "get_tx_elements".to_string(),
-                err: e,
+                err: Box::new(e),
             })
     }
 }

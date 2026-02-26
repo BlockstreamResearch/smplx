@@ -99,6 +99,7 @@ impl ExplorerError {
     }
 
     #[inline]
+    #[allow(clippy::cast_sign_loss)]
     pub(crate) fn erroneous_response_minreq(e: &minreq::Response) -> Self {
         ExplorerError::ErroneousRequest {
             url: Some(e.url.clone()),

@@ -119,7 +119,7 @@ impl std::fmt::Display for AddressType {
             AddressType::Bech32 => "bech32".to_string(),
             AddressType::Bech32m => "bech32m".to_string(),
         };
-        write!(f, "{}", str)
+        write!(f, "{str}")
     }
 }
 
@@ -193,7 +193,7 @@ impl ScantxoutsetResult {
                 progress: status_data.progress,
                 searched_items: status_data.searched_items,
             }),
-            _ => Err(serde_json::Error::custom(format!("unknown action: {}", action))),
+            _ => Err(serde_json::Error::custom(format!("unknown action: {action}"))),
         }
     }
 }
@@ -306,7 +306,8 @@ pub struct ScriptSig {
 pub struct RawTransactionOutput {
     pub value: f64,
     pub n: u32,
-    pub scriptPubKey: ScriptPubKey,
+    #[serde(rename = "scriptPubKey")]
+    pub script_pubkey: ScriptPubKey,
     #[serde(default)]
     pub asset: Option<String>,
     #[serde(default)]

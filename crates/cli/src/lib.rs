@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 pub mod cache_storage;
 pub mod cli;
 pub mod config;

@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 pub mod arguments;
 pub mod constants;
 pub mod error;

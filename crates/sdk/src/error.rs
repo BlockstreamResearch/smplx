@@ -62,5 +62,5 @@ pub enum SimplexError {
     HexToArray(#[from] HexToArrayError),
 
     #[error("Failed to execute provider method: '{method}', err: '{err}'")]
-    ProviderError { method: String, err: ExplorerError },
+    ProviderError { method: String, err: Box<ExplorerError> },
 }

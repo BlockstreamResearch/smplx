@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 use proc_macro::TokenStream;
 
 #[cfg(feature = "macros")]

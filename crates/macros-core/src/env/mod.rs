@@ -7,8 +7,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::io::Write;
 use std::path::PathBuf;
-use std::{env, fs};
-use syn::parse::{Parse, ParseStream};
+use std::{env, fs, io};
 
 #[derive(thiserror::Error, Debug)]
 pub enum CodeGeneratorError {
@@ -45,7 +44,6 @@ impl<'b> CodeGenerator {
 
         fs::create_dir_all(out_dir)?;
 
-        // Process each file path from compile_simf
         for simf_file_path in simfs {
             let path_buf = PathBuf::from(simf_file_path.as_ref());
             let simf_content = SimfContent::extract_content_from_path(&path_buf)
@@ -79,7 +77,6 @@ impl<'b> CodeGenerator {
 
     fn generate_code(file_descriptor: FileDescriptor) -> Result<TokenStream, CodeGeneratorError> {
         let contract_name = &file_descriptor.simf_content.contract_name;
-        let content = &file_descriptor.simf_content.content;
         let program_name = {
             let base_name = convert_contract_name_to_struct_name(contract_name);
             format_ident!("{base_name}Program")
@@ -87,8 +84,17 @@ impl<'b> CodeGenerator {
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
 
-        let pathdiff = pathdiff::diff_paths(&file_descriptor.simf_file.canonicalize().unwrap(), &file_descriptor.cwd)
-            .ok_or(CodeGeneratorError::FailedToFindCorrectRelativePath {
+        let pathdiff = pathdiff::diff_paths(
+            &file_descriptor.simf_file.canonicalize().map_err(|e| {
+                io::Error::other(format!(
+                    "Failed to canonicalize simf file descriptor, '{}', err: '{}'",
+                    file_descriptor.simf_file.display(),
+                    e
+                ))
+            })?,
+            &file_descriptor.cwd,
+        )
+        .ok_or(CodeGeneratorError::FailedToFindCorrectRelativePath {
             cwd: file_descriptor.cwd,
             simf_file: file_descriptor.simf_file,
         })?;
