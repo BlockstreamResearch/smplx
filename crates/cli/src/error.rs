@@ -24,10 +24,6 @@ pub enum Error {
     Test(#[from] Box<simplex_test::TestError>),
 
     /// Errors when building config.
-<<<<<<< HEAD
-    #[error("Occurred error with config building, error: {0}")]
-    ConfigError(#[from] crate::config::ConfigError),
-=======
     #[error("Occurred error with config building, error: '{0}'")]
     ConfigError(#[from] crate::config::ConfigError),
 
@@ -38,5 +34,4 @@ pub enum Error {
     /// Errors when generating code for simplicity environment.
     #[error("Occurred code generation error, error: '{0}'")]
     CodeGenerator(#[from] simplex_macros_core::env::CodeGeneratorError),
->>>>>>> dev
 }

@@ -1,11 +1,5 @@
 pub mod commands;
 
-<<<<<<< HEAD
-use crate::config::Config;
-use crate::error::Error;
-use clap::Parser;
-use simplex_test::TestProvider;
-=======
 use crate::cache_storage::CacheStorage;
 use crate::cli::commands::{Command, TestCommand, TestFlags};
 use crate::config::{Config, DEFAULT_CONFIG};
@@ -13,7 +7,6 @@ use crate::error::Error;
 use clap::Parser;
 use simplex_macros_core::env::CodeGenerator;
 use simplex_test::TestClientProvider;
->>>>>>> dev
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;

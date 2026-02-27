@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
-<<<<<<< HEAD
-=======
 use simplex_test::{ElementsDConf, RpcCreds};
 use std::io;
->>>>>>> dev
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
