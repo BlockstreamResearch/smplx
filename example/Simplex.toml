@@ -4,5 +4,5 @@ network = "liquidtestnet"
 compile_simf = ["simf/*.simf"]
 out_dir = "./src/artifacts"
 
-[tests]
-elementsd_path = "../assets/elementsd"
+[test]
+elementsd_path = "../simplex/assets/elementsd"
