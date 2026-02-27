@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
+use std::thread::sleep;
+use std::time::Duration;
 
 use simplicityhl::elements::hashes::{Hash, sha256};
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::hex::ToHex;
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
 use serde::Deserialize;
@@ -16,6 +17,14 @@ use super::provider::ProviderTrait;
 #[derive(Clone)]
 pub struct EsploraProvider {
     esplora_url: String,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct TxStatus {
+    confirmed: bool,
+    #[serde(default)]
+    block_height: Option<u32>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -66,7 +75,7 @@ impl EsploraProvider {
 
         // filter unique transactions
         for point in set {
-            let tx = self.fetch_transaction(point.txid)?;
+            let tx = self.fetch_transaction(&point.txid)?;
             map.insert(point.txid, tx);
         }
 
@@ -84,7 +93,7 @@ impl EsploraProvider {
 }
 
 impl ProviderTrait for EsploraProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, ProviderError> {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
 
@@ -104,11 +113,36 @@ impl ProviderTrait for EsploraProvider {
             });
         }
 
-        Ok(body)
+        Ok(Txid::from_str(&body).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?)
     }
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, ProviderError> {
-        let url = self.esplora_url.clone() + "/tx/" + txid.to_hex().as_str() + "/raw";
+    fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
+        let status_url = format!("{}/tx/{}/status", self.esplora_url, txid);
+
+        for _ in 1..10 {
+            let response = minreq::get(&status_url)
+                .send()
+                .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+            if response.status_code != 200 {
+                sleep(Duration::from_secs(5));
+                continue;
+            }
+
+            let status: TxStatus = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+            if status.confirmed {
+                return Ok(());
+            }
+
+            sleep(Duration::from_secs(10));
+        }
+
+        Err(ProviderError::Confirmation())
+    }
+
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
+        let url = format!("{}/tx/{}/raw", self.esplora_url, txid);
         let response = minreq::get(&url)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
@@ -127,8 +161,7 @@ impl ProviderTrait for EsploraProvider {
     }
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
-        let esplora = self.esplora_url.clone();
-        let url = format!("{esplora}/address/{address}/utxo");
+        let url = format!("{}/address/{}/utxo", self.esplora_url, address);
         let response = minreq::get(&url)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
@@ -154,7 +187,7 @@ impl ProviderTrait for EsploraProvider {
         let hash_bytes = hash.to_byte_array();
         let scripthash = hex::encode(hash_bytes);
 
-        let url = self.esplora_url.clone() + "/scripthash/" + scripthash.as_str() + "/utxo";
+        let url = format!("{}/scripthash/{}/utxo", self.esplora_url, scripthash);
         let response = minreq::get(&url)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
@@ -176,7 +209,7 @@ impl ProviderTrait for EsploraProvider {
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
-        let url = self.esplora_url.clone() + "/fee-estimates";
+        let url = format!("{}/fee-estimates", self.esplora_url);
         let response = minreq::get(&url)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;

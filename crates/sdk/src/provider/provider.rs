@@ -6,9 +6,11 @@ use super::error::ProviderError;
 use crate::constants::DEFAULT_FEE_RATE;
 
 pub trait ProviderTrait {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, ProviderError>;
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError>;
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, ProviderError>;
+    fn wait(&self, txid: &Txid) -> Result<(), ProviderError>;
+
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
 
@@ -17,12 +19,7 @@ pub trait ProviderTrait {
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 
     fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, ProviderError> {
-        if target_blocks == 0 {
-            return Ok(DEFAULT_FEE_RATE);
-        }
-
         let estimates = self.fetch_fee_estimates()?;
-
         let target_str = target_blocks.to_string();
 
         if let Some(&rate) = estimates.get(&target_str) {
@@ -49,6 +46,6 @@ pub trait ProviderTrait {
             }
         }
 
-        Err(ProviderError::Request("No fee estimates available".to_string()))
+        Ok(DEFAULT_FEE_RATE)
     }
 }

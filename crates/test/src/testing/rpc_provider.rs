@@ -6,11 +6,15 @@ use std::collections::HashMap;
 pub struct TestRpcProvider {}
 
 impl ProviderTrait for TestRpcProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, ProviderError> {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         todo!()
     }
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, ProviderError> {
+    fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
+        todo!()
+    }
+
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
         todo!()
     }
 

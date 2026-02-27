@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use elements_miniscript::Descriptor;
@@ -33,8 +33,9 @@ use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork};
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::transaction::FinalTransaction;
-use crate::transaction::RequiredSignature;
+use crate::transaction::PartialInput;
 use crate::transaction::PartialOutput;
+use crate::transaction::RequiredSignature;
 
 pub trait SignerTrait {
     fn sign_program(
@@ -99,6 +100,11 @@ impl SignerTrait for Signer {
     }
 }
 
+enum Estimate {
+    Success(Transaction, u64),
+    Failure(u64),
+}
+
 impl Signer {
     pub fn new(
         mnemonic: &str,
@@ -122,63 +128,58 @@ impl Signer {
     }
 
     pub fn finalize(&self, tx: &FinalTransaction, target_blocks: u32) -> Result<(Transaction, u64), SignerError> {
+        let mut signer_utxos = self.get_wpkh_utxos()?;
+        let mut set = HashSet::new();
+
+        for input in tx.inputs() {
+            set.insert(OutPoint {
+                txid: input.partial_input.witness_txid.clone(),
+                vout: input.partial_input.witness_output_index,
+            });
+        }
+
+        signer_utxos
+            .retain(|utxo| utxo.1.asset.explicit().unwrap() == self.network.policy_asset() && !set.contains(&utxo.0));
+        signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+
+        let mut fee_tx = tx.clone();
+        let mut curr_fee = MIN_FEE;
+        let fee_rate = self.provider.get_fee_rate(target_blocks)?;
+
+        for utxo in signer_utxos {
+            let policy_amount_delta = fee_tx.calculate_fee_delta();
+
+            if policy_amount_delta >= curr_fee as i64 {
+                match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
+                    Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                    Estimate::Failure(required_fee) => curr_fee = required_fee,
+                }
+            }
+
+            fee_tx.add_input(PartialInput::new(utxo.0, utxo.1), RequiredSignature::NativeEcdsa)?;
+        }
+
+        Err(SignerError::NotEnoughFunds(curr_fee))
+    }
+
+    pub fn finalize_strict(
+        &self,
+        tx: &FinalTransaction,
+        target_blocks: u32,
+    ) -> Result<(Transaction, u64), SignerError> {
         let policy_amount_delta = tx.calculate_fee_delta();
 
-        if policy_amount_delta < MIN_FEE {
+        if policy_amount_delta < MIN_FEE as i64 {
             return Err(SignerError::DustAmount(policy_amount_delta));
         }
 
-        // estimate the tx fee with the change
         let fee_rate = self.provider.get_fee_rate(target_blocks)?;
-        let mut fee_tx = tx.clone();
 
-        // use this wpkh address as a change script
-        fee_tx.add_output(PartialOutput::new(
-            self.get_wpkh_address()?.script_pubkey(),
-            PLACEHOLDER_FEE,
-            self.network.policy_asset(),
-        ));
-
-        fee_tx.add_output(PartialOutput::new(
-            Script::new(),
-            PLACEHOLDER_FEE,
-            self.network.policy_asset(),
-        ));
-
-        let final_tx = self.finalize_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
-
-        if policy_amount_delta > fee && policy_amount_delta - fee >= MIN_FEE {
-            // we have enough funds to cover change UTXO
-            let outputs = fee_tx.outputs_mut();
-
-            outputs[outputs.len() - 2].amount = policy_amount_delta - fee;
-            outputs[outputs.len() - 1].amount = fee;
-
-            let final_tx = self.finalize_tx(&fee_tx)?;
-
-            return Ok((final_tx, fee));
+        // policy_amount_delta will be > 0
+        match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta as u64)? {
+            Estimate::Success(tx, fee) => Ok((tx, fee)),
+            Estimate::Failure(required_fee) => Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee)),
         }
-
-        // not enough funds, so we need to estimate without the change
-        fee_tx.remove_output(fee_tx.n_outputs() - 2);
-
-        let final_tx = self.finalize_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
-
-        if policy_amount_delta < fee {
-            return Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, fee));
-        }
-
-        let outputs = fee_tx.outputs_mut();
-
-        // change the fee output amount
-        outputs[outputs.len() - 1].amount = policy_amount_delta;
-
-        // finalize the tx with fee and without the change
-        let final_tx = self.finalize_tx(&fee_tx)?;
-
-        Ok((final_tx, fee))
     }
 
     pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
@@ -223,7 +224,63 @@ impl Signer {
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
     }
 
-    fn finalize_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
+    fn estimate_tx(
+        &self,
+        mut fee_tx: FinalTransaction,
+        fee_rate: f32,
+        available_delta: u64,
+    ) -> Result<Estimate, SignerError> {
+        // estimate the tx fee with the change
+        // use this wpkh address as a change script
+        fee_tx.add_output(PartialOutput::new(
+            self.get_wpkh_address()?.script_pubkey(),
+            PLACEHOLDER_FEE,
+            self.network.policy_asset(),
+        ));
+
+        fee_tx.add_output(PartialOutput::new(
+            Script::new(),
+            PLACEHOLDER_FEE,
+            self.network.policy_asset(),
+        ));
+
+        let final_tx = self.sign_tx(&fee_tx)?;
+        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+
+        if available_delta > fee && available_delta - fee >= MIN_FEE {
+            // we have enough funds to cover the change UTXO
+            let outputs = fee_tx.outputs_mut();
+
+            outputs[outputs.len() - 2].amount = available_delta - fee;
+            outputs[outputs.len() - 1].amount = fee;
+
+            let final_tx = self.sign_tx(&fee_tx)?;
+
+            return Ok(Estimate::Success(final_tx, fee));
+        }
+
+        // not enough funds, so we need to estimate without the change
+        fee_tx.remove_output(fee_tx.n_outputs() - 2);
+
+        let final_tx = self.sign_tx(&fee_tx)?;
+        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+
+        if available_delta < fee {
+            return Ok(Estimate::Failure(fee));
+        }
+
+        let outputs = fee_tx.outputs_mut();
+
+        // change the fee output amount
+        outputs[outputs.len() - 1].amount = available_delta;
+
+        // finalize the tx with fee and without the change
+        let final_tx = self.sign_tx(&fee_tx)?;
+
+        return Ok(Estimate::Success(final_tx, fee));
+    }
+
+    fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
         let mut pst = tx.extract_pst();
         let inputs = tx.inputs();
 

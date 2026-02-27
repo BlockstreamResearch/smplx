@@ -121,7 +121,7 @@ impl FinalTransaction {
         self.outputs.len()
     }
 
-    pub fn calculate_fee_delta(&self) -> u64 {
+    pub fn calculate_fee_delta(&self) -> i64 {
         let available_amount = self
             .inputs
             .iter()
@@ -134,7 +134,7 @@ impl FinalTransaction {
             .filter(|output| output.asset == self.network.policy_asset())
             .fold(0 as u64, |acc, output| acc + output.amount);
 
-        available_amount - consumed_amount
+        available_amount as i64 - consumed_amount as i64
     }
 
     pub fn calculate_fee(&self, weight: usize, fee_rate: f32) -> u64 {

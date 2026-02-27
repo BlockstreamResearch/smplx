@@ -1,5 +1,6 @@
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
+use crate::transaction::TransactionError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
@@ -8,6 +9,9 @@ pub enum SignerError {
 
     #[error(transparent)]
     Provider(#[from] ProviderError),
+
+    #[error(transparent)]
+    Transaction(#[from] TransactionError),
 
     #[error("Failed to parse a mnemonic: {0}")]
     Mnemonic(String),
@@ -19,10 +23,13 @@ pub enum SignerError {
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 
     #[error("Fee amount is too low: {0}")]
-    DustAmount(u64),
+    DustAmount(i64),
 
     #[error("Not enough fee amount {0} to cover transaction costs: {1}")]
-    NotEnoughFeeAmount(u64, u64),
+    NotEnoughFeeAmount(i64, u64),
+
+    #[error("Not enough funds on account to cover transaction costs: {0}")]
+    NotEnoughFunds(u64),
 
     #[error("Invalid secret key")]
     InvalidSecretKey(#[from] simplicityhl::elements::secp256k1_zkp::UpstreamError),

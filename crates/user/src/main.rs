@@ -1,4 +1,4 @@
-use simplicityhl::elements::Script;
+use simplicityhl::elements::{Script, Txid};
 
 use simplex_sdk::presets::{P2PK, P2PKArguments, P2PKWitness};
 
@@ -24,32 +24,11 @@ fn get_p2pk(signer: &Signer) -> (P2PK, Script) {
     (p2pk, p2pk_script)
 }
 
-fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) {
-    let mut signer_utxos = signer.get_wpkh_utxos().unwrap();
-
-    for el in &signer_utxos {
-        let outpoint = &el.0;
-        let value = &el.1.value;
-        let asset = &el.1.asset;
-        let script = &el.1.script_pubkey;
-
-        println!("Outpoint: {}", outpoint);
-        println!("Value: {}", value);
-        println!("Asset: {}", asset);
-        println!("Script: {}", script);
-    }
-
-    signer_utxos.retain(|el| el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset());
-
+fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) -> Txid {
     let (_, p2pk_script) = get_p2pk(&signer);
 
     let mut ft = FinalTransaction::new(SimplicityNetwork::LiquidTestnet);
 
-    ft.add_input(
-        PartialInput::new(signer_utxos[0].0.clone(), signer_utxos[0].1.clone()),
-        RequiredSignature::NativeEcdsa,
-    )
-    .unwrap();
     ft.add_output(PartialOutput::new(
         p2pk_script.clone(),
         50,
@@ -60,18 +39,14 @@ fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) {
     let res = provider.broadcast_transaction(&tx).unwrap();
 
     println!("Broadcast: {}", res);
+
+    res
 }
 
-fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) {
+fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) -> Txid {
     let (p2pk, p2pk_script) = get_p2pk(&signer);
 
     let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
-
-    for el in &p2pk_utxos {
-        let outpoint = &el.0;
-
-        println!("{outpoint}");
-    }
 
     p2pk_utxos.retain(|el| el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset());
 
@@ -87,16 +62,13 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) {
         RequiredSignature::Witness("SIGNATURE".to_string()),
     )
     .unwrap();
-    ft.add_output(PartialOutput::new(
-        signer.get_wpkh_address().unwrap().script_pubkey(),
-        20,
-        SimplicityNetwork::LiquidTestnet.policy_asset(),
-    ));
 
     let (tx, _) = signer.finalize(&ft, 1).unwrap();
     let res = provider.broadcast_transaction(&tx).unwrap();
 
     println!("Broadcast: {}", res);
+
+    res
 }
 
 fn main() {
@@ -108,9 +80,17 @@ fn main() {
     )
     .unwrap();
 
-    spend_p2wpkh(&signer, &provider);
-    // TODO: wait for confirmation
-    spend_p2pk(&signer, &provider);
+    let tx = spend_p2wpkh(&signer, &provider);
+
+    provider.wait(&tx).unwrap();
+
+    println!("Confirmed");
+
+    let tx = spend_p2pk(&signer, &provider);
+
+    provider.wait(&tx).unwrap();
+
+    println!("Confirmed");
 
     println!("OK");
 }
