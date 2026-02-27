@@ -1,0 +1,4 @@
+network = "liquidtestnet"
+
+[tests]
+elementsd_path = "../../assets/elementsd"

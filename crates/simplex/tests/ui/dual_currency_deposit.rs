@@ -1,4 +1,6 @@
 use simplex_macros::*;
+use simplex_sdk::witness::WitnessTrait;
+use simplex_sdk::arguments::ArgumentsTrait;
 
 include_simf!("../../../../crates/simplex/tests/ui/dual_currency_deposit.simf");
 
@@ -42,9 +44,6 @@ fn main() -> Result<(), String> {
     let recovered_witness =
         derived_dual_currency_deposit::DualCurrencyDepositArguments::from_arguments(&witness_values)?;
     assert_eq!(original_arguments, recovered_witness);
-
-    let _template = derived_dual_currency_deposit::get_template_program();
-    let _compiled = derived_dual_currency_deposit::get_compiled_program(&original_arguments);
 
     Ok(())
 }

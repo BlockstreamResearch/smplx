@@ -69,9 +69,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.101"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "ar_archive_writer"
@@ -402,6 +402,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-channel"
+version = "0.5.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,6 +435,15 @@ dependencies = [
  "dispatch2",
  "nix 0.31.1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "deranged"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
+dependencies = [
+ "powerfmt",
 ]
 
 [[package]]
@@ -460,6 +484,16 @@ name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
+
+[[package]]
+name = "draft_example"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "simplex",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
+ "simplicityhl-core",
+]
 
 [[package]]
 name = "either"
@@ -1023,15 +1057,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
-name = "lock_api"
-version = "0.4.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
-dependencies = [
- "scopeguard",
-]
-
-[[package]]
 name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1137,6 +1162,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-conv"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
+
+[[package]]
 name = "objc2"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1173,39 +1204,81 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "options"
+version = "0.1.0"
+dependencies = [
+ "simplex",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
-name = "parking_lot"
-version = "0.12.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+name = "p2pk"
+version = "0.1.0"
 dependencies = [
- "lock_api",
- "parking_lot_core",
+ "simplex",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
 ]
 
 [[package]]
-name = "parking_lot_core"
-version = "0.9.12"
+name = "pathdiff"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
-dependencies = [
- "cfg-if",
- "libc",
- "redox_syscall",
- "smallvec",
- "windows-link",
-]
+checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "pest"
+version = "2.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0848c601009d37dfa3430c4666e147e49cdcf1b92ecd3e63657d8a5f19da662"
+dependencies = [
+ "memchr",
+ "ucd-trie",
+]
+
+[[package]]
+name = "pest_derive"
+version = "2.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11f486f1ea21e6c10ed15d5a7c77165d0ee443402f0780849d1768e7d9d6fe77"
+dependencies = [
+ "pest",
+ "pest_generator",
+]
+
+[[package]]
+name = "pest_generator"
+version = "2.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8040c4647b13b210a963c1ed407c1ff4fdfa01c31d6d2a098218702e6664f94f"
+dependencies = [
+ "pest",
+ "pest_meta",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.116",
+]
+
+[[package]]
+name = "pest_meta"
+version = "2.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89815c69d36021a140146f26659a81d6c2afa33d216d736dd4be5381a7362220"
+dependencies = [
+ "pest",
+ "sha2",
+]
 
 [[package]]
 name = "pin-project-lite"
@@ -1227,6 +1300,12 @@ checksum = "b73949432f5e2a09657003c25bca5e19a0e9c84f8058ca374f49e0ebe605af77"
 dependencies = [
  "zerovec",
 ]
+
+[[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "ppv-lite86"
@@ -1417,15 +1496,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 dependencies = [
  "getrandom 0.3.4",
-]
-
-[[package]]
-name = "redox_syscall"
-version = "0.5.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
-dependencies = [
- "bitflags 2.11.0",
 ]
 
 [[package]]
@@ -1637,12 +1707,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scopeguard"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
 name = "sct"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1792,16 +1856,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "signal-hook-registry"
-version = "1.4.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
-dependencies = [
- "errno",
- "libc",
-]
-
-[[package]]
 name = "simplex"
 version = "0.1.0"
 dependencies = [
@@ -1809,22 +1863,14 @@ dependencies = [
  "bincode",
  "either",
  "serde",
- "simplex-core",
  "simplex-macros",
- "simplex-runtime",
- "simplex-test",
- "simplicityhl",
- "tokio",
- "trybuild",
-]
-
-[[package]]
-name = "simplex-build"
-version = "0.1.0"
-dependencies = [
+ "simplex-provider",
  "simplex-sdk",
- "simplicityhl",
- "thiserror",
+ "simplex-test",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
+ "simplicityhl-core",
+ "tracing",
+ "trybuild",
 ]
 
 [[package]]
@@ -1836,51 +1882,18 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "electrsd",
+ "glob",
  "serde",
- "simplex-config",
+ "simplex-macros-core",
+ "simplex-sdk",
  "simplex-test",
- "simplicityhl",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "thiserror",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
+ "tracing-appender",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "simplex-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "simplex-core",
- "simplicityhl",
- "thiserror",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "simplex-core"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "hex",
- "minreq",
- "serde",
- "sha2",
- "simplicityhl",
- "thiserror",
-]
-
-[[package]]
-name = "simplex-macro-core"
-version = "0.1.0"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "simplicityhl",
- "syn 2.0.116",
- "thiserror",
 ]
 
 [[package]]
@@ -1888,35 +1901,51 @@ name = "simplex-macros"
 version = "0.1.0"
 dependencies = [
  "serde",
- "simplex-macro-core",
+ "simplex-macros-core",
  "syn 2.0.116",
 ]
 
 [[package]]
-name = "simplex-runtime"
+name = "simplex-macros-core"
+version = "0.1.0"
+dependencies = [
+ "pathdiff",
+ "prettyplease",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "simplex-test",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
+ "syn 2.0.116",
+ "thiserror",
+]
+
+[[package]]
+name = "simplex-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitcoin_hashes",
  "electrsd",
  "hex-simd",
+ "minreq",
  "reqwest",
  "serde",
  "serde_json",
- "simplex-core",
- "simplicityhl",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "thiserror",
- "tokio",
 ]
 
 [[package]]
 name = "simplex-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "minreq",
  "sha2",
- "simplex-runtime",
- "simplicityhl",
+ "simplex-provider",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "thiserror",
 ]
 
@@ -1925,12 +1954,12 @@ name = "simplex-test"
 version = "0.1.0"
 dependencies = [
  "electrsd",
- "simplex-config",
- "simplex-core",
- "simplex-runtime",
+ "serde",
+ "simplex-provider",
  "simplex-sdk",
- "simplicityhl",
+ "simplicityhl 0.4.1 (git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params)",
  "thiserror",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -1971,6 +2000,25 @@ dependencies = [
 [[package]]
 name = "simplicityhl"
 version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3aa7477fc9bfef4cc53ae969db00539f0e67af38156822ac79662513d04f6fee"
+dependencies = [
+ "base64 0.21.7",
+ "clap",
+ "either",
+ "getrandom 0.2.17",
+ "itertools",
+ "miniscript",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_json",
+ "simplicity-lang",
+]
+
+[[package]]
+name = "simplicityhl"
+version = "0.4.1"
 source = "git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params#77755254414093ff0e1b51beedbc27367745388e"
 dependencies = [
  "base64 0.21.7",
@@ -1983,6 +2031,18 @@ dependencies = [
  "serde",
  "serde_json",
  "simplicity-lang",
+]
+
+[[package]]
+name = "simplicityhl-core"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e341dd0a1c4967109d4b71bc6821d45d0c2310ea0b70efeefe154cd1a0f8932"
+dependencies = [
+ "hex",
+ "sha2",
+ "simplicityhl 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "thiserror",
 ]
 
 [[package]]
@@ -2137,6 +2197,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "time"
+version = "0.3.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "743bd48c283afc0388f9b8827b976905fb217ad9e647fae3a379a9283c4def2c"
+dependencies = [
+ "deranged",
+ "itoa",
+ "num-conv",
+ "powerfmt",
+ "serde_core",
+ "time-core",
+ "time-macros",
+]
+
+[[package]]
+name = "time-core"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
+
+[[package]]
+name = "time-macros"
+version = "0.2.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e70e4c5a0e0a8a4823ad65dfe1a6930e4f4d756dcd9dd7939022b5e8c501215"
+dependencies = [
+ "num-conv",
+ "time-core",
+]
+
+[[package]]
 name = "tinystr"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2170,9 +2261,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -2319,6 +2408,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-appender"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "786d480bce6247ab75f005b14ae1624ad978d3029d9113f0a22fa1ac773faeaf"
+dependencies = [
+ "crossbeam-channel",
+ "thiserror",
+ "time",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tracing-attributes"
 version = "0.1.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2394,6 +2495,12 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+
+[[package]]
+name = "ucd-trie"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
 
 [[package]]
 name = "unicode-ident"

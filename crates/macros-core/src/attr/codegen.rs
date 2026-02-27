@@ -1,5 +1,6 @@
 use crate::attr::SimfContent;
 use crate::attr::types::RustType;
+use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
@@ -44,7 +45,7 @@ impl SimfContractMeta {
         let args_struct = WitnessStruct::generate_args_struct(&simf_content.contract_name, &abi_meta.param_types)?;
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
-        let contract_source_const_name = format_ident!("{}_CONTRACT_SOURCE", simf_content.contract_name.to_uppercase());
+        let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
         Ok(SimfContractMeta {
             contract_source_const_name,
             args_struct,
@@ -105,28 +106,21 @@ impl WitnessStruct {
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
-                    use std::collections::HashMap;
-                    use simplicityhl::{Arguments, Value, ResolvedType};
-                    use simplicityhl::value::{UIntValue, ValueInner};
-                    use simplicityhl::num::U256;
-                    use simplicityhl::str::WitnessName;
-                    use simplicityhl::types::TypeConstructible;
-                    use simplicityhl::value::ValueConstructible;
-                    use bincode::*;
+                    use ::std::collections::HashMap;
+                    use ::simplicityhl::{Arguments, Value, ResolvedType};
+                    use ::simplicityhl::value::{UIntValue, ValueInner};
+                    use ::simplicityhl::num::U256;
+                    use ::simplicityhl::str::WitnessName;
+                    use ::simplicityhl::types::TypeConstructible;
+                    use ::simplicityhl::value::ValueConstructible;
+                    use ::simplex::simplex_sdk::arguments::ArgumentsTrait;
+                    use ::simplex::bincode::*;
             },
             struct_token_stream: quote! {
                 #generated_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build Simplicity arguments for contract instantiation.
-                    #[must_use]
-                    pub fn build_arguments(&self) -> ::simplicityhl::Arguments {
-                        ::simplicityhl::Arguments::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-
                     /// Build struct from Simplicity Arguments.
                     ///
                     /// # Errors
@@ -140,6 +134,16 @@ impl WitnessStruct {
 
                 }
 
+                impl ::simplex::simplex_sdk::arguments::ArgumentsTrait for #struct_name {
+                    /// Build Simplicity arguments for contract instantiation.
+                    #[must_use]
+                    fn build_arguments(&self) -> ::simplicityhl::Arguments {
+                        ::simplicityhl::Arguments::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
+                    }
+                }
+
                 impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
@@ -148,6 +152,7 @@ impl WitnessStruct {
                         self.build_arguments().serialize(serializer)
                     }
                 }
+
                 impl<'de> simplex::serde::Deserialize<'de> for #struct_name {
                     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                     where
@@ -158,7 +163,7 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex_core::Encodable for #struct_name {}
+                // impl ::simplex_core::Encodable for #struct_name {}
             },
         })
     }
@@ -185,29 +190,32 @@ impl WitnessStruct {
                     use simplicityhl::str::WitnessName;
                     use simplicityhl::types::TypeConstructible;
                     use simplicityhl::value::ValueConstructible;
+                    use ::simplex::simplex_sdk::witness::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build Simplicity witness values for contract execution.
-                    #[must_use]
-                    pub fn build_witness(&self) -> ::simplicityhl::WitnessValues {
-                        ::simplicityhl::WitnessValues::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-
                     /// Build struct from Simplicity WitnessValues.
                     ///
                     /// # Errors
                     ///
-                    /// Returns error if any required witness is missing, has wrong type, or has invalid value.
+                    /// Returns error if any required witness is missing, has the wrong type, or has an invalid value.
                     pub fn from_witness(witness: &WitnessValues) -> Result<Self, String> {
                         #arguments_conversion_from_args_map
 
                         Ok(#struct_to_return)
+                    }
+                }
+
+                impl ::simplex::simplex_sdk::witness::WitnessTrait for #struct_name {
+                     /// Build Simplicity witness values for contract execution.
+                    #[must_use]
+                    fn build_witness(&self) -> ::simplicityhl::WitnessValues {
+                        ::simplicityhl::WitnessValues::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
                     }
                 }
 
@@ -230,28 +238,13 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex_core::Encodable for #struct_name {}
+                // impl ::simplex_core::Encodable for #struct_name {}
             },
         })
     }
 
-    fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
-        let words: Vec<String> = contract_name
-            .split('_')
-            .filter(|w| !w.is_empty())
-            .map(|word| {
-                let mut chars = word.chars();
-                match chars.next() {
-                    None => String::new(),
-                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                }
-            })
-            .collect();
-        words.join("")
-    }
-
     fn generate_args_struct(contract_name: &str, meta: &Parameters) -> syn::Result<WitnessStruct> {
-        let base_name = Self::convert_contract_name_to_struct_name(contract_name);
+        let base_name = convert_contract_name_to_struct_name(contract_name);
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Arguments", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -259,7 +252,7 @@ impl WitnessStruct {
     }
 
     fn generate_witness_struct(contract_name: &str, meta: &WitnessTypes) -> syn::Result<WitnessStruct> {
-        let base_name = Self::convert_contract_name_to_struct_name(contract_name);
+        let base_name = convert_contract_name_to_struct_name(contract_name);
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Witness", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -336,4 +329,27 @@ impl WitnessStruct {
 
         (extractions, struct_init)
     }
+}
+
+pub(crate) fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
+    let words: Vec<String> = contract_name
+        .split('_')
+        .filter(|w| !w.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect();
+    words.join("")
+}
+
+pub(crate) fn convert_contract_name_to_contract_source_const(contract_name: &str) -> Ident {
+    format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
+}
+
+pub(crate) fn convert_contract_name_to_contract_module(contract_name: &str) -> Ident {
+    format_ident!("derived_{}", contract_name)
 }

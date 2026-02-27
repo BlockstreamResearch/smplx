@@ -1,4 +1,7 @@
 use simplex_macros::*;
+use simplex_sdk::witness::WitnessTrait;
+use simplex_sdk::arguments::ArgumentsTrait;
+
 include_simf!("../../../../crates/simplex/tests/ui/options.simf");
 
 fn main() -> Result<(), String> {
@@ -26,9 +29,6 @@ fn main() -> Result<(), String> {
     let witness_values = original_arguments.build_arguments();
     let recovered_witness = derived_options::OptionsArguments::from_arguments(&witness_values)?;
     assert_eq!(original_arguments, recovered_witness);
-
-    let _template = derived_options::get_template_program();
-    let _compiled = derived_options::get_compiled_program(&original_arguments);
 
     Ok(())
 }

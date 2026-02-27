@@ -1,5 +1,5 @@
 # Build output
-/target/
+target/
 
 # IDE/editors (optional but common minimal)
 **/.DS_Store
@@ -7,7 +7,7 @@
 .vscode/
 .cache
 .env
-Simplex.toml
+./Simplex.toml
 config.toml
 
 # Debugging data

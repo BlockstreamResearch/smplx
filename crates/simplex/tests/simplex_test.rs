@@ -1,25 +1,70 @@
-use simplex_runtime::elements_rpc::{AddressType, ElementsRpcClient};
-use simplex_test::DEFAULT_SAT_AMOUNT_FAUCET;
+use simplex_provider::elements_rpc::{AddressType, ElementsRpcClient};
+use simplex_sdk::constants::SimplicityNetwork;
+use simplex_test::{DEFAULT_SAT_AMOUNT_FAUCET, ElementsDConf, TestContext};
 use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
 
+#[ignore]
+#[simplex::simplex_macros::test(default_rpc)]
+fn test_execution(x: TestContext) {
+    assert!(true)
+}
+
+#[ignore]
 #[simplex::simplex_macros::test]
-// #[test]
-fn test_execution() {
-    assert!(true);
+fn test_execution3(x: TestContext) {
+    assert!(true)
+}
+
+#[ignore]
+#[test]
+fn test_execution2() {
+    use ::simplex::tracing;
+    use simplex_test::TestContextBuilder;
+    use std::path::PathBuf;
+
+    fn test_execution2(x: TestContext) {
+        assert!(true);
+    }
+
+    let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
+        Err(e) => {
+            tracing::trace!(
+                "Test 'test_in_custom_folder_custom_333' connected with simplex is disabled, run `simplex test` in order to test it, err: '{e}'"
+            );
+            panic!("Failed to run this test, required to use `simplex test`");
+        }
+        Ok(path) => {
+            let path = PathBuf::from(path);
+            let test_context = TestContextBuilder::FromConfigPath(path).build().unwrap();
+            tracing::trace!("Running 'test_in_custom_folder_custom_333' with simplex configuration");
+            test_context
+        }
+    };
+    println!("fn name: {}, \n ident: {}", "test_execution2", "#ident");
+    println!("input: {}, \n AttributeArgs: {}", "#input", "#args");
+
+    test_execution2(test_context)
 }
 
 #[test]
 fn test_invocation_tx_tracking() -> anyhow::Result<()> {
-    use simplex_test::{ConfigOption, TestProvider};
+    use simplex_test::{ConfigOption, TestClientProvider};
 
-    fn test_invocation_tx_tracking(rpc: TestProvider, user1_addr: Address, user2_addr: Address) -> anyhow::Result<()> {
+    fn test_invocation_tx_tracking(
+        rpc: TestClientProvider,
+        user1_addr: Address,
+        user2_addr: Address,
+    ) -> anyhow::Result<()> {
         // user input code
         {
-            let network = rpc.network();
+            let network = SimplicityNetwork::default_regtest();
             let keypair = Keypair::from_seckey_slice(&secp256k1::SECP256K1, &[1; 32])?;
-            let p2pk = simplex_core::get_p2pk_address(&keypair.x_only_public_key().0, network)?;
+            let p2pk = simplicityhl_core::get_p2pk_address(
+                &keypair.x_only_public_key().0,
+                simplicityhl_core::SimplicityNetwork::default_regtest(),
+            )?;
 
             dbg!(p2pk.to_string());
 
@@ -39,7 +84,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
                 rpc.as_ref(),
                 &p2pk,
                 DEFAULT_SAT_AMOUNT_FAUCET,
-                Some(rpc.network().policy_asset()),
+                Some(network.policy_asset()),
             )?;
 
             ElementsRpcClient::generate_blocks(rpc.as_ref(), 5)?;
@@ -62,7 +107,13 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
             Ok(())
         }
     }
-    let rpc = TestProvider::init(ConfigOption::DefaultRegtest).unwrap();
+
+    let network = SimplicityNetwork::default_regtest();
+    let rpc = TestClientProvider::init(
+        ConfigOption::DefaultRegtest,
+        ElementsDConf::obtain_default_elementsd_path(),
+    )
+    .unwrap();
     {
         ElementsRpcClient::generate_blocks(rpc.as_ref(), 1).unwrap();
         ElementsRpcClient::rescanblockchain(rpc.as_ref(), None, None).unwrap();
@@ -76,7 +127,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
         rpc.as_ref(),
         &user1_addr,
         DEFAULT_SAT_AMOUNT_FAUCET,
-        Some(rpc.network().policy_asset()),
+        Some(network.policy_asset()),
     )
     .unwrap();
 
@@ -84,7 +135,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
         rpc.as_ref(),
         &user2_addr,
         DEFAULT_SAT_AMOUNT_FAUCET,
-        Some(rpc.network().policy_asset()),
+        Some(network.policy_asset()),
     )
     .unwrap();
 

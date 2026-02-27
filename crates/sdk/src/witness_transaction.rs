@@ -6,7 +6,7 @@ use simplicityhl::elements::{Script, Transaction, TxOut};
 use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork, WITNESS_SCALE_FACTOR};
 use crate::error::SimplexError;
 use crate::program::ProgramTrait;
-use crate::provider::Provider;
+use crate::provider::ProviderSync;
 use crate::signer::SignerTrait;
 use crate::witness::WitnessTrait;
 
@@ -67,7 +67,7 @@ where
         &self,
         target_blocks: u32,
         change_recipient_script: Script,
-        provider: impl Provider,
+        provider: impl ProviderSync,
     ) -> Result<(Transaction, u64), SimplexError> {
         let policy_amount_delta = self.calculate_fee_delta();
 
@@ -83,7 +83,6 @@ where
             change_recipient_script.clone(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
-            
             None,
         ));
 
@@ -188,6 +187,7 @@ where
         Ok(final_tx)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn finalize_tx_with_signer(
         &self,
         final_tx: Transaction,
@@ -201,7 +201,7 @@ where
         let signature = signer.sign(program, &final_tx, utxos, index, self.network)?;
         let new_witness = signer_lambda(&witness, &signature)?;
 
-        Ok(self.finalize_tx_as_is(final_tx, utxos, program, new_witness, index)?)
+        self.finalize_tx_as_is(final_tx, utxos, program, new_witness, index)
     }
 
     fn finalize_tx_as_is(
@@ -212,7 +212,7 @@ where
         witness: WitnessValues,
         index: usize,
     ) -> Result<Transaction, SimplexError> {
-        Ok(program.finalize(witness, final_tx, utxos, index, self.network)?)
+        program.finalize(witness, final_tx, utxos, index, self.network)
     }
 
     fn calculate_fee_delta(&self) -> u64 {
@@ -221,14 +221,14 @@ where
             .inputs()
             .iter()
             .filter(|input| input.asset.unwrap() == self.network.policy_asset())
-            .fold(0 as u64, |acc, input| acc + input.amount.unwrap());
+            .fold(0_u64, |acc, input| acc + input.amount.unwrap());
 
         let consumed_amount = self
             .pst
             .outputs()
             .iter()
             .filter(|output| output.asset.unwrap() == self.network.policy_asset())
-            .fold(0 as u64, |acc, output| acc + output.amount.unwrap());
+            .fold(0_u64, |acc, output| acc + output.amount.unwrap());
 
         available_amount - consumed_amount
     }

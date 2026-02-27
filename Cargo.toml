@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/*"
+    "crates/*",
+    "examples/options",
+    "examples/p2pk",
+    "examples/test_usage",
 ]
 
 [workspace.package]
@@ -12,19 +15,20 @@ edition = "2024"
 multiple_crate_versions = "allow"
 
 [workspace.dependencies]
-simplex-core = { path = "./crates/core" }
-simplex-runtime = { path = "./crates/runtime" }
+simplex-provider = { path = "./crates/provider" }
+simplex-macros-core = { path = "./crates/macros-core", features = ["bincode", "serde"] }
 simplex-macros = { path = "./crates/macros" }
-simplex-macros-core = { path = "./crates/macros-core" }
 simplex-test = { path = "./crates/test" }
 simplex-sdk = { path = "./crates/sdk" }
-simplex-config = { path = "./crates/config" }
 simplex = { path = "./crates/simplex" }
 
+async-trait = { version = "0.1.89" }
 bincode = { version = "2.0.1", features = ["serde"] }
 ring = { version = "0.17.14" }
 sha2 = { version = "0.10.9", features = ["compress"] }
+serde = { version = "1.0.228" }
 thiserror = { version = "2.0.18" }
+toml = { version = "0.9.8" }
 
 hex = { version = "0.4.3" }
 tracing = { version = "0.1.41" }

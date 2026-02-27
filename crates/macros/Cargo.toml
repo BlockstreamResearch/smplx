@@ -16,17 +16,15 @@ categories = ["cryptography::cryptocurrencies"]
 proc-macro = true
 
 [features]
-macros = []
-derive = []
 default = ["macros", "derive",]
 serde = ["macros", "dep:serde"]
+macros = []
+derive = []
 
 [lints]
 workspace = true
 
-
 [dependencies]
-simplex-macro-core = { path = "../macros-core", features = ["bincode", "serde"] }
+simplex-macros-core = { workspace = true }
 serde = { version = "1.0.228", optional = true }
 syn = { version = "2.0.114", default-features = false, features = ["parsing", "proc-macro"] }
-

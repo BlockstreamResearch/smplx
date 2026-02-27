@@ -1,20 +1,22 @@
 mod esplora;
 
-use std::collections::HashMap;
-
 use simplicityhl::elements::encode;
 use simplicityhl::elements::hex::ToHex;
 use simplicityhl::elements::{Transaction, Txid};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::constants::DEFAULT_FEE_RATE;
 use crate::error::SimplexError;
 
-pub trait Provider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError>;
+pub use simplex_provider::esplora::*;
+
+pub trait ProviderSync {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError>;
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError>;
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, SimplexError>;
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, SimplexError>;
 
     fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, SimplexError> {
         if target_blocks == 0 {
@@ -22,6 +24,51 @@ pub trait Provider {
         }
 
         let estimates = self.fetch_fee_estimates()?;
+
+        let target_str = target_blocks.to_string();
+
+        if let Some(&rate) = estimates.get(&target_str) {
+            return Ok((rate * 1000.0) as f32); // Convert sat/vB to sats/kvb
+        }
+
+        let fallback_targets = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 144, 504, 1008,
+        ];
+
+        for &target in fallback_targets.iter().filter(|&&t| t >= target_blocks) {
+            let key = target.to_string();
+
+            if let Some(&rate) = estimates.get(&key) {
+                return Ok((rate * 1000.0) as f32);
+            }
+        }
+
+        for &target in &fallback_targets {
+            let key = target.to_string();
+
+            if let Some(&rate) = estimates.get(&key) {
+                return Ok((rate * 1000.0) as f32);
+            }
+        }
+
+        Err(SimplexError::Request("No fee estimates available".to_string()))
+    }
+}
+
+#[async_trait::async_trait]
+pub trait ProviderAsync {
+    async fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError>;
+
+    async fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError>;
+
+    async fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, SimplexError>;
+
+    async fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, SimplexError> {
+        if target_blocks == 0 {
+            return Ok(DEFAULT_FEE_RATE);
+        }
+
+        let estimates = self.fetch_fee_estimates().await?;
 
         let target_str = target_blocks.to_string();
 
@@ -63,8 +110,8 @@ impl EsploraProvider {
     }
 }
 
-impl Provider for EsploraProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, SimplexError> {
+impl ProviderSync for EsploraProvider {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
 
@@ -84,12 +131,11 @@ impl Provider for EsploraProvider {
                 message: body,
             });
         }
-
-        Ok(body)
+        Ok(Txid::from_str(&body)?)
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {
-        let url = self.esplora_url.clone() + "/fee-estimates";
+        let url = format!("{}/fee-estimates", self.esplora_url.clone());
         let response = minreq::get(&url)
             .send()
             .map_err(|e| SimplexError::Request(e.to_string()))?;
@@ -106,8 +152,8 @@ impl Provider for EsploraProvider {
         Ok(estimates)
     }
 
-    fn fetch_transaction(&self, txid: Txid) -> Result<Transaction, SimplexError> {
-        let url = self.esplora_url.clone() + "/tx/" + txid.to_hex().as_str() + "/raw";
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, SimplexError> {
+        let url = format!("{}/tx/{}/raw", self.esplora_url.clone(), txid.to_hex().as_str());
         let response = minreq::get(&url)
             .send()
             .map_err(|e| SimplexError::Request(e.to_string()))?;

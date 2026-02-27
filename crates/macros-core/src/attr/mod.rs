@@ -1,12 +1,15 @@
 pub mod codegen;
 pub mod parse;
+pub(crate) mod program;
 mod types;
 
 pub use parse::SimfContent;
 
-use crate::attr::codegen::{GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta};
+use crate::attr::codegen::{
+    GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta, convert_contract_name_to_contract_module,
+};
 use proc_macro2::Span;
-use quote::{format_ident, quote};
+use quote::quote;
 use simplicityhl::AbiMeta;
 use std::error::Error;
 // TODO(Illia): add bincode generation feature (i.e. require bincode dependencies)
@@ -25,7 +28,7 @@ pub fn expand_helpers(simf_content: SimfContent, meta: AbiMeta) -> syn::Result<p
 }
 
 fn gen_helpers_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2::TokenStream, Box<dyn Error>> {
-    let mod_ident = format_ident!("derived_{}", simf_content.contract_name);
+    let mod_ident = convert_contract_name_to_contract_module(&simf_content.contract_name);
 
     let derived_meta = SimfContractMeta::try_from(simf_content, meta)?;
 
@@ -46,18 +49,13 @@ fn gen_helpers_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_ma
 
 fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::TokenStream {
     let contract_content = &derived_meta.simf_content.content;
-    let error_msg = format!(
-        "INTERNAL: expected '{}' Program to compile successfully.",
-        derived_meta.simf_content.contract_name
-    );
     let contract_source_name = &derived_meta.contract_source_const_name;
-    let contract_arguments_struct_name = &derived_meta.args_struct.struct_name;
 
     quote! {
-        use simplicityhl::elements::Address;
-        use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
-        use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
-        use simplicityhl::CompiledProgram;
+        // use simplicityhl::elements::Address;
+        // use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
+        // use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
+        // use simplicityhl::CompiledProgram;
 
         pub const #contract_source_name: &str = #contract_content;
 
@@ -65,52 +63,35 @@ fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::To
         ///
         /// # Panics
         /// - if the embedded source fails to compile (should never happen).
-        #[must_use]
-        pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
-            ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
-        }
-
-        /// Derive P2TR address for an option offer contract.
-        ///
-        /// # Errors
-        ///
-        /// Returns error if program compilation fails.
-        pub fn get_option_offer_address(
-            x_only_public_key: &XOnlyPublicKey,
-            arguments: &#contract_arguments_struct_name,
-            network: SimplicityNetwork,
-        ) -> Result<Address, ProgramError> {
-            Ok(create_p2tr_address(
-                get_loaded_program(arguments)?.commit().cmr(),
-                x_only_public_key,
-                network.address_params(),
-            ))
-        }
+        // #[must_use]
+        // pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
+        //     ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
+        // }
 
         /// Compile option offer program with the given arguments.
         ///
         /// # Errors
         ///
         /// Returns error if compilation fails.
-        pub fn get_loaded_program(
-            arguments: &#contract_arguments_struct_name,
-        ) -> Result<CompiledProgram, ProgramError> {
-            load_program(#contract_source_name, arguments.build_arguments())
-        }
+        // pub fn get_loaded_program(
+        //     arguments: &#contract_arguments_struct_name,
+        // ) -> Result<CompiledProgram, ProgramError> {
+        //     load_program(#contract_source_name, arguments.build_arguments())
+        // }
 
         /// Get compiled option offer program, panicking on failure.
         ///
         /// # Panics
         ///
         /// Panics if program instantiation fails.
-        #[must_use]
-        pub fn get_compiled_program(arguments: &#contract_arguments_struct_name) -> CompiledProgram {
-            let program = get_template_program();
+        // #[must_use]
+        // pub fn get_compiled_program(arguments: &#contract_arguments_struct_name) -> CompiledProgram {
+        //     let program = get_template_program();
 
-            program
-                .instantiate(arguments.build_arguments(), true)
-                .unwrap()
-        }
+        //     program
+        //         .instantiate(arguments.build_arguments(), true)
+        //         .unwrap()
+        // }
     }
 }
 
