@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 pub mod elements_rpc;
 mod error;
 pub mod esplora;

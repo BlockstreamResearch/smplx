@@ -1,3 +1,5 @@
+#![warn(clippy::all, clippy::pedantic)]
+
 pub extern crate either;
 pub extern crate serde;
 
@@ -9,3 +11,9 @@ pub extern crate simplex_sdk;
 
 #[cfg(feature = "macros")]
 pub extern crate simplex_test;
+
+#[cfg(feature = "macros")]
+pub extern crate tracing;
+
+#[cfg(feature = "encoding")]
+pub extern crate bincode;

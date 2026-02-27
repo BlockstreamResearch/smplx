@@ -89,10 +89,10 @@ impl ElementsRpcClient {
 
         let mut args = Vec::with_capacity(2);
         if start.is_some() {
-            args.push(start.into())
+            args.push(start.into());
         }
         if stop.is_some() {
-            args.push(stop.into())
+            args.push(stop.into());
         }
         client.call::<Value>(METHOD, &args)?;
         Ok(())
@@ -200,7 +200,16 @@ impl ElementsRpcClient {
         Ok(value.get("hex").unwrap().as_str().unwrap().to_string())
     }
 
-    pub fn sendrawtransaction(client: &Client, tx: &str) -> Result<String, ExplorerError> {
+    pub fn sendrawtransaction(client: &Client, tx: &str) -> Result<SendRawTransaction, ExplorerError> {
+        const METHOD: &str = "sendrawtransaction";
+
+        let value: serde_json::Value = client.call(METHOD, &[tx.into()])?;
+        Ok(SendRawTransaction {
+            txid: value.as_str().unwrap().to_string(),
+        })
+    }
+
+    pub fn sendrawtransaction_txid(client: &Client, tx: &str) -> Result<String, ExplorerError> {
         const METHOD: &str = "sendrawtransaction";
 
         let value: serde_json::Value = client.call(METHOD, &[tx.into()])?;
@@ -220,6 +229,7 @@ impl ElementsRpcClient {
         #[derive(serde::Deserialize)]
         pub struct CreatewalletResult {
             name: String,
+            #[allow(dead_code)]
             warning: String,
         }
 
@@ -257,7 +267,7 @@ impl ElementsRpcClient {
 
         let mut args = Vec::new();
         args.push(min_conf.unwrap_or(1).into());
-        args.push(max_conf.unwrap_or(9999999).into());
+        args.push(max_conf.unwrap_or(9_999_999).into());
 
         if let Some(addrs) = addresses {
             args.push(addrs.into());
@@ -309,10 +319,10 @@ impl ElementsRpcClient {
         const METHOD: &str = "validateaddress";
 
         let value: serde_json::Value = client.call(METHOD, &[address.into()])?;
-        Ok(value
+        value
             .get("isvalid")
-            .and_then(|v| v.as_bool())
-            .ok_or_else(|| ExplorerError::ElementsRpcUnexpectedReturn(METHOD.into()))?)
+            .and_then(serde_json::Value::as_bool)
+            .ok_or_else(|| ExplorerError::ElementsRpcUnexpectedReturn(METHOD.into()))
     }
 
     pub fn scantxoutset(
@@ -327,7 +337,11 @@ impl ElementsRpcClient {
         match action {
             "start" => {
                 if let Some(objects) = scanobjects {
-                    args.push(serde_json::to_value(objects).unwrap());
+                    args.push(serde_json::to_value(objects).map_err(|e| {
+                        ExplorerError::InvalidInput(format!(
+                            "Failed to transform objects into serde_json::Value, err: '{e}'"
+                        ))
+                    })?);
                 } else {
                     return Err(ExplorerError::InvalidInput(
                         "scantxoutset 'start' action requires scanobjects".to_string(),
@@ -337,15 +351,13 @@ impl ElementsRpcClient {
             "abort" | "status" => {
                 if scanobjects.is_some() {
                     return Err(ExplorerError::InvalidInput(format!(
-                        "scantxoutset '{}' action does not accept scanobjects",
-                        action
+                        "scantxoutset '{action}' action does not accept scanobjects",
                     )));
                 }
             }
             _ => {
                 return Err(ExplorerError::InvalidInput(format!(
-                    "unknown scantxoutset action: {}",
-                    action
+                    "unknown scantxoutset action: {action}"
                 )));
             }
         }
@@ -354,6 +366,50 @@ impl ElementsRpcClient {
         dbg!("response: {}", response.to_string());
         ScantxoutsetResult::from_value(response, action)
             .map_err(|e| ExplorerError::ElementsRpcUnexpectedReturn(e.to_string()))
+    }
+
+    pub fn gettransaction(
+        client: &Client,
+        txid: &str,
+        include_watchonly: Option<bool>,
+    ) -> Result<GetTransaction, ExplorerError> {
+        const METHOD: &str = "gettransaction";
+
+        let mut args = vec![txid.into()];
+
+        if let Some(watchonly) = include_watchonly {
+            args.push(watchonly.into());
+        }
+
+        Ok(client.call::<GetTransaction>(METHOD, &args)?)
+    }
+
+    pub fn getrawtransaction(
+        client: &Client,
+        txid: &str,
+        verbose: Option<bool>,
+    ) -> Result<GetRawTransaction, ExplorerError> {
+        const METHOD: &str = "getrawtransaction";
+
+        let mut args = vec![txid.into()];
+
+        if let Some(v) = verbose {
+            args.push(v.into());
+        } else {
+            args.push(true.into());
+        }
+
+        Ok(client.call::<GetRawTransaction>(METHOD, &args)?)
+    }
+
+    pub fn getrawtransaction_hex(client: &Client, txid: &str) -> Result<String, ExplorerError> {
+        const METHOD: &str = "getrawtransaction";
+
+        let value: serde_json::Value = client.call(METHOD, &[txid.into(), false.into()])?;
+        let value = value
+            .as_str()
+            .ok_or_else(|| ExplorerError::InvalidInput("Failed to deserialize a String".to_string()))?;
+        Ok(value.to_string())
     }
 }
 

@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 simplex-provider = { workspace = true }
 
+async-trait = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true }

@@ -73,16 +73,22 @@ pub type MempoolStats = ChainStats;
 
 #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
 pub struct ChainStats {
-    pub funded_txo_count: u64,
-    pub spent_txo_count: u64,
-    pub tx_count: u64,
+    #[serde(rename = "funded_txo_count")]
+    pub funded_txo: u64,
+    #[serde(rename = "spent_txo_count")]
+    pub spent_txo: u64,
+    #[serde(rename = "tx_count")]
+    pub tx: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Hash, Eq, PartialEq)]
 pub struct Stats {
-    pub tx_count: u64,
-    pub funded_txo_count: u64,
-    pub spent_txo_count: u64,
+    #[serde(rename = "tx_count")]
+    pub tx: u64,
+    #[serde(rename = "funded_txo_count")]
+    pub funded_txo: u64,
+    #[serde(rename = "spent_txo_count")]
+    pub spent_txo: u64,
 }
 
 #[allow(dead_code)]

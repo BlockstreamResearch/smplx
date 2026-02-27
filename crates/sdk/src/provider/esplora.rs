@@ -11,6 +11,8 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid
 
 use serde::Deserialize;
 
+pub use simplex_provider::esplora::*;
+
 use super::error::ProviderError;
 use super::provider::ProviderTrait;
 

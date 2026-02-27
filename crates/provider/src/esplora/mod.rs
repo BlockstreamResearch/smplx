@@ -11,9 +11,13 @@ use std::str::FromStr;
 const ESPLORA_LIQUID_TESTNET: &str = "https://blockstream.info/liquidtestnet/api";
 const ESPLORA_LIQUID: &str = "https://blockstream.info/liquid/api";
 
-pub struct EsploraClient {
-    base_url: String,
+pub struct EsploraClientAsync {
+    url_builder: UrlBuilder,
     client: reqwest::Client,
+}
+
+pub struct EsploraClientSync {
+    url_builder: UrlBuilder,
 }
 
 #[derive(Debug, Clone)]
@@ -33,12 +37,14 @@ impl EsploraClientBuilder {
         ESPLORA_LIQUID_TESTNET.to_string()
     }
 
+    #[must_use]
     pub fn liquid_testnet() -> Self {
         Self {
             url: Some(ESPLORA_LIQUID_TESTNET.to_string()),
         }
     }
 
+    #[must_use]
     pub fn liquid_mainnet() -> Self {
         Self {
             url: Some(ESPLORA_LIQUID.to_string()),
@@ -50,10 +56,22 @@ impl EsploraClientBuilder {
         EsploraClientBuilder { url: Some(url.into()) }
     }
 
-    pub fn build(self) -> EsploraClient {
-        EsploraClient {
-            base_url: self.url.unwrap_or(Self::default_url()),
+    #[must_use]
+    pub fn build_async(self) -> EsploraClientAsync {
+        EsploraClientAsync {
+            url_builder: UrlBuilder {
+                base_url: self.url.unwrap_or(Self::default_url()),
+            },
             client: reqwest::Client::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn build_sync(self) -> EsploraClientSync {
+        EsploraClientSync {
+            url_builder: UrlBuilder {
+                base_url: self.url.unwrap_or(Self::default_url()),
+            },
         }
     }
 }
@@ -64,9 +82,15 @@ impl Default for EsploraClientBuilder {
     }
 }
 
-impl Default for EsploraClient {
+impl Default for EsploraClientAsync {
     fn default() -> Self {
-        EsploraClientBuilder::default().build()
+        EsploraClientBuilder::default().build_async()
+    }
+}
+
+impl Default for EsploraClientSync {
+    fn default() -> Self {
+        EsploraClientBuilder::default().build_sync()
     }
 }
 
@@ -337,8 +361,16 @@ mod deserializable {
     impl TypeConversion<types::EsploraTransaction> for EsploraTransaction {
         fn convert(self) -> Result<types::EsploraTransaction, ExplorerError> {
             let status = self.status.convert()?;
-            let vin = self.vin.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
-            let vout = self.vout.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
+            let vin = self
+                .vin
+                .into_iter()
+                .map(TypeConversion::convert)
+                .collect::<Result<_, _>>()?;
+            let vout = self
+                .vout
+                .into_iter()
+                .map(TypeConversion::convert)
+                .collect::<Result<_, _>>()?;
 
             Ok(types::EsploraTransaction {
                 txid: Txid::from_str(&self.txid)?,
@@ -375,7 +407,7 @@ mod deserializable {
             };
 
             Ok(types::Vin {
-                out_point: Default::default(),
+                out_point: OutPoint::default(),
                 is_coinbase: self.is_coinbase,
                 scriptsig: self.scriptsig,
                 scriptsig_asm: self.scriptsig_asm,
@@ -458,166 +490,228 @@ mod deserializable {
     }
 }
 
-impl EsploraClient {
-    #[inline]
-    fn join_url(&self, str: impl AsRef<str>) -> Result<String, ExplorerError> {
-        Ok(format!("{}/{}", self.base_url, str.as_ref()))
-    }
-
+impl EsploraClientAsync {
     #[inline]
     fn filter_resp(resp: &reqwest::Response) -> Result<(), ExplorerError> {
-        if !(200..300).contains(&resp.status().as_u16()) {
-            return Err(ExplorerError::erroneous_response(resp));
+        if is_resp_ok(i32::from(resp.status().as_u16())) {
+            return Err(ExplorerError::erroneous_response_reqwest(resp));
         }
         Ok(())
     }
 
+    /// Retrieves transaction details by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_tx(&self, txid: &str) -> Result<types::EsploraTransaction, ExplorerError> {
-        let url = self.join_url(format!("/tx/{txid}"))?;
+        let url = self.url_builder.get_tx_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::EsploraTransaction>()
             .await
-            .map_err(|e| ExplorerError::deserialize(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
 
         Ok(resp)
     }
 
+    /// Retrieves transaction status by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
     pub async fn get_tx_status(&self, txid: &str) -> Result<types::TxStatus, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/status"))?;
+        let url = self.url_builder.get_tx_status_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::TxStatus>()
             .await
-            .map_err(|e| ExplorerError::deserialize(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
         Ok(resp)
     }
 
+    /// Retrieves transaction hex by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_tx_hex(&self, txid: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/hex"))?;
+        let url = self.url_builder.get_tx_hex_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::deserialize(&e))
+        resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves raw transaction bytes by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response bytes extraction fails
     pub async fn get_tx_raw(&self, txid: &str) -> Result<Vec<u8>, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/raw"))?;
+        let url = self.url_builder.get_tx_raw_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         resp.bytes()
             .await
             .map(|b| b.to_vec())
-            .map_err(|e| ExplorerError::deserialize(&e))
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves and deserializes a transaction as an Elements transaction.
+    ///
+    /// # Errors
+    /// - Returns all errors from `get_tx_raw`
+    /// - Returns `ExplorerError::TransactionDecode` if transaction deserialization fails
     pub async fn get_tx_elements(&self, txid: &str) -> Result<simplicityhl::elements::Transaction, ExplorerError> {
         let bytes = self.get_tx_raw(txid).await?;
         simplicityhl::elements::Transaction::deserialize(&bytes)
             .map_err(|e| ExplorerError::TransactionDecode(e.to_string()))
     }
 
+    /// Retrieves merkle proof for a transaction.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if merkle hash parsing fails
     pub async fn get_tx_merkle_proof(&self, txid: &str) -> Result<types::MerkleProof, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/merkle-proof"))?;
+        let url = self.url_builder.get_tx_merkle_proof_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::MerkleProof>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
         Ok(resp)
     }
 
+    /// Retrieves outspend information for a specific output.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_tx_outspend(&self, txid: &str, vout: u32) -> Result<types::Outspend, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/outspend/{vout}"))?;
+        let url = self.url_builder.get_tx_outspend_url(txid, vout)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::Outspend>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
         Ok(resp)
     }
 
+    /// Retrieves outspend information for all outputs of a transaction.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_tx_outspends(&self, txid: &str) -> Result<Vec<types::Outspend>, ExplorerError> {
-        let url = self.join_url(format!("tx/{txid}/outspends"))?;
+        let url = self.url_builder.get_tx_outspends_url(txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::Outspend>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        resp.into_iter().map(|x| x.convert()).collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        resp.into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<Vec<_>, _>>()
     }
 
-    pub async fn broadcast_tx(&self, tx: &simplicityhl::elements::Transaction) -> Result<String, ExplorerError> {
+    /// Broadcasts a transaction to the network.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub async fn broadcast_tx(&self, tx: &simplicityhl::elements::Transaction) -> Result<Txid, ExplorerError> {
         let tx_hex = simplicityhl::elements::encode::serialize_hex(tx);
-        let url = self.join_url("tx")?;
+        let url = self.url_builder.get_broadcast_tx_url()?;
         let resp = self
             .client
             .post(url)
             .body(tx_hex)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+        let resp = resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        Ok(Txid::from_str(&resp)?)
     }
 
-    // TODO: add batch execution with 10 elements
+    /// Broadcasts a package of transactions.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
     pub async fn broadcast_tx_package(
         &self,
         txs: &[simplicityhl::elements::Transaction],
     ) -> Result<serde_json::Value, ExplorerError> {
-        let url = self.join_url("txs/package")?;
+        let url = self.url_builder.get_broadcast_tx_package_url()?;
         let tx_hexes = txs
             .iter()
             .map(simplicityhl::elements::encode::serialize_hex)
@@ -629,276 +723,377 @@ impl EsploraClient {
             .json(&tx_hexes)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.json().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.json().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves address information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::AddressConversion` if address parsing fails
     pub async fn get_address(&self, address: &str) -> Result<types::AddressInfo, ExplorerError> {
-        let url = self.join_url(format!("address/{address}"))?;
+        let url = self.url_builder.get_address_url(address)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::AddressInfo>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
 
         Ok(resp)
     }
 
+    /// Retrieves all transactions for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
     pub async fn get_address_txs(&self, address: &str) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = self.join_url(format!("address/{address}/txs"))?;
+        let url = self.url_builder.get_address_txs_url(address)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
         let resp = resp
             .json::<Vec<deserializable::EsploraTransaction>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves confirmed transactions for an address with pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
     pub async fn get_address_txs_chain(
         &self,
         address: &str,
         last_seen_txid: Option<&str>,
     ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = if let Some(txid) = last_seen_txid {
-            self.join_url(format!("address/{address}/txs/chain/{txid}"))?
-        } else {
-            self.join_url(format!("address/{address}/txs/chain"))?
-        };
+        let url = self.url_builder.get_address_txs_chain_url(address, last_seen_txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::EsploraTransaction>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves mempool transactions for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_address_txs_mempool(
         &self,
         address: &str,
     ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = self.join_url(format!("address/{address}/txs/mempool"))?;
+        let url = self.url_builder.get_address_txs_mempool_url(address)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::EsploraTransaction>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves UTXOs for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::HexSimdDecode` if hex decoding fails
+    /// - Returns `ExplorerError::CommitmentDecode` if commitment parsing fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
     pub async fn get_address_utxo(&self, address: &str) -> Result<Vec<types::AddressUtxo>, ExplorerError> {
-        let url = self.join_url(format!("address/{address}/utxo"))?;
+        let url = self.url_builder.get_address_utxo_url(address)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::AddressUtxo>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        resp.into_iter().map(|x| x.convert()).collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        resp.into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<Vec<_>, _>>()
     }
 
+    /// Retrieves scripthash information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::ElementsHex` if script parsing fails
     pub async fn get_scripthash(&self, hash: &str) -> Result<types::ScripthashInfo, ExplorerError> {
-        let url = self.join_url(format!("scripthash/{hash}"))?;
+        let url = self.url_builder.get_scripthash_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::ScripthashInfo>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
         Ok(resp)
     }
 
-    // TODO: check output
+    /// Retrieves transactions for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_scripthash_txs(&self, hash: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(format!("scripthash/{hash}/txs"))?;
+        let url = self.url_builder.get_scripthash_txs_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
-    // TODO: check output
+    /// Retrieves confirmed transactions for a scripthash with pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_scripthash_txs_chain(
         &self,
         hash: &str,
         last_seen_txid: Option<&str>,
     ) -> Result<String, ExplorerError> {
-        let url = if let Some(txid) = last_seen_txid {
-            self.join_url(format!("scripthash/{hash}/txs/chain/{txid}"))?
-        } else {
-            self.join_url(format!("scripthash/{hash}/txs/chain"))?
-        };
+        let url = self.url_builder.get_scripthash_txs_chain_url(hash, last_seen_txid)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
-    // TODO: check output
+    /// Retrieves mempool transactions for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_scripthash_txs_mempool(&self, hash: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(format!("scripthash/{hash}/txs/mempool"))?;
+        let url = self.url_builder.get_scripthash_txs_mempool_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
-    // TODO: check output
+    /// Retrieves UTXOs for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_scripthash_utxo(&self, hash: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(format!("scripthash/{hash}/utxo"))?;
+        let url = self.url_builder.get_scripthash_utxo_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.text().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves block information by block hash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if hash/merkle node parsing fails
     pub async fn get_block(&self, hash: &str) -> Result<types::Block, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}"))?;
+        let url = self.url_builder.get_block_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<deserializable::Block>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp.convert()?;
         Ok(resp)
     }
 
-    // TODO: decode hex into elements::BlockHeader (no method to do this)
+    /// Retrieves block header as hex string.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
     pub async fn get_block_header(&self, hash: &str) -> Result<String, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}/header"))?;
+        let url = self.url_builder.get_block_header_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         Ok(resp)
     }
 
+    /// Retrieves block status information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
     pub async fn get_block_status(&self, hash: &str) -> Result<types::BlockStatus, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}/status"))?;
+        let url = self.url_builder.get_block_status_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         resp.json::<types::BlockStatus>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves transactions in a block with optional pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
     pub async fn get_block_txs(
         &self,
         hash: &str,
         start_index: Option<u32>,
     ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
-        let url = if let Some(index) = start_index {
-            self.join_url(format!("block/{hash}/txs/{index}"))?
-        } else {
-            self.join_url(format!("block/{hash}/txs"))?
-        };
+        let url = self.url_builder.get_block_txs_url(hash, start_index)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
         let resp = resp
             .json::<Vec<deserializable::EsploraTransaction>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.into_iter().map(|val| val.convert()).collect::<Result<_, _>>()?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves transaction IDs in a block.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_block_txids(&self, hash: &str) -> Result<Vec<Txid>, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}/txids"))?;
+        let url = self.url_builder.get_block_txids_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
         let resp = resp
             .json::<Vec<String>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
 
         let resp = resp
             .into_iter()
@@ -907,127 +1102,185 @@ impl EsploraClient {
         Ok(resp)
     }
 
+    /// Retrieves a specific transaction ID from a block.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_block_txid(&self, hash: &str, index: u32) -> Result<Txid, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}/txid/{index}"))?;
+        let url = self.url_builder.get_block_txid_url(hash, index)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
 
         Ok(Txid::from_str(&resp)?)
     }
 
+    /// Retrieves raw block bytes.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response bytes extraction fails
     pub async fn get_block_raw(&self, hash: &str) -> Result<Vec<u8>, ExplorerError> {
-        let url = self.join_url(format!("block/{hash}/raw"))?;
+        let url = self.url_builder.get_block_raw_url(hash)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
         resp.bytes()
             .await
             .map(|b| b.to_vec())
-            .map_err(|e| ExplorerError::response_failed(&e))
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves block hash by block height.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
     pub async fn get_block_height(&self, height: u64) -> Result<BlockHash, ExplorerError> {
-        let url = self.join_url(format!("block-height/{height}"))?;
+        let url = self.url_builder.get_block_height_url(height)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = BlockHash::from_str(&resp)?;
         Ok(resp)
     }
 
+    /// Retrieves blocks starting from a given height.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if hash/merkle node parsing fails
     pub async fn get_blocks(&self, start_height: Option<u64>) -> Result<Vec<types::Block>, ExplorerError> {
-        let url = if let Some(height) = start_height {
-            self.join_url(format!("blocks/{}", height))?
-        } else {
-            self.join_url("blocks")?
-        };
+        let url = self.url_builder.get_blocks_url(start_height)?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::Block>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.into_iter().map(|val| val.convert()).collect::<Result<_, _>>()?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves the height of the blockchain tip.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
     pub async fn get_blocks_tip_height(&self) -> Result<u64, ExplorerError> {
-        let url = self.join_url("blocks/tip/height")?;
+        let url = self.url_builder.get_blocks_tip_height_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<u64>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         Ok(resp)
     }
 
+    /// Retrieves the hash of the blockchain tip.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
     pub async fn get_blocks_tip_hash(&self) -> Result<BlockHash, ExplorerError> {
-        let url = self.join_url("blocks/tip/hash")?;
+        let url = self.url_builder.get_blocks_tip_hash_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        let resp = resp.text().await.map_err(|e| ExplorerError::response_failed(&e))?;
+        let resp = resp.text().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = BlockHash::from_str(&resp)?;
         Ok(resp)
     }
 
+    /// Retrieves mempool information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
     pub async fn get_mempool(&self) -> Result<types::MempoolInfo, ExplorerError> {
-        let url = self.join_url("mempool")?;
+        let url = self.url_builder.get_mempool_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
-        resp.json().await.map_err(|e| ExplorerError::response_failed(&e))
+        resp.json().await.map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
 
+    /// Retrieves all transaction IDs in the mempool.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_mempool_txids(&self) -> Result<Vec<Txid>, ExplorerError> {
-        let url = self.join_url("mempool/txids")?;
+        let url = self.url_builder.get_mempool_txids_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<String>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
         let resp = resp
             .into_iter()
             .map(|val| Txid::from_str(&val))
@@ -1035,36 +1288,920 @@ impl EsploraClient {
         Ok(resp)
     }
 
+    /// Retrieves recent mempool transactions.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
     pub async fn get_mempool_recent(&self) -> Result<Vec<types::MempoolRecent>, ExplorerError> {
-        let url = self.join_url("mempool/recent")?;
+        let url = self.url_builder.get_mempool_recent_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         let resp = resp
             .json::<Vec<deserializable::MempoolRecent>>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
-        let resp = resp.into_iter().map(|x| x.convert()).collect::<Result<_, _>>()?;
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
         Ok(resp)
     }
 
+    /// Retrieves fee estimates.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_reqwest` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_reqwest` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_reqwest` if JSON deserialization fails
     pub async fn get_fee_estimates(&self) -> Result<types::FeeEstimates, ExplorerError> {
-        let url = self.join_url("fee-estimates")?;
+        let url = self.url_builder.get_fee_estimates_url()?;
         let resp = self
             .client
             .get(url)
             .send()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))?;
+            .map_err(|e| ExplorerError::response_failed_reqwest(&e))?;
         Self::filter_resp(&resp)?;
 
         resp.json::<types::FeeEstimates>()
             .await
-            .map_err(|e| ExplorerError::response_failed(&e))
+            .map_err(|e| ExplorerError::deserialize_reqwest(&e))
     }
+}
+
+impl EsploraClientSync {
+    #[inline]
+    fn filter_resp(resp: &minreq::Response) -> Result<(), ExplorerError> {
+        if is_resp_ok(resp.status_code) {
+            return Err(ExplorerError::erroneous_response_minreq(resp));
+        }
+        Ok(())
+    }
+
+    /// Retrieves transaction details by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_tx(&self, txid: &str) -> Result<types::EsploraTransaction, ExplorerError> {
+        let url: String = self.url_builder.get_tx_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::EsploraTransaction>()
+            .map_err(ExplorerError::deserialize_minreq)?;
+        let resp = resp.convert()?;
+
+        Ok(resp)
+    }
+
+    /// Retrieves transaction status by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
+    pub fn get_tx_status(&self, txid: &str) -> Result<types::TxStatus, ExplorerError> {
+        let url: String = self.url_builder.get_tx_status_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::TxStatus>()
+            .map_err(ExplorerError::deserialize_minreq)?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    /// Retrieves transaction hex by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_tx_hex(&self, txid: &str) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_tx_hex_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp.as_str().map_err(ExplorerError::deserialize_minreq)?.to_string())
+    }
+
+    /// Retrieves raw transaction bytes by transaction ID.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    pub fn get_tx_raw(&self, txid: &str) -> Result<Vec<u8>, ExplorerError> {
+        let url: String = self.url_builder.get_tx_raw_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp.as_bytes().to_vec())
+    }
+
+    /// Retrieves and deserializes a transaction as an Elements transaction.
+    ///
+    /// # Errors
+    /// - Returns all errors from `get_tx_raw`
+    /// - Returns `ExplorerError::TransactionDecode` if transaction deserialization fails
+    pub fn get_tx_elements(&self, txid: &str) -> Result<simplicityhl::elements::Transaction, ExplorerError> {
+        let bytes = self.get_tx_raw(txid)?;
+        simplicityhl::elements::Transaction::deserialize(&bytes)
+            .map_err(|e| ExplorerError::TransactionDecode(e.to_string()))
+    }
+
+    /// Retrieves merkle proof for a transaction.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if merkle hash parsing fails
+    pub fn get_tx_merkle_proof(&self, txid: &str) -> Result<types::MerkleProof, ExplorerError> {
+        let url: String = self.url_builder.get_tx_merkle_proof_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::MerkleProof>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    /// Retrieves outspend information for a specific output.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_tx_outspend(&self, txid: &str, vout: u32) -> Result<types::Outspend, ExplorerError> {
+        let url: String = self.url_builder.get_tx_outspend_url(txid, vout)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::Outspend>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    /// Retrieves outspend information for all outputs of a transaction.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_tx_outspends(&self, txid: &str) -> Result<Vec<types::Outspend>, ExplorerError> {
+        let url: String = self.url_builder.get_tx_outspends_url(txid)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::Outspend>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        resp.into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Broadcasts a transaction to the network.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON serialization or response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn broadcast_tx(&self, tx: &simplicityhl::elements::Transaction) -> Result<Txid, ExplorerError> {
+        let tx_hex = simplicityhl::elements::encode::serialize_hex(tx);
+        let url: String = self.url_builder.get_broadcast_tx_url()?;
+        let resp = minreq::post(url)
+            .with_json(&tx_hex)
+            .map_err(ExplorerError::deserialize_minreq)?
+            .send()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string();
+        Ok(Txid::from_str(&resp)?)
+    }
+
+    /// Broadcasts a package of transactions.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code or JSON parsing fails
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON serialization fails
+    pub fn broadcast_tx_package(
+        &self,
+        txs: &[simplicityhl::elements::Transaction],
+    ) -> Result<serde_json::Value, ExplorerError> {
+        let url: String = self.url_builder.get_broadcast_tx_package_url()?;
+        let tx_hexes = txs
+            .iter()
+            .map(simplicityhl::elements::encode::serialize_hex)
+            .collect::<Vec<_>>();
+
+        let resp = minreq::post(url)
+            .with_json(&tx_hexes)
+            .map_err(ExplorerError::deserialize_minreq)?
+            .send()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        resp.json().map_err(ExplorerError::response_failed_minreq)
+    }
+
+    /// Retrieves address information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::AddressConversion` if address parsing fails
+    pub fn get_address(&self, address: &str) -> Result<types::AddressInfo, ExplorerError> {
+        let url: String = self.url_builder.get_address_url(address)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::AddressInfo>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp.convert()?;
+
+        Ok(resp)
+    }
+
+    /// Retrieves all transactions for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
+    pub fn get_address_txs(&self, address: &str) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
+        let url: String = self.url_builder.get_address_txs_url(address)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+        let resp = resp
+            .json::<Vec<deserializable::EsploraTransaction>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves confirmed transactions for an address with pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
+    pub fn get_address_txs_chain(
+        &self,
+        address: &str,
+        last_seen_txid: Option<&str>,
+    ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
+        let url: String = self.url_builder.get_address_txs_chain_url(address, last_seen_txid)?;
+
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::EsploraTransaction>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves mempool transactions for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_address_txs_mempool(&self, address: &str) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
+        let url: String = self.url_builder.get_address_txs_mempool_url(address)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::EsploraTransaction>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves UTXOs for an address.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::HexSimdDecode` if hex decoding fails
+    /// - Returns `ExplorerError::CommitmentDecode` if commitment parsing fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
+    pub fn get_address_utxo(&self, address: &str) -> Result<Vec<types::AddressUtxo>, ExplorerError> {
+        let url: String = self.url_builder.get_address_utxo_url(address)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::AddressUtxo>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        resp.into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Retrieves scripthash information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::ElementsHex` if script parsing fails
+    pub fn get_scripthash(&self, hash: &str) -> Result<types::ScripthashInfo, ExplorerError> {
+        let url: String = self.url_builder.get_scripthash_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::ScripthashInfo>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    /// Retrieves transactions for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_scripthash_txs(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_scripthash_txs_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string())
+    }
+
+    /// Retrieves confirmed transactions for a scripthash with pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_scripthash_txs_chain(&self, hash: &str, last_seen_txid: Option<&str>) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_scripthash_txs_chain_url(hash, last_seen_txid)?;
+
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string())
+    }
+
+    /// Retrieves mempool transactions for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_scripthash_txs_mempool(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_scripthash_txs_mempool_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string())
+    }
+
+    /// Retrieves UTXOs for a scripthash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_scripthash_utxo(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_scripthash_utxo_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string())
+    }
+
+    /// Retrieves block information by block hash.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if hash/merkle node parsing fails
+    pub fn get_block(&self, hash: &str) -> Result<types::Block, ExplorerError> {
+        let url: String = self.url_builder.get_block_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<deserializable::Block>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp.convert()?;
+        Ok(resp)
+    }
+
+    /// Retrieves block header as hex string.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    pub fn get_block_header(&self, hash: &str) -> Result<String, ExplorerError> {
+        let url: String = self.url_builder.get_block_header_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .as_str()
+            .map_err(ExplorerError::response_failed_minreq)?
+            .to_string();
+        Ok(resp)
+    }
+
+    /// Retrieves block status information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    pub fn get_block_status(&self, hash: &str) -> Result<types::BlockStatus, ExplorerError> {
+        let url: String = self.url_builder.get_block_status_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        resp.json::<types::BlockStatus>()
+            .map_err(ExplorerError::response_failed_minreq)
+    }
+
+    /// Retrieves transactions in a block with optional pagination.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID/block hash parsing fails
+    pub fn get_block_txs(
+        &self,
+        hash: &str,
+        start_index: Option<u32>,
+    ) -> Result<Vec<types::EsploraTransaction>, ExplorerError> {
+        let url: String = self.url_builder.get_block_txs_url(hash, start_index)?;
+
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::EsploraTransaction>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves transaction IDs in a block.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_block_txids(&self, hash: &str) -> Result<Vec<Txid>, ExplorerError> {
+        let url: String = self.url_builder.get_block_txids_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<String>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+
+        let resp = resp
+            .into_iter()
+            .map(|val| Txid::from_str(&val))
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves a specific transaction ID from a block.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_block_txid(&self, hash: &str, index: u32) -> Result<Txid, ExplorerError> {
+        let url: String = self.url_builder.get_block_txid_url(hash, index)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.as_str().map_err(ExplorerError::response_failed_minreq)?;
+
+        Ok(Txid::from_str(resp)?)
+    }
+
+    /// Retrieves raw block bytes.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    pub fn get_block_raw(&self, hash: &str) -> Result<Vec<u8>, ExplorerError> {
+        let url: String = self.url_builder.get_block_raw_url(hash)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        Ok(resp.as_bytes().to_vec())
+    }
+
+    /// Retrieves block hash by block height.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
+    pub fn get_block_height(&self, height: u64) -> Result<BlockHash, ExplorerError> {
+        let url: String = self.url_builder.get_block_height_url(height)?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.as_str().map_err(ExplorerError::response_failed_minreq)?;
+
+        let resp = BlockHash::from_str(resp)?;
+        Ok(resp)
+    }
+
+    /// Retrieves blocks starting from a given height.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if hash/merkle node parsing fails
+    pub fn get_blocks(&self, start_height: Option<u64>) -> Result<Vec<types::Block>, ExplorerError> {
+        let url = self.url_builder.get_blocks_url(start_height)?;
+
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::Block>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves the height of the blockchain tip.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    pub fn get_blocks_tip_height(&self) -> Result<u64, ExplorerError> {
+        let url: String = self.url_builder.get_blocks_tip_height_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.json::<u64>().map_err(ExplorerError::response_failed_minreq)?;
+        Ok(resp)
+    }
+
+    /// Retrieves the hash of the blockchain tip.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if response text extraction fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if block hash parsing fails
+    pub fn get_blocks_tip_hash(&self) -> Result<BlockHash, ExplorerError> {
+        let url: String = self.url_builder.get_blocks_tip_hash_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp.as_str().map_err(ExplorerError::response_failed_minreq)?;
+        let resp = BlockHash::from_str(resp)?;
+        Ok(resp)
+    }
+
+    /// Retrieves mempool information.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    pub fn get_mempool(&self) -> Result<types::MempoolInfo, ExplorerError> {
+        let url: String = self.url_builder.get_mempool_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        resp.json().map_err(ExplorerError::response_failed_minreq)
+    }
+
+    /// Retrieves all transaction IDs in the mempool.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_mempool_txids(&self) -> Result<Vec<Txid>, ExplorerError> {
+        let url: String = self.url_builder.get_mempool_txids_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<String>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(|val| Txid::from_str(&val))
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves recent mempool transactions.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    /// - Returns `ExplorerError::BitcoinHashesHex` if TXID parsing fails
+    pub fn get_mempool_recent(&self) -> Result<Vec<types::MempoolRecent>, ExplorerError> {
+        let url: String = self.url_builder.get_mempool_recent_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        let resp = resp
+            .json::<Vec<deserializable::MempoolRecent>>()
+            .map_err(ExplorerError::response_failed_minreq)?;
+        let resp = resp
+            .into_iter()
+            .map(deserializable::TypeConversion::convert)
+            .collect::<Result<_, _>>()?;
+        Ok(resp)
+    }
+
+    /// Retrieves fee estimates.
+    ///
+    /// # Errors
+    /// - Returns `ExplorerError::response_failed_minreq` if the HTTP request fails
+    /// - Returns `ExplorerError::erroneous_response_minreq` if the API returns an error status code
+    /// - Returns `ExplorerError::deserialize_minreq` if JSON deserialization fails
+    pub fn get_fee_estimates(&self) -> Result<types::FeeEstimates, ExplorerError> {
+        let url: String = self.url_builder.get_fee_estimates_url()?;
+        let resp = minreq::get(url).send().map_err(ExplorerError::response_failed_minreq)?;
+        Self::filter_resp(&resp)?;
+
+        resp.json::<types::FeeEstimates>()
+            .map_err(ExplorerError::response_failed_minreq)
+    }
+}
+
+struct UrlBuilder {
+    base_url: String,
+}
+
+impl UrlBuilder {
+    fn get_tx_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("/tx/{txid}"))
+    }
+
+    fn get_tx_status_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/status"))
+    }
+
+    fn get_tx_hex_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/hex"))
+    }
+
+    fn get_tx_raw_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/raw"))
+    }
+
+    fn get_tx_merkle_proof_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/merkle-proof"))
+    }
+
+    fn get_tx_outspend_url(&self, txid: &str, vout: u32) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/outspend/{vout}"))
+    }
+
+    fn get_tx_outspends_url(&self, txid: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("tx/{txid}/outspends"))
+    }
+
+    fn get_broadcast_tx_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("tx")
+    }
+
+    fn get_broadcast_tx_package_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("txs/package")
+    }
+
+    fn get_address_url(&self, address: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("address/{address}"))
+    }
+
+    fn get_address_txs_url(&self, address: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("address/{address}/txs"))
+    }
+
+    fn get_address_txs_chain_url(&self, address: &str, last_seen_txid: Option<&str>) -> Result<String, ExplorerError> {
+        if let Some(txid) = last_seen_txid {
+            self.join_url(format!("address/{address}/txs/chain/{txid}"))
+        } else {
+            self.join_url(format!("address/{address}/txs/chain"))
+        }
+    }
+
+    fn get_address_txs_mempool_url(&self, address: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("address/{address}/txs/mempool"))
+    }
+
+    fn get_address_utxo_url(&self, address: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("address/{address}/utxo"))
+    }
+
+    fn get_scripthash_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("scripthash/{hash}"))
+    }
+
+    fn get_scripthash_txs_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("scripthash/{hash}/txs"))
+    }
+
+    fn get_scripthash_txs_chain_url(&self, hash: &str, last_seen_txid: Option<&str>) -> Result<String, ExplorerError> {
+        if let Some(txid) = last_seen_txid {
+            self.join_url(format!("scripthash/{hash}/txs/chain/{txid}"))
+        } else {
+            self.join_url(format!("scripthash/{hash}/txs/chain"))
+        }
+    }
+
+    fn get_scripthash_txs_mempool_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("scripthash/{hash}/txs/mempool"))
+    }
+
+    fn get_scripthash_utxo_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("scripthash/{hash}/utxo"))
+    }
+
+    fn get_block_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}"))
+    }
+
+    fn get_block_header_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}/header"))
+    }
+
+    fn get_block_status_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}/status"))
+    }
+
+    fn get_block_txs_url(&self, hash: &str, start_index: Option<u32>) -> Result<String, ExplorerError> {
+        if let Some(index) = start_index {
+            self.join_url(format!("block/{hash}/txs/{index}"))
+        } else {
+            self.join_url(format!("block/{hash}/txs"))
+        }
+    }
+
+    fn get_block_txids_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}/txids"))
+    }
+
+    fn get_block_txid_url(&self, hash: &str, index: u32) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}/txid/{index}"))
+    }
+
+    fn get_block_raw_url(&self, hash: &str) -> Result<String, ExplorerError> {
+        self.join_url(format!("block/{hash}/raw"))
+    }
+
+    fn get_block_height_url(&self, height: u64) -> Result<String, ExplorerError> {
+        self.join_url(format!("block-height/{height}"))
+    }
+
+    fn get_blocks_url(&self, start_height: Option<u64>) -> Result<String, ExplorerError> {
+        if let Some(height) = start_height {
+            self.join_url(format!("blocks/{height}"))
+        } else {
+            self.join_url("blocks")
+        }
+    }
+
+    fn get_blocks_tip_height_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("blocks/tip/height")
+    }
+
+    fn get_blocks_tip_hash_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("blocks/tip/hash")
+    }
+
+    fn get_mempool_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("mempool")
+    }
+
+    fn get_mempool_txids_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("mempool/txids")
+    }
+
+    fn get_mempool_recent_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("mempool/recent")
+    }
+
+    fn get_fee_estimates_url(&self) -> Result<String, ExplorerError> {
+        self.join_url("fee-estimates")
+    }
+}
+
+trait BaseUrlGetter {
+    fn get_base_url(&self) -> &str;
+}
+
+trait UrlAppender {
+    fn join_url(&self, str: impl AsRef<str>) -> Result<String, ExplorerError>;
+}
+
+impl<T: BaseUrlGetter> UrlAppender for T {
+    #[inline]
+    fn join_url(&self, str: impl AsRef<str>) -> Result<String, ExplorerError> {
+        Ok(format!("{}/{}", self.get_base_url(), str.as_ref()))
+    }
+}
+
+impl BaseUrlGetter for UrlBuilder {
+    fn get_base_url(&self) -> &str {
+        self.base_url.as_str()
+    }
+}
+
+impl BaseUrlGetter for EsploraClientAsync {
+    fn get_base_url(&self) -> &str {
+        self.url_builder.get_base_url()
+    }
+}
+
+impl BaseUrlGetter for EsploraClientSync {
+    fn get_base_url(&self) -> &str {
+        self.url_builder.get_base_url()
+    }
+}
+
+fn is_resp_ok(code: i32) -> bool {
+    !(200..300).contains(&code)
 }
