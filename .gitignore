@@ -7,8 +7,6 @@ target/
 .vscode/
 .cache
 .env
-./Simplex.toml
-config.toml
 
 # Debugging data
 logs.md

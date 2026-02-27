@@ -1,21 +1,26 @@
+mod artifacts;
+
 use simplicityhl::elements::{Script, Txid};
 
-use simplex_sdk::presets::{P2PK, P2PKArguments, P2PKWitness};
+use simplex::simplex_sdk::constants::{DUMMY_SIGNATURE, SimplicityNetwork};
+use simplex::simplex_sdk::provider::{EsploraProvider, ProviderTrait};
+use simplex::simplex_sdk::signer::Signer;
+use simplex::simplex_sdk::transaction::{
+    FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature,
+};
+use simplex::simplex_sdk::utils::tr_unspendable_key;
 
-use simplex_sdk::constants::{DUMMY_SIGNATURE, SimplicityNetwork};
-use simplex_sdk::provider::{EsploraProvider, ProviderTrait};
-use simplex_sdk::signer::Signer;
-use simplex_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature};
-use simplex_sdk::utils::tr_unspendable_key;
+use artifacts::p2pk::P2pkProgram;
+use artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 const ESPLORA_URL: &str = "https://blockstream.info/liquidtestnet/api";
 
-fn get_p2pk(signer: &Signer) -> (P2PK, Script) {
-    let arguments = P2PKArguments {
+fn get_p2pk(signer: &Signer) -> (P2pkProgram, Script) {
+    let arguments = P2pkArguments {
         public_key: signer.get_schnorr_public_key().unwrap().serialize(),
     };
 
-    let p2pk = P2PK::new(tr_unspendable_key(), arguments);
+    let p2pk = P2pkProgram::new(tr_unspendable_key(), arguments);
     let p2pk_script = p2pk
         .get_program()
         .get_script_pubkey(SimplicityNetwork::LiquidTestnet)
@@ -48,17 +53,22 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) -> Txid {
 
     let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
 
-    p2pk_utxos.retain(|el| el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset());
+    p2pk_utxos.retain(|el| {
+        el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset()
+    });
 
     let mut ft = FinalTransaction::new(SimplicityNetwork::LiquidTestnet);
 
-    let witness = P2PKWitness {
+    let witness = P2pkWitness {
         signature: DUMMY_SIGNATURE,
     };
 
     ft.add_program_input(
         PartialInput::new(p2pk_utxos[0].0.clone(), p2pk_utxos[0].1.clone()),
-        ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
+        ProgramInput::new(
+            Box::new(p2pk.get_program().clone()),
+            Box::new(witness.clone()),
+        ),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     )
     .unwrap();

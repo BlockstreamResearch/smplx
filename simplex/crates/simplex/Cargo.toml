@@ -35,4 +35,3 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 trybuild = { version = "1.0.115" }
 anyhow = { version = "1.0.101" }
-simplicityhl-core = "0.4.2"

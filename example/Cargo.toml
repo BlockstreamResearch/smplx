@@ -1,17 +1,12 @@
 [package]
 name = "draft_example"
+edition = "2024"
+rust-version = "1.90.0"
 version = "0.1.0"
-license.workspace = true
-edition.workspace = true
-
-[lints]
-workspace = true
 
 [dependencies]
-simplex = { workspace = true }
+simplex = { path = "../simplex/crates/simplex" }
 
-simplicityhl = { workspace = true }
-
-[dev-dependencies]
-anyhow = { version = "1.0.102" }
-simplicityhl-core = { version =  "0.4.2" }
+simplicityhl = { git = "https://github.com/ikripaka/SimplicityHL/", branch = "feature/rich-params" }
+trybuild = { version = "1.0.115" }
+anyhow = { version = "1.0.101" }

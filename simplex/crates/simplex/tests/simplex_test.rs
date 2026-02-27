@@ -5,6 +5,8 @@ use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
 
 use simplex::simplex_sdk::constants::SimplicityNetwork;
+use simplex::simplex_sdk::presets::{P2PK, P2PKArguments};
+use simplex::simplex_sdk::utils::tr_unspendable_key;
 
 #[ignore]
 #[simplex::simplex_macros::test(default_rpc)]
@@ -62,10 +64,13 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
         {
             let network = SimplicityNetwork::default_regtest();
             let keypair = Keypair::from_seckey_slice(&secp256k1::SECP256K1, &[1; 32])?;
-            let p2pk = simplicityhl_core::get_p2pk_address(
-                &keypair.x_only_public_key().0,
-                simplicityhl_core::SimplicityNetwork::default_regtest(),
-            )?;
+
+            let arguments = P2PKArguments {
+                public_key: keypair.x_only_public_key().0.serialize(),
+            };
+
+            let p2pk_program = P2PK::new(tr_unspendable_key(), arguments);
+            let p2pk = p2pk_program.get_program().get_tr_address(network).unwrap();
 
             dbg!(p2pk.to_string());
 
