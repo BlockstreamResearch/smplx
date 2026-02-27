@@ -5,7 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-pub const DEFAULT_CONFIG: &str = include_str!("../../../Simplex.example.toml");
+pub const DEFAULT_CONFIG: &str = include_str!("../Simplex.example.toml");
 const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(thiserror::Error, Debug)]

@@ -102,28 +102,27 @@ impl<'b> CodeGenerator {
 
         let code = quote! {
             use simplex::simplex_macros::include_simf;
-            use simplex::simplex_sdk::arguments::ArgumentsTrait;
-            use simplex::simplex_sdk::program::Program;
+            use simplex::simplex_sdk::program::{ArgumentsTrait, Program};
             use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
-            pub struct #program_name<'a> {
-                program: Program<'a>,
+            pub struct #program_name {
+                program: Program,
             }
 
-            impl<'a> #program_name<'a> {
+            impl #program_name {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
-                pub fn new(public_key: &'a XOnlyPublicKey, arguments: &'a impl ArgumentsTrait) -> Self {
+                pub fn new(public_key: XOnlyPublicKey, arguments: impl ArgumentsTrait + 'static) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, public_key, arguments),
+                        program: Program::new(Self::SOURCE, public_key, Box::new(arguments)),
                     }
                 }
 
-                pub fn get_program(&self) -> &Program<'a> {
+                pub fn get_program(&self) -> &Program {
                     &self.program
                 }
 
-                pub fn get_program_mut(&mut self) -> &mut Program<'a> {
+                pub fn get_program_mut(&mut self) -> &mut Program {
                     &mut self.program
                 }
             }

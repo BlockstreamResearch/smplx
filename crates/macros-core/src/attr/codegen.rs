@@ -113,7 +113,7 @@ impl WitnessStruct {
                     use ::simplicityhl::str::WitnessName;
                     use ::simplicityhl::types::TypeConstructible;
                     use ::simplicityhl::value::ValueConstructible;
-                    use ::simplex::simplex_sdk::arguments::ArgumentsTrait;
+                    use ::simplex::simplex_sdk::program::ArgumentsTrait;
                     use ::simplex::bincode::*;
             },
             struct_token_stream: quote! {
@@ -134,7 +134,7 @@ impl WitnessStruct {
 
                 }
 
-                impl ::simplex::simplex_sdk::arguments::ArgumentsTrait for #struct_name {
+                impl ::simplex::simplex_sdk::program::ArgumentsTrait for #struct_name {
                     /// Build Simplicity arguments for contract instantiation.
                     #[must_use]
                     fn build_arguments(&self) -> ::simplicityhl::Arguments {
@@ -190,7 +190,7 @@ impl WitnessStruct {
                     use simplicityhl::str::WitnessName;
                     use simplicityhl::types::TypeConstructible;
                     use simplicityhl::value::ValueConstructible;
-                    use ::simplex::simplex_sdk::witness::WitnessTrait;
+                    use ::simplex::simplex_sdk::program::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -209,7 +209,7 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex::simplex_sdk::witness::WitnessTrait for #struct_name {
+                impl ::simplex::simplex_sdk::program::WitnessTrait for #struct_name {
                      /// Build Simplicity witness values for contract execution.
                     #[must_use]
                     fn build_witness(&self) -> ::simplicityhl::WitnessValues {

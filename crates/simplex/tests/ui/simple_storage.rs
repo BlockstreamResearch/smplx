@@ -1,6 +1,5 @@
-use simplex_macros::*;
-use simplex_sdk::witness::WitnessTrait;
-use simplex_sdk::arguments::ArgumentsTrait;
+use simplex::simplex_macros::*;
+use simplex::simplex_sdk::witness::{WitnessTrait, ArgumentsTrait};
 
 include_simf!("../../../../crates/simplex/tests/ui/simple_storage.simf");
 

@@ -1,4 +1,0 @@
-network = "liquidtestnet"
-
-[test]
-exe_path = "../assets/bin"
