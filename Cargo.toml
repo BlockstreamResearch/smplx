@@ -2,9 +2,7 @@
 resolver = "3"
 members = [
     "crates/*",
-    "examples/options",
-    "examples/p2pk",
-    "examples/test_usage",
+    "example",
 ]
 
 [workspace.package]
@@ -21,6 +19,7 @@ simplex-macros = { path = "./crates/macros" }
 simplex-test = { path = "./crates/test" }
 simplex-sdk = { path = "./crates/sdk" }
 simplex = { path = "./crates/simplex" }
+simplex-user = { path = "./crates/user" }
 
 async-trait = { version = "0.1.89" }
 bincode = { version = "2.0.1", features = ["serde"] }

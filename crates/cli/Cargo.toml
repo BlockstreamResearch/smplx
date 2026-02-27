@@ -24,6 +24,7 @@ electrsd = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+
 anyhow = "1"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }

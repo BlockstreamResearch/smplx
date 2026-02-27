@@ -1,0 +1,8 @@
+network = "liquidtestnet"
+
+[build]
+compile_simf = ["simf/*.simf"]
+out_dir = "./src/artifacts"
+
+[tests]
+elementsd_path = "../assets/elementsd"

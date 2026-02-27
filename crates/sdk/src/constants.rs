@@ -82,6 +82,10 @@ impl SimplicityNetwork {
         }
     }
 
+    pub fn is_mainnet(&self) -> bool {
+        self == &Self::Liquid
+    }
+
     pub const fn address_params(&self) -> &'static elements::AddressParams {
         match self {
             Self::Liquid => &elements::AddressParams::LIQUID,

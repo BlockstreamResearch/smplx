@@ -26,5 +26,6 @@ workspace = true
 
 [dependencies]
 simplex-macros-core = { workspace = true }
+
 serde = { version = "1.0.228", optional = true }
 syn = { version = "2.0.114", default-features = false, features = ["parsing", "proc-macro"] }

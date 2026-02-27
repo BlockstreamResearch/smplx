@@ -1,19 +1,24 @@
-use crate::{ElementsdParams, TestError, common};
+use std::collections::HashMap;
+use std::path::Path;
+use std::str::FromStr;
+
 use bitcoind::bitcoincore_rpc::bitcoin;
+
 use electrsd::bitcoind;
 use electrsd::bitcoind::bitcoincore_rpc::jsonrpc::serde_json::Value;
 use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client};
 use electrsd::bitcoind::{BitcoinD, Conf};
-pub use simplex_provider::elements_rpc::*;
-use simplex_sdk::constants::SimplicityNetwork;
-use simplex_sdk::error::SimplexError;
-use simplex_sdk::provider::ProviderSync;
+
 use simplicityhl::elements::Transaction;
 use simplicityhl::elements::hex::ToHex;
-use simplicityhl::elements::{Address, AssetId, BlockHash, Txid};
-use std::collections::HashMap;
-use std::path::Path;
-use std::str::FromStr;
+use simplicityhl::elements::{Address, AssetId, BlockHash, OutPoint, Script, TxOut, Txid};
+
+pub use simplex_provider::elements_rpc::*;
+
+use simplex_sdk::constants::SimplicityNetwork;
+use simplex_sdk::provider::{ProviderError, ProviderTrait};
+
+use crate::{ElementsdParams, TestError, common};
 
 pub enum TestClientProvider {
     ConfiguredNode { node: BitcoinD, network: SimplicityNetwork },
@@ -96,24 +101,36 @@ pub struct TestRpcProvider {
     provider: TestClientProvider,
 }
 
-impl ProviderSync for TestRpcProvider {
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, SimplexError> {
+impl ProviderTrait for TestRpcProvider {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         use simplicityhl::simplicity::elements::encode;
         let tx_hex = encode::serialize_hex(tx);
         self.sendrawtransaction(&tx_hex)
-            .map_err(|e| SimplexError::RpcExecution(e.to_string()))
+            .map_err(|e| ProviderError::Request(e.to_string()))
     }
 
-    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, SimplexError> {
+    fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
+        todo!()
+    }
+
+    fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
         // Todo: search for appropriate endpoint
         let mut map = HashMap::new();
         map.insert("".to_string(), 0.1);
         Ok(map)
     }
 
-    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, SimplexError> {
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+        todo!()
+    }
+
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+        todo!()
+    }
+
+    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
         self.gettransaction(&txid)
-            .map_err(|e| SimplexError::RpcExecution(e.to_string()))
+            .map_err(|e| ProviderError::Request(e.to_string()))
     }
 }
 

@@ -1,6 +1,8 @@
-use electrsd::electrum_client::bitcoin::hex::HexToArrayError;
-use simplex_provider::ExplorerError;
 use std::io;
+
+use electrsd::electrum_client::bitcoin::hex::HexToArrayError;
+
+use simplex_provider::ExplorerError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
