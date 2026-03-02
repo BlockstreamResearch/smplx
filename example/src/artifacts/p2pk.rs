@@ -6,10 +6,7 @@ pub struct P2pkProgram {
 }
 impl P2pkProgram {
     pub const SOURCE: &'static str = derived_p2pk::P2PK_CONTRACT_SOURCE;
-    pub fn new(
-        public_key: XOnlyPublicKey,
-        arguments: impl ArgumentsTrait + 'static,
-    ) -> Self {
+    pub fn new(public_key: XOnlyPublicKey, arguments: impl ArgumentsTrait + 'static) -> Self {
         Self {
             program: Program::new(Self::SOURCE, public_key, Box::new(arguments)),
         }

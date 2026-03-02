@@ -1,8 +1,6 @@
-mod artifacts;
-
 use simplicityhl::elements::{Script, Txid};
 
-use simplex::simplex_sdk::constants::{DUMMY_SIGNATURE, SimplicityNetwork};
+use simplex::simplex_sdk::constants::{SimplicityNetwork, DUMMY_SIGNATURE};
 use simplex::simplex_sdk::provider::{EsploraProvider, ProviderTrait};
 use simplex::simplex_sdk::signer::Signer;
 use simplex::simplex_sdk::transaction::{
@@ -10,8 +8,8 @@ use simplex::simplex_sdk::transaction::{
 };
 use simplex::simplex_sdk::utils::tr_unspendable_key;
 
-use artifacts::p2pk::P2pkProgram;
-use artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+use draft_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+use draft_example::artifacts::p2pk::P2pkProgram;
 
 const ESPLORA_URL: &str = "https://blockstream.info/liquidtestnet/api";
 
@@ -30,7 +28,7 @@ fn get_p2pk(signer: &Signer) -> (P2pkProgram, Script) {
 }
 
 fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) -> Txid {
-    let (_, p2pk_script) = get_p2pk(&signer);
+    let (_, p2pk_script) = get_p2pk(signer);
 
     let mut ft = FinalTransaction::new(SimplicityNetwork::LiquidTestnet);
 
@@ -49,13 +47,11 @@ fn spend_p2wpkh(signer: &Signer, provider: &EsploraProvider) -> Txid {
 }
 
 fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) -> Txid {
-    let (p2pk, p2pk_script) = get_p2pk(&signer);
+    let (p2pk, p2pk_script) = get_p2pk(signer);
 
     let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
 
-    p2pk_utxos.retain(|el| {
-        el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset()
-    });
+    p2pk_utxos.retain(|el| el.1.asset.explicit().unwrap() == SimplicityNetwork::LiquidTestnet.policy_asset());
 
     let mut ft = FinalTransaction::new(SimplicityNetwork::LiquidTestnet);
 
@@ -64,11 +60,8 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) -> Txid {
     };
 
     ft.add_program_input(
-        PartialInput::new(p2pk_utxos[0].0.clone(), p2pk_utxos[0].1.clone()),
-        ProgramInput::new(
-            Box::new(p2pk.get_program().clone()),
-            Box::new(witness.clone()),
-        ),
+        PartialInput::new(p2pk_utxos[0].0, p2pk_utxos[0].1.clone()),
+        ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     )
     .unwrap();
@@ -81,26 +74,26 @@ fn spend_p2pk(signer: &Signer, provider: &EsploraProvider) -> Txid {
     res
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let provider = EsploraProvider::new(ESPLORA_URL.to_string());
     let signer = Signer::new(
         "exist carry drive collect lend cereal occur much tiger just involve mean",
         Box::new(provider.clone()),
         SimplicityNetwork::LiquidTestnet,
-    )
-    .unwrap();
+    )?;
 
     let tx = spend_p2wpkh(&signer, &provider);
 
-    provider.wait(&tx).unwrap();
+    provider.wait(&tx)?;
 
     println!("Confirmed");
 
     let tx = spend_p2pk(&signer, &provider);
 
-    provider.wait(&tx).unwrap();
+    provider.wait(&tx)?;
 
     println!("Confirmed");
 
     println!("OK");
+    Ok(())
 }

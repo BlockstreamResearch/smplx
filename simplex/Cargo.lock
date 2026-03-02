@@ -1962,7 +1962,7 @@ dependencies = [
 [[package]]
 name = "simplicityhl"
 version = "0.4.1"
-source = "git+https://github.com/ikripaka/SimplicityHL/?branch=feature%2Frich-params#77755254414093ff0e1b51beedbc27367745388e"
+source = "git+https://github.com/BlockstreamResearch/SimplicityHL.git?rev=568b462#568b4621d6145cd97dce68a3f3428c7eb85306b6"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
