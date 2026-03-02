@@ -1,5 +1,5 @@
-use simplicityhl::WitnessValues;
 use dyn_clone::DynClone;
+use simplicityhl::WitnessValues;
 
 pub trait WitnessTrait: DynClone {
     fn build_witness(&self) -> WitnessValues;

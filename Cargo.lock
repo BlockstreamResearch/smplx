@@ -1920,6 +1920,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplex-template-gen-core"
+version = "0.1.0"
+dependencies = [
+ "pathdiff",
+ "prettyplease",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "simplex-test",
+ "simplicityhl",
+ "syn 2.0.117",
+ "thiserror",
+]
+
+[[package]]
 name = "simplex-test"
 version = "0.1.0"
 dependencies = [

@@ -1,5 +1,5 @@
-use simplicityhl::Arguments;
 use dyn_clone::DynClone;
+use simplicityhl::Arguments;
 
 pub trait ArgumentsTrait: DynClone {
     fn build_arguments(&self) -> Arguments;

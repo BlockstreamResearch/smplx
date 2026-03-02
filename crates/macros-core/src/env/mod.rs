@@ -51,7 +51,11 @@ impl<'b> CodeGenerator {
 
             let output_file = out_dir.join(format!("{}.rs", simf_content.contract_name));
 
-            let mut file = fs::OpenOptions::new().write(true).truncate(true).open(&output_file)?;
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&output_file)?;
             Self::expand_file(
                 FileDescriptor {
                     simf_content,

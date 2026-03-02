@@ -5,7 +5,6 @@ use crate::TestError;
 pub use config::*;
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 pub use rpc_provider::*;
-use std::io;
 use std::path::PathBuf;
 
 pub struct TestContext {

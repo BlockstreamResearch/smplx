@@ -1,6 +1,5 @@
 use crate::attr::SimfContent;
 use crate::attr::types::RustType;
-use proc_macro2::Ident;
 use quote::{format_ident, quote};
 use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
@@ -258,6 +257,7 @@ impl WitnessStruct {
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
         })
     }
+
     fn generate_witness_fields<'a>(
         iter: impl Iterator<Item = (&'a WitnessName, &'a ResolvedType)>,
     ) -> syn::Result<Vec<WitnessField>> {
@@ -346,10 +346,10 @@ pub(crate) fn convert_contract_name_to_struct_name(contract_name: &str) -> Strin
     words.join("")
 }
 
-pub(crate) fn convert_contract_name_to_contract_source_const(contract_name: &str) -> Ident {
+pub(crate) fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
 }
 
-pub(crate) fn convert_contract_name_to_contract_module(contract_name: &str) -> Ident {
+pub(crate) fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("derived_{}", contract_name)
 }
