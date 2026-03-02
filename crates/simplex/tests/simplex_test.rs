@@ -4,7 +4,7 @@ use simplicityhl::elements::Address;
 use simplicityhl::elements::bitcoin::secp256k1;
 use simplicityhl::elements::secp256k1_zkp::Keypair;
 
-use simplex::simplex_sdk::constants::SimplicityNetwork;
+use simplex::simplex_sdk::provider::SimplicityNetwork;
 use simplex::simplex_sdk::presets::{P2PK, P2PKArguments};
 use simplex::simplex_sdk::utils::tr_unspendable_key;
 

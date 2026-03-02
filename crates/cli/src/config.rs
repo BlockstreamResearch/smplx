@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use simplex_sdk::constants::SimplicityNetwork;
+use simplex_sdk::provider::SimplicityNetwork;
 use simplex_test::{ElementsDConf, RpcCreds};
 use std::io;
 use std::path::{Path, PathBuf};

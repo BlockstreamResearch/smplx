@@ -1,10 +1,12 @@
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 
-use crate::constants::{SimplicityNetwork, WITNESS_SCALE_FACTOR};
+use crate::provider::SimplicityNetwork;
 
 use super::error::TransactionError;
 use super::partial_input::{PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
+
+pub const WITNESS_SCALE_FACTOR: usize = 4;
 
 #[derive(Clone)]
 pub struct FinalInput {

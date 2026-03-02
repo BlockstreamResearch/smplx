@@ -19,7 +19,7 @@ minreq = { workspace = true }
 simplicityhl = { workspace = true }
 
 hex = { version = "0.4" }
-serde = { version = "1.0.228", features = ["derive"]}
+serde = { version = "1.0.228", features = ["derive"] }
 elements-miniscript = { version = "0.4", features = ["base64", "serde"] }
 bip39 = { version = "2.0.0", features = ["rand"] }
 dyn-clone = { version = "1.0.20" }

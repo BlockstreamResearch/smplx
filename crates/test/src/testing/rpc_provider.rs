@@ -15,7 +15,7 @@ use simplicityhl::elements::{Address, AssetId, BlockHash, OutPoint, Script, TxOu
 
 pub use simplex_provider::elements_rpc::*;
 
-use simplex_sdk::constants::SimplicityNetwork;
+use simplex_sdk::provider::SimplicityNetwork;
 use simplex_sdk::provider::{ProviderError, ProviderTrait};
 
 use crate::{ElementsdParams, TestError, common};

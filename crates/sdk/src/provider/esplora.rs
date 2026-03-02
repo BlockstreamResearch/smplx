@@ -14,11 +14,12 @@ use serde::Deserialize;
 pub use simplex_provider::esplora::*;
 
 use super::error::ProviderError;
-use super::provider::ProviderTrait;
+use super::provider::{DEFAULT_TIMEOUT_SECS, ProviderTrait};
 
 #[derive(Clone)]
 pub struct EsploraProvider {
     esplora_url: String,
+    timeout: Duration,
 }
 
 #[derive(Deserialize)]
@@ -59,7 +60,10 @@ struct EsploraUtxo {
 
 impl EsploraProvider {
     pub fn new(url: String) -> Self {
-        Self { esplora_url: url }
+        Self {
+            esplora_url: url,
+            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+        }
     }
 
     fn esplora_utxo_to_outpoint(&self, utxo: &EsploraUtxo) -> Result<OutPoint, ProviderError> {
@@ -98,8 +102,10 @@ impl ProviderTrait for EsploraProvider {
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
+        let timeout_secs = self.timeout.as_secs();
 
         let response = minreq::post(&url)
+            .with_timeout(timeout_secs)
             .with_body(tx_hex)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
@@ -119,10 +125,12 @@ impl ProviderTrait for EsploraProvider {
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
-        let status_url = format!("{}/tx/{}/status", self.esplora_url, txid);
+        let url = format!("{}/tx/{}/status", self.esplora_url, txid);
+        let timeout_secs = self.timeout.as_secs();
 
         for _ in 1..10 {
-            let response = minreq::get(&status_url)
+            let response = minreq::get(&url)
+                .with_timeout(timeout_secs)
                 .send()
                 .map_err(|e| ProviderError::Request(e.to_string()))?;
 
@@ -145,7 +153,10 @@ impl ProviderTrait for EsploraProvider {
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
         let url = format!("{}/tx/{}/raw", self.esplora_url, txid);
+        let timeout_secs = self.timeout.as_secs();
+
         let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
@@ -164,7 +175,10 @@ impl ProviderTrait for EsploraProvider {
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
         let url = format!("{}/address/{}/utxo", self.esplora_url, address);
+        let timeout_secs = self.timeout.as_secs();
+
         let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
@@ -190,7 +204,10 @@ impl ProviderTrait for EsploraProvider {
         let scripthash = hex::encode(hash_bytes);
 
         let url = format!("{}/scripthash/{}/utxo", self.esplora_url, scripthash);
+        let timeout_secs = self.timeout.as_secs();
+
         let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
@@ -212,7 +229,10 @@ impl ProviderTrait for EsploraProvider {
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
         let url = format!("{}/fee-estimates", self.esplora_url);
+        let timeout_secs = self.timeout.as_secs();
+
         let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
