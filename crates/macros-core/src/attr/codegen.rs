@@ -331,7 +331,7 @@ impl WitnessStruct {
     }
 }
 
-pub(crate) fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
+pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
     let words: Vec<String> = contract_name
         .split('_')
         .filter(|w| !w.is_empty())
@@ -346,10 +346,10 @@ pub(crate) fn convert_contract_name_to_struct_name(contract_name: &str) -> Strin
     words.join("")
 }
 
-pub(crate) fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
+pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
 }
 
-pub(crate) fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
+pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("derived_{}", contract_name)
 }

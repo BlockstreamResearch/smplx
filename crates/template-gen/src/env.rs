@@ -1,10 +1,10 @@
-use crate::attr::SimfContent;
-use crate::attr::codegen::{
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
+use simplex_macros_core::attr::SimfContent;
+use simplex_macros_core::attr::codegen::{
     convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
     convert_contract_name_to_struct_name,
 };
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{env, fs, io};
@@ -31,7 +31,6 @@ pub struct CodeGenerator {}
 struct FileDescriptor {
     simf_content: SimfContent,
     simf_file: PathBuf,
-    out_dir: PathBuf,
     cwd: PathBuf,
 }
 
@@ -60,7 +59,39 @@ impl<'b> CodeGenerator {
                 FileDescriptor {
                     simf_content,
                     simf_file: PathBuf::from(simf_file_path.as_ref()),
-                    out_dir: PathBuf::from(out_dir),
+                    cwd: env::current_dir()?,
+                },
+                &mut file,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn generate_template_lib(
+        out_dir: impl AsRef<std::path::Path>,
+        simfs: &[impl AsRef<std::path::Path>],
+    ) -> Result<(), CodeGeneratorError> {
+        let out_dir = out_dir.as_ref();
+
+        fs::create_dir_all(out_dir)?;
+
+        for simf_file_path in simfs {
+            let path_buf = PathBuf::from(simf_file_path.as_ref());
+            let simf_content = SimfContent::extract_content_from_path(&path_buf)
+                .map_err(CodeGeneratorError::FailedToExtractContent)?;
+
+            let output_file = out_dir.join(format!("{}.rs", simf_content.contract_name));
+
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&output_file)?;
+            Self::expand_file(
+                FileDescriptor {
+                    simf_content,
+                    simf_file: PathBuf::from(simf_file_path.as_ref()),
                     cwd: env::current_dir()?,
                 },
                 &mut file,

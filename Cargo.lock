@@ -1851,6 +1851,7 @@ dependencies = [
  "serde",
  "simplex-macros-core",
  "simplex-sdk",
+ "simplex-template-gen-core",
  "simplex-test",
  "simplicityhl",
  "thiserror",
@@ -1874,16 +1875,12 @@ dependencies = [
 name = "simplex-macros-core"
 version = "0.1.0"
 dependencies = [
- "pathdiff",
- "prettyplease",
- "proc-macro-error",
  "proc-macro2",
  "quote",
  "serde",
  "simplex-test",
  "simplicityhl",
  "syn 2.0.117",
- "thiserror",
 ]
 
 [[package]]
@@ -1929,7 +1926,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "simplex-test",
+ "simplex-macros-core",
  "simplicityhl",
  "syn 2.0.117",
  "thiserror",

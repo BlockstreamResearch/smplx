@@ -5,7 +5,7 @@ use crate::cli::commands::{Command, TestCommand, TestFlags};
 use crate::config::{Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
-use simplex_macros_core::env::CodeGenerator;
+use simplex_template_gen_core::CodeGenerator;
 use simplex_test::TestClientProvider;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -20,7 +20,7 @@ pub struct Cli {
     pub config: Option<PathBuf>,
 
     #[command(subcommand)]
-    pub command: commands::Command,
+    pub command: Command,
 }
 
 struct TestParams {
@@ -41,19 +41,19 @@ impl Cli {
     /// Returns an error if the command execution fails.
     pub async fn run(&self) -> Result<(), Error> {
         match &self.command {
-            commands::Command::Init => {
+            Command::Init => {
                 let config_path = Config::get_path()?;
                 std::fs::write(&config_path, DEFAULT_CONFIG)?;
                 println!("Config written to: '{}'", config_path.display());
                 Ok(())
             }
-            commands::Command::Config => {
+            Command::Config => {
                 let loaded_config =
                     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
                 println!("{loaded_config:#?}");
                 Ok(())
             }
-            commands::Command::Test { command } => {
+            Command::Test { command } => {
                 let loaded_config =
                     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
                 println!("{loaded_config:#?}");
@@ -62,7 +62,7 @@ impl Cli {
 
                 Ok(())
             }
-            commands::Command::Regtest => {
+            Command::Regtest => {
                 let loaded_config =
                     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
                 println!("{loaded_config:#?}");
@@ -187,7 +187,7 @@ impl Cli {
             }
         }
         test_command.args([command_as_arg]);
-        dbg!(test_command.get_args());
+        let _ = dbg!(test_command.get_args());
         test_command
             .env(simplex_test::TEST_ENV_NAME, params.cache_path)
             .stdin(Stdio::inherit())

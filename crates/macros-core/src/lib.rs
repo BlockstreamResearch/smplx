@@ -1,8 +1,6 @@
 #![warn(clippy::all, clippy::pedantic)]
 
 pub mod attr;
-/// Module releted to simplex environment generation
-pub mod env;
 pub mod test;
 
 /// Expands the `include_simf` macro.
@@ -23,11 +21,4 @@ pub fn expand_include_simf(input: &attr::parse::SynFilePath) -> syn::Result<proc
 /// Returns a `syn::Result` with an error if expansion fails.
 pub fn expand_test(args: proc_macro2::TokenStream, input: syn::ItemFn) -> syn::Result<proc_macro2::TokenStream> {
     test::expand(args, input)
-}
-
-pub fn expand_simplex_contract_enviroment(
-    outdir: impl AsRef<std::path::Path>,
-    simfs: &[impl AsRef<std::path::Path>],
-) -> Result<(), env::CodeGeneratorError> {
-    env::CodeGenerator::generate_files(outdir, simfs)
 }

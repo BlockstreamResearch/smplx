@@ -33,5 +33,5 @@ pub enum Error {
 
     /// Errors when generating code for simplicity environment.
     #[error("Occurred code generation error, error: '{0}'")]
-    CodeGenerator(#[from] simplex_macros_core::env::CodeGeneratorError),
+    CodeGenerator(#[from] simplex_template_gen_core::CodeGeneratorError),
 }

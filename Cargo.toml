@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/*",
 ]
+exclude = ["examples/basic"]
 
 [workspace.package]
 license = "MIT OR Apache-2.0"
@@ -14,6 +15,7 @@ multiple_crate_versions = "allow"
 [workspace.dependencies]
 simplex-provider = { path = "./crates/provider" }
 simplex-macros-core = { path = "./crates/macros-core", features = ["bincode", "serde"] }
+simplex-template-gen-core = { path = "./crates/template-gen" }
 simplex-macros = { path = "./crates/macros" }
 simplex-test = { path = "./crates/test" }
 simplex-sdk = { path = "./crates/sdk" }

@@ -18,6 +18,7 @@ workspace = true
 simplex-test = { workspace = true }
 simplex-sdk = { workspace = true }
 simplex-macros-core = { workspace = true }
+simplex-template-gen-core = { workspace = true }
 
 simplicityhl = { workspace = true }
 electrsd = { workspace = true }

@@ -5,8 +5,7 @@ rust-version = "1.90.0"
 version = "0.1.0"
 
 [dependencies]
-simplex = { path = "../simplex/crates/simplex" }
+simplex = { path = "../../crates/simplex" }
 
 simplicityhl = { git = "https://github.com/BlockstreamResearch/SimplicityHL.git", rev = "568b462" }
-trybuild = { version = "1.0.115" }
 anyhow = { version = "1.0.101" }
