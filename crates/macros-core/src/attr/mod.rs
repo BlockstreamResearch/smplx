@@ -12,12 +12,6 @@ use proc_macro2::Span;
 use quote::quote;
 use simplicityhl::AbiMeta;
 use std::error::Error;
-// TODO(Illia): add bincode generation feature (i.e. require bincode dependencies)
-// TODO(Illia): add conditional compilation for simplicity-core to e included automatically
-
-// TODO(Illia): automatically derive bincode implementation
-// TODO(Illia): extract either:serde feature and use it when simplicityhl has serde feature
-// TODO(Illia): add features
 
 /// Expands helper functions for the given Simf content and metadata.
 ///
@@ -52,46 +46,7 @@ fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::To
     let contract_source_name = &derived_meta.contract_source_const_name;
 
     quote! {
-        // use simplicityhl::elements::Address;
-        // use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
-        // use simplex::simplex_core::{create_p2tr_address, load_program, ProgramError, SimplicityNetwork};
-        // use simplicityhl::CompiledProgram;
-
         pub const #contract_source_name: &str = #contract_content;
-
-        /// Get the options template program for instantiation.
-        ///
-        /// # Panics
-        /// - if the embedded source fails to compile (should never happen).
-        // #[must_use]
-        // pub fn get_template_program() -> ::simplicityhl::TemplateProgram {
-        //     ::simplicityhl::TemplateProgram::new(#contract_source_name).expect(#error_msg)
-        // }
-
-        /// Compile option offer program with the given arguments.
-        ///
-        /// # Errors
-        ///
-        /// Returns error if compilation fails.
-        // pub fn get_loaded_program(
-        //     arguments: &#contract_arguments_struct_name,
-        // ) -> Result<CompiledProgram, ProgramError> {
-        //     load_program(#contract_source_name, arguments.build_arguments())
-        // }
-
-        /// Get compiled option offer program, panicking on failure.
-        ///
-        /// # Panics
-        ///
-        /// Panics if program instantiation fails.
-        // #[must_use]
-        // pub fn get_compiled_program(arguments: &#contract_arguments_struct_name) -> CompiledProgram {
-        //     let program = get_template_program();
-
-        //     program
-        //         .instantiate(arguments.build_arguments(), true)
-        //         .unwrap()
-        // }
     }
 }
 

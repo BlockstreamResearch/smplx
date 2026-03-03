@@ -1,3 +1,4 @@
+use crate::config::ConfigOverride;
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
@@ -14,10 +15,7 @@ pub enum Command {
         #[command(subcommand)]
         command: TestCommand,
     },
-    Build {
-        #[arg(env = "OUT_DIR")]
-        out_dir: Option<PathBuf>,
-    },
+    Build,
 }
 
 /// Test management commands
@@ -49,4 +47,36 @@ pub struct TestFlags {
     /// Run ignored tests
     #[arg(long = "ignored")]
     pub ignored: bool,
+}
+
+/// Build override arguments
+#[derive(Debug, Args, Clone)]
+pub struct OverrideArgs {
+    #[command(flatten)]
+    pub build_args: BuildOverrideArgs,
+}
+
+/// Build override arguments
+#[derive(Debug, Args, Clone)]
+pub struct BuildOverrideArgs {
+    /// Output directory for build artifacts
+    #[arg(global = true, long, env = "OUT_DIR")]
+    pub out_dir: Option<PathBuf>,
+    /// Flag to generate only files for contracts without module artifacts
+    #[arg(global = true, long)]
+    pub only_files: Option<bool>,
+}
+
+impl OverrideArgs {
+    pub fn generate(self) -> Option<ConfigOverride> {
+        Some(ConfigOverride {
+            rpc_creds: None,
+            network: None,
+            build_conf: if self.build_args.out_dir.is_none() && self.build_args.only_files.is_none() {
+                None
+            } else {
+                Some(self.build_args)
+            },
+        })
+    }
 }

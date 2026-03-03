@@ -12,10 +12,10 @@ use std::{env, fs, io};
 #[derive(thiserror::Error, Debug)]
 pub enum CodeGeneratorError {
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     #[error("Failed to extract content from path, err: '{0}'")]
-    FailedToExtractContent(std::io::Error),
+    FailedToExtractContent(io::Error),
 
     #[error("Failed to generate file: {0}")]
     GenerationFailed(String),
@@ -34,14 +34,26 @@ struct FileDescriptor {
     cwd: PathBuf,
 }
 
+type ContractModName = String;
+
 impl<'b> CodeGenerator {
     pub fn generate_files(
         out_dir: impl AsRef<std::path::Path>,
         simfs: &[impl AsRef<std::path::Path>],
     ) -> Result<(), CodeGeneratorError> {
+        let _ = Self::_generate_files(out_dir, simfs)?;
+
+        Ok(())
+    }
+
+    fn _generate_files(
+        out_dir: impl AsRef<std::path::Path>,
+        simfs: &[impl AsRef<std::path::Path>],
+    ) -> Result<Vec<ContractModName>, CodeGeneratorError> {
         let out_dir = out_dir.as_ref();
 
         fs::create_dir_all(out_dir)?;
+        let mut module_files = Vec::with_capacity(simfs.len());
 
         for simf_file_path in simfs {
             let path_buf = PathBuf::from(simf_file_path.as_ref());
@@ -49,60 +61,57 @@ impl<'b> CodeGenerator {
                 .map_err(CodeGeneratorError::FailedToExtractContent)?;
 
             let output_file = out_dir.join(format!("{}.rs", simf_content.contract_name));
+            module_files.push(simf_content.contract_name.clone());
 
             let mut file = fs::OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
                 .open(&output_file)?;
-            Self::expand_file(
-                FileDescriptor {
-                    simf_content,
-                    simf_file: PathBuf::from(simf_file_path.as_ref()),
-                    cwd: env::current_dir()?,
-                },
-                &mut file,
-            )?;
+            let code = Self::generate_simf_binding_code(FileDescriptor {
+                simf_content,
+                simf_file: PathBuf::from(simf_file_path.as_ref()),
+                cwd: env::current_dir()?,
+            })?;
+            Self::expand_file(code, &mut file)?;
         }
-
-        Ok(())
+        Ok(module_files)
     }
 
-    pub fn generate_template_lib(
+    pub fn generate_artifacts_mod(
+        out_dir_name: impl AsRef<str>,
         out_dir: impl AsRef<std::path::Path>,
         simfs: &[impl AsRef<std::path::Path>],
     ) -> Result<(), CodeGeneratorError> {
         let out_dir = out_dir.as_ref();
-
-        fs::create_dir_all(out_dir)?;
-
-        for simf_file_path in simfs {
-            let path_buf = PathBuf::from(simf_file_path.as_ref());
-            let simf_content = SimfContent::extract_content_from_path(&path_buf)
-                .map_err(CodeGeneratorError::FailedToExtractContent)?;
-
-            let output_file = out_dir.join(format!("{}.rs", simf_content.contract_name));
-
-            let mut file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&output_file)?;
-            Self::expand_file(
-                FileDescriptor {
-                    simf_content,
-                    simf_file: PathBuf::from(simf_file_path.as_ref()),
-                    cwd: env::current_dir()?,
-                },
-                &mut file,
-            )?;
-        }
+        let out_dir = dbg!(out_dir.join(out_dir_name.as_ref()));
+        let mod_filenames = Self::_generate_files(&out_dir, simfs)?;
+        Self::_generate_mod_rs(&out_dir, &mod_filenames)?;
 
         Ok(())
     }
 
-    fn expand_file(file_descriptor: FileDescriptor, buf: &mut dyn Write) -> Result<(), CodeGeneratorError> {
-        let code = Self::generate_code(file_descriptor)?;
+    pub fn _generate_mod_rs(
+        out_dir: impl AsRef<std::path::Path>,
+        simfs_mod_name: &[ContractModName],
+    ) -> Result<(), CodeGeneratorError> {
+        let out_dir = out_dir.as_ref();
+        let output_file = out_dir.join("mod.rs");
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&output_file)?;
+        let simfs_mod_name = simfs_mod_name.iter().map(|x| format_ident!("{x}")).collect::<Vec<_>>();
+        let code = quote! {
+            #(pub mod #simfs_mod_name);*;
+        };
+        dbg!(code.to_string());
+        Self::expand_file(code, &mut file)?;
+        Ok(())
+    }
+
+    fn expand_file(code: TokenStream, buf: &mut dyn Write) -> Result<(), CodeGeneratorError> {
         let file: syn::File = syn::parse2(code).map_err(|e| CodeGeneratorError::GenerationFailed(e.to_string()))?;
         let prettystr = prettyplease::unparse(&file);
         buf.write_all(prettystr.as_bytes())?;
@@ -110,7 +119,7 @@ impl<'b> CodeGenerator {
         Ok(())
     }
 
-    fn generate_code(file_descriptor: FileDescriptor) -> Result<TokenStream, CodeGeneratorError> {
+    fn generate_simf_binding_code(file_descriptor: FileDescriptor) -> Result<TokenStream, CodeGeneratorError> {
         let contract_name = &file_descriptor.simf_content.contract_name;
         let program_name = {
             let base_name = convert_contract_name_to_struct_name(contract_name);

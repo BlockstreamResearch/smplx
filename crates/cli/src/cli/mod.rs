@@ -1,11 +1,10 @@
 pub mod commands;
 
 use crate::cache_storage::CacheStorage;
-use crate::cli::commands::{Command, TestCommand, TestFlags};
-use crate::config::{Config, DEFAULT_CONFIG};
+use crate::cli::commands::{Command, OverrideArgs, TestCommand, TestFlags};
+use crate::config::{BuildConf, Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
-use simplex_template_gen_core::CodeGenerator;
 use simplex_test::TestClientProvider;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -17,10 +16,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[command(about = "CLI for Simplicity Options trading on Liquid")]
 pub struct Cli {
     #[arg(short, long, env = "SIMPLEX_CONFIG")]
-    pub config: Option<PathBuf>,
+    config: Option<PathBuf>,
 
     #[command(subcommand)]
-    pub command: Command,
+    command: Command,
+
+    #[command(flatten)]
+    override_args: OverrideArgs,
 }
 
 struct TestParams {
@@ -39,8 +41,10 @@ impl Cli {
     ///
     /// # Errors
     /// Returns an error if the command execution fails.
-    pub async fn run(&self) -> Result<(), Error> {
-        match &self.command {
+    pub async fn run(self) -> Result<(), Error> {
+        let config_override = self.override_args.generate();
+
+        match self.command {
             Command::Init => {
                 let config_path = Config::get_path()?;
                 std::fs::write(&config_path, DEFAULT_CONFIG)?;
@@ -48,23 +52,26 @@ impl Cli {
                 Ok(())
             }
             Command::Config => {
-                let loaded_config =
-                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                let loaded_config = Config::load_or_discover(self.config.clone())
+                    .map_err(|e| Error::ConfigDiscoveryFailure(e))?
+                    .override_cfg(config_override.as_ref());
                 println!("{loaded_config:#?}");
                 Ok(())
             }
             Command::Test { command } => {
-                let loaded_config =
-                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                let loaded_config = Config::load_or_discover(self.config.clone())
+                    .map_err(|e| Error::ConfigDiscoveryFailure(e))?
+                    .override_cfg(config_override.as_ref());
                 println!("{loaded_config:#?}");
 
-                self.run_test_command(loaded_config, command)?;
+                Self::run_test_command(loaded_config, &command)?;
 
                 Ok(())
             }
             Command::Regtest => {
-                let loaded_config =
-                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+                let loaded_config = Config::load_or_discover(self.config.clone())
+                    .map_err(|e| Error::ConfigDiscoveryFailure(e))?
+                    .override_cfg(config_override.as_ref());
                 println!("{loaded_config:#?}");
 
                 let running = Arc::new(AtomicBool::new(true));
@@ -90,31 +97,42 @@ impl Cli {
                 println!("Exiting...");
                 Ok(())
             }
-            // TODO: add overriding of value or delete
-            Command::Build { out_dir: _out_dir } => {
-                let loaded_config =
-                    Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+            Command::Build => {
+                let loaded_config = Config::load_or_discover(self.config.clone())
+                    .map_err(|e| Error::ConfigDiscoveryFailure(e))?
+                    .override_cfg(config_override.as_ref());
 
                 if loaded_config.build_config.is_none() {
                     return Err(Error::Config(
                         "No build config to build contracts environment, please add appropriate config".to_string(),
                     ));
                 }
+                dbg!(&loaded_config.build_config);
 
-                let build_config = loaded_config.build_config.unwrap();
-                if build_config.compile_simf.is_empty() {
-                    return Err(Error::Config("No files listed to build contracts environment, please check glob patterns or 'compile_simf' field in config.".to_string()));
+                let build_config = dbg!(BuildConf::check_or_unwrap(loaded_config.build_config)?);
+
+                let out_dir_unwrapped = build_config.out_dir.unwrap();
+                match build_config.only_files {
+                    true => {
+                        simplex_template_gen_core::expand_simplex_contract_environment(
+                            &out_dir_unwrapped,
+                            &build_config.compile_simf,
+                        )?;
+                    }
+                    false => {
+                        simplex_template_gen_core::expand_simplex_template(
+                            &out_dir_unwrapped,
+                            &build_config.compile_simf,
+                        )?;
+                    }
                 }
 
-                CodeGenerator::generate_files(&build_config.out_dir, &build_config.compile_simf)?;
-
-                println!("{build_config:#?}");
                 Ok(())
             }
         }
     }
 
-    pub(crate) fn run_test_command(&self, config: Config, command: &TestCommand) -> Result<(), Error> {
+    pub(crate) fn run_test_command(config: Config, command: &TestCommand) -> Result<(), Error> {
         let cache_path = CacheStorage::save_cached_test_config(&config.test_config)?;
         let mut test_command = match command {
             TestCommand::Integration { additional_flags } => Self::form_test_command(TestParams {

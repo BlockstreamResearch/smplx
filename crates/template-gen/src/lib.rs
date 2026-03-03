@@ -1,18 +1,20 @@
 #![warn(clippy::all, clippy::pedantic)]
 
 mod env;
-pub use env::*;
+pub use env::CodeGeneratorError;
 
-pub fn expand_simplex_contract_enviroment(
+pub fn expand_simplex_contract_environment(
     outdir: impl AsRef<std::path::Path>,
     simfs: &[impl AsRef<std::path::Path>],
 ) -> Result<(), CodeGeneratorError> {
-    CodeGenerator::generate_files(outdir, simfs)
+    env::CodeGenerator::generate_files(outdir, simfs)
 }
 
 pub fn expand_simplex_template(
     outdir: impl AsRef<std::path::Path>,
     simfs: &[impl AsRef<std::path::Path>],
 ) -> Result<(), CodeGeneratorError> {
-    CodeGenerator::generate_template_lib(outdir, simfs)
+    const ARTIFACTS_DIR_NAME: &str = "artifacts";
+
+    env::CodeGenerator::generate_artifacts_mod(ARTIFACTS_DIR_NAME, outdir, simfs)
 }

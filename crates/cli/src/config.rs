@@ -1,3 +1,5 @@
+use crate::cli::commands::BuildOverrideArgs;
+use crate::error::Error;
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
 use simplex_test::{ElementsDConf, RpcCreds};
@@ -55,18 +57,35 @@ pub struct ProviderConf {
 pub struct ConfigOverride {
     pub rpc_creds: Option<ElementsDConf>,
     pub network: Option<SimplicityNetwork>,
+    pub build_conf: Option<BuildOverrideArgs>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildConf {
     pub compile_simf: Vec<PathBuf>,
-    pub out_dir: PathBuf,
+    pub out_dir: Option<PathBuf>,
+    pub only_files: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct _BuildConf {
     compile_simf: Vec<String>,
-    out_dir: PathBuf,
+    out_dir: Option<PathBuf>,
+    #[serde(default)]
+    only_files: bool,
+}
+
+impl BuildConf {
+    pub(crate) fn check_or_unwrap(loaded_config: Option<Self>) -> Result<Self, Error> {
+        let loaded_config = loaded_config.unwrap();
+        if loaded_config.compile_simf.is_empty() {
+            return Err(Error::Config("No files listed to build contracts environment, please check glob patterns or 'compile_simf' field in config.".to_string()));
+        }
+        if loaded_config.out_dir.is_none() {
+            return Err(Error::Config("No out directory is set to build contracts environment, please check glob patterns or 'out_dir' field in config.".to_string()));
+        }
+        Ok(loaded_config)
+    }
 }
 
 impl Default for ProviderConf {
@@ -83,21 +102,35 @@ impl Config {
         Ok(cwd.join(CONFIG_FILENAME))
     }
 
-    pub fn discover(cfg_override: Option<&ConfigOverride>) -> Result<Config, ConfigError> {
-        match Config::_discover() {
-            Ok(mut cfg) => {
-                if let Some(cfg_override) = cfg_override {
-                    if let Some(test_conf) = cfg_override.rpc_creds.clone() {
-                        cfg.test_config = test_conf;
-                    }
-                    if let Some(network) = cfg_override.network {
-                        cfg.provider_config.simplicity_network = network;
-                    }
-                }
-                Ok(cfg)
+    pub fn discover() -> Result<Config, ConfigError> {
+        Config::_discover()
+    }
+
+    pub fn override_cfg(mut self, cfg_override: Option<&ConfigOverride>) -> Self {
+        if let Some(cfg_override) = cfg_override {
+            if let Some(test_conf) = cfg_override.rpc_creds.clone() {
+                self.test_config = test_conf;
             }
-            Err(e) => Err(e),
+            if let Some(network) = cfg_override.network {
+                self.provider_config.simplicity_network = network;
+            }
+            if let Some(build_args) = cfg_override.build_conf.as_ref() {
+                if let Some(ref mut build_conf) = self.build_config {
+                    build_conf.out_dir = build_args.out_dir.clone();
+                    if let Some(only_files) = build_args.only_files {
+                        build_conf.only_files = only_files;
+                    }
+                } else if build_args.out_dir.is_some() || build_args.only_files.is_some() {
+                    // Create default BuildConf if override args are provided but no build_config exists
+                    self.build_config = Some(BuildConf {
+                        compile_simf: Vec::new(),
+                        out_dir: build_args.out_dir.clone(),
+                        only_files: build_args.only_files.unwrap_or_default(),
+                    });
+                }
+            }
         }
+        self
     }
 
     pub fn load(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
@@ -153,7 +186,11 @@ impl FromStr for Config {
                 None => None,
                 Some(x) => Some(BuildConf {
                     compile_simf: resolve_glob_paths(&x.compile_simf)?,
-                    out_dir: resolve_dir_path(x.out_dir)?,
+                    out_dir: match x.out_dir {
+                        None => None,
+                        Some(x) => Some(resolve_dir_path(x)?),
+                    },
+                    only_files: x.only_files,
                 }),
             },
         })

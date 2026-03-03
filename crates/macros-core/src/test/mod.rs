@@ -10,10 +10,8 @@ pub(crate) fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Res
     let attrs = &input.attrs;
 
     let fn_name_str = name.to_string();
-    let args_str = args.clone().to_token_stream().to_string();
     let parsed_attribute_args = parse_args(args)?;
     let simplex_test_env = simplex_test::TEST_ENV_NAME;
-    let ident = format!("{input:#?}");
     let ok_path_generation = match parsed_attribute_args.config_option {
         ConfigOpt::Config => {
             quote! {
@@ -57,8 +55,6 @@ pub(crate) fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Res
                 }
                 #ok_path_generation
             };
-            // println!("fn name: {}, \n ident: {}", #fn_name_str, #ident);
-            // println!("input: {}, \n AttributeArgs: {}", "", #args_str);
 
             #name(test_context)
         }
