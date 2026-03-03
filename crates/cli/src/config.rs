@@ -1,5 +1,6 @@
 use crate::cli::commands::BuildOverrideArgs;
 use crate::error::Error;
+use globwalk::FileType;
 use serde::{Deserialize, Serialize};
 use simplex_sdk::constants::SimplicityNetwork;
 use simplex_test::{ElementsDConf, RpcCreds};
@@ -116,16 +117,16 @@ impl Config {
             }
             if let Some(build_args) = cfg_override.build_conf.as_ref() {
                 if let Some(ref mut build_conf) = self.build_config {
-                    build_conf.out_dir = build_args.out_dir.clone();
-                    if let Some(only_files) = build_args.only_files {
-                        build_conf.only_files = only_files;
+                    if build_args.out_dir.is_some() {
+                        build_conf.out_dir = build_args.out_dir.clone();
                     }
-                } else if build_args.out_dir.is_some() || build_args.only_files.is_some() {
+                    build_conf.only_files |= build_args.only_files;
+                } else if build_args.out_dir.is_some() || build_args.only_files {
                     // Create default BuildConf if override args are provided but no build_config exists
                     self.build_config = Some(BuildConf {
                         compile_simf: Vec::new(),
                         out_dir: build_args.out_dir.clone(),
-                        only_files: build_args.only_files.unwrap_or_default(),
+                        only_files: build_args.only_files,
                     });
                 }
             }
@@ -229,23 +230,19 @@ impl Into<SimplicityNetwork> for _NetworkName {
     }
 }
 
-fn resolve_glob_paths(pattern: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> {
+fn resolve_glob_paths(patterns: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    for path in pattern.iter().map(|x| resolve_glob_path(x.as_ref())) {
-        let path = path?;
-        paths.extend_from_slice(&path);
-    }
-    Ok(paths)
-}
+    let basedir = std::env::current_dir()?;
 
-fn resolve_glob_path(pattern: impl AsRef<str>) -> io::Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    for path in glob::glob(pattern.as_ref())
-        .map_err(|e| io::Error::other(e.to_string()))?
-        .filter_map(Result::ok)
-    {
-        println!("path: '{}', pattern: '{}'", path.display(), pattern.as_ref());
-        paths.push(path);
+    let walker = globwalk::GlobWalkerBuilder::from_patterns(basedir, patterns)
+        .follow_links(true)
+        .file_type(FileType::FILE)
+        .build()?
+        .into_iter()
+        .filter_map(Result::ok);
+
+    for img in walker {
+        paths.push(img.path().to_path_buf());
     }
     Ok(paths)
 }

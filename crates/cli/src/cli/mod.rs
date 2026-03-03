@@ -55,14 +55,14 @@ impl Cli {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
                     .override_cfg(config_override.as_ref());
-                println!("{loaded_config:#?}");
+
+                dbg!(&loaded_config);
                 Ok(())
             }
             Command::Test { command } => {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
                     .override_cfg(config_override.as_ref());
-                println!("{loaded_config:#?}");
 
                 Self::run_test_command(loaded_config, &command)?;
 
@@ -72,7 +72,6 @@ impl Cli {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
                     .override_cfg(config_override.as_ref());
-                println!("{loaded_config:#?}");
 
                 let running = Arc::new(AtomicBool::new(true));
                 let r = running.clone();
@@ -107,7 +106,7 @@ impl Cli {
                         "No build config to build contracts environment, please add appropriate config".to_string(),
                     ));
                 }
-                dbg!(&loaded_config.build_config);
+                dbg!(&loaded_config);
 
                 let build_config = dbg!(BuildConf::check_or_unwrap(loaded_config.build_config)?);
 

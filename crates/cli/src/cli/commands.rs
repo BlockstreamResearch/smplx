@@ -64,7 +64,7 @@ pub struct BuildOverrideArgs {
     pub out_dir: Option<PathBuf>,
     /// Flag to generate only files for contracts without module artifacts
     #[arg(global = true, long)]
-    pub only_files: Option<bool>,
+    pub only_files: bool,
 }
 
 impl OverrideArgs {
@@ -72,7 +72,7 @@ impl OverrideArgs {
         Some(ConfigOverride {
             rpc_creds: None,
             network: None,
-            build_conf: if self.build_args.out_dir.is_none() && self.build_args.only_files.is_none() {
+            build_conf: if self.build_args.out_dir.is_none() && !self.build_args.only_files {
                 None
             } else {
                 Some(self.build_args)

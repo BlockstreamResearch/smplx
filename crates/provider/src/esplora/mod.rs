@@ -1,7 +1,5 @@
 mod types;
 
-// TODO(Illia): remove #[allow(dead_code)]
-
 use crate::error::ExplorerError;
 use crate::esplora::deserializable::TypeConversion;
 use simplicityhl::elements::pset::serialize::Deserialize;
@@ -31,7 +29,6 @@ pub struct EsploraConfig {
 }
 
 // TODO: Illia add caching as optional parameter
-// TODO: Add api backend trait implementation
 impl EsploraClientBuilder {
     fn default_url() -> String {
         ESPLORA_LIQUID_TESTNET.to_string()
@@ -51,8 +48,11 @@ impl EsploraClientBuilder {
         }
     }
 
-    pub fn custom(url: impl Into<String>) -> Self {
-        // todo: remove trailling slash
+    pub fn custom(url: impl AsRef<str>) -> Self {
+        let url = {
+            let url = url.as_ref();
+            url.trim_matches('/').to_string()
+        };
         EsploraClientBuilder { url: Some(url.into()) }
     }
 

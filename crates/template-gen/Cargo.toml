@@ -15,10 +15,8 @@ default = ["bincode", "serde"]
 
 [dependencies]
 simplex-macros-core = { workspace = true }
-simplicityhl = { workspace = true }
 thiserror = { workspace = true }
 
-proc-macro-error = { version = "1.0" }
 syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
 quote = { version = "1.0.44" }

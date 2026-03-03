@@ -80,9 +80,7 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
             // -
             // p2tr
 
-            // TODO: uncomment and fix
             dbg!(ElementsRpcClient::validateaddress(rpc.as_ref(), &p2pk.to_string())?);
-            // ElementsRpcClient::importaddress(rpc.as_ref(), &p2pk.to_string(), None, None, None)?;
 
             // broadcast, fetch fee transaction
 
