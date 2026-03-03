@@ -105,8 +105,8 @@ pub struct BalanceDetails {
 #[derive(Default, Debug, Clone, Copy)]
 pub enum AddressType {
     Legacy,
-    #[default]
     P2shSegwit,
+    #[default]
     Bech32,
     Bech32m,
 }

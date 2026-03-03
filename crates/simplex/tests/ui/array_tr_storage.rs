@@ -1,7 +1,7 @@
 use simplex::simplex_macros::*;
 use simplex::simplex_sdk::program::{WitnessTrait, ArgumentsTrait};
 
-include_simf!("../../../../crates/simplex/tests/ui/array_tr_storage.simf");
+include_simf!("../../../../crates/simplex/tests/ui_simfs/array_tr_storage.simf");
 
 fn main() -> Result<(), String> {
     let original_witness = derived_array_tr_storage::ArrayTrStorageWitness {

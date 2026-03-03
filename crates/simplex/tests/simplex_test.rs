@@ -126,6 +126,10 @@ fn test_invocation_tx_tracking() -> anyhow::Result<()> {
         ElementsRpcClient::sweep_initialfreecoins(rpc.as_ref()).unwrap();
         ElementsRpcClient::generate_blocks(rpc.as_ref(), 100).unwrap();
     }
+    // TODO: remove berkeley
+    //  addresstype - bech32
+
+    //
 
     let user1_addr = ElementsRpcClient::getnewaddress(rpc.as_ref(), "", AddressType::default()).unwrap();
     let user2_addr = ElementsRpcClient::getnewaddress(rpc.as_ref(), "", AddressType::default()).unwrap();

@@ -1,7 +1,7 @@
 use simplex::simplex_macros::*;
 use simplex::simplex_sdk::program::{WitnessTrait, ArgumentsTrait};
 
-include_simf!("../../../../crates/simplex/tests/ui/bytes32_tr_storage.simf");
+include_simf!("../../../../crates/simplex/tests/ui_simfs/bytes32_tr_storage.simf");
 
 fn main() -> Result<(), String> {
     let original_witness = derived_bytes32_tr_storage::Bytes32TrStorageWitness {

@@ -13,6 +13,11 @@ Install simplex with command:
 cargo install --path ./crates/cli
 ```
 
+To run tests for this crate - run 
+```bash 
+RUN_SLOW_TESTS=true cargo test
+```
+
 ## License
 
 Dual-licensed under either of:

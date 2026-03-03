@@ -5,4 +5,4 @@ compile_simf = ["simf/*.simf"]
 out_dir = "./src/"
 
 [test]
-elementsd_path = "../assets/elementsd"
+elementsd_path = "../../assets/elementsd"
