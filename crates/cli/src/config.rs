@@ -63,15 +63,17 @@ pub struct ConfigOverride {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildConf {
-    pub compile_simf: Vec<PathBuf>,
+    pub simf_files: Vec<PathBuf>,
     pub out_dir: Option<PathBuf>,
+    pub base_dir: PathBuf,
     pub only_files: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct _BuildConf {
-    compile_simf: Vec<String>,
+    simf_files: Vec<String>,
     out_dir: Option<PathBuf>,
+    base_dir: Option<PathBuf>,
     #[serde(default)]
     only_files: bool,
 }
@@ -79,7 +81,7 @@ pub struct _BuildConf {
 impl BuildConf {
     pub(crate) fn check_or_unwrap(loaded_config: Option<Self>) -> Result<Self, Error> {
         let loaded_config = loaded_config.unwrap();
-        if loaded_config.compile_simf.is_empty() {
+        if loaded_config.simf_files.is_empty() {
             return Err(Error::Config("No files listed to build contracts environment, please check glob patterns or 'compile_simf' field in config.".to_string()));
         }
         if loaded_config.out_dir.is_none() {
@@ -107,7 +109,7 @@ impl Config {
         Config::_discover()
     }
 
-    pub fn override_cfg(mut self, cfg_override: Option<&ConfigOverride>) -> Self {
+    pub fn override_cfg(mut self, cfg_override: Option<ConfigOverride>) -> io::Result<Self> {
         if let Some(cfg_override) = cfg_override {
             if let Some(test_conf) = cfg_override.rpc_creds.clone() {
                 self.test_config = test_conf;
@@ -115,23 +117,21 @@ impl Config {
             if let Some(network) = cfg_override.network {
                 self.provider_config.simplicity_network = network;
             }
-            if let Some(build_args) = cfg_override.build_conf.as_ref() {
+            if let Some(build_args) = cfg_override.build_conf {
                 if let Some(ref mut build_conf) = self.build_config {
                     if build_args.out_dir.is_some() {
-                        build_conf.out_dir = build_args.out_dir.clone();
+                        build_conf.out_dir = build_args.out_dir;
                     }
                     build_conf.only_files |= build_args.only_files;
-                } else if build_args.out_dir.is_some() || build_args.only_files {
-                    // Create default BuildConf if override args are provided but no build_config exists
-                    self.build_config = Some(BuildConf {
-                        compile_simf: Vec::new(),
-                        out_dir: build_args.out_dir.clone(),
-                        only_files: build_args.only_files,
-                    });
+                } else {
+                    // TODO: refactor config gathering, change io error into smth else
+                    return Err(io::Error::other(
+                        "Empty build_conf configuration, configure at least 'base_dir', 'simf_files' and 'out_dir'",
+                    ));
                 }
             }
         }
-        self
+        Ok(self)
     }
 
     pub fn load(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
@@ -160,6 +160,22 @@ impl Config {
     fn from_path(p: impl AsRef<Path>) -> Result<Self, ConfigError> {
         std::fs::read_to_string(p.as_ref())?.parse()
     }
+
+    #[inline]
+    fn resolve_optional_dir_or_cwd(base: Option<PathBuf>) -> io::Result<PathBuf> {
+        match base {
+            None => std::env::current_dir(),
+            Some(b) => Ok(resolve_dir_path(b)?),
+        }
+    }
+
+    #[inline]
+    fn resolve_optional_dir(base: Option<PathBuf>) -> io::Result<Option<PathBuf>> {
+        match base {
+            None => Ok(None),
+            Some(b) => Ok(Some(resolve_dir_path(b)?)),
+        }
+    }
 }
 
 impl FromStr for Config {
@@ -185,14 +201,15 @@ impl FromStr for Config {
                 }),
             build_config: match cfg.build {
                 None => None,
-                Some(x) => Some(BuildConf {
-                    compile_simf: resolve_glob_paths(&x.compile_simf)?,
-                    out_dir: match x.out_dir {
-                        None => None,
-                        Some(x) => Some(resolve_dir_path(x)?),
-                    },
-                    only_files: x.only_files,
-                }),
+                Some(x) => {
+                    let base_dir = Self::resolve_optional_dir_or_cwd(x.base_dir)?;
+                    Some(BuildConf {
+                        simf_files: resolve_glob_paths(&base_dir, &x.simf_files)?,
+                        out_dir: Self::resolve_optional_dir(x.out_dir)?,
+                        base_dir,
+                        only_files: x.only_files,
+                    })
+                }
             },
         })
     }
@@ -230,11 +247,10 @@ impl Into<SimplicityNetwork> for _NetworkName {
     }
 }
 
-fn resolve_glob_paths(patterns: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> {
+fn resolve_glob_paths(base_dir: impl AsRef<Path>, patterns: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    let basedir = std::env::current_dir()?;
 
-    let walker = globwalk::GlobWalkerBuilder::from_patterns(basedir, patterns)
+    let walker = globwalk::GlobWalkerBuilder::from_patterns(base_dir, patterns)
         .follow_links(true)
         .file_type(FileType::FILE)
         .build()?
@@ -242,7 +258,7 @@ fn resolve_glob_paths(patterns: &[impl AsRef<str>]) -> io::Result<Vec<PathBuf>> 
         .filter_map(Result::ok);
 
     for img in walker {
-        paths.push(img.path().to_path_buf());
+        paths.push(img.path().to_path_buf().canonicalize()?);
     }
     Ok(paths)
 }
@@ -271,5 +287,6 @@ fn resolve_dir_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
             path_outer.display()
         )));
     }
+    let path_outer = path_outer.canonicalize()?;
     Ok(path_outer)
 }

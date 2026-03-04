@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{ToTokens, quote};
+use quote::quote;
 use syn::parse::Parser;
 
 pub(crate) fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Result<proc_macro2::TokenStream> {

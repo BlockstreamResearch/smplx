@@ -6,6 +6,7 @@ use crate::config::{BuildConf, Config, DEFAULT_CONFIG};
 use crate::error::Error;
 use clap::Parser;
 use simplex_test::TestClientProvider;
+use std::env;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -54,7 +55,7 @@ impl Cli {
             Command::Config => {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
-                    .override_cfg(config_override.as_ref());
+                    .override_cfg(config_override)?;
 
                 dbg!(&loaded_config);
                 Ok(())
@@ -62,7 +63,7 @@ impl Cli {
             Command::Test { command } => {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
-                    .override_cfg(config_override.as_ref());
+                    .override_cfg(config_override)?;
 
                 Self::run_test_command(loaded_config, &command)?;
 
@@ -71,7 +72,7 @@ impl Cli {
             Command::Regtest => {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
-                    .override_cfg(config_override.as_ref());
+                    .override_cfg(config_override)?;
 
                 let running = Arc::new(AtomicBool::new(true));
                 let r = running.clone();
@@ -99,7 +100,7 @@ impl Cli {
             Command::Build => {
                 let loaded_config = Config::load_or_discover(self.config.clone())
                     .map_err(|e| Error::ConfigDiscoveryFailure(e))?
-                    .override_cfg(config_override.as_ref());
+                    .override_cfg(config_override)?;
 
                 if loaded_config.build_config.is_none() {
                     return Err(Error::Config(
@@ -111,17 +112,22 @@ impl Cli {
                 let build_config = dbg!(BuildConf::check_or_unwrap(loaded_config.build_config)?);
 
                 let out_dir_unwrapped = build_config.out_dir.unwrap();
+                let cwd = env::current_dir()?;
+
                 match build_config.only_files {
                     true => {
-                        simplex_template_gen_core::expand_simplex_contract_environment(
+                        simplex_template_gen_core::expand_only_files(
+                            &cwd,
                             &out_dir_unwrapped,
-                            &build_config.compile_simf,
+                            &build_config.simf_files,
                         )?;
                     }
                     false => {
-                        simplex_template_gen_core::expand_simplex_template(
+                        simplex_template_gen_core::expand_files_with_nested_dirs(
+                            &cwd,
+                            &build_config.base_dir,
                             &out_dir_unwrapped,
-                            &build_config.compile_simf,
+                            &build_config.simf_files,
                         )?;
                     }
                 }

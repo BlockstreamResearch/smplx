@@ -72,10 +72,10 @@ impl OverrideArgs {
         Some(ConfigOverride {
             rpc_creds: None,
             network: None,
-            build_conf: if self.build_args.out_dir.is_none() && !self.build_args.only_files {
-                None
-            } else {
+            build_conf: if self.build_args.out_dir.is_some() || self.build_args.only_files {
                 Some(self.build_args)
+            } else {
+                None
             },
         })
     }
