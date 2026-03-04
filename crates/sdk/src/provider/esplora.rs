@@ -11,15 +11,12 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid
 
 use serde::Deserialize;
 
-pub use simplex_provider::esplora::*;
-
 use super::error::ProviderError;
 use super::provider::{DEFAULT_TIMEOUT_SECS, ProviderTrait};
 
-#[derive(Clone)]
 pub struct EsploraProvider {
-    esplora_url: String,
-    timeout: Duration,
+    pub esplora_url: String,
+    pub timeout: Duration,
 }
 
 #[derive(Deserialize)]

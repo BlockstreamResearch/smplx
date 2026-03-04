@@ -1,4 +1,4 @@
-network = "liquidtestnet"
+network = "elementsregtest"
 
 [build]
 compile_simf = ["simf/*.simf"]

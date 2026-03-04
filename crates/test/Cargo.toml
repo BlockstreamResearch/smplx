@@ -7,9 +7,7 @@ edition.workspace = true
 [lints]
 workspace = true
 
-
 [dependencies]
-simplex-provider = { workspace = true }
 simplex-sdk = { workspace = true }
 
 thiserror = { workspace = true }

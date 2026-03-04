@@ -1,7 +1,5 @@
-mod common;
-mod error;
-mod testing;
+pub mod config;
+pub mod context;
+pub mod error;
 
-pub use common::*;
-pub use error::*;
-pub use testing::*;
+pub use config::{RpcConfig, TestConfig, TEST_ENV_NAME};
