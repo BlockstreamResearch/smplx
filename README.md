@@ -6,6 +6,18 @@ This collection of useful crates provides useful utilities for working with Simp
 - `simplex-core` - provides useful utilities.
 - `simplex-cli` - provides common cli interface and ability to setup your contract development environment.
 
+## Quick start
+
+Install simplex with command: 
+```bash
+cargo install --path ./crates/cli
+```
+
+To run tests for this crate - run 
+```bash 
+RUN_SLOW_TESTS=true cargo test
+```
+
 ## License
 
 Dual-licensed under either of:

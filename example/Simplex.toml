@@ -1,8 +1,0 @@
-network = "liquidtestnet"
-
-[build]
-compile_simf = ["simf/*.simf"]
-out_dir = "./src/artifacts"
-
-[test]
-elementsd_path = "../simplex/assets/elementsd"

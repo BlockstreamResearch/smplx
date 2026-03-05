@@ -1,0 +1,9 @@
+# TEST CONFIG 
+
+# [test]
+# esplora = "esplora_api_url"
+
+# [test.rpc]
+# url = "rpc_url"
+# username = "username"
+# password = "password"

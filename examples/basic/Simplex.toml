@@ -1,0 +1,9 @@
+network = "elementsregtest"
+
+[build]
+simf_files = ["*.simf"]
+out_dir = "./src"
+base_dir = "./simf"
+
+[test]
+elementsd_path = "../../assets/elementsd"
