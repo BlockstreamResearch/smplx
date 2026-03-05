@@ -12,9 +12,7 @@ pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TestConfig {
-    #[serde(default)]
     pub esplora: Option<String>,
-    #[serde(default)]
     pub rpc: Option<RpcConfig>,
 }
 

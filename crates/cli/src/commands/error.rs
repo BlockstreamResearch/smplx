@@ -8,4 +8,7 @@ pub enum CommandError {
 
     #[error(transparent)]
     Test(#[from] simplex_test::error::TestError),
+
+    #[error(transparent)]
+    Build(#[from] simplex_build::error::BuildError),
 }

@@ -1,5 +1,5 @@
 [package]
-name = "simplex-template-gen-core"
+name = "simplex-build"
 description = "Macro support core for Simplex, the Rust SimplicityHl toolkit. Not intended to be used directly."
 version = "0.1.0"
 license.workspace = true
@@ -15,7 +15,9 @@ default = ["bincode", "serde"]
 
 [dependencies]
 simplex-macros-core = { workspace = true }
+
 thiserror = { workspace = true }
+toml = { workspace = true }
 
 syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
@@ -23,3 +25,5 @@ quote = { version = "1.0.44" }
 serde = { version = "1.0.228", optional = true }
 pathdiff = { version = "0.2.3" }
 prettyplease = { version = "0.2.37" }
+glob = { version = "0.3.3"}
+globwalk = { version = "0.9.1"}

@@ -23,7 +23,6 @@ pub struct EsploraProvider {
 #[allow(dead_code)]
 struct TxStatus {
     confirmed: bool,
-    #[serde(default)]
     block_height: Option<u32>,
 }
 
@@ -31,11 +30,8 @@ struct TxStatus {
 #[allow(dead_code)]
 struct UtxoStatus {
     pub confirmed: bool,
-    #[serde(default)]
     pub block_height: Option<u64>,
-    #[serde(default)]
     pub block_hash: Option<String>,
-    #[serde(default)]
     pub block_time: Option<u64>,
 }
 
@@ -44,13 +40,9 @@ struct UtxoStatus {
 struct EsploraUtxo {
     pub txid: String,
     pub vout: u32,
-    #[serde(default)]
     pub value: Option<u64>,
-    #[serde(default)]
     pub valuecommitment: Option<String>,
-    #[serde(default)]
     pub asset: Option<String>,
-    #[serde(default)]
     pub assetcommitment: Option<String>,
     pub status: UtxoStatus,
 }

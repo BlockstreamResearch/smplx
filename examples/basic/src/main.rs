@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     let provider = EsploraProvider::new(ESPLORA_URL.to_string());
     let signer = Signer::new(
         "exist carry drive collect lend cereal occur much tiger just involve mean",
-        provider.clone(),
+        &provider,
         SimplicityNetwork::LiquidTestnet,
     )?;
 

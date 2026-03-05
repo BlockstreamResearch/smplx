@@ -15,7 +15,7 @@ multiple_crate_versions = "allow"
 [workspace.dependencies]
 simplex-macros-core = { path = "./crates/macros-core", features = ["bincode", "serde"] }
 simplex-macros = { path = "./crates/macros" }
-simplex-template-gen-core = { path = "./crates/template-gen" }
+simplex-build = { path = "./crates/build" }
 simplex-test = { path = "./crates/test" }
 simplex-regtest = { path = "./crates/regtest" }
 simplex-sdk = { path = "./crates/sdk" }

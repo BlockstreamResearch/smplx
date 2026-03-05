@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::commands::build::Build;
 use crate::commands::commands::Command;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
@@ -51,26 +52,13 @@ impl Cli {
                 // TODO: pass config
                 Ok(Regtest::run()?)
             }
-            Command::Build { out_dir: _out_dir } => {
-                // let loaded_config =
-                //     Config::load_or_discover(self.config.clone()).map_err(|e| Error::ConfigDiscoveryFailure(e))?;
+            Command::Build => {
+                let config_path = Config::get_default_path()?;
+                let loaded_config = Config::load(config_path)?;
 
-                // if loaded_config.build_config.is_none() {
-                //     return Err(Error::Config(
-                //         "No build config to build contracts environment, please add appropriate config".to_string(),
-                //     ));
-                // }
+                println!("{loaded_config:#?}");
 
-                // let build_config = loaded_config.build_config.unwrap();
-                // if build_config.compile_simf.is_empty() {
-                //     return Err(Error::Config("No files listed to build contracts environment, please check glob patterns or 'compile_simf' field in config.".to_string()));
-                // }
-
-                // CodeGenerator::generate_files(&build_config.out_dir, &build_config.compile_simf)?;
-
-                // println!("{build_config:#?}");
-
-                Ok(())
+                Ok(Build::run(loaded_config.build)?)
             }
         }
     }
