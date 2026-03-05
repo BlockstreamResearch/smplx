@@ -1,3 +1,5 @@
+mod artifacts;
+
 use simplicityhl::elements::{Script, Txid};
 
 use simplex::simplex_sdk::constants::DUMMY_SIGNATURE;
@@ -8,8 +10,8 @@ use simplex::simplex_sdk::transaction::{
 };
 use simplex::simplex_sdk::utils::tr_unspendable_key;
 
-use draft_example::artifacts::p2pk::P2pkProgram;
-use draft_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+use artifacts::p2pk::P2pkProgram;
+use artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 const ESPLORA_URL: &str = "https://blockstream.info/liquidtestnet/api";
 

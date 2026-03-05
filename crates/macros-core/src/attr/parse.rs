@@ -7,10 +7,6 @@ use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{Expr, ExprLit, Lit};
 
-// TODO: come up with an idea of how to parse constant values and evaluate constant values that are passed inside
-//  pub const OPTION_SOURCE: &str = include_str!("source_simf/options.simf");
-//  include_simf_source!(OPTION_SOURCE);
-
 pub struct SynFilePath {
     _span_file: String,
     path_literal: String,

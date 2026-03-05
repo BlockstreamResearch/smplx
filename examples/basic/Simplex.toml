@@ -1,8 +1,9 @@
 network = "elementsregtest"
 
 [build]
-compile_simf = ["simf/*.simf"]
-out_dir = "./src/artifacts"
+simf_files = ["*.simf"]
+out_dir = "./src"
+base_dir = "./simf"
 
 [test]
 elementsd_path = "../../assets/elementsd"

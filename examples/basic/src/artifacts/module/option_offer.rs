@@ -1,11 +1,11 @@
 use simplex::simplex_macros::include_simf;
 use simplex::simplex_sdk::program::{ArgumentsTrait, Program};
 use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
-pub struct P2pkProgram {
+pub struct OptionOfferProgram {
     program: Program,
 }
-impl P2pkProgram {
-    pub const SOURCE: &'static str = derived_p2pk::P2PK_CONTRACT_SOURCE;
+impl OptionOfferProgram {
+    pub const SOURCE: &'static str = derived_option_offer::OPTION_OFFER_CONTRACT_SOURCE;
     pub fn new(
         public_key: XOnlyPublicKey,
         arguments: impl ArgumentsTrait + 'static,
@@ -21,4 +21,4 @@ impl P2pkProgram {
         &mut self.program
     }
 }
-include_simf!("simf/p2pk.simf");
+include_simf!("simf/module/option_offer.simf");

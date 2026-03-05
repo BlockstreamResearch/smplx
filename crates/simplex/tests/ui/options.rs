@@ -1,7 +1,7 @@
 use simplex::simplex_macros::*;
 use simplex::simplex_sdk::program::{WitnessTrait, ArgumentsTrait};
 
-include_simf!("../../../../crates/simplex/tests/ui/options.simf");
+include_simf!("../../../../crates/simplex/tests/ui_simfs/options.simf");
 
 fn main() -> Result<(), String> {
     let original_witness = derived_options::OptionsWitness {

@@ -4,7 +4,7 @@
 // use simplicityhl::elements::bitcoin::secp256k1;
 // use simplicityhl::elements::secp256k1_zkp::Keypair;
 
-// use simplex::simplex_sdk::provider::SimplicityNetwork;
+// use simplex::simplex_sdk::constants::SimplicityNetwork;
 // use simplex::simplex_sdk::presets::{P2PK, P2PKArguments};
 // use simplex::simplex_sdk::utils::tr_unspendable_key;
 
@@ -80,9 +80,7 @@
 //             // -
 //             // p2tr
 
-//             // TODO: uncomment and fix
 //             dbg!(ElementsRpcClient::validateaddress(rpc.as_ref(), &p2pk.to_string())?);
-//             // ElementsRpcClient::importaddress(rpc.as_ref(), &p2pk.to_string(), None, None, None)?;
 
 //             // broadcast, fetch fee transaction
 
@@ -126,6 +124,10 @@
 //         ElementsRpcClient::sweep_initialfreecoins(rpc.as_ref()).unwrap();
 //         ElementsRpcClient::generate_blocks(rpc.as_ref(), 100).unwrap();
 //     }
+//     // TODO: remove berkeley
+//     //  addresstype - bech32
+
+//     //
 
 //     let user1_addr = ElementsRpcClient::getnewaddress(rpc.as_ref(), "", AddressType::default()).unwrap();
 //     let user2_addr = ElementsRpcClient::getnewaddress(rpc.as_ref(), "", AddressType::default()).unwrap();

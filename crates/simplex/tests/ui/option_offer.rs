@@ -1,7 +1,7 @@
 use simplex::simplex_macros::*;
 use simplex::simplex_sdk::program::{WitnessTrait, ArgumentsTrait};
 
-include_simf!("../../../../crates/simplex/tests/ui/option_offer.simf");
+include_simf!("../../../../crates/simplex/tests/ui_simfs/option_offer.simf");
 
 fn main() -> Result<(), String> {
     let original_witness = derived_option_offer::OptionOfferWitness { path: simplex::either::Left((0, false)) };
