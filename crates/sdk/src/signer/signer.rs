@@ -29,13 +29,16 @@ use elements_miniscript::{
 };
 
 use super::error::SignerError;
-use crate::constants::{MIN_FEE, PLACEHOLDER_FEE, SimplicityNetwork};
+use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
+use crate::provider::SimplicityNetwork;
 use crate::transaction::FinalTransaction;
 use crate::transaction::PartialInput;
 use crate::transaction::PartialOutput;
 use crate::transaction::RequiredSignature;
+
+pub const PLACEHOLDER_FEE: u64 = 1;
 
 pub trait SignerTrait {
     fn sign_program(
@@ -53,14 +56,14 @@ pub trait SignerTrait {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError>;
 }
 
-pub struct Signer {
+pub struct Signer<'a> {
     xprv: Xpriv,
-    provider: Box<dyn ProviderTrait>,
+    provider: Box<&'a dyn ProviderTrait>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
 }
 
-impl SignerTrait for Signer {
+impl<'a> SignerTrait for Signer<'a> {
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
@@ -105,10 +108,10 @@ enum Estimate {
     Failure(u64),
 }
 
-impl Signer {
+impl<'a> Signer<'a> {
     pub fn new(
         mnemonic: &str,
-        provider: Box<dyn ProviderTrait>,
+        provider: &'a impl ProviderTrait,
         network: SimplicityNetwork,
     ) -> Result<Self, SignerError> {
         let secp = Secp256k1::new();
@@ -121,7 +124,7 @@ impl Signer {
 
         Ok(Self {
             xprv,
-            provider: provider,
+            provider: Box::new(provider),
             network: network,
             secp: secp,
         })
@@ -386,7 +389,7 @@ mod tests {
         let provider = EsploraProvider::new("https://blockstream.info/liquidtestnet/api".to_string());
         let signer = Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
-            Box::new(provider.clone()),
+            &provider,
             SimplicityNetwork::LiquidTestnet,
         )
         .unwrap();

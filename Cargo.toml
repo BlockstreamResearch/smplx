@@ -13,11 +13,11 @@ edition = "2024"
 multiple_crate_versions = "allow"
 
 [workspace.dependencies]
-simplex-provider = { path = "./crates/provider" }
 simplex-macros-core = { path = "./crates/macros-core", features = ["bincode", "serde"] }
-simplex-template-gen-core = { path = "./crates/template-gen" }
 simplex-macros = { path = "./crates/macros" }
+simplex-template-gen-core = { path = "./crates/template-gen" }
 simplex-test = { path = "./crates/test" }
+simplex-regtest = { path = "./crates/regtest" }
 simplex-sdk = { path = "./crates/sdk" }
 simplex = { path = "./crates/simplex" }
 

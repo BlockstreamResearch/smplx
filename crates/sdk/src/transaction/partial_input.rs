@@ -28,6 +28,12 @@ pub struct ProgramInput {
     pub witness: Box<dyn WitnessTrait>,
 }
 
+#[derive(Clone)]
+pub struct IssuanceInput {
+    pub issuance_amount: u64,
+    pub asset_entropy: [u8; 32],
+}
+
 impl PartialInput {
     pub fn new(outpoint: OutPoint, txout: TxOut) -> Self {
         let amount = match txout.value {
@@ -49,7 +55,14 @@ impl PartialInput {
         }
     }
 
-    pub fn to_input(&self) -> Input {
+    pub fn outpoint(&self) -> OutPoint {
+        OutPoint {
+            txid: self.witness_txid.clone(),
+            vout: self.witness_output_index,
+        }
+    }
+
+    pub fn input(&self) -> Input {
         let mut input = Input::default();
 
         input.previous_txid = self.witness_txid.clone();
@@ -69,5 +82,25 @@ impl ProgramInput {
             program: program,
             witness: witness,
         }
+    }
+}
+
+impl IssuanceInput {
+    pub fn new(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
+        Self {
+            issuance_amount: issuance_amount,
+            asset_entropy: asset_entropy,
+        }
+    }
+
+    pub fn input(&self) -> Input {
+        let mut input = Input::default();
+
+        input.issuance_value_amount = Some(self.issuance_amount);
+        input.issuance_asset_entropy = Some(self.asset_entropy);
+        input.issuance_inflation_keys = None;
+        input.blinded_issuance = Some(0x00);
+
+        input
     }
 }

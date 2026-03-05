@@ -1,15 +1,20 @@
+use simplicityhl::elements::AssetId;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 
-use crate::constants::{SimplicityNetwork, WITNESS_SCALE_FACTOR};
+use crate::provider::SimplicityNetwork;
+use crate::utils::asset_entropy;
 
 use super::error::TransactionError;
-use super::partial_input::{PartialInput, ProgramInput, RequiredSignature};
+use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
+
+pub const WITNESS_SCALE_FACTOR: usize = 4;
 
 #[derive(Clone)]
 pub struct FinalInput {
     pub partial_input: PartialInput,
     pub program_input: Option<ProgramInput>,
+    pub issuance_input: Option<IssuanceInput>,
     pub required_sig: RequiredSignature,
 }
 
@@ -29,7 +34,6 @@ impl FinalTransaction {
         }
     }
 
-    // TODO: require required_sig != Witness(String)
     pub fn add_input(
         &mut self,
         partial_input: PartialInput,
@@ -47,10 +51,38 @@ impl FinalTransaction {
         self.inputs.push(FinalInput {
             partial_input: partial_input,
             program_input: None,
+            issuance_input: None,
             required_sig: required_sig,
         });
 
         Ok(())
+    }
+
+    pub fn add_issuance_input(
+        &mut self,
+        partial_input: PartialInput,
+        issuance_input: IssuanceInput,
+        required_sig: RequiredSignature,
+    ) -> Result<AssetId, TransactionError> {
+        match required_sig {
+            RequiredSignature::Witness(_) => {
+                return Err(TransactionError::SignatureRequest(
+                    "Requested signature is not NativeEcdsa or None".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
+        let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
+
+        self.inputs.push(FinalInput {
+            partial_input: partial_input,
+            program_input: None,
+            issuance_input: Some(issuance_input),
+            required_sig: required_sig,
+        });
+
+        Ok(asset_id)
     }
 
     pub fn add_program_input(
@@ -71,6 +103,7 @@ impl FinalTransaction {
         self.inputs.push(FinalInput {
             partial_input: partial_input,
             program_input: Some(program_input),
+            issuance_input: None,
             required_sig: required_sig,
         });
 
@@ -147,7 +180,19 @@ impl FinalTransaction {
         let mut pst = PartiallySignedTransaction::new_v2();
 
         self.inputs.iter().for_each(|el| {
-            pst.add_input(el.partial_input.to_input());
+            let mut input = el.partial_input.input();
+
+            // populate the input manually since `input.merge` is private
+            if el.issuance_input.is_some() {
+                let issue = el.issuance_input.clone().unwrap().input();
+
+                input.issuance_value_amount = issue.issuance_value_amount;
+                input.issuance_asset_entropy = issue.issuance_asset_entropy;
+                input.issuance_inflation_keys = issue.issuance_inflation_keys;
+                input.blinded_issuance = issue.blinded_issuance;
+            }
+
+            pst.add_input(input);
         });
 
         self.outputs.iter().for_each(|el| {

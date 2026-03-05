@@ -2,8 +2,8 @@ mod artifacts;
 
 use simplicityhl::elements::{Script, Txid};
 
-use simplex::simplex_sdk::constants::{DUMMY_SIGNATURE, SimplicityNetwork};
-use simplex::simplex_sdk::provider::{EsploraProvider, ProviderTrait};
+use simplex::simplex_sdk::constants::DUMMY_SIGNATURE;
+use simplex::simplex_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
 use simplex::simplex_sdk::signer::Signer;
 use simplex::simplex_sdk::transaction::{
     FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature,
@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     let provider = EsploraProvider::new(ESPLORA_URL.to_string());
     let signer = Signer::new(
         "exist carry drive collect lend cereal occur much tiger just involve mean",
-        Box::new(provider.clone()),
+        provider.clone(),
         SimplicityNetwork::LiquidTestnet,
     )?;
 
@@ -97,5 +97,6 @@ fn main() -> anyhow::Result<()> {
     println!("Confirmed");
 
     println!("OK");
+
     Ok(())
 }

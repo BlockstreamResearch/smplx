@@ -16,7 +16,7 @@ use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
-use crate::constants::SimplicityNetwork;
+use crate::provider::SimplicityNetwork;
 
 pub trait ProgramTrait: DynClone {
     fn get_env(

@@ -23,7 +23,6 @@ sdk = ["dep:simplex-sdk"]
 [dependencies]
 simplex-macros = { workspace = true, features = [], optional = true }
 simplex-test = { workspace = true }
-simplex-provider = { workspace = true }
 simplex-sdk = { workspace = true, optional = true }
 
 bincode = { workspace = true, optional = true }

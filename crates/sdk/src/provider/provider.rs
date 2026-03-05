@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
 use super::error::ProviderError;
-use crate::constants::DEFAULT_FEE_RATE;
+
+pub const DEFAULT_FEE_RATE: f32 = 100.0;
+pub const DEFAULT_TIMEOUT_SECS: u64 = 10;
 
 pub trait ProviderTrait {
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError>;

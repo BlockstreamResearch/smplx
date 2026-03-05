@@ -1,5 +1,10 @@
+use crate::provider::rpc::error::RpcError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
+    #[error(transparent)]
+    Rpc(#[from] RpcError),
+
     #[error("HTTP request failed: {0}")]
     Request(String),
 
