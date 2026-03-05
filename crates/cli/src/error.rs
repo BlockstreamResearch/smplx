@@ -1,9 +1,12 @@
-use crate::config;
+use crate::{commands::error::CommandError, config};
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum CliError {
     #[error(transparent)]
     Config(#[from] config::error::ConfigError),
+
+    #[error(transparent)]
+    Command(#[from] CommandError),
 
     #[error("IO error: '{0}'")]
     Io(#[from] std::io::Error),

@@ -64,8 +64,6 @@ impl TestClient {
         let bin_args = get_elementsd_bin_args();
 
         conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
-        conf.view_stdout = true;
-        conf.attempts = 2;
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
 
@@ -77,7 +75,6 @@ impl TestClient {
         let bin_args = get_electrs_bin_args();
 
         conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
-        conf.view_stderr = true;
         conf.http_enabled = true;
         conf.network = "liquidregtest";
 

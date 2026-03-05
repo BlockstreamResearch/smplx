@@ -5,19 +5,21 @@ use simplex_test::TestConfig;
 
 use super::error::ConfigError;
 
-pub const INIT_CONFIG: &str = include_str!("../../Simplex.example.toml");
+pub const INIT_CONFIG: &str = include_str!("../../Simplex.default.toml");
 pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub test_config: Option<TestConfig>,
-    pub build_config: Option<BuildConf>,
+    #[serde(default)]
+    pub test: Option<TestConfig>,
+    #[serde(default)]
+    pub build: Option<BuildConf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BuildConf {
-    pub compile_simf: Vec<PathBuf>,
-    pub out_dir: PathBuf,
+    pub compile_simf: Option<Vec<PathBuf>>,
+    pub out_dir: Option<PathBuf>,
 }
 
 impl Config {
