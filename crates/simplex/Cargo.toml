@@ -24,3 +24,6 @@ serde = { workspace = true }
 simplicityhl = { workspace = true, features = ["serde"] }
 
 either = { version = "1.15.0", features = ["serde"] }
+
+[dev-dependencies]
+trybuild = { version = "1.0.115" }

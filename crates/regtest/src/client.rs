@@ -43,7 +43,10 @@ impl TestClient {
     }
 
     pub fn esplora_url(&self) -> String {
-        self.electrs.esplora_url.clone().unwrap()
+        let url = self.electrs.esplora_url.clone().unwrap();
+        let port = url.split_once(":").unwrap().1;
+
+        format!("http://127.0.0.1:{}", port)
     }
 
     pub fn auth(&self) -> Auth {
@@ -53,8 +56,8 @@ impl TestClient {
     }
 
     pub fn kill(&mut self) -> Result<(), ClientError> {
+        // electrs stops elements automatically
         self.electrs.kill().map_err(|_| ClientError::ElectrsTermination())?;
-        self.elements.stop().map_err(|_| ClientError::ElementsTermination())?;
 
         Ok(())
     }

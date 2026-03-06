@@ -12,7 +12,8 @@ pub fn expand(args: TokenStream, input: syn::ItemFn) -> syn::Result<TokenStream>
     expand_inner(&input, args)
 }
 
-fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Result<proc_macro2::TokenStream> {
+// TODO: args?
+fn expand_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<proc_macro2::TokenStream> {
     let ret = &input.sig.output;
     let name = &input.sig.ident;
     let inputs = &input.sig.inputs;

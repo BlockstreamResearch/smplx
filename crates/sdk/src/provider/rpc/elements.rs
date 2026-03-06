@@ -12,7 +12,7 @@ use crate::utils::sat2btc;
 
 pub struct ElementsRpc {
     inner: Client,
-    auth: Auth,
+    pub auth: Auth,
     pub url: String,
 }
 

@@ -9,6 +9,7 @@ use crate::config::TestConfig;
 use crate::error::TestError;
 
 pub struct TestContext {
+    client: Option<TestClient>,
     config: TestConfig,
     provider: Box<dyn ProviderTrait>,
 }
@@ -17,6 +18,7 @@ impl TestContext {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
         let provider: Box<dyn ProviderTrait>;
+        let mut client: Option<TestClient> = None;
 
         match config.esplora.clone() {
             Some(esplora) => match config.rpc.clone() {
@@ -30,19 +32,30 @@ impl TestContext {
                 }
             },
             None => {
-                let client = TestClient::new();
+                let client_inner = TestClient::new();
 
                 provider = Box::new(SimplexProvider::new(
-                    client.esplora_url(),
-                    client.rpc_url(),
-                    client.auth(),
+                    client_inner.esplora_url(),
+                    client_inner.rpc_url(),
+                    client_inner.auth(),
                 )?);
+
+                client = Some(client_inner);
+
+                // TODO
+                // signer = Signer::new(config.seed);
+
+                // provider.rpc.generate_blocks(1)?;
+                // provider.rpc.rescanblockchain(None, None)?;
+                // provider.rpc.sweep_initialfreecoins()?;
+                // provider.rpc.generate_blocks(100)?;
+
+                // provider.rpc.sendtoaddress(signer)
             }
         }
 
-        // TODO: setup signer
-
         Ok(Self {
+            client: client,
             config: config,
             provider: provider,
         })
@@ -55,14 +68,4 @@ impl TestContext {
     pub fn get_provider(&self) -> &Box<dyn ProviderTrait> {
         &self.provider
     }
-
-    // TODO: how to do this better?
-
-    // pub fn default_rpc_setup(&self) -> Result<(), TestError> {
-    //     self.rpc.generate_blocks(1)?;
-    //     self.rpc.rescanblockchain(None, None)?;
-    //     self.rpc.sweep_initialfreecoins()?;
-    //     self.rpc.generate_blocks(100)?;
-    //     Ok(())
-    // }
 }
