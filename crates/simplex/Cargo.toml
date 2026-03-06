@@ -19,4 +19,8 @@ simplex-macros = { workspace = true }
 simplex-test = { workspace = true }
 simplex-sdk = { workspace = true }
 
+bincode = { workspace = true }
+serde = { workspace = true }
 simplicityhl = { workspace = true, features = ["serde"] }
+
+either = { version = "1.15.0", features = ["serde"] }
