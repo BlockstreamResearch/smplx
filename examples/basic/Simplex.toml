@@ -5,8 +5,8 @@
 # out_dir = "./src/artifacts"
 # src_dir = "./simf"
 
-# [test]
-# esplora = "esplora_api_url"
+[test]
+esplora = "https://blockstream.info/liquidtestnet/api"
 
 # [test.rpc]
 # url = "rpc_url"

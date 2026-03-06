@@ -1,5 +1,4 @@
 use proc_macro2::TokenStream;
-use quote::quote;
 use syn::parse::Parser;
 
 use crate::TEST_ENV_NAME;
@@ -21,23 +20,13 @@ fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Result<proc_ma
     let attrs = &input.attrs;
 
     let simplex_test_env = TEST_ENV_NAME;
-    let ok_path_generation = {
-        quote! {
-            Ok(path) => {
-                let path = PathBuf::from(path);
-                let test_context = TestContextBuilder::FromConfigPath(path).build().unwrap();
-
-                test_context
-            }
-        }
-    };
 
     let expansion = quote::quote! {
         #[::core::prelude::v1::test]
         #(#attrs)*
         fn #name() #ret {
-            use ::std::path::PathBuf;
-            use ::simplex::simplex_test::TestContextBuilder;
+            use std::path::PathBuf;
+            use simplex::TestContext;
 
             fn #name(#inputs) #ret {
                 #body
@@ -46,8 +35,10 @@ fn expand_inner(input: &syn::ItemFn, args: AttributeArgs) -> syn::Result<proc_ma
             let test_context = match std::env::var(#simplex_test_env) {
                 Err(e) => {
                     panic!("Failed to run this test, required to use `simplex test`");
+                },
+                Ok(path) => {
+                    TestContext::new(PathBuf::from(path)).unwrap()
                 }
-                #ok_path_generation
             };
 
             #name(test_context)
