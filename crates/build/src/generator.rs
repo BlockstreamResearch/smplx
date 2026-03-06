@@ -17,7 +17,7 @@ use super::error::BuildError;
 
 pub struct ArtifactsGenerator {}
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct TreeNode {
     files: Vec<PathBuf>,
     dirs: HashMap<String, TreeNode>,
@@ -29,7 +29,7 @@ impl ArtifactsGenerator {
         base_dir: impl AsRef<Path>,
         simfs: &[impl AsRef<Path>],
     ) -> Result<(), BuildError> {
-        let tree = dbg!(Self::build_directory_tree(&base_dir, simfs)?);
+        let tree = Self::build_directory_tree(&base_dir, simfs)?;
 
         Self::generate_bindings(out_dir.as_ref(), tree)?;
 

@@ -54,8 +54,7 @@ impl ArtifactsResolver {
             )));
         }
 
-        let path_outer = path_outer.canonicalize()?;
-
+        // TODO: canonicalize? but this path may not exist
         Ok(path_outer)
     }
 }
