@@ -10,15 +10,14 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
-async-trait = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true }
 simplicityhl = { workspace = true }
 electrsd = { workspace = true }
+serde = { workspace = true }
+hex = { workspace = true }
 
-hex = { version = "0.4" }
-serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0" }
 elements-miniscript = { version = "0.4", features = ["base64", "serde"] }
 bip39 = { version = "2.0.0", features = ["rand"] }
