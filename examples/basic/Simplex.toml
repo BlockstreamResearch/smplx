@@ -2,7 +2,8 @@
 
 # [build]
 # simf_files = ["*.simf"]
-# out_dir = "./src"
+# out_dir = "./src/artifacts"
+# src_dir = "./simf"
 
 # [test]
 # esplora = "esplora_api_url"

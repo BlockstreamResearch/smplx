@@ -14,7 +14,7 @@ impl ArtifactsResolver {
 
         let mut paths = Vec::new();
 
-        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, simfs.as_slice())
+        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, &simfs)
             .follow_links(true)
             .file_type(FileType::FILE)
             .build()?
@@ -28,7 +28,7 @@ impl ArtifactsResolver {
         Ok(paths)
     }
 
-    pub fn resolve_output_dir(path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
+    pub fn resolve_local_dir(path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
         let mut path_outer = PathBuf::from(path.as_ref());
 
         if !path_outer.is_absolute() {
