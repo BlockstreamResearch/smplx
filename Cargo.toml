@@ -13,7 +13,6 @@ edition = "2024"
 multiple_crate_versions = "allow"
 
 [workspace.dependencies]
-simplex-macros-core = { path = "./crates/macros-core" }
 simplex-macros = { path = "./crates/macros" }
 simplex-build = { path = "./crates/build" }
 simplex-test = { path = "./crates/test" }

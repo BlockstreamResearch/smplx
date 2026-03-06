@@ -1,8 +1,10 @@
-pub extern crate either;
-pub extern crate serde;
-pub extern crate bincode;
-pub extern crate simplicityhl;
+pub use bincode;
+pub use either;
+pub use serde;
+pub use simplicityhl;
 
-pub extern crate simplex_macros;
-pub extern crate simplex_sdk;
-pub extern crate simplex_test;
+pub use simplex_macros;
+pub use simplex_sdk;
+
+pub use simplex_test::config::TestConfig;
+pub use simplex_test::context;

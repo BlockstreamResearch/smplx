@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoind::bitcoincore_rpc::Auth;
-use electrsd::bitcoind;
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 

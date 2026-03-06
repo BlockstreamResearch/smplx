@@ -5,8 +5,9 @@ pub mod provider;
 pub(crate) mod rpc;
 pub mod simplex;
 
+pub use rpc::elements::ElementsRpc;
 pub use error::ProviderError;
 pub use esplora::EsploraProvider;
-pub use network::*;
+pub use simplex::SimplexProvider;
 pub use provider::ProviderTrait;
-pub use rpc::elements::ElementsRpc;
+pub use network::*;

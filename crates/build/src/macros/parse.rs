@@ -1,8 +1,9 @@
-use proc_macro2::Span;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{Expr, ExprLit, Lit};

@@ -9,11 +9,10 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-simplex-macros-core = { workspace = true }
-
 thiserror = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
+simplicityhl = { workspace = true }
 
 syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }

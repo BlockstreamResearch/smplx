@@ -1287,7 +1287,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
- "simplex-macros-core",
+ "simplicityhl",
  "syn",
  "thiserror",
  "toml",
@@ -1304,7 +1304,6 @@ dependencies = [
  "electrsd",
  "serde",
  "simplex-build",
- "simplex-macros-core",
  "simplex-regtest",
  "simplex-sdk",
  "simplex-test",
@@ -1318,19 +1317,8 @@ dependencies = [
 name = "simplex-macros"
 version = "0.1.0"
 dependencies = [
- "serde",
- "simplex-macros-core",
- "syn",
-]
-
-[[package]]
-name = "simplex-macros-core"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
+ "simplex-build",
  "simplex-test",
- "simplicityhl",
  "syn",
 ]
 
@@ -1366,9 +1354,13 @@ name = "simplex-test"
 version = "0.1.0"
 dependencies = [
  "electrsd",
+ "proc-macro2",
+ "quote",
  "serde",
+ "simplex-regtest",
  "simplex-sdk",
  "simplicityhl",
+ "syn",
  "thiserror",
  "toml",
 ]

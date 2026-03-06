@@ -1,8 +1,10 @@
-use crate::attr::SimfContent;
-use crate::attr::types::RustType;
 use quote::{format_ident, quote};
+
 use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
+
+use crate::macros::parse::SimfContent;
+use crate::macros::types::RustType;
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,

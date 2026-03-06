@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
-use bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
-use electrsd::bitcoind;
+use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 
 use serde_json::Value;
 

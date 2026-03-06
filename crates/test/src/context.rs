@@ -1,75 +1,68 @@
-// use crate::TestError;
-// pub use config::*;
-// use electrsd::bitcoind::bitcoincore_rpc::Auth;
-// pub use rpc_provider::*;
-// use std::path::PathBuf;
+use std::path::PathBuf;
 
-// pub struct TestContext {
-//     config: ElementsDConf,
-//     rpc: TestRpcProvider,
-// }
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
-// pub enum TestContextBuilder {
-//     Default,
-//     FromConfigPath(PathBuf),
-// }
+use simplex_regtest::TestClient;
+use simplex_sdk::provider::{EsploraProvider, ProviderTrait, SimplexProvider};
 
-// impl TestContextBuilder {
-//     pub fn build(self) -> Result<TestContext, TestError> {
-//         let context = match self {
-//             Self::Default => {
-//                 let elementsd_path = ElementsDConf::obtain_default_elementsd_path();
-//                 let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest, &elementsd_path)?;
-//                 TestContext {
-//                     config: ElementsDConf {
-//                         elemendsd_path: elementsd_path,
-//                         rpc_creds: RpcCreds::None,
-//                     },
-//                     rpc,
-//                 }
-//             }
-//             Self::FromConfigPath(path) => {
-//                 let config: ElementsDConf = ElementsDConf::from_file(&path)?;
-//                 match &config.rpc_creds {
-//                     RpcCreds::Auth {
-//                         url,
-//                         username,
-//                         password,
-//                     } => {
-//                         let rpc = TestRpcProvider::init(
-//                             ConfigOption::CustomRpcUrlRegtest {
-//                                 url: url.clone(),
-//                                 auth: Auth::UserPass(username.clone(), password.clone()),
-//                             },
-//                             &config.elemendsd_path,
-//                         )?;
-//                         TestContext { config, rpc }
-//                     }
-//                     RpcCreds::None => {
-//                         let rpc = TestRpcProvider::init(ConfigOption::DefaultRegtest, &config.elemendsd_path)?;
-//                         TestContext { config, rpc }
-//                     }
-//                 }
-//             }
-//         };
-//         Ok(context)
-//     }
-// }
+use crate::config::TestConfig;
+use crate::error::TestError;
 
-// impl TestContext {
-//     pub fn get_config(&self) -> &ElementsDConf {
-//         &self.config
-//     }
+pub struct TestContext {
+    config: TestConfig,
+    provider: Box<dyn ProviderTrait>,
+}
 
-//     pub fn get_rpc_provider(&self) -> &TestRpcProvider {
-//         &self.rpc
-//     }
+impl TestContext {
+    pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
+        let config = TestConfig::from_file(&config_path)?;
+        let provider: Box<dyn ProviderTrait>;
 
-//     pub fn default_rpc_setup(&self) -> Result<(), TestError> {
-//         self.rpc.generate_blocks(1)?;
-//         self.rpc.rescanblockchain(None, None)?;
-//         self.rpc.sweep_initialfreecoins()?;
-//         self.rpc.generate_blocks(100)?;
-//         Ok(())
-//     }
-// }
+        match config.esplora.clone() {
+            Some(esplora) => match config.rpc.clone() {
+                Some(rpc) => {
+                    let auth = Auth::UserPass(rpc.username, rpc.password);
+
+                    provider = Box::new(SimplexProvider::new(esplora, rpc.url, auth)?);
+                }
+                None => {
+                    provider = Box::new(EsploraProvider::new(esplora));
+                }
+            },
+            None => {
+                let client = TestClient::new();
+
+                provider = Box::new(SimplexProvider::new(
+                    client.esplora_url(),
+                    client.rpc_url(),
+                    client.auth(),
+                )?);
+            }
+        }
+
+        // TODO: setup signer
+
+        Ok(Self {
+            config: config,
+            provider: provider,
+        })
+    }
+
+    pub fn get_config(&self) -> &TestConfig {
+        &self.config
+    }
+
+    pub fn get_provider(&self) -> &Box<dyn ProviderTrait> {
+        &self.provider
+    }
+
+    // TODO: how to do this better?
+
+    // pub fn default_rpc_setup(&self) -> Result<(), TestError> {
+    //     self.rpc.generate_blocks(1)?;
+    //     self.rpc.rescanblockchain(None, None)?;
+    //     self.rpc.sweep_initialfreecoins()?;
+    //     self.rpc.generate_blocks(100)?;
+    //     Ok(())
+    // }
+}

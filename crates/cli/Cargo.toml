@@ -19,7 +19,6 @@ simplex-regtest = { workspace = true }
 simplex-test = { workspace = true }
 simplex-build = { workspace = true }
 simplex-sdk = { workspace = true }
-simplex-macros-core = { workspace = true }
 
 simplicityhl = { workspace = true }
 electrsd = { workspace = true }

@@ -18,9 +18,9 @@ pub struct TestConfig {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct RpcConfig {
-    url: String,
-    username: String,
-    password: String,
+    pub url: String,
+    pub username: String,
+    pub password: String,
 }
 
 impl TestConfig {

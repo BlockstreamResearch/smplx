@@ -1,6 +1,8 @@
-use quote::quote;
-use simplicityhl::ResolvedType;
 use std::fmt::Display;
+
+use quote::quote;
+
+use simplicityhl::ResolvedType;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
