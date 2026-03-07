@@ -6,10 +6,13 @@
 # src_dir = "./simf"
 
 # [test]
-# esplora = "http://127.0.0.1:62485"
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 
+# [test.esplora]
+# url = "https://blockstream.info/liquidtestnet/api"
+# network = "LiquidTestnet"
+
 # [test.rpc]
-# url = "http://127.0.0.1:62477"
-# username = "__cookie__"
-# password = "41721659183c5b553722a4689248867c3179ba16c5e73a93ba3ca4a914a3382f"
+# url = ""
+# username = ""
+# password = ""
