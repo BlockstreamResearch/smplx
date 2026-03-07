@@ -35,7 +35,36 @@ impl Config {
         }
 
         let conf_str = std::fs::read_to_string(path)?;
+        let config: Config = toml::from_str(conf_str.as_str()).map_err(ConfigError::UnableToDeserialize)?;
 
-        Ok(toml::from_str(conf_str.as_str()).map_err(ConfigError::UnableToDeserialize)?)
+        Self::validate(&config)?;
+
+        Ok(config)
+    }
+
+    fn validate(config: &Config) -> Result<(), ConfigError> {
+        match config.test.clone() {
+            Some(test_config) => match test_config.esplora {
+                Some(esplora_config) => {
+                    Self::validate_network(&esplora_config.network)?;
+
+                    if test_config.rpc.is_some() && esplora_config.network != "ElementsRegtest" {
+                        return Err(ConfigError::NetworkNameUnmatched(esplora_config.network.clone()));
+                    }
+
+                    Ok(())
+                }
+                None => Ok(()),
+            },
+            None => Ok(()),
+        }
+    }
+
+    fn validate_network(network: &String) -> Result<(), ConfigError> {
+        if network != "Liquid" && network != "LiquidTestnet" && network != "ElementsRegtest" {
+            return Err(ConfigError::BadNetworkName(network.clone()));
+        }
+
+        Ok(())
     }
 }

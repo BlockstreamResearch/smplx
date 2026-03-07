@@ -7,6 +7,7 @@
 
 # [test]
 # esplora = "http://127.0.0.1:62485"
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 
 # [test.rpc]
 # url = "http://127.0.0.1:62477"

@@ -56,14 +56,14 @@ pub trait SignerTrait {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError>;
 }
 
-pub struct Signer<'a> {
+pub struct Signer {
     xprv: Xpriv,
-    provider: Box<&'a dyn ProviderTrait>,
+    provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
 }
 
-impl<'a> SignerTrait for Signer<'a> {
+impl SignerTrait for Signer {
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
@@ -108,23 +108,20 @@ enum Estimate {
     Failure(u64),
 }
 
-impl<'a> Signer<'a> {
-    pub fn new(
-        mnemonic: &str,
-        provider: &'a impl ProviderTrait,
-        network: SimplicityNetwork,
-    ) -> Result<Self, SignerError> {
+impl Signer {
+    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Result<Self, SignerError> {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
             .parse()
             .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))?;
         let seed = mnemonic.to_seed("");
-
         let xprv = Xpriv::new_master(NetworkKind::Test, &seed)?;
+
+        let network = provider.get_network().clone();
 
         Ok(Self {
             xprv,
-            provider: Box::new(provider),
+            provider: provider,
             network: network,
             secp: secp,
         })
@@ -147,7 +144,7 @@ impl<'a> Signer<'a> {
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
-        let fee_rate = self.provider.get_fee_rate(target_blocks)?;
+        let fee_rate = self.provider.fetch_fee_rate(target_blocks)?;
 
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta();
@@ -160,6 +157,16 @@ impl<'a> Signer<'a> {
             }
 
             fee_tx.add_input(PartialInput::new(utxo.0, utxo.1), RequiredSignature::NativeEcdsa)?;
+        }
+
+        // need to try one more time after the loop
+        let policy_amount_delta = fee_tx.calculate_fee_delta();
+
+        if policy_amount_delta >= curr_fee as i64 {
+            match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
+                Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                Estimate::Failure(required_fee) => curr_fee = required_fee,
+            }
         }
 
         Err(SignerError::NotEnoughFunds(curr_fee))
@@ -176,13 +183,17 @@ impl<'a> Signer<'a> {
             return Err(SignerError::DustAmount(policy_amount_delta));
         }
 
-        let fee_rate = self.provider.get_fee_rate(target_blocks)?;
+        let fee_rate = self.provider.fetch_fee_rate(target_blocks)?;
 
         // policy_amount_delta will be > 0
         match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta as u64)? {
             Estimate::Success(tx, fee) => Ok((tx, fee)),
             Estimate::Failure(required_fee) => Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee)),
         }
+    }
+
+    pub fn get_provider(&self) -> &Box<dyn ProviderTrait> {
+        &self.provider
     }
 
     pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
@@ -386,18 +397,19 @@ mod tests {
 
     #[test]
     fn keys_correspond_to_address() {
-        let provider = EsploraProvider::new("https://blockstream.info/liquidtestnet/api".to_string());
+        let url = "https://blockstream.info/liquidtestnet/api".to_string();
+        let network = SimplicityNetwork::LiquidTestnet;
+
         let signer = Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
-            &provider,
-            SimplicityNetwork::LiquidTestnet,
+            Box::new(EsploraProvider::new(url, network.clone())),
         )
         .unwrap();
 
         let address = signer.get_wpkh_address().unwrap();
         let pubkey = signer.get_ecdsa_public_key().unwrap();
 
-        let derived_addr = Address::p2wpkh(&pubkey, None, SimplicityNetwork::LiquidTestnet.address_params());
+        let derived_addr = Address::p2wpkh(&pubkey, None, network.address_params());
 
         assert_eq!(derived_addr.to_string(), address.to_string());
     }

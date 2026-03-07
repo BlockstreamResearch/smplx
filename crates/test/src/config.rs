@@ -9,11 +9,19 @@ use serde::{Deserialize, Serialize};
 use super::error::TestError;
 
 pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
+pub const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestConfig {
+    pub mnemonic: String,
+    pub esplora: Option<EsploraConfig>,
+    pub rpc: Option<RpcConfig>,
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct TestConfig {
-    pub esplora: Option<String>,
-    pub rpc: Option<RpcConfig>,
+pub struct EsploraConfig {
+    pub url: String,
+    pub network: String,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -43,6 +51,17 @@ impl TestConfig {
 
         file.read_to_string(&mut content)?;
 
+        // TODO: check that network name is correct
         Ok(toml::from_str(&content)?)
+    }
+}
+
+impl Default for TestConfig {
+    fn default() -> Self {
+        Self {
+            mnemonic: TEST_MNEMONIC.to_string(),
+            esplora: None,
+            rpc: None,
+        }
     }
 }

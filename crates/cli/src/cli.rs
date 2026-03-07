@@ -42,8 +42,6 @@ impl Cli {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                println!("{loaded_config:#?}");
-
                 let test_config = loaded_config.test.unwrap_or_default();
 
                 Ok(Test::run(test_config, command)?)
@@ -55,8 +53,6 @@ impl Cli {
             Command::Build => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
-
-                println!("{loaded_config:#?}");
 
                 Ok(Build::run(loaded_config.build)?)
             }

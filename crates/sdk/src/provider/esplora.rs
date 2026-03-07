@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::thread::sleep;
 use std::time::Duration;
 
 use simplicityhl::elements::hashes::{Hash, sha256};
@@ -11,11 +10,14 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid
 
 use serde::Deserialize;
 
+use crate::provider::SimplicityNetwork;
+
 use super::error::ProviderError;
-use super::provider::{DEFAULT_TIMEOUT_SECS, ProviderTrait};
+use super::provider::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 
 pub struct EsploraProvider {
     pub esplora_url: String,
+    pub network: SimplicityNetwork,
     pub timeout: Duration,
 }
 
@@ -48,10 +50,11 @@ struct EsploraUtxo {
 }
 
 impl EsploraProvider {
-    pub fn new(url: String) -> Self {
+    pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
             esplora_url: url,
-            timeout: Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+            network: network,
+            timeout: Duration::from_secs(DEFAULT_ESPLORA_TIMEOUT_SECS),
         }
     }
 
@@ -88,6 +91,10 @@ impl EsploraProvider {
 }
 
 impl ProviderTrait for EsploraProvider {
+    fn get_network(&self) -> &SimplicityNetwork {
+        &self.network
+    }
+
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
@@ -117,6 +124,12 @@ impl ProviderTrait for EsploraProvider {
         let url = format!("{}/tx/{}/status", self.esplora_url, txid);
         let timeout_secs = self.timeout.as_secs();
 
+        let confirmation_poll = match self.network.clone() {
+            SimplicityNetwork::ElementsRegtest { .. } => Duration::from_millis(100),
+            _ => Duration::from_secs(10),
+        };
+
+        // polling needs to be > 1 min on mainnet/testnet
         for _ in 1..10 {
             let response = minreq::get(&url)
                 .with_timeout(timeout_secs)
@@ -124,7 +137,7 @@ impl ProviderTrait for EsploraProvider {
                 .map_err(|e| ProviderError::Request(e.to_string()))?;
 
             if response.status_code != 200 {
-                sleep(Duration::from_secs(5));
+                std::thread::sleep(confirmation_poll);
                 continue;
             }
 
@@ -134,7 +147,7 @@ impl ProviderTrait for EsploraProvider {
                 return Ok(());
             }
 
-            sleep(Duration::from_secs(10));
+            std::thread::sleep(confirmation_poll);
         }
 
         Err(ProviderError::Confirmation())

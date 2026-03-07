@@ -17,5 +17,5 @@ pub fn get_elementsd_bin_args() -> Vec<String> {
 }
 
 pub fn get_electrs_bin_args() -> Vec<String> {
-    vec!["-v".to_string()]
+    vec![]
 }

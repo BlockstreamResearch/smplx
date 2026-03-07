@@ -11,7 +11,7 @@ use super::error::RpcError;
 use crate::utils::sat2btc;
 
 pub struct ElementsRpc {
-    inner: Client,
+    pub inner: Client,
     pub auth: Auth,
     pub url: String,
 }
