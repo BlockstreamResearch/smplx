@@ -1,6 +1,7 @@
 [package]
 name = "simplex-regtest"
 version = "0.1.0"
+description = "Simplex regtest command internal implementation"
 license.workspace = true
 edition.workspace = true
 

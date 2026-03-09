@@ -1,16 +1,9 @@
 [package]
 name = "simplex-macros"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.90.0"
-description = "High-level helpers for delivering boilerplate code for SimplicityHL contracts"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/BlockstreamResearch/simplicity-contracts"
-homepage = "https://github.com/BlockstreamResearch/simplicity-contracts/tree/dev/crates/simplicityhl-core"
-readme = "README.md"
-documentation = "https://docs.rs/simplicityhl-core"
-keywords = ["simplicity", "liquid", "bitcoin", "elements", "macro"]
-categories = ["cryptography::cryptocurrencies"]
+description = "Simplex macros re-export package"
+license.workspace = true
+edition.workspace = true
 
 [lib]
 proc-macro = true

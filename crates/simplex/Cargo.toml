@@ -1,14 +1,13 @@
 [package]
 name = "simplex"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.90"
-description = "High-level helpers for compiling and executing Simplicity programs on Liquid"
-license = "MIT OR Apache-2.0"
+description = "A blazingly-fast, ux-first simplicity development framework"
+license.workspace = true
+edition.workspace = true
 repository = "https://github.com/BlockstreamResearch/simplex"
-readme = "README.md"
+readme = "../README.md"
 documentation = "https://docs.rs/simplex"
-keywords = ["simplicity", "liquid", "bitcoin", "elements", "taproot"]
+keywords = ["liquid", "framework", "simplicity", "simplex"]
 categories = ["cryptography::cryptocurrencies"]
 
 [lints]

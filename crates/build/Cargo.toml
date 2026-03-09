@@ -1,7 +1,7 @@
 [package]
 name = "simplex-build"
-description = "Macro support core for Simplex, the Rust SimplicityHl toolkit. Not intended to be used directly."
 version = "0.1.0"
+description = "Simplex build command internal implementation"
 license.workspace = true
 edition.workspace = true
 

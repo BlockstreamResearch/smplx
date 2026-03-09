@@ -6,7 +6,7 @@ members = [
 exclude = ["examples/basic"]
 
 [workspace.package]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 edition = "2024"
 
 [workspace.lints.clippy]
