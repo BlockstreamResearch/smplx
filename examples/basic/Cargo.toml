@@ -1,0 +1,11 @@
+[package]
+name = "draft_example"
+edition = "2024"
+rust-version = "1.90.0"
+version = "0.1.0"
+
+[dependencies]
+simplex = { path = "../../crates/simplex" }
+
+simplicityhl = { git = "https://github.com/BlockstreamResearch/SimplicityHL.git", rev = "568b462" }
+anyhow = { version = "1.0.101" }

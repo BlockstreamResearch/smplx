@@ -1,0 +1,28 @@
+[package]
+name = "simplex"
+version = "0.1.0"
+description = "A blazingly-fast, ux-first simplicity development framework"
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/BlockstreamResearch/simplex"
+readme = "../README.md"
+documentation = "https://docs.rs/simplex"
+keywords = ["liquid", "framework", "simplicity", "simplex"]
+categories = ["cryptography::cryptocurrencies"]
+
+[lints]
+workspace = true
+
+[dependencies]
+simplex-macros = { workspace = true }
+simplex-test = { workspace = true }
+simplex-sdk = { workspace = true }
+
+bincode = { workspace = true }
+serde = { workspace = true }
+simplicityhl = { workspace = true, features = ["serde"] }
+
+either = { version = "1.15.0", features = ["serde"] }
+
+[dev-dependencies]
+trybuild = { version = "1.0.115" }

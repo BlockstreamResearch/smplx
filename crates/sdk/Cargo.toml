@@ -1,32 +1,24 @@
 [package]
-name = "simplex-simplicity"
+name = "simplex-sdk"
 version = "0.1.0"
-edition = "2024"
-rust-version = "1.90"
-description = "High-level helpers for compiling and executing Simplicity programs on Liquid"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/BlockstreamResearch/simplicity-contracts"
-homepage = "https://github.com/BlockstreamResearch/simplicity-contracts/tree/dev/crates/simplicityhl-core"
-readme = "README.md"
-documentation = "https://docs.rs/simplicityhl-core"
-keywords = ["simplicity", "liquid", "bitcoin", "elements", "taproot"]
-categories = ["cryptography::cryptocurrencies"]
+description = "Simplex sdk to simplify the development with simplicity"
+license.workspace = true
+edition.workspace = true
 
 [lints]
 workspace = true
 
-[features]
-encoding = ["dep:bincode"]
-
 [dependencies]
-thiserror = "2"
-
-bincode = { version = "2.0.1", optional = true }
-
+thiserror = { workspace = true }
 sha2 = { workspace = true }
-
+minreq = { workspace = true }
+simplicityhl = { workspace = true }
+electrsd = { workspace = true }
+serde = { workspace = true }
 hex = { workspace = true }
 
-simplicityhl = { workspace = true }
-
-minreq = { workspace = true }
+serde_json = { version = "1.0" }
+elements-miniscript = { version = "0.4", features = ["base64", "serde"] }
+bip39 = { version = "2.0.0", features = ["rand"] }
+dyn-clone = { version = "1.0.20" }
+bitcoin_hashes = { version = "0.14.1" }

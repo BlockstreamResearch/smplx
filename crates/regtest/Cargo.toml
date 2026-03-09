@@ -1,0 +1,15 @@
+[package]
+name = "simplex-regtest"
+version = "0.1.0"
+description = "Simplex regtest command internal implementation"
+license.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+simplex-sdk = { workspace = true }
+
+thiserror = { workspace = true }
+electrsd = { workspace = true }
