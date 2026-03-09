@@ -1,5 +1,3 @@
-pub const DEFAULT_SAT_AMOUNT_FAUCET: u64 = 100000;
-
 pub fn get_elementsd_bin_args() -> Vec<String> {
     vec![
         "-fallbackfee=0.0001".to_string(),
@@ -19,5 +17,5 @@ pub fn get_elementsd_bin_args() -> Vec<String> {
 }
 
 pub fn get_electrs_bin_args() -> Vec<String> {
-    vec!["-v".to_string()]
+    vec![]
 }

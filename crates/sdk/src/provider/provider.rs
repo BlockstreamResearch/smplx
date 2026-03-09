@@ -2,12 +2,16 @@ use std::collections::HashMap;
 
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
+use crate::provider::SimplicityNetwork;
+
 use super::error::ProviderError;
 
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
-pub const DEFAULT_TIMEOUT_SECS: u64 = 10;
+pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
 
 pub trait ProviderTrait {
+    fn get_network(&self) -> &SimplicityNetwork;
+
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError>;
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError>;
@@ -20,7 +24,7 @@ pub trait ProviderTrait {
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 
-    fn get_fee_rate(&self, target_blocks: u32) -> Result<f32, ProviderError> {
+    fn fetch_fee_rate(&self, target_blocks: u32) -> Result<f32, ProviderError> {
         let estimates = self.fetch_fee_estimates()?;
         let target_str = target_blocks.to_string();
 

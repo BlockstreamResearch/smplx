@@ -1,19 +1,12 @@
-#![warn(clippy::all, clippy::pedantic)]
+pub use bincode;
+pub use either;
+pub use serde;
+pub use simplicityhl;
 
-pub extern crate either;
-pub extern crate serde;
+pub use simplex_sdk;
 
-#[cfg(feature = "macros")]
-pub extern crate simplex_macros;
+pub use simplex_test::config::TestConfig;
+pub use simplex_test::context::TestContext;
 
-#[cfg(feature = "sdk")]
-pub extern crate simplex_sdk;
-
-#[cfg(feature = "macros")]
-pub extern crate simplex_test;
-
-#[cfg(feature = "macros")]
-pub extern crate tracing;
-
-#[cfg(feature = "encoding")]
-pub extern crate bincode;
+pub use simplex_macros;
+pub use simplex_macros::{include_simf, test};

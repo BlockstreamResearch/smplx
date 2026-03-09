@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
-use bitcoind::bitcoincore_rpc::Auth;
-use electrsd::bitcoind;
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
 
-use crate::provider::{ProviderError, ProviderTrait};
+use crate::provider::SimplicityNetwork;
+
+use super::error::ProviderError;
+use super::provider::ProviderTrait;
 
 use super::{ElementsRpc, EsploraProvider};
 
@@ -15,15 +17,24 @@ pub struct SimplexProvider {
 }
 
 impl SimplexProvider {
-    pub fn new(esplora_url: String, elements_url: String, auth: Auth) -> Result<Self, ProviderError> {
+    pub fn new(
+        esplora_url: String,
+        elements_url: String,
+        auth: Auth,
+        network: SimplicityNetwork,
+    ) -> Result<Self, ProviderError> {
         Ok(Self {
-            esplora: EsploraProvider::new(esplora_url),
+            esplora: EsploraProvider::new(esplora_url, network),
             elements: ElementsRpc::new(elements_url, auth)?,
         })
     }
 }
 
 impl ProviderTrait for SimplexProvider {
+    fn get_network(&self) -> &SimplicityNetwork {
+        self.esplora.get_network()
+    }
+
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
         let txid = self.esplora.broadcast_transaction(tx)?;
 

@@ -1,9 +1,18 @@
-network = "elementsregtest"
+# TEST CONFIG 
 
-[build]
-simf_files = ["*.simf"]
-out_dir = "./src"
-base_dir = "./simf"
+# [build]
+# simf_files = ["*.simf"]
+# out_dir = "./src/artifacts"
+# src_dir = "./simf"
 
-[test]
-elementsd_path = "../../assets/elementsd"
+# [test]
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+
+# [test.esplora]
+# url = "https://blockstream.info/liquidtestnet/api"
+# network = "LiquidTestnet"
+
+# [test.rpc]
+# url = ""
+# username = ""
+# password = ""

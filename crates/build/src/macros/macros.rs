@@ -1,23 +1,25 @@
-pub mod codegen;
-pub mod parse;
-pub(crate) mod program;
-mod types;
-
-pub use parse::SimfContent;
-
-use crate::attr::codegen::{
-    GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta, convert_contract_name_to_contract_module,
-};
-use proc_macro2::Span;
-use quote::quote;
-use simplicityhl::AbiMeta;
 use std::error::Error;
 
-/// Expands helper functions for the given Simf content and metadata.
-///
-/// # Errors
-/// Returns a `syn::Result` with an error if code generation fails.
-pub fn expand_helpers(simf_content: SimfContent, meta: AbiMeta) -> syn::Result<proc_macro2::TokenStream> {
+use proc_macro2::Span;
+use quote::quote;
+
+use simplicityhl::AbiMeta;
+
+use super::codegen::{
+    GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta, convert_contract_name_to_contract_module,
+};
+use super::parse::{SimfContent, SynFilePath};
+use super::program;
+
+pub fn expand(input: &SynFilePath) -> syn::Result<proc_macro2::TokenStream> {
+    let simf_content = SimfContent::eval_path_expr(input)?;
+    let abi_meta = program::compile_simf(&simf_content)?;
+    let generated = expand_helpers(simf_content, abi_meta)?;
+
+    Ok(generated)
+}
+
+fn expand_helpers(simf_content: SimfContent, meta: AbiMeta) -> syn::Result<proc_macro2::TokenStream> {
     gen_helpers_inner(simf_content, meta).map_err(|e| syn::Error::new(Span::call_site(), e))
 }
 

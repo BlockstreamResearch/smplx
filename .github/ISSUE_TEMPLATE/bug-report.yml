@@ -2,7 +2,7 @@ name: Bug Report
 description: File a bug report
 labels: ['bug']
 assignees:
-  - KyrylR
+  - Arvolear
 body:
   - type: markdown
     attributes:
@@ -10,8 +10,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: "Project version"
-      placeholder: "1.2.3"
+      label: "Simplex version"
+      placeholder: "0.1.2"
     validations:
       required: true
   - type: textarea

@@ -1,9 +1,18 @@
 # TEST CONFIG 
 
+# [build]
+# simf_files = ["*.simf"]
+# out_dir = "./src/artifacts"
+# src_dir = "./simf"
+
 # [test]
-# esplora = "esplora_api_url"
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+
+# [test.esplora]
+# url = "https://blockstream.info/liquidtestnet/api"
+# network = "LiquidTestnet"
 
 # [test.rpc]
-# url = "rpc_url"
-# username = "username"
-# password = "password"
+# url = ""
+# username = ""
+# password = ""

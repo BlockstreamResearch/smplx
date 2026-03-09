@@ -1,4 +1,4 @@
-use simplex::simplex_macros::include_simf;
+use simplex::include_simf;
 use simplex::simplex_sdk::program::{ArgumentsTrait, Program};
 use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 pub struct P2pkProgram {

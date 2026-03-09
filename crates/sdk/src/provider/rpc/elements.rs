@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
-use bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
-use electrsd::bitcoind;
+use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 
 use serde_json::Value;
 
@@ -12,8 +11,8 @@ use super::error::RpcError;
 use crate::utils::sat2btc;
 
 pub struct ElementsRpc {
-    inner: Client,
-    auth: Auth,
+    pub inner: Client,
+    pub auth: Auth,
     pub url: String,
 }
 

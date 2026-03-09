@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
@@ -11,9 +9,7 @@ pub enum Command {
         #[command(subcommand)]
         command: TestCommand,
     },
-    Build {
-        out_dir: Option<PathBuf>,
-    },
+    Build,
 }
 
 #[derive(Debug, Subcommand)]

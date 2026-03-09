@@ -1,4 +1,4 @@
-use crate::{commands::error::CommandError, config};
+use crate::{commands, config};
 
 #[derive(thiserror::Error, Debug)]
 pub enum CliError {
@@ -6,11 +6,8 @@ pub enum CliError {
     Config(#[from] config::error::ConfigError),
 
     #[error(transparent)]
-    Command(#[from] CommandError),
+    Command(#[from] commands::error::CommandError),
 
     #[error("IO error: '{0}'")]
     Io(#[from] std::io::Error),
-
-    #[error("Occurred code generation error, error: '{0}'")]
-    CodeGenerator(#[from] simplex_template_gen_core::CodeGeneratorError),
 }
