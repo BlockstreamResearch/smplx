@@ -38,12 +38,15 @@ src_dir = "./simf"
 simf_files = ["*.simf"]
 out_dir = "./src/artifacts"
 
+[regtest]
+mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 
 [test.esplora]
 url = "<esplora url>"
-network = "<Liquid, LiquidTestnet, LiquidRegtest>"
+network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
 [test.rpc]
 url = "<rpc url>"
@@ -60,7 +63,7 @@ Where:
 - `test` (`simplex test` config)
   - `esplora`
     - `url` - Esplora API endpoint url
-    - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `LiquidRegtest`).
+    - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
   - `rpc`
     - `url` - Elements RPC endpoint url
     - `username` - Elements RPC username
@@ -90,7 +93,7 @@ Check out the complete project examples in the `examples` directory to learn mor
 ## Future work
 
 - [ ] Custom signer setup with `simplex regtest`.
-- [ ] SDK support for confidential assets.
+- [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] `simplex init` and `simplex clean` tasks.
 - [ ] Proper installation scripts.
 - [ ] Simplicity dependencies management once the language adds [support for modules](https://github.com/BlockstreamResearch/SimplicityHL/issues/155).

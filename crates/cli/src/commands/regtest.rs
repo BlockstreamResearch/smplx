@@ -1,15 +1,16 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use simplex_regtest::TestClient;
+use simplex_regtest::Regtest as RegtestRunner;
+use simplex_regtest::RegtestConfig;
 
 use crate::commands::error::CommandError;
 
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn run() -> Result<(), CommandError> {
-        let mut client = TestClient::new();
+    pub fn run(config: RegtestConfig) -> Result<(), CommandError> {
+        let (mut client, signer) = RegtestRunner::new(config)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();
@@ -19,12 +20,19 @@ impl Regtest {
         })
         .expect("Error setting Ctrl-C handler");
 
+        let auth = client.auth().get_user_pass().unwrap();
+
         println!("======================================");
         println!("Waiting for Ctrl-C...");
-        println!("rpc: {}", client.rpc_url());
-        println!("esplora: {}", client.esplora_url());
-        let auth = client.auth().get_user_pass().unwrap();
-        println!("user: {:?}, password: {:?}", auth.0.unwrap(), auth.1.unwrap());
+        println!("RPC: {}", client.rpc_url());
+        println!("Esplora: {}", client.esplora_url());
+        println!("User: {:?}, Password: {:?}", auth.0.unwrap(), auth.1.unwrap());
+        println!();
+        println!(
+            "Signer: {:?}, Private Key: {:?}",
+            signer.get_wpkh_address()?,
+            signer.get_private_key()?
+        );
         println!("======================================");
 
         while running.load(Ordering::SeqCst) {}

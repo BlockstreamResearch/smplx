@@ -1,18 +1,21 @@
 # TEST CONFIG 
 
 # [build]
+# src_dir = "./simf"
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
-# src_dir = "./simf"
+
+# [regtest]
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 
 # [test]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 
 # [test.esplora]
-# url = "https://blockstream.info/liquidtestnet/api"
-# network = "LiquidTestnet"
+# url = "<esplora url>"
+# network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
 # [test.rpc]
-# url = ""
-# username = ""
-# password = ""
+# url = "<rpc url>"
+# username = "<rpc username>"
+# password = "<rpc password>"

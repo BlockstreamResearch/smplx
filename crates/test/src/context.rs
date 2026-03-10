@@ -1,10 +1,10 @@
 use std::path::PathBuf;
-use std::time::Duration;
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
-use simplex_regtest::TestClient;
-use simplex_sdk::provider::ElementsRpc;
+use simplex_regtest::Regtest;
+use simplex_regtest::client::RegtestClient;
+
 use simplex_sdk::provider::{EsploraProvider, ProviderTrait, SimplexProvider, SimplicityNetwork};
 use simplex_sdk::signer::Signer;
 
@@ -13,7 +13,7 @@ use crate::error::TestError;
 
 #[allow(dead_code)]
 pub struct TestContext {
-    _client: Option<TestClient>,
+    _client: Option<RegtestClient>,
     config: TestConfig,
     signer: Signer,
 }
@@ -22,8 +22,7 @@ impl TestContext {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
 
-        let (provider, client) = Self::setup_provider(&config)?;
-        let signer = Self::setup_signer(provider, &client, &config.mnemonic)?;
+        let (signer, client) = Self::setup(&config)?;
 
         Ok(Self {
             _client: client,
@@ -48,22 +47,23 @@ impl TestContext {
         &self.signer
     }
 
-    fn setup_provider(config: &TestConfig) -> Result<(Box<dyn ProviderTrait>, Option<TestClient>), TestError> {
-        let provider: Box<dyn ProviderTrait>;
-        let client: Option<TestClient>;
+    fn setup(config: &TestConfig) -> Result<(Signer, Option<RegtestClient>), TestError> {
+        let client: Option<RegtestClient>;
+        let signer: Signer;
 
         match config.esplora.clone() {
             Some(esplora) => match config.rpc.clone() {
                 Some(rpc) => {
                     // custom regtest case
                     let auth = Auth::UserPass(rpc.username, rpc.password);
-
-                    provider = Box::new(SimplexProvider::new(
+                    let provider = Box::new(SimplexProvider::new(
                         esplora.url,
                         rpc.url,
                         auth,
                         SimplicityNetwork::default_regtest(),
                     )?);
+
+                    signer = Signer::new(config.mnemonic.as_str(), provider)?;
                     client = None;
                 }
                 None => {
@@ -73,70 +73,21 @@ impl TestContext {
                         "LiquidTestnet" => SimplicityNetwork::LiquidTestnet,
                         _ => panic!("Impossible branch reached, please report a bug"),
                     };
+                    let provider = Box::new(EsploraProvider::new(esplora.url, network));
 
-                    provider = Box::new(EsploraProvider::new(esplora.url, network));
+                    signer = Signer::new(config.mnemonic.as_str(), provider)?;
                     client = None;
                 }
             },
             None => {
                 // simplex inner network
-                let client_inner = TestClient::new();
+                let (regtest_client, regtest_signer) = Regtest::new(config.to_regtest_config())?;
 
-                provider = Box::new(SimplexProvider::new(
-                    client_inner.esplora_url(),
-                    client_inner.rpc_url(),
-                    client_inner.auth(),
-                    SimplicityNetwork::default_regtest(),
-                )?);
-
-                // need to save the client so that rust doesn't kill it
-                client = Some(client_inner);
+                client = Some(regtest_client);
+                signer = regtest_signer;
             }
         }
 
-        Ok((provider, client))
-    }
-
-    fn setup_signer(
-        provider: Box<dyn ProviderTrait>,
-        client: &Option<TestClient>,
-        mnemonic: &String,
-    ) -> Result<Signer, TestError> {
-        let signer = Signer::new(mnemonic, provider)?;
-
-        match client {
-            // if client exists, we are using inner simplex network
-            Some(client_inner) => {
-                let rpc_provider = ElementsRpc::new(client_inner.rpc_url(), client_inner.auth())?;
-
-                rpc_provider.generate_blocks(1)?;
-                rpc_provider.rescanblockchain(None, None)?;
-                rpc_provider.sweep_initialfreecoins()?;
-                rpc_provider.generate_blocks(100)?;
-
-                // 20 million BTC
-                rpc_provider.sendtoaddress(&signer.get_wpkh_address()?, 20_000_000 * u64::pow(10, 8), None)?;
-
-                // wait for electrs to index
-                let mut attempts = 0;
-
-                loop {
-                    if !(signer.get_wpkh_utxos()?).is_empty() {
-                        break;
-                    }
-
-                    attempts += 1;
-
-                    if attempts > 100 {
-                        panic!("Electrs failed to index the sweep after 10 seconds");
-                    }
-
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-            }
-            None => {}
-        };
-
-        Ok(signer)
+        Ok((signer, client))
     }
 }

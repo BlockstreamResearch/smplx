@@ -6,15 +6,15 @@ use electrsd::bitcoind;
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use electrsd::bitcoind::{BitcoinD, Conf};
 
-use super::error::ClientError;
+use super::error::RegtestError;
 use crate::args::{get_electrs_bin_args, get_elementsd_bin_args};
 
-pub struct TestClient {
+pub struct RegtestClient {
     pub electrs: ElectrsD,
     pub elements: BitcoinD,
 }
 
-impl TestClient {
+impl RegtestClient {
     // TODO: pass custom config
     pub fn new() -> Self {
         let (electrs_path, elementsd_path) = Self::default_bin_paths();
@@ -57,9 +57,9 @@ impl TestClient {
         Auth::UserPass(cookie.user, cookie.password)
     }
 
-    pub fn kill(&mut self) -> Result<(), ClientError> {
+    pub fn kill(&mut self) -> Result<(), RegtestError> {
         // electrs stops elements automatically
-        self.electrs.kill().map_err(|_| ClientError::ElectrsTermination())?;
+        self.electrs.kill().map_err(|_| RegtestError::ElectrsTermination())?;
 
         Ok(())
     }

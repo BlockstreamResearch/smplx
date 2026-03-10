@@ -13,3 +13,5 @@ simplex-sdk = { workspace = true }
 
 thiserror = { workspace = true }
 electrsd = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }

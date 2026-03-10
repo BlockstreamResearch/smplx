@@ -11,7 +11,7 @@ pub enum BuildError {
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
 
-    #[error("Occurred config deserialization error: '{0}'")]
+    #[error("Failed to deserialize config: '{0}'")]
     ConfigDeserialize(#[from] toml::de::Error),
 
     #[error("Invalid generation path: '{0}'")]

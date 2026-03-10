@@ -42,13 +42,13 @@ impl Cli {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                let test_config = loaded_config.test.unwrap_or_default();
-
-                Ok(Test::run(test_config, command)?)
+                Ok(Test::run(loaded_config.test, command)?)
             }
             Command::Regtest => {
-                // TODO: pass config
-                Ok(Regtest::run()?)
+                let config_path = Config::get_default_path()?;
+                let loaded_config = Config::load(config_path)?;
+
+                Ok(Regtest::run(loaded_config.regtest)?)
             }
             Command::Build => {
                 let config_path = Config::get_default_path()?;

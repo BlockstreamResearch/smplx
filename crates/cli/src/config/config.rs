@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 use simplex_build::BuildConfig;
+use simplex_regtest::RegtestConfig;
 use simplex_test::TestConfig;
 
 use super::error::ConfigError;
@@ -12,8 +13,9 @@ pub const CONFIG_FILENAME: &str = "Simplex.toml";
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    pub test: Option<TestConfig>,
     pub build: BuildConfig,
+    pub regtest: RegtestConfig,
+    pub test: TestConfig,
 }
 
 impl Config {
@@ -43,19 +45,16 @@ impl Config {
     }
 
     fn validate(config: &Config) -> Result<(), ConfigError> {
-        match config.test.clone() {
-            Some(test_config) => match test_config.esplora {
-                Some(esplora_config) => {
-                    Self::validate_network(&esplora_config.network)?;
+        match config.test.esplora.clone() {
+            Some(esplora_config) => {
+                Self::validate_network(&esplora_config.network)?;
 
-                    if test_config.rpc.is_some() && esplora_config.network != "ElementsRegtest" {
-                        return Err(ConfigError::NetworkNameUnmatched(esplora_config.network.clone()));
-                    }
-
-                    Ok(())
+                if config.test.rpc.is_some() && esplora_config.network != "ElementsRegtest" {
+                    return Err(ConfigError::NetworkNameUnmatched(esplora_config.network.clone()));
                 }
-                None => Ok(()),
-            },
+
+                Ok(())
+            }
             None => Ok(()),
         }
     }

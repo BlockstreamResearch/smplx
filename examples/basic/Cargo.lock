@@ -1226,8 +1226,10 @@ name = "simplex-regtest"
 version = "0.1.0"
 dependencies = [
  "electrsd",
+ "serde",
  "simplex-sdk",
  "thiserror",
+ "toml",
 ]
 
 [[package]]
