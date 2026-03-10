@@ -92,7 +92,6 @@ Check out the complete project examples in the `examples` directory to learn mor
 
 ## Future work
 
-- [ ] Custom signer setup with `simplex regtest`.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] `simplex init` and `simplex clean` tasks.
 - [ ] Proper installation scripts.
