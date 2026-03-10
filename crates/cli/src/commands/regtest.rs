@@ -24,15 +24,12 @@ impl Regtest {
 
         println!("======================================");
         println!("Waiting for Ctrl-C...");
+        println!();
         println!("RPC: {}", client.rpc_url());
         println!("Esplora: {}", client.esplora_url());
         println!("User: {:?}, Password: {:?}", auth.0.unwrap(), auth.1.unwrap());
         println!();
-        println!(
-            "Signer: {:?}, Private Key: {:?}",
-            signer.get_wpkh_address()?,
-            signer.get_private_key()?
-        );
+        println!("Signer: {:?}", signer.get_wpkh_address()?);
         println!("======================================");
 
         while running.load(Ordering::SeqCst) {}
