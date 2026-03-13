@@ -8,13 +8,13 @@ use simplex_sdk::signer::SignerError;
 pub enum RegtestError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
-    
+
     #[error(transparent)]
     Rpc(#[from] RpcError),
 
     #[error(transparent)]
     Signer(#[from] SignerError),
-    
+
     #[error("Failed to terminate elements")]
     ElementsTermination(),
 
