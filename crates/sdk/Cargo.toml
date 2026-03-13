@@ -1,6 +1,6 @@
 [package]
 name = "simplex-sdk"
-version = "0.1.0"
+version = "0.0.1"
 description = "Simplex sdk to simplify the development with simplicity"
 license.workspace = true
 edition.workspace = true

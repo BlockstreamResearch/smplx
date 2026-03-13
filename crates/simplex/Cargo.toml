@@ -1,6 +1,6 @@
 [package]
 name = "simplex"
-version = "0.1.0"
+version = "0.0.1"
 description = "A blazingly-fast, ux-first simplicity development framework"
 license.workspace = true
 edition.workspace = true
@@ -14,9 +14,9 @@ categories = ["cryptography::cryptocurrencies"]
 workspace = true
 
 [dependencies]
-simplex-macros = { workspace = true }
-simplex-test = { workspace = true }
-simplex-sdk = { workspace = true }
+simplex-macros = { workspace = true, version = "0.0.1" }
+simplex-test = { workspace = true, version = "0.0.1" }
+simplex-sdk = { workspace = true, version = "0.0.1" }
 
 bincode = { workspace = true }
 serde = { workspace = true }

@@ -1265,7 +1265,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "simplex"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "bincode",
  "either",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-build"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "glob",
  "globwalk",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-macros"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "simplex-build",
  "simplex-test",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-regtest"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "electrsd",
  "serde",
@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-sdk"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "simplex-test"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "electrsd",
  "proc-macro2",
