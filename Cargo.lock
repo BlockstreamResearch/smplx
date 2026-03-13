@@ -1365,20 +1365,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "smplx-rs"
-version = "0.0.1"
-dependencies = [
- "bincode",
- "either",
- "serde",
- "simplicityhl",
- "smplx-macros",
- "smplx-sdk",
- "smplx-test",
- "trybuild",
-]
-
-[[package]]
 name = "smplx-sdk"
 version = "0.0.1"
 dependencies = [
@@ -1394,6 +1380,20 @@ dependencies = [
  "sha2",
  "simplicityhl",
  "thiserror",
+]
+
+[[package]]
+name = "smplx-std"
+version = "0.0.1"
+dependencies = [
+ "bincode",
+ "either",
+ "serde",
+ "simplicityhl",
+ "smplx-macros",
+ "smplx-sdk",
+ "smplx-test",
+ "trybuild",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-# Simplex
+# Smplx
 
 **A blazingly-fast, ux-first simplicity development framework.**
 
