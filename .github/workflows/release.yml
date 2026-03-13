@@ -15,6 +15,10 @@ jobs:
   build:
     name: Build ${{ matrix.target }} (${{ matrix.runner }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: full
@@ -23,7 +27,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: simplex-linux-x86_64.tar.gz
             attestation: simplex-linux-x86_64.attestation.txt
@@ -56,10 +60,10 @@ jobs:
         env:
           RUST_PROFILE: release
           TARGET: ${{ matrix.target }}
-          OUT_DIR: target/${{ matrix.target }}/${{ env.RUST_PROFILE }}
-          run: | 
-            cargo build --target $TARGET --profile $RUST_PROFILE --bins
-            mv $OUT_DIR/simplex simplex
+          OUT_DIR: target/${{ matrix.target }}
+        run: | 
+          cargo build --target $TARGET --profile $RUST_PROFILE --bins
+          mv $OUT_DIR/${{ env.RUST_PROFILE }}/simplex simplex
  
       - name: Install elementsd and electrs
         env:
@@ -70,16 +74,16 @@ jobs:
           ELEMENTSD_FILENAME="elements-${ELEMENTSD_VERSION}-${ELEMENTSD_TARGET}.tar.gz"
           ELECTRS_FILENAME="electrs_${ELECTRS_TARGET}_esplora_027e38d3ebc2f85b28ae76f8f3448438ee4fc7b1_liquid.zip"
 
-          curl -Ls "https://github.com/ElementsProject/elements/releases/download/elements-${ELEMENTSD_VERSION}/${ELEMENTSD_FILENAME}" -o "${ELEMENTSD_FILENAME}"
-          tar -xzf "${ELEMENTSD_FILENAME}" && rm "${ELEMENTSD_FILENAME}"
-          mv "elements-${ELEMENTSD_VERSION}/bin/elementsd" "elementsd"
+          curl -Ls "https://github.com/ElementsProject/elements/releases/download/elements-${ELEMENTSD_VERSION}/${ELEMENTSD_FILENAME}" -o ${ELEMENTSD_FILENAME}
+          tar -xzf ${ELEMENTSD_FILENAME} && rm ${ELEMENTSD_FILENAME}
+          mv elements-${ELEMENTSD_VERSION}/bin/elementsd elementsd
           
-          curl -Ls "https://github.com/RCasatta/electrsd/releases/download/electrs_releases/${ELECTRS_FILENAME}" -o "${ELECTRS_FILENAME}"
-          unzip "${ELECTRS_FILENAME}" && rm "${ELECTRS_FILENAME}"
+          curl -Ls "https://github.com/RCasatta/electrsd/releases/download/electrs_releases/${ELECTRS_FILENAME}" -o ${ELECTRS_FILENAME}
+          unzip ${ELECTRS_FILENAME} && rm ${ELECTRS_FILENAME}
 
       - name: Binaries attestation
         id: attestation
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             simplex
@@ -135,8 +139,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ build, release ]
     permissions:
-      id-token: write
       contents: read
+      id-token: write
     concurrency:
       group: publish-core-${{ github.ref }}
       cancel-in-progress: false
