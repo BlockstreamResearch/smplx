@@ -1,5 +1,5 @@
 [package]
-name = "simplex-build"
+name = "smplx-build"
 version = "0.0.1"
 description = "Simplex build command internal implementation"
 license.workspace = true

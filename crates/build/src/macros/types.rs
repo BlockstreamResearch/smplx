@@ -108,7 +108,7 @@ impl RustType {
             RustType::Either(left, right) => {
                 let left_ty = left.to_type_token_stream();
                 let right_ty = right.to_type_token_stream();
-                quote! { ::simplex::either::Either<#left_ty, #right_ty> }
+                quote! { simplex::either::Either<#left_ty, #right_ty> }
             }
             RustType::Option(inner) => {
                 let inner_ty = inner.to_type_token_stream();
@@ -182,13 +182,13 @@ impl RustType {
 
                 quote! {
                     match &#value_expr {
-                        ::simplex::either::Either::Left(left_val) => {
+                        simplex::either::Either::Left(left_val) => {
                             Value::left(
                                 #left_conv,
                                 #right_ty
                             )
                         }
-                        ::simplex::either::Either::Right(right_val) => {
+                        simplex::either::Either::Right(right_val) => {
                             Value::right(
                                 #left_ty,
                                 #right_conv
@@ -276,7 +276,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::Boolean(b) => *b,
+                            simplex::simplicityhl::value::ValueInner::Boolean(b) => *b,
                             _ => return Err(format!("Wrong type for {}: expected bool", #witness_name)),
                         }
                     }
@@ -290,7 +290,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U8(v)) => *v,
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U8(v)) => *v,
                             _ => return Err(format!("Wrong type for {}: expected U8", #witness_name)),
                         }
                     }
@@ -304,7 +304,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U16(v)) => *v,
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U16(v)) => *v,
                             _ => return Err(format!("Wrong type for {}: expected U16", #witness_name)),
                         }
                     }
@@ -318,7 +318,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U32(v)) => *v,
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U32(v)) => *v,
                             _ => return Err(format!("Wrong type for {}: expected U32", #witness_name)),
                         }
                     }
@@ -332,7 +332,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U64(v)) => *v,
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U64(v)) => *v,
                             _ => return Err(format!("Wrong type for {}: expected U64", #witness_name)),
                         }
                     }
@@ -346,7 +346,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U128(v)) => *v,
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U128(v)) => *v,
                             _ => return Err(format!("Wrong type for {}: expected U128", #witness_name)),
                         }
                     }
@@ -360,7 +360,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::UInt(UIntValue::U256(u256)) => u256.to_byte_array(),
+                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U256(u256)) => u256.to_byte_array(),
                             _ => return Err(format!("Wrong type for {}: expected U256", #witness_name)),
                         }
                     }
@@ -377,7 +377,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::Array(arr_value) => {
+                            simplex::simplicityhl::value::ValueInner::Array(arr_value) => {
                                 if arr_value.len() != #size {
                                     return Err(format!("Wrong array length for {}: expected {}, got {}", #witness_name, #size, arr_value.len()));
                                 }
@@ -403,7 +403,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::Tuple(tuple_value) => {
+                            simplex::simplicityhl::value::ValueInner::Tuple(tuple_value) => {
                                 if tuple_value.len() != #elements_len {
                                     return Err(format!("Wrong tuple length for {}", #witness_name));
                                 }
@@ -425,13 +425,13 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::Either(either_val) => {
+                            simplex::simplicityhl::value::ValueInner::Either(either_val) => {
                                 match either_val {
-                                    ::simplex::either::Either::Left(left_val) => {
-                                        ::simplex::either::Either::Left(#left_extraction)
+                                    simplex::either::Either::Left(left_val) => {
+                                        simplex::either::Either::Left(#left_extraction)
                                     }
-                                    ::simplex::either::Either::Right(right_val) => {
-                                        ::simplex::either::Either::Right(#right_extraction)
+                                    simplex::either::Either::Right(right_val) => {
+                                        simplex::either::Either::Right(#right_extraction)
                                     }
                                 }
                             }
@@ -450,7 +450,7 @@ impl RustType {
                             .get(&witness_name)
                             .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
                         match value.inner() {
-                            simplicityhl::value::ValueInner::Option(opt_val) => {
+                            simplex::simplicityhl::value::ValueInner::Option(opt_val) => {
                                 match opt_val {
                                     None => None,
                                     Some(some_val) => Some(#inner_extraction),
@@ -474,43 +474,43 @@ impl RustType {
         match self {
             RustType::Bool => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::Boolean(b) => *b,
+                    simplex::simplicityhl::value::ValueInner::Boolean(b) => *b,
                     _ => return Err(format!("Wrong type for {}: expected bool", #context)),
                 }
             },
             RustType::U8 => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U8(v)) => *v,
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U8(v)) => *v,
                     _ => return Err(format!("Wrong type for {}: expected U8", #context)),
                 }
             },
             RustType::U16 => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U16(v)) => *v,
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U16(v)) => *v,
                     _ => return Err(format!("Wrong type for {}: expected U16", #context)),
                 }
             },
             RustType::U32 => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U32(v)) => *v,
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U32(v)) => *v,
                     _ => return Err(format!("Wrong type for {}: expected U32", #context)),
                 }
             },
             RustType::U64 => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U64(v)) => *v,
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U64(v)) => *v,
                     _ => return Err(format!("Wrong type for {}: expected U64", #context)),
                 }
             },
             RustType::U128 => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U128(v)) => *v,
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U128(v)) => *v,
                     _ => return Err(format!("Wrong type for {}: expected U128", #context)),
                 }
             },
             RustType::U256Array => quote! {
                 match #value_expr.inner() {
-                    simplicityhl::value::ValueInner::UInt(UIntValue::U256(u256)) => u256.to_byte_array(),
+                    simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U256(u256)) => u256.to_byte_array(),
                     _ => return Err(format!("Wrong type for {}: expected U256", #context)),
                 }
             },
@@ -523,7 +523,7 @@ impl RustType {
 
                 quote! {
                     match #value_expr.inner() {
-                        simplicityhl::value::ValueInner::Array(arr_val) => {
+                        simplex::simplicityhl::value::ValueInner::Array(arr_val) => {
                             if arr_val.len() != #size {
                                 return Err(format!("Wrong array length for {}: expected {}, got {}", #context, #size, arr_val.len()));
                             }
@@ -545,7 +545,7 @@ impl RustType {
 
                 quote! {
                     match #value_expr.inner() {
-                        simplicityhl::value::ValueInner::Tuple(tuple_val) => {
+                        simplex::simplicityhl::value::ValueInner::Tuple(tuple_val) => {
                             if tuple_val.len() != #tuple_len {
                                 return Err(format!("Wrong tuple length for {}", #context));
                             }
@@ -563,13 +563,13 @@ impl RustType {
 
                 quote! {
                     match #value_expr.inner() {
-                        simplicityhl::value::ValueInner::Either(either_val) => {
+                        simplex::simplicityhl::value::ValueInner::Either(either_val) => {
                             match either_val {
-                                ::simplex::either::Either::Left(left_val) => {
-                                    ::simplex::either::Either::Left(#left_extraction)
+                                simplex::either::Either::Left(left_val) => {
+                                    simplex::either::Either::Left(#left_extraction)
                                 }
-                                ::simplex::either::Either::Right(right_val) => {
-                                    ::simplex::either::Either::Right(#right_extraction)
+                                simplex::either::Either::Right(right_val) => {
+                                    simplex::either::Either::Right(#right_extraction)
                                 }
                             }
                         }
@@ -583,7 +583,7 @@ impl RustType {
 
                 quote! {
                     match #value_expr.inner() {
-                        simplicityhl::value::ValueInner::Option(opt_val) => {
+                        simplex::simplicityhl::value::ValueInner::Option(opt_val) => {
                             match opt_val {
                                 None => None,
                                 Some(some_val) => Some(#inner_extraction),

@@ -1,10 +1,10 @@
-use simplicityhl::elements::{Script, Txid};
+use simplex::simplicityhl::elements::{Script, Txid};
 
-use simplex::simplex_sdk::constants::DUMMY_SIGNATURE;
-use simplex::simplex_sdk::transaction::{
+use simplex::constants::DUMMY_SIGNATURE;
+use simplex::transaction::{
     FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature,
 };
-use simplex::simplex_sdk::utils::tr_unspendable_key;
+use simplex::utils::tr_unspendable_key;
 
 use draft_example::artifacts::p2pk::P2pkProgram;
 use draft_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};

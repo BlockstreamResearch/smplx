@@ -418,8 +418,7 @@ name = "draft_example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "simplex",
- "simplicityhl",
+ "smplx-rs",
 ]
 
 [[package]]
@@ -1183,90 +1182,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
-name = "simplex"
-version = "0.0.1"
-dependencies = [
- "bincode",
- "either",
- "serde",
- "simplex-macros",
- "simplex-sdk",
- "simplex-test",
- "simplicityhl",
-]
-
-[[package]]
-name = "simplex-build"
-version = "0.0.1"
-dependencies = [
- "glob",
- "globwalk",
- "pathdiff",
- "prettyplease",
- "proc-macro2",
- "quote",
- "serde",
- "simplicityhl",
- "syn",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "simplex-macros"
-version = "0.0.1"
-dependencies = [
- "simplex-build",
- "simplex-test",
- "syn",
-]
-
-[[package]]
-name = "simplex-regtest"
-version = "0.0.1"
-dependencies = [
- "electrsd",
- "serde",
- "simplex-sdk",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "simplex-sdk"
-version = "0.0.1"
-dependencies = [
- "bip39",
- "bitcoin_hashes",
- "dyn-clone",
- "electrsd",
- "elements-miniscript",
- "hex",
- "minreq",
- "serde",
- "serde_json",
- "sha2",
- "simplicityhl",
- "thiserror",
-]
-
-[[package]]
-name = "simplex-test"
-version = "0.0.1"
-dependencies = [
- "electrsd",
- "proc-macro2",
- "quote",
- "serde",
- "simplex-regtest",
- "simplex-sdk",
- "simplicityhl",
- "syn",
- "thiserror",
- "toml",
-]
-
-[[package]]
 name = "simplicity-lang"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1309,6 +1224,90 @@ dependencies = [
  "serde",
  "serde_json",
  "simplicity-lang",
+]
+
+[[package]]
+name = "smplx-build"
+version = "0.0.1"
+dependencies = [
+ "glob",
+ "globwalk",
+ "pathdiff",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "simplicityhl",
+ "syn",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "smplx-macros"
+version = "0.0.1"
+dependencies = [
+ "smplx-build",
+ "smplx-test",
+ "syn",
+]
+
+[[package]]
+name = "smplx-regtest"
+version = "0.0.1"
+dependencies = [
+ "electrsd",
+ "serde",
+ "smplx-sdk",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "smplx-rs"
+version = "0.0.1"
+dependencies = [
+ "bincode",
+ "either",
+ "serde",
+ "simplicityhl",
+ "smplx-macros",
+ "smplx-sdk",
+ "smplx-test",
+]
+
+[[package]]
+name = "smplx-sdk"
+version = "0.0.1"
+dependencies = [
+ "bip39",
+ "bitcoin_hashes",
+ "dyn-clone",
+ "electrsd",
+ "elements-miniscript",
+ "hex",
+ "minreq",
+ "serde",
+ "serde_json",
+ "sha2",
+ "simplicityhl",
+ "thiserror",
+]
+
+[[package]]
+name = "smplx-test"
+version = "0.0.1"
+dependencies = [
+ "electrsd",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "simplicityhl",
+ "smplx-regtest",
+ "smplx-sdk",
+ "syn",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]

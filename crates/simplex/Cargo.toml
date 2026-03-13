@@ -1,22 +1,25 @@
 [package]
-name = "simplex"
+name = "smplx-rs"
 version = "0.0.1"
 description = "A blazingly-fast, ux-first simplicity development framework"
 license.workspace = true
 edition.workspace = true
 repository = "https://github.com/BlockstreamResearch/simplex"
 readme = "../README.md"
-documentation = "https://docs.rs/simplex"
-keywords = ["liquid", "framework", "simplicity", "simplex"]
+documentation = "https://docs.rs/smplx-rs"
+keywords = ["liquid", "elements", "smart contracts", "simplicity", "framework"]
 categories = ["cryptography::cryptocurrencies"]
+
+[lib]
+name = "simplex"
 
 [lints]
 workspace = true
 
 [dependencies]
-simplex-macros = { workspace = true, version = "0.0.1" }
-simplex-test = { workspace = true, version = "0.0.1" }
-simplex-sdk = { workspace = true, version = "0.0.1" }
+smplx-macros = { workspace = true }
+smplx-test = { workspace = true }
+smplx-sdk = { workspace = true }
 
 bincode = { workspace = true }
 serde = { workspace = true }

@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
-use simplex_regtest::Regtest;
-use simplex_regtest::client::RegtestClient;
+use smplx_regtest::Regtest;
+use smplx_regtest::client::RegtestClient;
 
-use simplex_sdk::provider::{EsploraProvider, ProviderTrait, SimplexProvider, SimplicityNetwork};
-use simplex_sdk::signer::Signer;
+use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplexProvider, SimplicityNetwork};
+use smplx_sdk::signer::Signer;
 
 use crate::config::TestConfig;
 use crate::error::TestError;

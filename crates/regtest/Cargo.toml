@@ -1,5 +1,5 @@
 [package]
-name = "simplex-regtest"
+name = "smplx-regtest"
 version = "0.0.1"
 description = "Simplex regtest command internal implementation"
 license.workspace = true
@@ -9,7 +9,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-simplex-sdk = { workspace = true, version = "0.0.1" }
+smplx-sdk = { workspace = true }
 
 thiserror = { workspace = true }
 electrsd = { workspace = true }

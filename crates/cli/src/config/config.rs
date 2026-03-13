@@ -1,9 +1,9 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use simplex_build::BuildConfig;
-use simplex_regtest::RegtestConfig;
-use simplex_test::TestConfig;
+use smplx_build::BuildConfig;
+use smplx_regtest::RegtestConfig;
+use smplx_test::TestConfig;
 
 use super::error::ConfigError;
 

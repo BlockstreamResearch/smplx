@@ -1,9 +1,9 @@
 use std::io;
 
-use simplex_sdk::provider::ProviderError;
-use simplex_sdk::signer::SignerError;
+use smplx_sdk::provider::ProviderError;
+use smplx_sdk::signer::SignerError;
 
-use simplex_regtest::error::RegtestError;
+use smplx_regtest::error::RegtestError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
