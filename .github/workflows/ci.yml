@@ -1,12 +1,14 @@
 name: CI
 
-permissions: {}
-
 on:
+  workflow_dispatch:
   push:
-    branches: [master, dev]
+    branches:
+      - master
   pull_request:
-  workflow_call:
+    branches:
+      - master
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -15,8 +17,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
 
 jobs:
   rust-tests:
@@ -27,19 +27,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [ "1.90.0", "stable" ]
+        toolchain: [ "1.91.0", "stable" ]
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
           submodules: true
+
+      - name: Install Rust toolchain
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
-      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Use Rust cache
       - uses: Swatinem/rust-cache@v2
+
       - name: Build
         run: cargo build --workspace --all-features --verbose
+
       - name: Test
         run: cargo test --workspace --all-features --no-fail-fast --verbose
         env:
@@ -51,14 +57,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
           submodules: true
+
+      - name: Install Rust toolchain
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt
+
+      - name: Check formatting
       - run: cargo fmt --all --check
 
   crate-checks:
@@ -67,24 +78,31 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
           submodules: true
+          
+      - name: Install Rust toolchain
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+
+      - name: Install cargo-hack
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Use Rust cache
       - uses: Swatinem/rust-cache@v2
+
+      - name: Check hack
       - run: cargo hack check
 
   ci-success:
     runs-on: ubuntu-latest
     if: always()
-    permissions: {}
     needs:
       - rust-tests
       - rustfmt

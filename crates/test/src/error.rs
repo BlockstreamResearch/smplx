@@ -9,13 +9,13 @@ use simplex_regtest::error::RegtestError;
 pub enum TestError {
     #[error(transparent)]
     Regtest(#[from] RegtestError),
-    
+
     #[error(transparent)]
     Provider(#[from] ProviderError),
 
     #[error(transparent)]
     Signer(#[from] SignerError),
-    
+
     #[error("Failed to deserialize config: '{0}'")]
     ConfigDeserialize(#[from] toml::de::Error),
 
