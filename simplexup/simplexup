@@ -74,8 +74,8 @@ main() {
 
   # Compute the URL of the release tarball in the Simplex repository.
   RELEASE_URL="https://github.com/${SIMPLEXUP_REPO}/releases/download/${SIMPLEXUP_TAG}/"
-  ATTESTATION_URL="${RELEASE_URL}simplex_${SIMPLEXUP_VERSION}_${PLATFORM}_${ARCHITECTURE}.attestation.txt"
-  BIN_ARCHIVE_URL="${RELEASE_URL}simplex_${SIMPLEXUP_VERSION}_${PLATFORM}_${ARCHITECTURE}.tar.gz"
+  ATTESTATION_URL="${RELEASE_URL}simplex-${SIMPLEXUP_VERSION}-${PLATFORM}-${ARCHITECTURE}.attestation.txt"
+  BIN_ARCHIVE_URL="${RELEASE_URL}simplex-${SIMPLEXUP_VERSION}-${PLATFORM}-${ARCHITECTURE}.tar.gz"
 
   ensure mkdir -p "$SIMPLEX_VERSIONS_DIR"
 
@@ -528,16 +528,16 @@ download() {
 
 # Banner prompt for Simplex
 banner() {
-  printf '
+  printf "
 
 -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
                        _.|
                   _ -../ | 
               _ -..::/ ||          ____  _                 _         
           _ -..:::::/ |||         / ___|(_)_ __ ___  _ __ | | _____  __
-     _ .....:.:.:. / ||||         \___ \| | '_ ` _ \| '_ \| |/ _ \ \/ /
+     _ .....:.:.:. / ||||         \___ \| | '_ ' _ \| '_ \| |/ _ \ \/ /
   -- -- _ .:.:... /  |||           ___) | | | | | | | |_) | |  __/>  <
-      -- ... -- _/  ||||          |____/|_|_| |_| |_| .__/|_|\___/_/\_\
+      -- ... -- _/  ||||          |____/|_|_| |_| |_| .__/|_|\___/_/\_\\
           _ :_:..\ |||||                            |_|
              _ :..\ |||
                 _ .\ ||      A blazingly-fast, ux-first simplicity framework.
@@ -550,7 +550,7 @@ Contribute : https://github.com/BlockstreamResearch/smplx/blob/master/CONTRIBUTI
 
 -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 
-'
+"
 }
 
 main "$@"

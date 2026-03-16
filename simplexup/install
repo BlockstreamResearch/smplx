@@ -7,7 +7,7 @@ BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
 SIMPLEX_DIR="${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}"
 SIMPLEX_BIN_DIR="$SIMPLEX_DIR/bin"
 
-BIN_URL="https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/install"
+BIN_URL="https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/simplexup"
 BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
 
 # Create the .simplex bin directory and simplexup binary if it doesn't exist.

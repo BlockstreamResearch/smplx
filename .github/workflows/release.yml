@@ -23,8 +23,6 @@ jobs:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: full
       RUST_LOG: debug
-      ATTESTATION: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
-      ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
     strategy:
       fail-fast: false
       matrix:
@@ -93,18 +91,23 @@ jobs:
             electrs
 
       - name: Record attestation URL
-        run: printf '%s\n' ${{ steps.attestation.outputs.attestation-url }} > $ATTESTATION
+        env:
+          ATTESTATION: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
+          ATESTATION_URL: ${{ steps.attestation.outputs.attestation-url }}
+        run: printf '%s\n' ${ATESTATION_URL} > ${ATTESTATION}
 
       - name: Archive binaries
-        run: tar czf $ARCHIVE simplex elementsd electrs
+        env:
+          ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
+        run: tar czf ${ARCHIVE} simplex elementsd electrs
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: $ARCHIVE
+          name: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
           path: | 
-            $ATTESTATION
-            $ARCHIVE
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
 
   release:
     name: Create Release
@@ -122,17 +125,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.ARVOLEAR_TOKEN }}
-          VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         with:
-          name: Simplex $VERSION
-          tag_name: $VERSION
+          name: Simplex ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           prerelease: false
           body: "TBD"
           files: |
-            simplex-$VERSION-linux-x86_64.attestation.txt
-            simplex-$VERSION-linux-x86_64.tar.gz
-            simplex-$VERSION-darwin-arm64.attestation.txt
-            simplex-$VERSION-darwin-arm64.tar.gz
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.attestation.txt
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.tar.gz
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-darwin-arm64.attestation.txt
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-darwin-arm64.tar.gz
 
   publish:
     name: Publish to crates.io
