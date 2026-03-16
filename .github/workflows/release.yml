@@ -23,21 +23,23 @@ jobs:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: full
       RUST_LOG: debug
+      ATTESTATION: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
+      ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            archive: simplex-linux-x86_64.tar.gz
-            attestation: simplex-linux-x86_64.attestation.txt
+            archive: linux-x86_64.tar.gz
+            attestation: linux-x86_64.attestation.txt
             elementsd_target: "x86_64-linux-gnu"
             electrs_target: "linux"
 
           - target: aarch64-apple-darwin
             os: macos-latest
-            archive: simplex-macos-aarch64.tar.gz
-            attestation: simplex-macos-aarch64.attestation.txt
+            archive: darwin-arm64.tar.gz
+            attestation: darwin-arm64.attestation.txt
             elementsd_target: "arm64-apple-darwin"
             electrs_target: "macos"
     steps:
@@ -91,21 +93,18 @@ jobs:
             electrs
 
       - name: Record attestation URL
-        env:
-          ATTESTATION_URL: ${{ steps.attestation.outputs.attestation-url }}
-          ATTESTATION: ${{ matrix.attestation }}
-        run: printf '%s\n' "$ATTESTATION_URL" > "$ATTESTATION"
+        run: printf '%s\n' ${{ steps.attestation.outputs.attestation-url }} > $ATTESTATION
 
       - name: Archive binaries
-        run: tar czf ${{ matrix.archive }} simplex elementsd electrs
+        run: tar czf $ARCHIVE simplex elementsd electrs
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.archive }}
+          name: $ARCHIVE
           path: | 
-            ${{ matrix.archive }}
-            ${{ matrix.attestation }}
+            $ATTESTATION
+            $ARCHIVE
 
   release:
     name: Create Release
@@ -123,16 +122,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.ARVOLEAR_TOKEN }}
+          VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         with:
-          name: Simplex ${{ github.event.inputs.tag || github.ref_name }}
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Simplex $VERSION
+          tag_name: $VERSION
           prerelease: false
           body: "TBD"
           files: |
-            simplex-linux-x86_64.attestation.txt
-            simplex-linux-x86_64.tar.gz
-            simplex-macos-aarch64.attestation.txt
-            simplex-macos-aarch64.tar.gz
+            simplex-$VERSION-linux-x86_64.attestation.txt
+            simplex-$VERSION-linux-x86_64.tar.gz
+            simplex-$VERSION-darwin-arm64.attestation.txt
+            simplex-$VERSION-darwin-arm64.tar.gz
 
   publish:
     name: Publish to crates.io
