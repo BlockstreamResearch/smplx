@@ -18,8 +18,6 @@ BINS=(simplex elementsd electrs)
 HASH_NAMES=()
 HASH_VALUES=()
 
-export RUSTFLAGS="${RUSTFLAGS:--C target-cpu=native}"
-
 main() {
   need_cmd git
   need_cmd curl
@@ -121,6 +119,7 @@ main() {
       while read -r name_line && read -r sha_line; do
         name=$(echo "$name_line" | sed -nE 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
         sha=$(echo "$sha_line"  | sed -nE 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+
         if [ -n "$name" ] && [ -n "$sha" ]; then
           HASH_NAMES+=("$name")
           HASH_VALUES+=("$sha")
@@ -138,6 +137,7 @@ main() {
 
       for bin in "${BINS[@]}"; do
         expected=""
+
         for i in "${!HASH_NAMES[@]}"; do
           if [ "${HASH_NAMES[$i]}" = "$bin" ] || [ "${HASH_NAMES[$i]}" = "$bin.exe" ]; then
             expected="${HASH_VALUES[$i]}"
@@ -153,6 +153,7 @@ main() {
         fi
 
         actual=$(compute_sha256 "$path")
+
         if [ "$actual" != "$expected" ]; then
           all_match=false
           break
@@ -177,6 +178,7 @@ main() {
 
   tmp="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
   tmp="$tmp/simplex.tar.gz"
+
   echo $BIN_ARCHIVE_URL
   ensure download "$BIN_ARCHIVE_URL" "$tmp"
   # Make sure it's a valid tar archive.
@@ -196,8 +198,10 @@ main() {
       say "verifying downloaded binaries against the attestation file"
 
       failed=false
+
       for bin in "${BINS[@]}"; do
         expected=""
+
         for i in "${!HASH_NAMES[@]}"; do
           if [ "${HASH_NAMES[$i]}" = "$bin" ] || [ "${HASH_NAMES[$i]}" = "$bin.exe" ]; then
             expected="${HASH_VALUES[$i]}"
@@ -220,6 +224,7 @@ main() {
         fi
 
         actual=$(compute_sha256 "$path")
+
         if [ "$actual" != "$expected" ]; then
           say "$bin hash verification failed:"
           say "  expected: $expected"
@@ -313,16 +318,27 @@ list() {
   if [ -d "$SIMPLEX_VERSIONS_DIR" ]; then
     for VERSION in $SIMPLEX_VERSIONS_DIR/*; do
       say "${VERSION##*/}"
+      
       for bin in "${BINS[@]}"; do
         bin_path="$VERSION/$bin"
-        say "- $(ensure "$bin_path" -V)"
+
+        case $bin in
+          simplex) 
+            say "Simplex - v0.0.1"
+          ;;
+        esac
       done
       printf "\n"
     done
   else
     for bin in "${BINS[@]}"; do
       bin_path="$SIMPLEX_BIN_DIR/$bin"
-      say "- $(ensure "$bin_path" -V)"
+      
+      case $bin in
+        simplex) 
+          say "Simplex - v0.0.1"
+        ;;
+      esac
     done
   fi
   exit 0
@@ -331,26 +347,32 @@ list() {
 use() {
   [ -z "$SIMPLEXUP_VERSION" ] && err "no version provided"
   SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEXUP_VERSION"
+  
   if [ -d "$SIMPLEX_VERSION_DIR" ]; then
-
     check_bins_in_use
 
     for bin in "${BINS[@]}"; do
       bin_path="$SIMPLEX_BIN_DIR/$bin"
       cp "$SIMPLEX_VERSION_DIR/$bin" "$bin_path"
       # Print usage msg
-      say "use - $(ensure "$bin_path" -V)"
+      case $bin in
+        simplex) 
+          say "Simplex - v0.0.1"
+        ;;
+      esac
 
       # Check if the default path of the binary is not in SIMPLEX_BIN_DIR
       which_path="$(command -v "$bin" || true)"
+
       if [ -n "$which_path" ] && [ "$which_path" != "$bin_path" ]; then
         warn ""
         cat 1>&2 <<EOF
 There are multiple binaries with the name '$bin' present in your 'PATH'.
-This may be the result of installing '$bin' using another method,
-like Cargo or other package managers.
-You may need to run 'rm $which_path' or move '$SIMPLEX_BIN_DIR'
-in your 'PATH' to allow the newly installed version to take precedence!
+
+This may be the result of installing '$bin' using another method, like Cargo or other package managers.
+
+You may need to run 'rm $which_path' or move '$SIMPLEX_BIN_DIR' in your 'PATH'
+to allow the newly installed version to take precedence!
 
 EOF
       fi
@@ -400,6 +422,7 @@ check_cmd() {
 detect_platform_arch() {
   uname_s=$(uname -s)
   PLATFORM=$(tolower "${SIMPLEXUP_PLATFORM:-$uname_s}")
+
   case $PLATFORM in
     linux) ;;
     darwin|mac*)
@@ -412,6 +435,7 @@ detect_platform_arch() {
 
   uname_m=$(uname -m)
   ARCHITECTURE=$(tolower "${SIMPLEX_ARCH:-$uname_m}")
+
   if [ "${ARCHITECTURE}" = "x86_64" ]; then
     # Redirect stderr to /dev/null to avoid printing errors if non Rosetta.
     if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
@@ -530,25 +554,27 @@ download() {
 banner() {
   printf "
 
--~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
-                       _.|
-                  _ -../ | 
-              _ -..::/ ||          ____  _                 _         
-          _ -..:::::/ |||         / ___|(_)_ __ ___  _ __ | | _____  __
-     _ .....:.:.:. / ||||         \___ \| | '_ ' _ \| '_ \| |/ _ \ \/ /
-  -- -- _ .:.:... /  |||           ___) | | | | | | | |_) | |  __/>  <
-      -- ... -- _/  ||||          |____/|_|_| |_| |_| .__/|_|\___/_/\_\\
-          _ :_:..\ |||||                            |_|
-             _ :..\ |||
-                _ .\ ||      A blazingly-fast, ux-first simplicity framework.
-                  - \ | 
-                    -.
--~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
+
+                          _.|
+                     _ -../ | 
+                 _ -..::/ ||          ____  _                 _         
+             _ -..:::::/ |||         / ___|(_)_ __ ___  _ __ | | _____  __
+        _ .....:.:.:. / ||||         \___ \| | '_ ' _ \| '_ \| |/ _ \ \/ /
+     -- -- _ .:.:... /  |||           ___) | | | | | | | |_) | |  __/>  <
+         -- ... -- _/  ||||          |____/|_|_| |_| |_| .__/|_|\___/_/\_\\
+             _ :_:..\ |||||                            |_|
+                _ :..\ |||
+                   _ .\ ||                 A blazingly-fast, ux-first
+                     - \ |              simplicity development framework
+                       -.
+
+-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
 
 Repo       : https://github.com/BlockstreamResearch/smplx
 Contribute : https://github.com/BlockstreamResearch/smplx/blob/master/CONTRIBUTING.md
 
--~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
+-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
 
 "
 }
