@@ -1,51 +1,59 @@
-# `simplexup`
+# simplexup
 
-Update or revert to a specific Foundry branch with ease.
-
-`foundryup` supports installing and managing multiple versions.
+Install, update, and manage Simplex with ease.
 
 ## Installing
 
-```sh
+Download simplexup:
+
+```bash
 curl -L https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/install | bash
 ```
 
 ## Usage
 
-To install the latest stable version:
+To install the latest stable Simplex version:
 
-```sh
+```bash
 simplexup
 ```
 
-To **install** a specific **version** (in this case the `v0.1.0` version):
+To install a specific version (in this case the `v0.1.0` version):
 
-```sh
-simplex --install nightly
+```bash
+simplexup --install 0.1.0
 ```
 
-To **list** all **versions** installed:
+To list all versions installed:
 
-```sh
-simplex --list
+```bash
+simplexup --list
 ```
 
-To switch between different versions and **use**:
+To switch between different versions:
 
-```sh
-simplex --use v0.1.0
+```bash
+simplexup --use 0.1.0
+```
+
+To update `simplexup`:
+
+```bash
+simplexup --update
 ```
 
 ## Uninstalling
 
-Simplex contains everything in a `.simplex` directory, usually located in `/home/<user>/.simplex/` on Linux, `/Users/<user>/.simplex/` on MacOS and `C:\Users\<user>\.simplex` on Windows where `<user>` is your username.
+Simplex contains everything in a `.simplex` directory located in `/home/<user>/.simplex/` on Linux and `/Users/<user>/.simplex/` on Macos, where `<user>` is your username.
 
-To uninstall Simplex remove the `.simplex` directory.
+To uninstall Simplex, just remove the `.simplex` directory.
 
-Remove Simplex from PATH:
+Optionally remove Simplex from PATH:
 
-- Optionally Foundry can be removed from editing shell configuration file (`.bashrc`, `.zshrc`, etc.). To do so remove the line that adds Simplex to PATH:
-
-```sh
+```bash
 export PATH="$PATH:/home/user/.simplex/bin"
 ```
+
+## Disclaimer
+
+GLHF!
