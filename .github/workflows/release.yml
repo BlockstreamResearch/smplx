@@ -61,11 +61,11 @@ jobs:
           RUST_PROFILE: release
           TARGET: ${{ matrix.target }}
           OUT_DIR: target/${{ matrix.target }}
-        run: | 
+        run: |
           cargo build --target $TARGET --profile $RUST_PROFILE --bins
           mv $OUT_DIR/${{ env.RUST_PROFILE }}/simplex simplex
- 
-      - name: Install elementsd and electrs
+
+      - name: Download elementsd and electrs
         env:
           ELEMENTSD_VERSION: "23.3.1"
           ELEMENTSD_TARGET: ${{ matrix.elementsd_target }}
@@ -80,6 +80,12 @@ jobs:
           
           curl -Ls "https://github.com/RCasatta/electrsd/releases/download/electrs_releases/${ELECTRS_FILENAME}" -o ${ELECTRS_FILENAME}
           unzip ${ELECTRS_FILENAME} && rm ${ELECTRS_FILENAME}
+
+      - name: Sign elementsd binary
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            codesign --force -s - elementsd
+          fi
 
       - name: Binaries attestation
         id: attestation
@@ -105,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
-          path: | 
+          path: |
             simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
             simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
 
