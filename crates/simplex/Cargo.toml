@@ -7,7 +7,7 @@ edition.workspace = true
 repository = "https://github.com/BlockstreamResearch/simplex"
 readme = "../../README.md"
 documentation = "https://docs.rs/smplx-std"
-keywords = ["liquid", "elements", "smart contracts", "simplicity", "framework"]
+keywords = ["liquid", "elements", "smart-contracts", "simplicity", "framework"]
 categories = ["cryptography::cryptocurrencies"]
 
 [lib]
