@@ -170,10 +170,11 @@ jobs:
       - name: Publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: ./scripts/publish \
-          ./crates/sdk/Cargo.toml \
-          ./crates/build/Cargo.toml \
-          ./crates/regtest/Cargo.toml \
-          ./crates/test/Cargo.toml \
-          ./crates/macros/Cargo.toml \
-          ./crates/simplex/Cargo.toml
+        run: |
+          ./scripts/publish \
+            ./crates/sdk/Cargo.toml \
+            ./crates/build/Cargo.toml \
+            ./crates/regtest/Cargo.toml \
+            ./crates/test/Cargo.toml \
+            ./crates/macros/Cargo.toml \
+            ./crates/simplex/Cargo.toml
