@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+main() {
+  need_cmd jq
+  need_cmd curl
+
+  # If no arguments are provided, throw an error
+  if [ "$#" -eq 0 ]; then
+    err "no arguments provided"
+  fi
+  
+  # Loop through every path passed to the script
+  for path in "$@"; do
+    if check_crate "$path"; then
+      publish_crate "$path"
+    fi
+  done
+}
+
+check_crate() {
+  local manifest_path="$1"
+
+  if [ ! -f "$manifest_path" ]; then
+    err "Manifest file not found at '$manifest_path'"
+  fi
+
+  # Extract crate name and version securely
+  local manifest
+  if ! manifest=$(cargo read-manifest --manifest-path "$manifest_path" 2>/dev/null); then
+    err "Failed to parse manifest at '$manifest_path'. Is it a valid Cargo crate?"
+  fi
+
+  local crate_name
+  crate_name=$(echo "$manifest" | jq -r '.name')
+    
+  local crate_version
+  crate_version=$(echo "$manifest" | jq -r '.version')
+
+  say "Checking ${crate_name} v${crate_version}..."
+
+  # Query crates.io
+  local api_url="https://crates.io/api/v1/crates/$crate_name"
+  local response
+  response=$(curl -s -H "User-Agent: ci-version-checker (https://github.com/BlockstreamResearch/smplx)" "$api_url")
+
+  # Parse versions, suppressing grep's exit code if no match is found
+  local published
+  published=$(echo "$response" | jq -r '.versions[]?.num' 2>/dev/null | grep -Fx "$crate_version" || true)
+
+  if [ -n "$published" ]; then
+    # Already published
+    return 1
+  else
+    # Needs publishing
+    return 0
+  fi
+}
+
+publish_crate() {
+  local manifest_path="$1"
+
+  # We re-extract the name and version here so we can log exactly what is happening.
+  local manifest
+  if ! manifest=$(cargo read-manifest --manifest-path "$manifest_path" 2>/dev/null); then
+    err "Failed to parse manifest at '$manifest_path' during publish step."
+  fi
+
+  local crate_name
+  crate_name=$(echo "$manifest" | jq -r '.name')
+    
+  local crate_version
+  crate_version=$(echo "$manifest" | jq -r '.version')
+
+  say "Publishing ${crate_name} v${crate_version}..."
+
+  # Run the actual cargo publish command
+  if cargo publish --manifest-path "$manifest_path"; then
+    say "Successfully published ${crate_name} v${crate_version}."
+        
+    # Wait for crates.io to update its global index
+    say "Waiting 15 seconds for the crates.io index to update..."
+    sleep 15
+  else
+    # If publish fails, we use your err function to halt the entire script
+    err "Failed to publish ${crate_name} v${crate_version}."
+  fi
+}
+
+need_cmd() {
+  if ! check_cmd "$1"; then
+    err "need '$1' (command not found)"
+  fi
+}
+
+check_cmd() {
+  command -v "$1" &>/dev/null
+}
+
+say() {
+  printf "publish: %s\n" "$1"
+}
+
+err() {
+  say "$1" >&2
+  exit 1
+}
+
+main "$@"
