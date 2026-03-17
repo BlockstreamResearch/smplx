@@ -1,4 +1,3 @@
-pub use bincode;
 pub use either;
 pub use serde;
 pub use simplicityhl;

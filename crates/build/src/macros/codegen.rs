@@ -115,7 +115,6 @@ impl WitnessStruct {
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
                     use simplex::program::ArgumentsTrait;
-                    use simplex::bincode::*;
             },
             struct_token_stream: quote! {
                 #generated_struct
