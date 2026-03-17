@@ -418,7 +418,7 @@ name = "draft_example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "smplx-rs",
+ "smplx-std",
 ]
 
 [[package]]
@@ -1211,8 +1211,9 @@ dependencies = [
 
 [[package]]
 name = "simplicityhl"
-version = "0.4.1"
-source = "git+https://github.com/BlockstreamResearch/SimplicityHL.git?rev=568b462#568b4621d6145cd97dce68a3f3428c7eb85306b6"
+version = "0.5.0-rc.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8fb4ae422c730ec6e274c1438013ce6d7b41b97152e2dec63735e8daad1f1c4"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
@@ -1264,19 +1265,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "smplx-rs"
-version = "0.0.1"
-dependencies = [
- "bincode",
- "either",
- "serde",
- "simplicityhl",
- "smplx-macros",
- "smplx-sdk",
- "smplx-test",
-]
-
-[[package]]
 name = "smplx-sdk"
 version = "0.0.1"
 dependencies = [
@@ -1292,6 +1280,19 @@ dependencies = [
  "sha2",
  "simplicityhl",
  "thiserror",
+]
+
+[[package]]
+name = "smplx-std"
+version = "0.0.1"
+dependencies = [
+ "bincode",
+ "either",
+ "serde",
+ "simplicityhl",
+ "smplx-macros",
+ "smplx-sdk",
+ "smplx-test",
 ]
 
 [[package]]
