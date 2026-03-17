@@ -77,11 +77,9 @@ publish_crate() {
   if cargo publish --manifest-path "$manifest_path"; then
     say "Successfully published ${crate_name} v${crate_version}."
         
-    # Wait for crates.io to update its global index
     say "Waiting 15 seconds for the crates.io index to update..."
     sleep 15
   else
-    # If publish fails, we use your err function to halt the entire script
     err "Failed to publish ${crate_name} v${crate_version}."
   fi
 }
