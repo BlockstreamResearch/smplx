@@ -56,4 +56,4 @@ export PATH="$PATH:/home/user/.simplex/bin"
 
 ## Disclaimer
 
-GLHF!
+Simplicity simplified.

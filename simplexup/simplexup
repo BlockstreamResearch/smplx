@@ -320,11 +320,10 @@ list() {
       say "${VERSION##*/}"
       
       for bin in "${BINS[@]}"; do
-        bin_path="$VERSION/$bin"
-
         case $bin in
           simplex) 
-            say "Simplex - v0.0.1"
+            bin_path="$VERSION/$bin"
+            say "- $(ensure "$bin_path" -V)"
           ;;
         esac
       done
@@ -332,11 +331,10 @@ list() {
     done
   else
     for bin in "${BINS[@]}"; do
-      bin_path="$SIMPLEX_BIN_DIR/$bin"
-      
       case $bin in
         simplex) 
-          say "Simplex - v0.0.1"
+          bin_path="$SIMPLEX_BIN_DIR/$bin"
+          say "- $(ensure "$bin_path" -V)"
         ;;
       esac
     done
@@ -357,7 +355,7 @@ use() {
       # Print usage msg
       case $bin in
         simplex) 
-          say "Simplex - v0.0.1"
+          say "- $(ensure "$bin_path" -V)"
         ;;
       esac
 

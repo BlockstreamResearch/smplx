@@ -11,7 +11,7 @@ use crate::error::CliError;
 
 #[derive(Debug, Parser)]
 #[command(name = "Simplex")]
-#[command(about = "Simplicity development framework")]
+#[command(version, about = "A blazingly-fast, ux-first simplicity development framework")]
 pub struct Cli {
     pub config: Option<PathBuf>,
 

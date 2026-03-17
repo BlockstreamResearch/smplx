@@ -38,5 +38,7 @@ fi
 
 echo
 echo "Detected your preferred shell is $PREF_SHELL and added simplexup to PATH."
+echo
 echo "Run 'source $PROFILE' or start a new terminal session to use simplexup."
+echo
 echo "Then, simply run 'simplexup' to install Simplex."

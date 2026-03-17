@@ -1,6 +1,8 @@
 ![](https://github.com/user-attachments/assets/c4661df7-6101-4c46-9376-dedaeef8056b)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://github.com/BlockstreamResearch/smplx/workflows/ci.yml/badge.svg?branch=master)](https://github.com/BlockstreamResearch/smplx/workflows/ci.yml)
+[![Community](https://img.shields.io/endpoint?color=neon&logo=telegram&label=Chat&url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fsimplicity_community)](https://t.me/simplicity_community)
 
 # Smplx
 
@@ -21,10 +23,25 @@ Simplex is a Rust-based, comprehensive development framework for [Simplicity](ht
 ## Installation
 
 ```bash
-cargo install --path ./crates/cli
+curl -L https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/install | bash
+simplexup
 ```
 
-*The proper installer will be provided soon.*
+See the [simplexup manual](simplexup/README.md) for more details.
+
+## Getting started
+
+Add `smplx-std` dependency to cargo:
+
+```bash
+cargo add --dev smplx-std
+```
+
+Optionally, initialize a new project:
+
+```bash
+simplex init
+```
 
 ## Usage
 
@@ -60,6 +77,8 @@ Where:
   - `src_dir` - The simplicity contracts source directory.
   - `simf_files` - A glob pattern incidating which contracts are in scope.
   - `out_dir` - The output directory where contracts artifacts are generated.
+- `regtest` (`simplex regtest` config)
+  - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
 - `test` (`simplex test` config)
   - `esplora`
     - `url` - Esplora API endpoint url
@@ -68,6 +87,7 @@ Where:
     - `url` - Elements RPC endpoint url
     - `username` - Elements RPC username
     - `password` - Elements RPC password
+  - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
 
 ### CLI
 
@@ -78,7 +98,6 @@ Simplex CLI provides the following commands:
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
-- `simplex clean` - Cleans up the project.
 
 To view the available options, run the help command:
 
@@ -90,11 +109,17 @@ simplex -h
 
 Check out the complete project examples in the `examples` directory to learn more.
 
+## Contributing
+
+We are open to any mind-blowing ideas! Please take a look at our [contributing guidelines](CONTRIBUTING.md) to get involved.
+
 ## Future work
 
+- [ ] Comprehensive `simplex init` and `simplex clean` tasks.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
-- [ ] `simplex init` and `simplex clean` tasks.
-- [ ] Proper installation scripts.
+- [ ] Local regtest 10x speedup.
+- [ ] Regtest cheat codes.
+- [ ] Browser compatibility.
 - [ ] Simplicity dependencies management once the language adds [support for modules](https://github.com/BlockstreamResearch/SimplicityHL/issues/155).
 - [ ] Comprehensive documentation.
 

@@ -29,7 +29,7 @@ toml = { version = "0.9.8" }
 minreq = { version = "2.14.1", features = ["https", "json-using-serde"] }
 electrsd = { version = "0.29.0", features = ["legacy"] }
 
-simplicityhl = { git = "https://github.com/BlockstreamResearch/SimplicityHL.git", rev = "568b462" }
+simplicityhl = { version = "0.5.0-rc.0" }
 
 [patch.crates-io]
 simplicity-sys = { git = "https://github.com/BlockstreamResearch/rust-simplicity", tag = "simplicity-sys-0.6.1" }
