@@ -4,7 +4,7 @@ use clap::Parser;
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
-    Box::pin(simplex_cli::cli::Cli::parse().run()).await?;
+    Box::pin(smplx_cli::Cli::parse().run()).await?;
 
     Ok(())
 }

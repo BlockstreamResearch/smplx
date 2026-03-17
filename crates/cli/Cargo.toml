@@ -1,6 +1,6 @@
 [package]
-name = "simplex-cli"
-version = "0.1.0"
+name = "smplx-cli"
+version = "0.0.1"
 description = "Simplex cli with various utilities to manage a simplicity project"
 license.workspace = true
 edition.workspace = true
@@ -13,10 +13,10 @@ path = "src/bin/main.rs"
 workspace = true
 
 [dependencies]
-simplex-regtest = { workspace = true }
-simplex-test = { workspace = true }
-simplex-build = { workspace = true }
-simplex-sdk = { workspace = true }
+smplx-regtest = { workspace = true }
+smplx-test = { workspace = true }
+smplx-build = { workspace = true}
+smplx-sdk = { workspace = true }
 
 simplicityhl = { workspace = true }
 electrsd = { workspace = true }

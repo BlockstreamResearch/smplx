@@ -1,6 +1,6 @@
 [package]
-name = "simplex-macros"
-version = "0.1.0"
+name = "smplx-macros"
+version = "0.0.1"
 description = "Simplex macros re-export package"
 license.workspace = true
 edition.workspace = true
@@ -12,7 +12,7 @@ proc-macro = true
 workspace = true
 
 [dependencies]
-simplex-build = { workspace = true } 
-simplex-test = { workspace = true }
+smplx-build = { workspace = true } 
+smplx-test = { workspace = true }
 
 syn = { version = "2.0.114", default-features = false, features = ["parsing", "proc-macro"] }

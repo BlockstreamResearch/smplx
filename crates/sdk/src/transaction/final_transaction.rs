@@ -58,6 +58,31 @@ impl FinalTransaction {
         Ok(())
     }
 
+    pub fn add_program_input(
+        &mut self,
+        partial_input: PartialInput,
+        program_input: ProgramInput,
+        required_sig: RequiredSignature,
+    ) -> Result<(), TransactionError> {
+        match required_sig {
+            RequiredSignature::NativeEcdsa => {
+                return Err(TransactionError::SignatureRequest(
+                    "Requested signature is not Witness or None".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
+        self.inputs.push(FinalInput {
+            partial_input: partial_input,
+            program_input: Some(program_input),
+            issuance_input: None,
+            required_sig: required_sig,
+        });
+
+        Ok(())
+    }
+
     pub fn add_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -85,12 +110,13 @@ impl FinalTransaction {
         Ok(asset_id)
     }
 
-    pub fn add_program_input(
+    pub fn add_program_issuance_input(
         &mut self,
         partial_input: PartialInput,
         program_input: ProgramInput,
+        issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<AssetId, TransactionError> {
         match required_sig {
             RequiredSignature::NativeEcdsa => {
                 return Err(TransactionError::SignatureRequest(
@@ -100,14 +126,16 @@ impl FinalTransaction {
             _ => {}
         }
 
+        let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
+
         self.inputs.push(FinalInput {
             partial_input: partial_input,
             program_input: Some(program_input),
-            issuance_input: None,
+            issuance_input: Some(issuance_input),
             required_sig: required_sig,
         });
 
-        Ok(())
+        Ok(asset_id)
     }
 
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {

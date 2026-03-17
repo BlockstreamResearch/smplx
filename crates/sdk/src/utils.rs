@@ -1,7 +1,8 @@
+use sha2::{Digest, Sha256};
+
+use simplicityhl::elements::{AssetId, ContractHash, OutPoint, Script};
 use simplicityhl::simplicity::bitcoin;
 use simplicityhl::simplicity::bitcoin::secp256k1;
-
-use simplicityhl::elements::{AssetId, ContractHash, OutPoint};
 use simplicityhl::simplicity::hashes::{Hash, sha256};
 
 pub fn tr_unspendable_key() -> secp256k1::XOnlyPublicKey {
@@ -15,6 +16,13 @@ pub fn tr_unspendable_key() -> secp256k1::XOnlyPublicKey {
 pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> sha256::Midstate {
     let contract_hash = ContractHash::from_byte_array(entropy);
     AssetId::generate_asset_entropy(*outpoint, contract_hash)
+}
+
+pub fn hash_script(script: &Script) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+
+    sha2::digest::Update::update(&mut hasher, script.as_bytes());
+    hasher.finalize().into()
 }
 
 pub fn sat2btc(sat: u64) -> String {

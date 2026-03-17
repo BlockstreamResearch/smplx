@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use simplex_regtest::RegtestConfig;
+use smplx_regtest::RegtestConfig;
 
 use super::error::TestError;
 

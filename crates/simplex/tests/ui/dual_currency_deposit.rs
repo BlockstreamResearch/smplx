@@ -1,5 +1,5 @@
 use simplex::include_simf;
-use simplex::simplex_sdk::program::{WitnessTrait, ArgumentsTrait};
+use simplex::program::{WitnessTrait, ArgumentsTrait};
 
 include_simf!("../../../../crates/simplex/tests/ui_simfs/dual_currency_deposit.simf");
 

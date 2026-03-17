@@ -7,11 +7,11 @@ use std::path::{Component, Path, PathBuf};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::macros::parse::SimfContent;
 use crate::macros::codegen::{
     convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
     convert_contract_name_to_struct_name,
 };
+use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
 
@@ -164,8 +164,8 @@ impl ArtifactsGenerator {
 
         let code = quote! {
             use simplex::include_simf;
-            use simplex::simplex_sdk::program::{ArgumentsTrait, Program};
-            use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
+            use simplex::program::{ArgumentsTrait, Program};
+            use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
             pub struct #program_name {
                 program: Program,

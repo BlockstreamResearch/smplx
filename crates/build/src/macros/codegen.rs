@@ -84,7 +84,7 @@ impl WitnessField {
 
         quote! {
             (
-                ::simplicityhl::str::WitnessName::from_str_unchecked(#witness_name),
+                simplex::simplicityhl::str::WitnessName::from_str_unchecked(#witness_name),
                 #conversion
             )
         }
@@ -107,15 +107,14 @@ impl WitnessStruct {
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
-                    use ::std::collections::HashMap;
-                    use ::simplicityhl::{Arguments, Value, ResolvedType};
-                    use ::simplicityhl::value::{UIntValue, ValueInner};
-                    use ::simplicityhl::num::U256;
-                    use ::simplicityhl::str::WitnessName;
-                    use ::simplicityhl::types::TypeConstructible;
-                    use ::simplicityhl::value::ValueConstructible;
-                    use ::simplex::simplex_sdk::program::ArgumentsTrait;
-                    use ::simplex::bincode::*;
+                    use std::collections::HashMap;
+                    use simplex::simplicityhl::{Arguments, Value, ResolvedType};
+                    use simplex::simplicityhl::value::{UIntValue, ValueInner};
+                    use simplex::simplicityhl::num::U256;
+                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::types::TypeConstructible;
+                    use simplex::simplicityhl::value::ValueConstructible;
+                    use simplex::program::ArgumentsTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -135,31 +134,31 @@ impl WitnessStruct {
 
                 }
 
-                impl ::simplex::simplex_sdk::program::ArgumentsTrait for #struct_name {
+                impl simplex::program::ArgumentsTrait for #struct_name {
                     /// Build Simplicity arguments for contract instantiation.
                     #[must_use]
-                    fn build_arguments(&self) -> ::simplicityhl::Arguments {
-                        ::simplicityhl::Arguments::from(HashMap::from([
+                    fn build_arguments(&self) -> simplex::simplicityhl::Arguments {
+                        simplex::simplicityhl::Arguments::from(HashMap::from([
                             #(#tuples),*
                         ]))
                     }
                 }
 
-                impl ::simplex::serde::Serialize for #struct_name {
+                impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
-                    S: ::simplex::serde::Serializer,
+                    S: simplex::serde::Serializer,
                     {
                         self.build_arguments().serialize(serializer)
                     }
                 }
 
-                impl<'de> ::simplex::serde::Deserialize<'de> for #struct_name {
+                impl<'de> simplex::serde::Deserialize<'de> for #struct_name {
                     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                     where
-                    D: ::simplex::serde::Deserializer<'de>,
+                    D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = ::simplicityhl::Arguments::deserialize(deserializer)?;
+                        let x = simplex::simplicityhl::Arguments::deserialize(deserializer)?;
                         Self::from_arguments(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
@@ -182,14 +181,14 @@ impl WitnessStruct {
 
         Ok(GeneratedWitnessTokens {
             imports: quote! {
-                    use ::std::collections::HashMap;
-                    use ::simplicityhl::{WitnessValues, Value, ResolvedType};
-                    use ::simplicityhl::value::{UIntValue, ValueInner};
-                    use ::simplicityhl::num::U256;
-                    use ::simplicityhl::str::WitnessName;
-                    use ::simplicityhl::types::TypeConstructible;
-                    use ::simplicityhl::value::ValueConstructible;
-                    use ::simplex::simplex_sdk::program::WitnessTrait;
+                    use std::collections::HashMap;
+                    use simplex::simplicityhl::{WitnessValues, Value, ResolvedType};
+                    use simplex::simplicityhl::value::{UIntValue, ValueInner};
+                    use simplex::simplicityhl::num::U256;
+                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::types::TypeConstructible;
+                    use simplex::simplicityhl::value::ValueConstructible;
+                    use simplex::program::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -208,31 +207,31 @@ impl WitnessStruct {
                     }
                 }
 
-                impl ::simplex::simplex_sdk::program::WitnessTrait for #struct_name {
+                impl simplex::program::WitnessTrait for #struct_name {
                      /// Build Simplicity witness values for contract execution.
                     #[must_use]
-                    fn build_witness(&self) -> ::simplicityhl::WitnessValues {
-                        ::simplicityhl::WitnessValues::from(HashMap::from([
+                    fn build_witness(&self) -> simplex::simplicityhl::WitnessValues {
+                        simplex::simplicityhl::WitnessValues::from(HashMap::from([
                             #(#tuples),*
                         ]))
                     }
                 }
 
-                impl ::simplex::serde::Serialize for #struct_name {
+                impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
-                        S: ::simplex::serde::Serializer,
+                        S: simplex::serde::Serializer,
                     {
                         self.build_witness().serialize(serializer)
                     }
                 }
 
-                impl<'de> ::simplex::serde::Deserialize<'de> for #struct_name {
+                impl<'de> simplex::serde::Deserialize<'de> for #struct_name {
                     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                     where
-                        D: ::simplex::serde::Deserializer<'de>,
+                        D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = ::simplicityhl::WitnessValues::deserialize(deserializer)?;
+                        let x = simplex::simplicityhl::WitnessValues::deserialize(deserializer)?;
                         Self::from_witness(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }

@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use simplex_sdk::provider::ElementsRpc;
-use simplex_sdk::provider::SimplexProvider;
-use simplex_sdk::provider::SimplicityNetwork;
-use simplex_sdk::signer::Signer;
+use smplx_sdk::provider::ElementsRpc;
+use smplx_sdk::provider::SimplexProvider;
+use smplx_sdk::provider::SimplicityNetwork;
+use smplx_sdk::signer::Signer;
 
-use super::client::RegtestClient;
 use super::RegtestConfig;
+use super::client::RegtestClient;
 use super::error::RegtestError;
 
 pub struct Regtest {}

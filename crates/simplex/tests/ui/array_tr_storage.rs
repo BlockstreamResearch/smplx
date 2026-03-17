@@ -1,5 +1,5 @@
 use simplex::include_simf;
-use simplex::simplex_sdk::program::{ArgumentsTrait, WitnessTrait};
+use simplex::program::{ArgumentsTrait, WitnessTrait};
 
 include_simf!("../../../../crates/simplex/tests/ui_simfs/array_tr_storage.simf");
 

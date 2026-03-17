@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use sha2::{Digest, Sha256};
-
 use dyn_clone::DynClone;
 
 use simplicityhl::CompiledProgram;
@@ -16,7 +14,9 @@ use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
+
 use crate::provider::SimplicityNetwork;
+use crate::utils::hash_script;
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -71,7 +71,7 @@ impl ProgramTrait for Program {
         }
 
         let target_utxo = &utxos[input_index];
-        let script_pubkey = self.get_tr_address(network.clone())?.script_pubkey();
+        let script_pubkey = self.get_tr_address(&network)?.script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
             return Err(ProgramError::ScriptPubkeyMismatch {
@@ -152,7 +152,7 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: SimplicityNetwork) -> Result<Address, ProgramError> {
+    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Result<Address, ProgramError> {
         let spend_info = self.taproot_spending_info()?;
 
         Ok(Address::p2tr(
@@ -164,16 +164,12 @@ impl Program {
         ))
     }
 
-    pub fn get_script_pubkey(&self, network: SimplicityNetwork) -> Result<Script, ProgramError> {
+    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Result<Script, ProgramError> {
         Ok(self.get_tr_address(network)?.script_pubkey())
     }
 
-    pub fn get_script_hash(&self, network: SimplicityNetwork) -> Result<[u8; 32], ProgramError> {
-        let script = self.get_script_pubkey(network)?;
-        let mut hasher = Sha256::new();
-
-        sha2::digest::Update::update(&mut hasher, script.as_bytes());
-        Ok(hasher.finalize().into())
+    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> Result<[u8; 32], ProgramError> {
+        Ok(hash_script(&self.get_script_pubkey(network)?))
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {

@@ -1,0 +1,177 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*.rc-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.1.2)'
+        required: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }} (${{ matrix.runner }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: full
+      RUST_LOG: debug
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: linux-x86_64.tar.gz
+            attestation: linux-x86_64.attestation.txt
+            elementsd_target: "x86_64-linux-gnu"
+            electrs_target: "linux"
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: darwin-arm64.tar.gz
+            attestation: darwin-arm64.attestation.txt
+            elementsd_target: "arm64-apple-darwin"
+            electrs_target: "macos"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Use Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build binaries
+        env:
+          RUST_PROFILE: release
+          TARGET: ${{ matrix.target }}
+          OUT_DIR: target/${{ matrix.target }}
+        run: |
+          cargo build --target $TARGET --profile $RUST_PROFILE --bins
+          mv $OUT_DIR/${{ env.RUST_PROFILE }}/simplex simplex
+
+      - name: Download elementsd and electrs
+        env:
+          ELEMENTSD_VERSION: "23.3.1"
+          ELEMENTSD_TARGET: ${{ matrix.elementsd_target }}
+          ELECTRS_TARGET: ${{ matrix.electrs_target }}
+        run: |
+          ELEMENTSD_FILENAME="elements-${ELEMENTSD_VERSION}-${ELEMENTSD_TARGET}.tar.gz"
+          ELECTRS_FILENAME="electrs_${ELECTRS_TARGET}_esplora_027e38d3ebc2f85b28ae76f8f3448438ee4fc7b1_liquid.zip"
+
+          curl -Ls "https://github.com/ElementsProject/elements/releases/download/elements-${ELEMENTSD_VERSION}/${ELEMENTSD_FILENAME}" -o ${ELEMENTSD_FILENAME}
+          tar -xzf ${ELEMENTSD_FILENAME} && rm ${ELEMENTSD_FILENAME}
+          mv elements-${ELEMENTSD_VERSION}/bin/elementsd elementsd
+          
+          curl -Ls "https://github.com/RCasatta/electrsd/releases/download/electrs_releases/${ELECTRS_FILENAME}" -o ${ELECTRS_FILENAME}
+          unzip ${ELECTRS_FILENAME} && rm ${ELECTRS_FILENAME}
+
+      - name: Sign elementsd binary
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            codesign --force -s - elementsd
+          fi
+
+      - name: Binaries attestation
+        id: attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            simplex
+            elementsd
+            electrs
+
+      - name: Record attestation URL
+        env:
+          ATTESTATION: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
+          ATESTATION_URL: ${{ steps.attestation.outputs.attestation-url }}
+        run: printf '%s\n' ${ATESTATION_URL} > ${ATTESTATION}
+
+      - name: Archive binaries
+        env:
+          ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
+        run: tar czf ${ARCHIVE} simplex elementsd electrs
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
+          path: |
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.attestation }}
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.ARVOLEAR_TOKEN }}
+        with:
+          name: Simplex ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          prerelease: false
+          body: "TBD"
+          files: |
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.attestation.txt
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.tar.gz
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-darwin-arm64.attestation.txt
+            simplex-${{ github.event.inputs.tag || github.ref_name }}-darwin-arm64.tar.gz
+
+  # publish:
+  #   name: Publish to crates.io
+  #   runs-on: ubuntu-latest
+  #   needs: [ build, release ]
+  #   permissions:
+  #     contents: read
+  #     id-token: write
+  #   concurrency:
+  #     group: publish-core-${{ github.ref }}
+  #     cancel-in-progress: false
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v6
+
+  #     - name: Install Rust toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         toolchain: stable
+
+  #     - name: Authenticate
+  #       uses: rust-lang/crates-io-auth-action@v1
+  #       id: auth
+
+  #     - name: Publish
+  #       run: ./scripts/publish \
+  #         ./crates/sdk/Cargo.toml \
+  #         ./crates/build/Cargo.toml \
+  #         ./crates/regtest/Cargo.toml \
+  #         ./crates/test/Cargo.toml \
+  #         ./crates/macros/Cargo.toml \
+  #         ./crates/simplex/Cargo.toml
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

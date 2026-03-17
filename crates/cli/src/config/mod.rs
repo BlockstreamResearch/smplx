@@ -1,4 +1,4 @@
-pub mod error;
 pub mod config;
+pub mod error;
 
 pub use config::{Config, INIT_CONFIG};

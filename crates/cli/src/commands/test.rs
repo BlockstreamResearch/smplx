@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use simplex_test::TestConfig;
+use smplx_test::TestConfig;
 
 use super::commands::{TestCommand, TestFlags};
 use super::error::CommandError;
@@ -77,7 +77,7 @@ impl Test {
         cargo_test_command.args(["-c".to_string(), command_as_arg]);
 
         cargo_test_command
-            .env(simplex_test::TEST_ENV_NAME, cache_path)
+            .env(smplx_test::TEST_ENV_NAME, cache_path)
             .stdin(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit());

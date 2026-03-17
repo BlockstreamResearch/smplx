@@ -1,6 +1,6 @@
 [package]
-name = "simplex-test"
-version = "0.1.0"
+name = "smplx-test"
+version = "0.0.1"
 description = "Simplex test command internal implementation"
 license.workspace = true
 edition.workspace = true
@@ -9,8 +9,8 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-simplex-sdk = { workspace = true }
-simplex-regtest = { workspace = true }
+smplx-sdk = { workspace = true }
+smplx-regtest = { workspace = true }
 
 thiserror = { workspace = true }
 simplicityhl = { workspace = true }

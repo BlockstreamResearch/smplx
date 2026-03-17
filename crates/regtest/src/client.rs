@@ -29,14 +29,12 @@ impl RegtestClient {
     }
 
     pub fn default_bin_paths() -> (PathBuf, PathBuf) {
-        // TODO: change binary into installed one in $PATH dir
-        const MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
-        const ELEMENTSD_BIN_PATH: &str = "../../assets/elementsd";
-        const ELECTRS_BIN_PATH: &str = "../../assets/electrs";
+        const ELECTRS_BIN_PATH: &str = "electrs";
+        const ELEMENTSD_BIN_PATH: &str = "elementsd";
 
         (
-            Path::new(MANIFEST_DIR).join(ELECTRS_BIN_PATH),
-            Path::new(MANIFEST_DIR).join(ELEMENTSD_BIN_PATH),
+            Path::new(ELECTRS_BIN_PATH).to_path_buf(),
+            Path::new(ELEMENTSD_BIN_PATH).to_path_buf(),
         )
     }
 
