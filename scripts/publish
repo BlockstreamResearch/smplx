@@ -49,6 +49,7 @@ check_crate() {
 
   if [ -n "$published" ]; then
     # Already published
+    say "${crate_name} v${crate_version} is already published."
     return 1
   else
     # Needs publishing
