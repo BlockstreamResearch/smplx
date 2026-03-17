@@ -129,13 +129,15 @@ jobs:
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.ARVOLEAR_TOKEN }}
         with:
-          name: Simplex ${{ github.event.inputs.tag || github.ref_name }}
+          token: ${{ secrets.ARVOLEAR_TOKEN }}
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Simplex ${{ github.event.inputs.tag || github.ref_name }}
           prerelease: false
-          body: "TBD"
+          body: |
+            # Release notes ${{ github.event.inputs.tag || github.ref_name }} 🎉
+            
+            TBD
           files: |
             simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.attestation.txt
             simplex-${{ github.event.inputs.tag || github.ref_name }}-linux-x86_64.tar.gz
