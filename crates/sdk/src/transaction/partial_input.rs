@@ -17,7 +17,7 @@ pub struct PartialInput {
     pub witness_txid: Txid,
     pub witness_output_index: u32,
     pub witness_utxo: TxOut,
-    pub sequence: Option<Sequence>,
+    pub sequence: Sequence,
     pub amount: Option<u64>,
     pub asset: Option<AssetId>,
 }
@@ -36,6 +36,10 @@ pub struct IssuanceInput {
 
 impl PartialInput {
     pub fn new(outpoint: OutPoint, txout: TxOut) -> Self {
+        Self::new_sequence(outpoint, txout, Default::default())
+    }
+
+    pub fn new_sequence(outpoint: OutPoint, txout: TxOut, sequence: Sequence) -> Self {
         let amount = match txout.value {
             Value::Explicit(value) => Some(value),
             _ => None,
@@ -49,7 +53,7 @@ impl PartialInput {
             witness_txid: outpoint.txid,
             witness_output_index: outpoint.vout,
             witness_utxo: txout,
-            sequence: Default::default(),
+            sequence: sequence,
             amount: amount,
             asset: asset,
         }
@@ -68,7 +72,7 @@ impl PartialInput {
         input.previous_txid = self.witness_txid.clone();
         input.previous_output_index = self.witness_output_index;
         input.witness_utxo = Some(self.witness_utxo.clone());
-        input.sequence = self.sequence.clone();
+        input.sequence = Some(self.sequence.clone());
         input.amount = self.amount.clone();
         input.asset = self.asset.clone();
 
