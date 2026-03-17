@@ -115,7 +115,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 ## Future work
 
-- [ ] Comprehensive `simplex init` and `simplex clean` tasks.
+- [ ] Complete `simplex init` and `simplex clean` tasks.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
