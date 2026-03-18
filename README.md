@@ -23,8 +23,7 @@ Simplex is a Rust-based, comprehensive development framework for [Simplicity](ht
 ## Installation
 
 ```bash
-curl -L https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/install | bash
-simplexup
+curl -L https://smplx.simplicity-lang.org | bash && simplexup
 ```
 
 See the [simplexup manual](simplexup/README.md) for more details.
