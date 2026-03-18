@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::commands::Command;
 use crate::commands::build::Build;
-use crate::commands::commands::Command;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
 use crate::config::{Config, INIT_CONFIG};

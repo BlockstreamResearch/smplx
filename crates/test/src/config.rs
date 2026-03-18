@@ -56,9 +56,9 @@ impl TestConfig {
             fs::create_dir_all(parent_dir)?;
         }
 
-        let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(&path)?;
+        let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(path)?;
 
-        file.write(toml::to_string_pretty(&self).unwrap().as_bytes())?;
+        file.write_all(toml::to_string_pretty(&self).unwrap().as_bytes())?;
         file.flush()?;
 
         Ok(())

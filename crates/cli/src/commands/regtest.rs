@@ -10,7 +10,7 @@ pub struct Regtest {}
 
 impl Regtest {
     pub fn run(config: RegtestConfig) -> Result<(), CommandError> {
-        let (mut client, signer) = RegtestRunner::new(config)?;
+        let (mut client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();

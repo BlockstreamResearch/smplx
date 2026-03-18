@@ -12,12 +12,12 @@ impl PartialOutput {
     pub fn new(script: Script, amount: u64, asset: AssetId) -> Self {
         Self {
             script_pubkey: script,
-            amount: amount,
-            asset: asset,
+            amount,
+            asset,
         }
     }
 
     pub fn to_output(&self) -> Output {
-        Output::new_explicit(self.script_pubkey.clone(), self.amount, self.asset.clone(), None)
+        Output::new_explicit(self.script_pubkey.clone(), self.amount, self.asset, None)
     }
 }

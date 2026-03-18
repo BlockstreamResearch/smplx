@@ -3,7 +3,7 @@ use std::process::Stdio;
 
 use smplx_test::TestConfig;
 
-use super::commands::{TestCommand, TestFlags};
+use super::core::{TestCommand, TestFlags};
 use super::error::CommandError;
 
 pub struct Test {}
@@ -40,7 +40,7 @@ impl Test {
             TestCommand::Integration { additional_flags } => {
                 command_as_arg.push_str("cargo test --tests");
 
-                let flag_args = Self::build_test_flags(&additional_flags);
+                let flag_args = Self::build_test_flags(additional_flags);
 
                 if !flag_args.is_empty() {
                     command_as_arg.push_str(" --");
@@ -64,7 +64,7 @@ impl Test {
                     command_as_arg.push_str(&arg);
                 }
 
-                let flag_args = Self::build_test_flags(&additional_flags);
+                let flag_args = Self::build_test_flags(additional_flags);
 
                 if !flag_args.is_empty() {
                     command_as_arg.push_str(" --");

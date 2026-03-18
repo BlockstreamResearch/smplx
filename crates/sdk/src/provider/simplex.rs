@@ -6,8 +6,8 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid
 
 use crate::provider::SimplicityNetwork;
 
+use super::core::ProviderTrait;
 use super::error::ProviderError;
-use super::provider::ProviderTrait;
 
 use super::{ElementsRpc, EsploraProvider};
 
@@ -44,22 +44,22 @@ impl ProviderTrait for SimplexProvider {
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
-        Ok(self.esplora.wait(txid)?)
+        self.esplora.wait(txid)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
-        Ok(self.esplora.fetch_transaction(txid)?)
+        self.esplora.fetch_transaction(txid)
     }
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
-        Ok(self.esplora.fetch_address_utxos(address)?)
+        self.esplora.fetch_address_utxos(address)
     }
 
     fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
-        Ok(self.esplora.fetch_scripthash_utxos(script)?)
+        self.esplora.fetch_scripthash_utxos(script)
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
-        Ok(self.esplora.fetch_fee_estimates()?)
+        self.esplora.fetch_fee_estimates()
     }
 }

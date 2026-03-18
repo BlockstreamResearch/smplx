@@ -15,17 +15,15 @@ pub struct RegtestClient {
 }
 
 impl RegtestClient {
-    // TODO: pass custom config
+    // TODO: pass custom config, remove clippy tag
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let (electrs_path, elementsd_path) = Self::default_bin_paths();
         let zmq_addr = Self::get_zmq_addr();
         let elements = Self::create_bitcoind_node(elementsd_path, &zmq_addr);
         let electrs = Self::create_electrs_node(electrs_path, &elements, &zmq_addr);
 
-        Self {
-            electrs: electrs,
-            elements: elements,
-        }
+        Self { electrs, elements }
     }
 
     pub fn default_bin_paths() -> (PathBuf, PathBuf) {
@@ -97,6 +95,6 @@ impl RegtestClient {
         conf.http_enabled = true;
         conf.network = "liquidregtest";
 
-        ElectrsD::with_conf(bin_path.as_ref(), &elementsd, &conf).unwrap()
+        ElectrsD::with_conf(bin_path.as_ref(), elementsd, &conf).unwrap()
     }
 }
