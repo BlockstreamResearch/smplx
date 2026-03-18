@@ -100,6 +100,19 @@ jobs:
       - name: Check hack
         run: cargo hack check
 
+  deny:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Init cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources
+
   ci-success:
     runs-on: ubuntu-latest
     if: always()
@@ -107,6 +120,7 @@ jobs:
       - rust-tests
       - rustfmt
       - crate-checks
+      - deny
     timeout-minutes: 30
     steps:
       - name: Decide whether the needed jobs succeeded or failed
