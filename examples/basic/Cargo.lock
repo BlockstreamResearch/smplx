@@ -394,14 +394,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "draft_example"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "smplx-std",
-]
-
-[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1162,6 +1154,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "simplex_example"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "smplx-std",
+]
+
+[[package]]
 name = "simplicity-lang"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1210,6 +1210,8 @@ dependencies = [
 [[package]]
 name = "smplx-build"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "405636c8a7d0d9a87822faddc04215bb7919d590cf3dff78a1495458e311103d"
 dependencies = [
  "glob",
  "globwalk",
@@ -1227,6 +1229,8 @@ dependencies = [
 [[package]]
 name = "smplx-macros"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ec9275ef5dff18aa65009f2ac42892f5cf0d409746da57eae842a7bee1c5a20"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1236,6 +1240,8 @@ dependencies = [
 [[package]]
 name = "smplx-regtest"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "407bc1cb6dddd30a5fc7859a129db39d3b021ecb1db14db9d0d287e5b26cf7c3"
 dependencies = [
  "electrsd",
  "serde",
@@ -1247,6 +1253,8 @@ dependencies = [
 [[package]]
 name = "smplx-sdk"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29977f9989db6b89180fd1d7ce4b57820f1bd93bbc42b9e215db81f42602102f"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1265,6 +1273,8 @@ dependencies = [
 [[package]]
 name = "smplx-std"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25684233ca96852fdc72ad1afe732b77582e1ab65ac4093eb594e1f8e25fc567"
 dependencies = [
  "either",
  "serde",
@@ -1277,6 +1287,8 @@ dependencies = [
 [[package]]
 name = "smplx-test"
 version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bcf316dc5fe2a283708006ca6f28c361ed81347504e0bcf75ba6b551b54e7fd"
 dependencies = [
  "electrsd",
  "proc-macro2",
