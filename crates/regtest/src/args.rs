@@ -13,6 +13,7 @@ pub fn get_elementsd_bin_args() -> Vec<String> {
         "-initialfreecoins=2100000000000000".to_string(),
         "-listen=1".to_string(),
         "-txindex=1".to_string(),
+        "-multi_data_permitted".to_string(),
     ]
 }
 
