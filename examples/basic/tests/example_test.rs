@@ -6,8 +6,8 @@ use simplex::transaction::{
 };
 use simplex::utils::tr_unspendable_key;
 
-use draft_example::artifacts::p2pk::P2pkProgram;
-use draft_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+use simplex_example::artifacts::p2pk::P2pkProgram;
+use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
     let signer = context.get_signer();
@@ -17,7 +17,7 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
     };
 
     let p2pk = P2pkProgram::new(tr_unspendable_key(), arguments);
-    let p2pk_script = p2pk.get_program().get_script_pubkey(*context.get_network()).unwrap();
+    let p2pk_script = p2pk.get_program().get_script_pubkey(context.get_network()).unwrap();
 
     (p2pk, p2pk_script)
 }
