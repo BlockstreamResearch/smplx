@@ -1,4 +1,5 @@
-pub type CommandResult<T> = Result<T, CommandError>;
+use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(thiserror::Error, Debug)]
 pub enum CommandError {
@@ -15,11 +16,56 @@ pub enum CommandError {
     Build(#[from] smplx_build::error::BuildError),
 
     #[error(transparent)]
-    Clean(#[from] crate::commands::clean::CleanError),
+    Init(#[from] InitError),
 
     #[error(transparent)]
-    Init(#[from] crate::commands::init::InitError),
+    Clean(#[from] CleanError),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+pub type CommandResult<T> = Result<T, CommandError>;
+
+#[derive(Error, Debug)]
+pub enum InitError {
+    #[error("Failed to open file '{1}': {0}")]
+    OpenFile(std::io::Error, PathBuf),
+
+    #[error("Failed to write to file '{1}': {0}")]
+    WriteToFile(std::io::Error, PathBuf),
+
+    #[error("Failed to format file with rustfmt: {0}")]
+    FmtError(std::io::Error),
+
+    #[error("Failed to resolve parent directory for: {0}")]
+    ResolveParent(PathBuf),
+
+    #[error("Failed to create directories at '{1}': {0}")]
+    CreateDirs(std::io::Error, PathBuf),
+
+    #[error("Failed to fetch crate info from crates.io: {0}")]
+    CratesIoFetch(String),
+
+    #[error("Cannot auto-detect package name from path: {0}")]
+    PackageName(PathBuf),
+
+    #[error("Cannot create package with a non-unicode name: '{0}'")]
+    NonUnicodeName(String),
+}
+
+pub type InitResult<T> = Result<T, InitError>;
+
+#[derive(Error, Debug)]
+pub enum CleanError {
+    #[error("Failed to resolve out_dir from config, err: '{0}'")]
+    ResolveOutDir(String),
+
+    #[error("Failed to remove output directory '{1}': {0}")]
+    RemoveOutDir(std::io::Error, PathBuf),
+
+    #[error("Failed to remove file '{1}': {0}")]
+    RemoveFile(std::io::Error, PathBuf),
+}
+
+pub type CleanResult<T> = Result<T, CleanError>;

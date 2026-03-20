@@ -1,28 +1,13 @@
 use crate::commands::CleanFlags;
-use crate::commands::error::CommandResult;
+use crate::commands::error::{CleanError, CleanResult, CommandResult};
 use smplx_build::{ArtifactsResolver, BuildConfig};
 use std::fmt::Display;
 use std::fs;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
 pub struct Clean;
 
 pub struct DeletedItems(Vec<PathBuf>);
-
-#[derive(Error, Debug)]
-pub enum CleanError {
-    #[error("Failed to resolve out_dir from config, err: '{0}'")]
-    ResolveOutDir(String),
-
-    #[error("Failed to remove output directory '{1}': {0}")]
-    RemoveOutDir(std::io::Error, PathBuf),
-
-    #[error("Failed to remove file '{1}': {0}")]
-    RemoveFile(std::io::Error, PathBuf),
-}
-
-type CleanResult<T> = Result<T, CleanError>;
 
 impl Clean {
     pub fn run(config: BuildConfig, additional_flags: CleanFlags, config_path: impl AsRef<Path>) -> CommandResult<()> {

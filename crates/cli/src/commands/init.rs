@@ -1,42 +1,12 @@
 use crate::commands::InitFlags;
-use crate::commands::error::CommandResult;
+use crate::commands::error::{CommandResult, InitError, InitResult};
 use crate::config::INIT_CONFIG;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use thiserror::Error;
+use std::path::Path;
 
 pub struct Init;
-
-#[derive(Error, Debug)]
-pub enum InitError {
-    #[error("Failed to open file '{1}': {0}")]
-    OpenFile(std::io::Error, PathBuf),
-
-    #[error("Failed to write to file '{1}': {0}")]
-    WriteToFile(std::io::Error, PathBuf),
-
-    #[error("Failed to format file with rustfmt: {0}")]
-    FmtError(std::io::Error),
-
-    #[error("Failed to resolve parent directory for: {0}")]
-    ResolveParent(PathBuf),
-
-    #[error("Failed to create directories at '{1}': {0}")]
-    CreateDirs(std::io::Error, PathBuf),
-
-    #[error("Failed to fetch crate info from crates.io: {0}")]
-    CratesIoFetch(String),
-
-    #[error("Cannot auto-detect package name from path: {0}")]
-    PackageName(PathBuf),
-
-    #[error("Cannot create package with a non-unicode name: '{0}'")]
-    NonUnicodeName(String),
-}
-
-type InitResult<T> = Result<T, InitError>;
 
 impl Init {
     pub fn init_smplx(conf: InitFlags, smplx_conf_path: impl AsRef<Path>) -> CommandResult<()> {
