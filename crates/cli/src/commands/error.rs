@@ -1,5 +1,6 @@
-use std::path::PathBuf;
 use thiserror::Error;
+
+use std::path::PathBuf;
 
 #[derive(thiserror::Error, Debug)]
 pub enum CommandError {

@@ -1,10 +1,10 @@
-use crate::commands::InitFlags;
-use crate::commands::error::{CommandResult, InitError, InitResult};
+use crate::commands::{
+    InitFlags,
+    error::{CommandResult, InitError, InitResult},
+};
 use crate::config::INIT_CONFIG;
-use std::fs;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::Path;
+
+use std::{fs, fs::OpenOptions, io::Write, path::Path};
 
 pub struct Init;
 

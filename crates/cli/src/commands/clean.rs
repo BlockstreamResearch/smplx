@@ -1,9 +1,15 @@
-use crate::commands::CleanFlags;
-use crate::commands::error::{CleanError, CleanResult, CommandResult};
+use crate::commands::{
+    CleanFlags,
+    error::{CleanError, CleanResult, CommandResult},
+};
+
 use smplx_build::{ArtifactsResolver, BuildConfig};
-use std::fmt::Display;
-use std::fs;
-use std::path::{Path, PathBuf};
+
+use std::{
+    fmt::Display,
+    fs,
+    path::{Path, PathBuf},
+};
 
 pub struct Clean;
 
