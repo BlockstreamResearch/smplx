@@ -1,4 +1,4 @@
-mod core;
+pub mod core;
 pub mod error;
 
 pub use core::{Signer, SignerTrait};

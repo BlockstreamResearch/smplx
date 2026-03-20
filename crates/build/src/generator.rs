@@ -197,6 +197,8 @@ impl ArtifactsGenerator {
         let mod_names = mod_names.iter().map(|x| format_ident!("{x}")).collect::<Vec<_>>();
 
         let code = quote! {
+            #![allow(clippy::all)]
+
             #(pub mod #mod_names);*;
         };
 

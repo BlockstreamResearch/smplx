@@ -1,5 +1,5 @@
 pub mod arguments;
-mod core;
+pub mod core;
 pub mod error;
 pub mod witness;
 

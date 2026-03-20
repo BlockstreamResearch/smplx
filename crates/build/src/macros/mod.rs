@@ -1,5 +1,5 @@
 pub mod codegen;
-mod core;
+pub mod core;
 pub mod parse;
 pub mod program;
 pub mod types;
