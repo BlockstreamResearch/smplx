@@ -1,5 +1,5 @@
+mod core;
 pub mod error;
-pub mod signer;
 
+pub use core::{Signer, SignerTrait};
 pub use error::SignerError;
-pub use signer::{Signer, SignerTrait};

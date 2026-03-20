@@ -21,11 +21,7 @@ impl ElementsRpc {
         let inner = Client::new(url.as_str(), auth.clone())?;
         inner.ping()?;
 
-        Ok(Self {
-            inner: inner,
-            auth: auth,
-            url: url,
-        })
+        Ok(Self { inner, auth, url })
     }
 
     pub fn height(&self) -> Result<u64, RpcError> {

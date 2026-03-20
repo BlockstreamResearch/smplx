@@ -8,17 +8,16 @@ use super::error::BuildError;
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    pub fn resolve_files_to_build(src_dir: &String, simfs: &Vec<String>) -> Result<Vec<PathBuf>, BuildError> {
+    pub fn resolve_files_to_build(src_dir: &String, simfs: &[String]) -> Result<Vec<PathBuf>, BuildError> {
         let cwd = env::current_dir()?;
         let base = cwd.join(src_dir);
 
         let mut paths = Vec::new();
 
-        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, &simfs)
+        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, simfs)
             .follow_links(true)
             .file_type(FileType::FILE)
             .build()?
-            .into_iter()
             .filter_map(Result::ok);
 
         for img in walker {
@@ -34,7 +33,7 @@ impl ArtifactsResolver {
         if !path_outer.is_absolute() {
             let manifest_dir = env::current_dir()?;
 
-            let mut path_local = PathBuf::from(manifest_dir);
+            let mut path_local = manifest_dir;
             path_local.push(path_outer);
 
             path_outer = path_local;

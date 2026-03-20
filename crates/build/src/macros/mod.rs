@@ -1,7 +1,7 @@
 pub mod codegen;
-pub mod macros;
+mod core;
 pub mod parse;
 pub mod program;
 pub mod types;
 
-pub use macros::expand;
+pub use core::expand;

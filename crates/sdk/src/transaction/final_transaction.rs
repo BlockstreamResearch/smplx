@@ -28,7 +28,7 @@ pub struct FinalTransaction {
 impl FinalTransaction {
     pub fn new(network: SimplicityNetwork) -> Self {
         Self {
-            network: network,
+            network,
             inputs: Vec::new(),
             outputs: Vec::new(),
         }
@@ -39,20 +39,17 @@ impl FinalTransaction {
         partial_input: PartialInput,
         required_sig: RequiredSignature,
     ) -> Result<(), TransactionError> {
-        match required_sig {
-            RequiredSignature::Witness(_) => {
-                return Err(TransactionError::SignatureRequest(
-                    "Requested signature is not NativeEcdsa or None".to_string(),
-                ));
-            }
-            _ => {}
+        if let RequiredSignature::Witness(_) = required_sig {
+            return Err(TransactionError::SignatureRequest(
+                "Requested signature is not NativeEcdsa or None".to_string(),
+            ));
         }
 
         self.inputs.push(FinalInput {
-            partial_input: partial_input,
+            partial_input,
             program_input: None,
             issuance_input: None,
-            required_sig: required_sig,
+            required_sig,
         });
 
         Ok(())
@@ -64,20 +61,17 @@ impl FinalTransaction {
         program_input: ProgramInput,
         required_sig: RequiredSignature,
     ) -> Result<(), TransactionError> {
-        match required_sig {
-            RequiredSignature::NativeEcdsa => {
-                return Err(TransactionError::SignatureRequest(
-                    "Requested signature is not Witness or None".to_string(),
-                ));
-            }
-            _ => {}
+        if let RequiredSignature::NativeEcdsa = required_sig {
+            return Err(TransactionError::SignatureRequest(
+                "Requested signature is not Witness or None".to_string(),
+            ));
         }
 
         self.inputs.push(FinalInput {
-            partial_input: partial_input,
+            partial_input,
             program_input: Some(program_input),
             issuance_input: None,
-            required_sig: required_sig,
+            required_sig,
         });
 
         Ok(())
@@ -89,22 +83,19 @@ impl FinalTransaction {
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
     ) -> Result<AssetId, TransactionError> {
-        match required_sig {
-            RequiredSignature::Witness(_) => {
-                return Err(TransactionError::SignatureRequest(
-                    "Requested signature is not NativeEcdsa or None".to_string(),
-                ));
-            }
-            _ => {}
+        if let RequiredSignature::Witness(_) = required_sig {
+            return Err(TransactionError::SignatureRequest(
+                "Requested signature is not NativeEcdsa or None".to_string(),
+            ));
         }
 
         let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
 
         self.inputs.push(FinalInput {
-            partial_input: partial_input,
+            partial_input,
             program_input: None,
             issuance_input: Some(issuance_input),
-            required_sig: required_sig,
+            required_sig,
         });
 
         Ok(asset_id)
@@ -117,22 +108,19 @@ impl FinalTransaction {
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
     ) -> Result<AssetId, TransactionError> {
-        match required_sig {
-            RequiredSignature::NativeEcdsa => {
-                return Err(TransactionError::SignatureRequest(
-                    "Requested signature is not Witness or None".to_string(),
-                ));
-            }
-            _ => {}
+        if let RequiredSignature::NativeEcdsa = required_sig {
+            return Err(TransactionError::SignatureRequest(
+                "Requested signature is not Witness or None".to_string(),
+            ));
         }
 
         let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
 
         self.inputs.push(FinalInput {
-            partial_input: partial_input,
+            partial_input,
             program_input: Some(program_input),
             issuance_input: Some(issuance_input),
-            required_sig: required_sig,
+            required_sig,
         });
 
         Ok(asset_id)
@@ -186,14 +174,14 @@ impl FinalTransaction {
         let available_amount = self
             .inputs
             .iter()
-            .filter(|input| input.partial_input.asset.clone().unwrap() == self.network.policy_asset())
-            .fold(0 as u64, |acc, input| acc + input.partial_input.amount.clone().unwrap());
+            .filter(|input| input.partial_input.asset.unwrap() == self.network.policy_asset())
+            .fold(0_u64, |acc, input| acc + input.partial_input.amount.unwrap());
 
         let consumed_amount = self
             .outputs
             .iter()
             .filter(|output| output.asset == self.network.policy_asset())
-            .fold(0 as u64, |acc, output| acc + output.amount);
+            .fold(0_u64, |acc, output| acc + output.amount);
 
         available_amount as i64 - consumed_amount as i64
     }

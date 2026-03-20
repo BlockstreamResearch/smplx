@@ -44,7 +44,7 @@ pub trait SignerTrait {
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
-        program: &Box<dyn ProgramTrait>,
+        program: &dyn ProgramTrait,
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<schnorr::Signature, SignerError>;
@@ -67,11 +67,11 @@ impl SignerTrait for Signer {
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
-        program: &Box<dyn ProgramTrait>,
+        program: &dyn ProgramTrait,
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<schnorr::Signature, SignerError> {
-        let env = program.get_env(&pst, input_index, network)?;
+        let env = program.get_env(pst, input_index, network)?;
         let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
 
         let private_key = self.get_private_key()?;
@@ -117,13 +117,13 @@ impl Signer {
         let seed = mnemonic.to_seed("");
         let xprv = Xpriv::new_master(NetworkKind::Test, &seed)?;
 
-        let network = provider.get_network().clone();
+        let network = *provider.get_network();
 
         Ok(Self {
             xprv,
-            provider: provider,
-            network: network,
-            secp: secp,
+            provider,
+            network,
+            secp,
         })
     }
 
@@ -133,7 +133,7 @@ impl Signer {
 
         for input in tx.inputs() {
             set.insert(OutPoint {
-                txid: input.partial_input.witness_txid.clone(),
+                txid: input.partial_input.witness_txid,
                 vout: input.partial_input.witness_output_index,
             });
         }
@@ -192,8 +192,8 @@ impl Signer {
         }
     }
 
-    pub fn get_provider(&self) -> &Box<dyn ProviderTrait> {
-        &self.provider
+    pub fn get_provider(&self) -> &dyn ProviderTrait {
+        self.provider.as_ref()
     }
 
     pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
@@ -291,32 +291,29 @@ impl Signer {
         // finalize the tx with fee and without the change
         let final_tx = self.sign_tx(&fee_tx)?;
 
-        return Ok(Estimate::Success(final_tx, fee));
+        Ok(Estimate::Success(final_tx, fee))
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
         let mut pst = tx.extract_pst();
         let inputs = tx.inputs();
 
-        for index in 0..inputs.len() {
-            let input = inputs[index].clone();
-
+        for (index, input_i) in inputs.iter().enumerate() {
             // we need to prune the program
-            if input.program_input.is_some() {
-                let program = input.program_input.unwrap();
-                let signed_witness: Result<WitnessValues, SignerError> = match input.required_sig {
+            if let Some(program_input) = &input_i.program_input {
+                let signed_witness: Result<WitnessValues, SignerError> = match &input_i.required_sig {
                     // sign the program and insert the signature into the witness
                     RequiredSignature::Witness(witness_name) => Ok(self.get_signed_program_witness(
                         &pst,
-                        &program.program,
-                        &program.witness.build_witness(),
-                        &witness_name,
+                        program_input.program.as_ref(),
+                        &program_input.witness.build_witness(),
+                        witness_name,
                         index,
                     )?),
                     // just build the passed witness
-                    _ => Ok(program.witness.build_witness()),
+                    _ => Ok(program_input.witness.build_witness()),
                 };
-                let pruned_witness = program
+                let pruned_witness = program_input
                     .program
                     .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
                     .unwrap();
@@ -338,9 +335,9 @@ impl Signer {
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
-        program: &Box<dyn ProgramTrait>,
+        program: &dyn ProgramTrait,
         witness: &WitnessValues,
-        witness_name: &String,
+        witness_name: &str,
         index: usize,
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
@@ -352,7 +349,7 @@ impl Signer {
         });
 
         hm.insert(
-            WitnessName::from_str_unchecked(witness_name.as_str()),
+            WitnessName::from_str_unchecked(witness_name),
             Value::byte_array(signature.serialize()),
         );
 
@@ -364,7 +361,7 @@ impl Signer {
     }
 
     fn master_xpriv(&self) -> Result<Xpriv, SignerError> {
-        Ok(self.derive_xpriv(&DerivationPath::master())?)
+        self.derive_xpriv(&DerivationPath::master())
     }
 
     fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, SignerError> {
@@ -374,7 +371,7 @@ impl Signer {
     }
 
     fn master_xpub(&self) -> Result<Xpub, SignerError> {
-        Ok(self.derive_xpub(&DerivationPath::master())?)
+        self.derive_xpub(&DerivationPath::master())
     }
 
     fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
@@ -385,7 +382,7 @@ impl Signer {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
 
-        Ok(DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))?)
+        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
     }
 }
 
@@ -402,7 +399,7 @@ mod tests {
 
         let signer = Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
-            Box::new(EsploraProvider::new(url, network.clone())),
+            Box::new(EsploraProvider::new(url, network)),
         )
         .unwrap();
 

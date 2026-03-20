@@ -71,7 +71,7 @@ impl ProgramTrait for Program {
         }
 
         let target_utxo = &utxos[input_index];
-        let script_pubkey = self.get_tr_address(&network)?.script_pubkey();
+        let script_pubkey = self.get_tr_address(network)?.script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
             return Err(ProgramError::ScriptPubkeyMismatch {
@@ -129,7 +129,7 @@ impl ProgramTrait for Program {
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
-        let pruned = self.execute(&pst, witness, input_index, network)?.0;
+        let pruned = self.execute(pst, witness, input_index, network)?.0;
 
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
         let cmr = pruned.cmr();
@@ -146,9 +146,9 @@ impl ProgramTrait for Program {
 impl Program {
     pub fn new(source: &'static str, pub_key: XOnlyPublicKey, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
-            source: source,
-            pub_key: pub_key,
-            arguments: arguments,
+            source,
+            pub_key,
+            arguments,
         }
     }
 
