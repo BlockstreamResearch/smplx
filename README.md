@@ -57,9 +57,11 @@ out_dir = "./src/artifacts"
 
 [regtest]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+bitcoins = 10_000_000
 
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+bitcoins = 10_000_000
 
 [test.esplora]
 url = "<esplora url>"
@@ -79,6 +81,7 @@ Where:
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
+  - `bitcoins` - Initial coins available to the signer
 - `test` (`simplex test` config)
   - `esplora`
     - `url` - Esplora API endpoint url
@@ -88,6 +91,7 @@ Where:
     - `username` - Elements RPC username
     - `password` - Elements RPC password
   - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
+  - `bitcoins` - Initial coins available to the signer
 
 ### CLI
 

@@ -25,7 +25,10 @@ pub fn hash_script(script: &Script) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-pub fn sat2btc(sat: u64) -> String {
-    let amount = bitcoin::Amount::from_sat(sat);
-    amount.to_string_in(bitcoin::amount::Denomination::Bitcoin)
+pub fn sat2btc(sat: u64) -> f64 {
+    bitcoin::Amount::from_sat(sat).to_btc()
+}
+
+pub fn btc2sat(btc: u64) -> u64 {
+    bitcoin::Amount::from_int_btc(btc).to_sat()
 }

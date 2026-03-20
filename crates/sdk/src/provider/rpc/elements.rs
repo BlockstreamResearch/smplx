@@ -5,6 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 use serde_json::Value;
 
 use simplicityhl::elements::{Address, AssetId, BlockHash, Txid};
+use simplicityhl::simplicity::bitcoin;
 
 use super::error::RpcError;
 
@@ -24,27 +25,22 @@ impl ElementsRpc {
         Ok(Self { inner, auth, url })
     }
 
-    pub fn height(&self) -> Result<u64, RpcError> {
-        const METHOD: &str = "getblockcount";
+    pub fn get_new_address(&self, label: &str) -> Result<Address, RpcError> {
+        const METHOD: &str = "getnewaddress";
 
-        self.inner
-            .call::<serde_json::Value>(METHOD, &[])?
-            .as_u64()
-            .ok_or_else(|| RpcError::ElementsRpcUnexpectedReturn(METHOD.into()))
+        let addr: Value = self.inner.call(METHOD, &[label.into(), "bech32".to_string().into()])?;
+
+        Ok(Address::from_str(addr.as_str().unwrap()).unwrap())
     }
 
-    pub fn block_hash(&self, height: u64) -> Result<BlockHash, RpcError> {
-        const METHOD: &str = "getblockhash";
-
-        let raw: Value = self.inner.call(METHOD, &[height.into()])?;
-
-        Ok(BlockHash::from_str(raw.as_str().unwrap())?)
-    }
-
-    pub fn sendtoaddress(&self, address: &Address, satoshi: u64, asset: Option<AssetId>) -> Result<Txid, RpcError> {
+    pub fn send_to_address(&self, address: &Address, satoshi: u64, asset: Option<AssetId>) -> Result<Txid, RpcError> {
         const METHOD: &str = "sendtoaddress";
 
         let btc = sat2btc(satoshi);
+        let btc = bitcoin::amount::Amount::from_btc(btc)
+            .unwrap()
+            .to_string_in(bitcoin::amount::Denomination::Bitcoin);
+
         let r = match asset {
             Some(asset) => self.inner.call::<Value>(
                 METHOD,
@@ -69,7 +65,7 @@ impl ElementsRpc {
         Ok(Txid::from_str(r.as_str().unwrap()).unwrap())
     }
 
-    pub fn rescanblockchain(&self, start: Option<u64>, stop: Option<u64>) -> Result<(), RpcError> {
+    pub fn rescan_blockchain(&self, start: Option<u64>, stop: Option<u64>) -> Result<(), RpcError> {
         const METHOD: &str = "rescanblockchain";
 
         let mut args = Vec::with_capacity(2);
@@ -87,27 +83,19 @@ impl ElementsRpc {
         Ok(())
     }
 
-    pub fn getnewaddress(&self, label: &str) -> Result<Address, RpcError> {
-        const METHOD: &str = "getnewaddress";
-
-        let addr: Value = self.inner.call(METHOD, &[label.into(), "bech32".to_string().into()])?;
-
-        Ok(Address::from_str(addr.as_str().unwrap()).unwrap())
-    }
-
     pub fn generate_blocks(&self, block_num: u32) -> Result<(), RpcError> {
         const METHOD: &str = "generatetoaddress";
 
-        let address = self.getnewaddress("")?.to_string();
+        let address = self.get_new_address("")?.to_string();
         self.inner.call::<Value>(METHOD, &[block_num.into(), address.into()])?;
 
         Ok(())
     }
 
-    pub fn sweep_initialfreecoins(&self) -> Result<(), RpcError> {
+    pub fn sweep_initial_freecoins(&self) -> Result<(), RpcError> {
         const METHOD: &str = "sendtoaddress";
 
-        let address = self.getnewaddress("")?;
+        let address = self.get_new_address("")?;
         self.inner.call::<Value>(
             METHOD,
             &[
