@@ -1,3 +1,5 @@
+pub type CommandResult<T> = Result<T, CommandError>;
+
 #[derive(thiserror::Error, Debug)]
 pub enum CommandError {
     #[error(transparent)]
@@ -11,6 +13,12 @@ pub enum CommandError {
 
     #[error(transparent)]
     Build(#[from] smplx_build::error::BuildError),
+
+    #[error(transparent)]
+    Clean(#[from] crate::commands::clean::CleanError),
+
+    #[error(transparent)]
+    Init(#[from] crate::commands::init::InitError),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

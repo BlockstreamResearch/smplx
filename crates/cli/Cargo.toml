@@ -15,17 +15,18 @@ workspace = true
 [dependencies]
 smplx-regtest = { workspace = true }
 smplx-test = { workspace = true }
-smplx-build = { workspace = true}
+smplx-build = { workspace = true }
 smplx-sdk = { workspace = true }
 
-simplicityhl = { workspace = true }
-electrsd = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+minreq = { workspace = true }
 
 anyhow = "1"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-ctrlc = { version =  "3.5.2", features = ["termination"] }
+toml_edit = { version = "0.23.9" }
+ctrlc = { version = "3.5.2", features = ["termination"] }
+serde_json = { version = "1.0.149" }

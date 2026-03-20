@@ -5,9 +5,9 @@ use smplx_build::BuildConfig;
 use smplx_regtest::RegtestConfig;
 use smplx_test::TestConfig;
 
-use super::error::ConfigError;
+use super::error::{ConfigError, ConfigResult};
 
-pub const INIT_CONFIG: &str = include_str!("../../Simplex.default.toml");
+pub const INIT_CONFIG: &str = include_str!("../../assets/Simplex.default.toml");
 pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -19,13 +19,20 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn get_default_path() -> Result<PathBuf, ConfigError> {
+    pub fn get_default_path() -> ConfigResult<PathBuf> {
         let cwd = std::env::current_dir()?;
-
-        Ok(cwd.join(CONFIG_FILENAME))
+        Self::get_derived_default_path(cwd)
     }
 
-    pub fn load(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
+    pub fn pwd() -> ConfigResult<PathBuf> {
+        Ok(std::env::current_dir()?)
+    }
+
+    pub fn get_derived_default_path(path: impl AsRef<Path>) -> ConfigResult<PathBuf> {
+        Ok(path.as_ref().join(CONFIG_FILENAME))
+    }
+
+    pub fn load(path_buf: impl AsRef<Path>) -> ConfigResult<Self> {
         let path = path_buf.as_ref().to_path_buf();
 
         if !path.is_file() {
@@ -44,7 +51,7 @@ impl Config {
         Ok(config)
     }
 
-    fn validate(config: &Config) -> Result<(), ConfigError> {
+    fn validate(config: &Config) -> ConfigResult<()> {
         match config.test.esplora.clone() {
             Some(esplora_config) => {
                 Self::validate_network(&esplora_config.network)?;
@@ -59,7 +66,7 @@ impl Config {
         }
     }
 
-    fn validate_network(network: &String) -> Result<(), ConfigError> {
+    fn validate_network(network: &String) -> ConfigResult<()> {
         if network != "Liquid" && network != "LiquidTestnet" && network != "ElementsRegtest" {
             return Err(ConfigError::BadNetworkName(network.clone()));
         }

@@ -4,12 +4,12 @@ use std::process::Stdio;
 use smplx_test::TestConfig;
 
 use super::core::{TestCommand, TestFlags};
-use super::error::CommandError;
+use super::error::CommandResult;
 
 pub struct Test {}
 
 impl Test {
-    pub fn run(config: TestConfig, command: &TestCommand) -> Result<(), CommandError> {
+    pub fn run(config: TestConfig, command: &TestCommand) -> CommandResult<()> {
         let cache_path = Self::get_test_config_cache_name()?;
         config.to_file(&cache_path)?;
 
@@ -103,7 +103,7 @@ impl Test {
         opt_params
     }
 
-    fn get_test_config_cache_name() -> Result<PathBuf, CommandError> {
+    fn get_test_config_cache_name() -> CommandResult<PathBuf> {
         const TARGET_DIR_NAME: &str = "target";
         const SIMPLEX_CACHE_DIR_NAME: &str = "simplex";
         const SIMPLEX_TEST_CONFIG_NAME: &str = "simplex_test_config.toml";

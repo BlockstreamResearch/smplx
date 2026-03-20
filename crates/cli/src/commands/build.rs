@@ -1,11 +1,11 @@
 use smplx_build::{ArtifactsGenerator, ArtifactsResolver, BuildConfig};
 
-use super::error::CommandError;
+use super::error::CommandResult;
 
 pub struct Build {}
 
 impl Build {
-    pub fn run(config: BuildConfig) -> Result<(), CommandError> {
+    pub fn run(config: BuildConfig) -> CommandResult<()> {
         let output_dir = ArtifactsResolver::resolve_local_dir(&config.out_dir)?;
         let src_dir = ArtifactsResolver::resolve_local_dir(&config.src_dir)?;
         let files_to_build = ArtifactsResolver::resolve_files_to_build(&config.src_dir, &config.simf_files)?;
