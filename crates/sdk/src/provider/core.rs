@@ -16,6 +16,10 @@ pub trait ProviderTrait {
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError>;
 
+    fn fetch_tip_height(&self) -> Result<u32, ProviderError>;
+
+    fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError>;
+
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;

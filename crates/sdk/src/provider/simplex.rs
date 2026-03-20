@@ -47,6 +47,14 @@ impl ProviderTrait for SimplexProvider {
         self.esplora.wait(txid)
     }
 
+    fn fetch_tip_height(&self) -> Result<u32, ProviderError> {
+        self.esplora.fetch_tip_height()
+    }
+
+    fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
+        self.esplora.fetch_tip_timestamp()
+    }
+
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
         self.esplora.fetch_transaction(txid)
     }
