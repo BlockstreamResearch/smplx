@@ -128,14 +128,11 @@ impl Signer {
         })
     }
 
-    pub fn send_policy(&self, to: Script, amount: u64) -> Result<(Transaction, u64), SignerError> {
-        self.send(to, self.network.policy_asset(), amount)
-    }
-
-    pub fn send(&self, to: Script, asset: AssetId, amount: u64) -> Result<(Transaction, u64), SignerError> {
+    // TODO: add an ability to send arbitrary assets
+    pub fn send(&self, to: Script, amount: u64) -> Result<(Transaction, u64), SignerError> {
         let mut ft = FinalTransaction::new(self.network);
 
-        ft.add_output(PartialOutput::new(to, amount, asset));
+        ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
 
         self.finalize(&ft)
     }
