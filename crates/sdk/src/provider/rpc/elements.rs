@@ -92,7 +92,7 @@ impl ElementsRpc {
         Ok(())
     }
 
-    pub fn sweep_initial_freecoins(&self) -> Result<(), RpcError> {
+    pub fn sweep_initialfreecoins(&self) -> Result<(), RpcError> {
         const METHOD: &str = "sendtoaddress";
 
         let address = self.get_new_address("")?;

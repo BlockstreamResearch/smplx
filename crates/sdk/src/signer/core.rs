@@ -151,7 +151,7 @@ impl Signer {
             });
         }
 
-        signer_utxos.retain(|(outpoint, _)| !set.contains(&outpoint));
+        signer_utxos.retain(|(outpoint, _)| !set.contains(outpoint));
         signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
 
         let mut fee_tx = tx.clone();

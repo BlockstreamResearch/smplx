@@ -35,7 +35,7 @@ impl Regtest {
 
         rpc_provider.generate_blocks(1)?;
         rpc_provider.rescan_blockchain(None, None)?;
-        rpc_provider.sweep_initial_freecoins()?;
+        rpc_provider.sweep_initialfreecoins()?;
         rpc_provider.generate_blocks(100)?;
 
         rpc_provider.send_to_address(&signer.get_wpkh_address()?, btc2sat(bitcoins), None)?;
