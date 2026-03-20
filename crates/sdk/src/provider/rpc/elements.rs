@@ -4,7 +4,7 @@ use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 
 use serde_json::Value;
 
-use simplicityhl::elements::{Address, AssetId, BlockHash, Txid};
+use simplicityhl::elements::{Address, AssetId, Txid};
 use simplicityhl::simplicity::bitcoin;
 
 use super::error::RpcError;
