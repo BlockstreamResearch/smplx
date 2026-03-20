@@ -58,30 +58,33 @@ impl Init {
             manifest
         };
 
-        let default_lib_rs_file_content: &[u8] = {
+        let default_lib_rs_file_content: &[u8] = { b"mod artifacts;" };
+        let default_test_file_content: &[u8] = {
             b"\
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
-                "
+#[simplex::test]
+fn dummy_test(context: simplex::TestContext) {
+    todo!()
+}"
         };
+        let default_p2pk_simf_file_content: &[u8] = {
+            b"\
+fn main() {
+    jet::bip_0340_verify((param::PUBLIC_KEY, jet::sig_all_hash()), witness::SIGNATURE)
+}"
+        };
+        let default_gitignore_file_content: &[u8] = { b"src/artifacts" };
 
         let manifest_path = pwd.join("Cargo.toml");
         let lib_rs_path = pwd.join("src/lib.rs");
+        let p2pk_simf_content = pwd.join("simf/p2pk.simf");
+        let test_rs_path = pwd.join("tests/p2pk_test.rs");
+        let gitignore_path = pwd.join(".gitignore");
 
         Self::write_to_file(manifest_path, manifest.to_string())?;
         Self::write_to_file(&lib_rs_path, default_lib_rs_file_content)?;
+        Self::write_to_file(&test_rs_path, default_test_file_content)?;
+        Self::write_to_file(&p2pk_simf_content, default_p2pk_simf_file_content)?;
+        Self::write_to_file(&gitignore_path, default_gitignore_file_content)?;
         Self::execute_cargo_fmt(lib_rs_path)?;
 
         Ok(())
