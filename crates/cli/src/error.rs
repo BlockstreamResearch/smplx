@@ -11,5 +11,3 @@ pub enum CliError {
     #[error("IO error: '{0}'")]
     Io(#[from] std::io::Error),
 }
-
-pub type CliResult<T> = Result<T, CliError>;

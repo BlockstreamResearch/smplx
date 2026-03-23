@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 use std::path::PathBuf;
 
 #[derive(thiserror::Error, Debug)]
@@ -26,9 +24,7 @@ pub enum CommandError {
     Io(#[from] std::io::Error),
 }
 
-pub type CommandResult<T> = Result<T, CommandError>;
-
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum InitError {
     #[error("Failed to open file '{1}': {0}")]
     OpenFile(std::io::Error, PathBuf),
@@ -55,9 +51,7 @@ pub enum InitError {
     NonUnicodeName(String),
 }
 
-pub type InitResult<T> = Result<T, InitError>;
-
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum CleanError {
     #[error("Failed to resolve out_dir from config, err: '{0}'")]
     ResolveOutDir(String),
@@ -68,5 +62,3 @@ pub enum CleanError {
     #[error("Failed to remove file '{1}': {0}")]
     RemoveFile(std::io::Error, PathBuf),
 }
-
-pub type CleanResult<T> = Result<T, CleanError>;

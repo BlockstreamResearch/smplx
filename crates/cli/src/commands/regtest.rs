@@ -4,12 +4,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use smplx_regtest::Regtest as RegtestRunner;
 use smplx_regtest::RegtestConfig;
 
-use crate::commands::error::CommandResult;
+use crate::commands::error::CommandError;
 
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn run(config: RegtestConfig) -> CommandResult<()> {
+    pub fn run(config: RegtestConfig) -> Result<(), CommandError> {
         let (mut client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));

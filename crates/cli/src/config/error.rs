@@ -26,5 +26,3 @@ pub enum ConfigError {
     #[error("Path doesn't exist: '{0}'")]
     PathNotExists(PathBuf),
 }
-
-pub type ConfigResult<T> = Result<T, ConfigError>;

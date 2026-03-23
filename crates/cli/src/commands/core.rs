@@ -2,23 +2,23 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Initializes the Simplex project
+    /// Initializes Simplex project
     Init {
         #[command(flatten)]
         additional_flags: InitFlags,
     },
-    /// Prints the current Simplex config in use
+    /// Prints current Simplex config in use
     Config,
     /// Spins up the local Electrs + Elements regtest
     Regtest,
-    /// Runs the Simplex tests
+    /// Runs Simplex tests
     Test {
         #[command(subcommand)]
         command: TestCommand,
     },
     /// Generates the simplicity contracts artifacts
     Build,
-    /// Clean directory after file generation inside
+    /// Clean Simplex artifacts in the current directory
     Clean {
         #[command(flatten)]
         additional_flags: CleanFlags,
@@ -57,7 +57,7 @@ pub struct TestFlags {
 
 #[derive(Debug, Args, Copy, Clone)]
 pub struct InitFlags {
-    /// Generate a draft library instead of just `Simplex.toml`
+    /// Generate a draft Rust library instead of just `Simplex.toml`
     #[arg(long)]
     pub lib: bool,
 }

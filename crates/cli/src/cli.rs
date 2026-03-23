@@ -9,7 +9,7 @@ use crate::commands::init::Init;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
 use crate::config::Config;
-use crate::error::CliResult;
+use crate::error::CliError;
 
 #[derive(Debug, Parser)]
 #[command(name = "Simplex")]
@@ -22,12 +22,12 @@ pub struct Cli {
 }
 
 impl Cli {
-    pub async fn run(&self) -> CliResult<()> {
+    pub async fn run(&self) -> Result<(), CliError> {
         match &self.command {
             Command::Init { additional_flags } => {
-                let smplx_conf_path = Config::get_default_path()?;
-                Init::init_smplx(*additional_flags, smplx_conf_path)?;
-                Ok(())
+                let simplex_conf_path = Config::get_default_path()?;
+
+                Ok(Init::run(*additional_flags, simplex_conf_path)?)
             }
             Command::Config => {
                 let config_path = Config::get_default_path()?;
