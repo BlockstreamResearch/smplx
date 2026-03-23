@@ -4,6 +4,8 @@ version = "0.0.1"
 description = "Simplex cli with various utilities to manage a simplicity project"
 license.workspace = true
 edition.workspace = true
+repository = "https://github.com/BlockstreamResearch/smplx"
+readme = "../../README.md"
 
 [[bin]]
 name = "simplex"

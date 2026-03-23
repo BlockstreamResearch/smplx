@@ -1,7 +1,7 @@
 use simplicityhl::elements::pset::Output;
 use simplicityhl::elements::{AssetId, Script};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PartialOutput {
     pub script_pubkey: Script,
     pub amount: u64,

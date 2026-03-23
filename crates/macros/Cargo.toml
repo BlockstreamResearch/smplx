@@ -4,6 +4,8 @@ version = "0.0.1"
 description = "Simplex macros re-export package"
 license.workspace = true
 edition.workspace = true
+repository = "https://github.com/BlockstreamResearch/smplx"
+readme = "../../README.md"
 
 [lib]
 proc-macro = true

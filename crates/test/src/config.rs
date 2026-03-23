@@ -12,11 +12,13 @@ use super::error::TestError;
 
 pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
 pub const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+pub const DEFAULT_BITCOINS: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TestConfig {
     pub mnemonic: String,
+    pub bitcoins: u64,
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
 }
@@ -48,6 +50,7 @@ impl TestConfig {
     pub fn to_regtest_config(&self) -> RegtestConfig {
         RegtestConfig {
             mnemonic: self.mnemonic.clone(),
+            bitcoins: self.bitcoins,
         }
     }
 
@@ -69,6 +72,7 @@ impl Default for TestConfig {
     fn default() -> Self {
         Self {
             mnemonic: DEFAULT_TEST_MNEMONIC.to_string(),
+            bitcoins: DEFAULT_BITCOINS,
             esplora: None,
             rpc: None,
         }

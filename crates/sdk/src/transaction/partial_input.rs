@@ -12,7 +12,7 @@ pub enum RequiredSignature {
     Witness(String),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PartialInput {
     pub witness_txid: Txid,
     pub witness_output_index: u32,

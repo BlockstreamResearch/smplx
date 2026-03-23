@@ -7,11 +7,13 @@ use serde::Deserialize;
 use super::error::RegtestError;
 
 pub const DEFAULT_REGTEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+pub const DEFAULT_BITCOINS: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct RegtestConfig {
     pub mnemonic: String,
+    pub bitcoins: u64,
 }
 
 impl RegtestConfig {
@@ -29,6 +31,7 @@ impl Default for RegtestConfig {
     fn default() -> Self {
         Self {
             mnemonic: DEFAULT_REGTEST_MNEMONIC.to_string(),
+            bitcoins: DEFAULT_BITCOINS,
         }
     }
 }

@@ -4,11 +4,12 @@ use std::str::FromStr;
 use elements_miniscript::Descriptor;
 use elements_miniscript::bitcoin::PublicKey;
 use elements_miniscript::descriptor::Wpkh;
+
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut};
+use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, TxOut, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
@@ -127,8 +128,17 @@ impl Signer {
         })
     }
 
-    pub fn finalize(&self, tx: &FinalTransaction, target_blocks: u32) -> Result<(Transaction, u64), SignerError> {
-        let mut signer_utxos = self.get_wpkh_utxos()?;
+    // TODO: add an ability to send arbitrary assets
+    pub fn send(&self, to: Script, amount: u64) -> Result<(Transaction, u64), SignerError> {
+        let mut ft = FinalTransaction::new(self.network);
+
+        ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
+
+        self.finalize(&ft)
+    }
+
+    pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
+        let mut signer_utxos = self.get_wpkh_utxos_asset(self.network.policy_asset())?;
         let mut set = HashSet::new();
 
         for input in tx.inputs() {
@@ -138,13 +148,12 @@ impl Signer {
             });
         }
 
-        signer_utxos
-            .retain(|utxo| utxo.1.asset.explicit().unwrap() == self.network.policy_asset() && !set.contains(&utxo.0));
+        signer_utxos.retain(|(outpoint, _)| !set.contains(outpoint));
         signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
-        let fee_rate = self.provider.fetch_fee_rate(target_blocks)?;
+        let fee_rate = self.provider.fetch_fee_rate(1)?;
 
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta();
@@ -212,7 +221,27 @@ impl Signer {
     }
 
     pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        Ok(self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?)
+        self.get_wpkh_utxos_filter(|_| true)
+    }
+
+    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
+        self.get_wpkh_utxos_filter(|(_, txout)| txout.asset.explicit().unwrap() == asset)
+    }
+
+    // TODO: can this be optimized to not populate TxOuts that are filtered out?
+    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
+        self.get_wpkh_utxos_filter(|(outpoint, _)| outpoint.txid == txid)
+    }
+
+    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<(OutPoint, TxOut)>, SignerError>
+    where
+        F: FnMut(&(OutPoint, TxOut)) -> bool,
+    {
+        let mut utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+
+        utxos.retain(filter);
+
+        Ok(utxos)
     }
 
     pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
