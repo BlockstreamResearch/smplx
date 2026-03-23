@@ -5,7 +5,7 @@ use simplicityhl::elements::{AssetId, OutPoint, Sequence, TxOut, Txid};
 use crate::program::ProgramTrait;
 use crate::program::WitnessTrait;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum RequiredSignature {
     None,
     NativeEcdsa,
