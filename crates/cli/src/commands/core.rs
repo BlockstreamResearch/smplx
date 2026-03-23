@@ -19,10 +19,7 @@ pub enum Command {
     /// Generates the simplicity contracts artifacts
     Build,
     /// Clean Simplex artifacts in the current directory
-    Clean {
-        #[command(flatten)]
-        additional_flags: CleanFlags,
-    },
+    Clean,
 }
 
 #[derive(Debug, Subcommand)]
@@ -60,11 +57,4 @@ pub struct InitFlags {
     /// Generate a draft Rust library instead of just `Simplex.toml`
     #[arg(long)]
     pub lib: bool,
-}
-
-#[derive(Debug, Args, Copy, Clone)]
-pub struct CleanFlags {
-    /// Remove `Simplex.toml` as well
-    #[arg(long)]
-    pub all: bool,
 }

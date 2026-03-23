@@ -1,49 +1,29 @@
-use std::{
-    fmt::Display,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Display, fs, path::PathBuf};
 
 use smplx_build::{ArtifactsResolver, BuildConfig};
 
+use crate::commands::error::CleanError;
 use crate::commands::error::CommandError;
-use crate::commands::{CleanFlags, error::CleanError};
 
 pub struct Clean;
 
 pub struct DeletedItems(Vec<PathBuf>);
 
 impl Clean {
-    pub fn run(
-        config: BuildConfig,
-        additional_flags: CleanFlags,
-        config_path: impl AsRef<Path>,
-    ) -> Result<(), CommandError> {
-        let deleted_files = Self::delete_files(config, additional_flags, config_path)?;
+    pub fn run(config: BuildConfig) -> Result<(), CommandError> {
+        let deleted_files = Self::delete_files(config)?;
 
         println!("Deleted files: {deleted_files}");
 
         Ok(())
     }
 
-    fn delete_files(
-        config: BuildConfig,
-        additional_flags: CleanFlags,
-        smplx_toml_path: impl AsRef<Path>,
-    ) -> Result<DeletedItems, CleanError> {
-        let mut deleted_items = Vec::with_capacity(2);
+    fn delete_files(config: BuildConfig) -> Result<DeletedItems, CleanError> {
+        let mut deleted_items = Vec::with_capacity(1);
         let generated_artifacts = Self::remove_artifacts(config)?;
 
         if let Some(artifacts_dir) = generated_artifacts {
             deleted_items.push(artifacts_dir);
-        }
-
-        if additional_flags.all {
-            let simplex_toml_path = Self::remove_config(smplx_toml_path)?;
-
-            if let Some(simplex_toml) = simplex_toml_path {
-                deleted_items.push(simplex_toml);
-            }
         }
 
         Ok(DeletedItems(deleted_items))
@@ -61,18 +41,6 @@ impl Clean {
         };
 
         Ok(res)
-    }
-
-    fn remove_config(config_path: impl AsRef<Path>) -> Result<Option<PathBuf>, CleanError> {
-        let config_path = config_path.as_ref().to_path_buf();
-
-        if config_path.exists() && config_path.is_file() {
-            fs::remove_file(&config_path).map_err(|e| CleanError::RemoveFile(e, config_path.to_path_buf()))?;
-
-            Ok(Some(config_path))
-        } else {
-            Ok(None)
-        }
     }
 }
 

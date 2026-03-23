@@ -55,11 +55,11 @@ impl Cli {
 
                 Ok(Build::run(loaded_config.build)?)
             }
-            Command::Clean { additional_flags } => {
+            Command::Clean => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(&config_path)?;
 
-                Ok(Clean::run(loaded_config.build, *additional_flags, config_path)?)
+                Ok(Clean::run(loaded_config.build)?)
             }
         }
     }
