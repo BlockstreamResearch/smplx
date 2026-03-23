@@ -4,9 +4,11 @@ use clap::Parser;
 
 use crate::commands::Command;
 use crate::commands::build::Build;
+use crate::commands::clean::Clean;
+use crate::commands::init::Init;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
-use crate::config::{Config, INIT_CONFIG};
+use crate::config::Config;
 use crate::error::CliError;
 
 #[derive(Debug, Parser)]
@@ -22,13 +24,10 @@ pub struct Cli {
 impl Cli {
     pub async fn run(&self) -> Result<(), CliError> {
         match &self.command {
-            Command::Init => {
-                let config_path = Config::get_default_path()?;
-                std::fs::write(&config_path, INIT_CONFIG)?;
+            Command::Init { additional_flags } => {
+                let simplex_conf_path = Config::get_default_path()?;
 
-                println!("Config written to: '{}'", config_path.display());
-
-                Ok(())
+                Ok(Init::run(*additional_flags, simplex_conf_path)?)
             }
             Command::Config => {
                 let config_path = Config::get_default_path()?;
@@ -55,6 +54,12 @@ impl Cli {
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Build::run(loaded_config.build)?)
+            }
+            Command::Clean { additional_flags } => {
+                let config_path = Config::get_default_path()?;
+                let loaded_config = Config::load(&config_path)?;
+
+                Ok(Clean::run(loaded_config.build, *additional_flags, config_path)?)
             }
         }
     }

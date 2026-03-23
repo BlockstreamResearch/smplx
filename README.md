@@ -97,11 +97,12 @@ Where:
 
 Simplex CLI provides the following commands:
 
-- `simplex init` - Initializes a Simplex project.
+- `simplex init` - Initializes a new Simplex project.
 - `simplex config` - Prints the current config.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
+- `simplex clean` - Cleans up generated artifacts.
 
 To view the available options, run the help command:
 
@@ -119,7 +120,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 ## Future work
 
-- [ ] Complete `simplex init` and `simplex clean` tasks.
+- [x] Complete `simplex init` and `simplex clean` tasks.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.

@@ -7,7 +7,7 @@ use smplx_test::TestConfig;
 
 use super::error::ConfigError;
 
-pub const INIT_CONFIG: &str = include_str!("../../Simplex.default.toml");
+pub const INIT_CONFIG: &str = include_str!("../../assets/Simplex.default.toml");
 pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -20,9 +20,11 @@ pub struct Config {
 
 impl Config {
     pub fn get_default_path() -> Result<PathBuf, ConfigError> {
-        let cwd = std::env::current_dir()?;
+        Self::get_path(std::env::current_dir()?)
+    }
 
-        Ok(cwd.join(CONFIG_FILENAME))
+    pub fn get_path(path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+        Ok(path.as_ref().join(CONFIG_FILENAME))
     }
 
     pub fn load(path_buf: impl AsRef<Path>) -> Result<Self, ConfigError> {
