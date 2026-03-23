@@ -82,12 +82,13 @@ impl Display for DeletedItems {
         let mut result = String::from("[");
 
         for (index, path) in self.0.iter().enumerate() {
-            result.push_str(&format!("\n\t{}", path.display()));
+            result.push_str(&format!("\n    {}", path.display()));
 
             if index < paths_len - 1 {
                 result.push(',');
+            } else {
+                result.push('\n');
             }
-            result.push('\n');
         }
 
         result.push(']');

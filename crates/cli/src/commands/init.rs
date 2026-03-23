@@ -52,7 +52,7 @@ impl Init {
             manifest
         };
 
-        let default_lib_rs_file_content: &[u8] = { b"mod artifacts;" };
+        let default_lib_rs_file_content: &[u8] = { b"pub mod artifacts;" };
         let default_test_file_content: &[u8] = {
             b"\
 #[simplex::test]
@@ -86,14 +86,16 @@ fn main() {
         Ok(())
     }
 
-    fn get_project_name(path: &Path) -> Result<&str, InitError> {
+    fn get_project_name(path: &Path) -> Result<String, InitError> {
         let file_name = path
             .file_name()
             .ok_or_else(|| InitError::PackageName(path.to_path_buf()))?;
 
-        file_name
+        let file_name = file_name
             .to_str()
-            .ok_or_else(|| InitError::NonUnicodeName(format!("{file_name:?}")))
+            .ok_or_else(|| InitError::NonUnicodeName(format!("{file_name:?}")))?;
+
+        Ok(format!("simplex_{}", file_name))
     }
 
     fn get_smplx_max_version() -> Result<String, InitError> {
