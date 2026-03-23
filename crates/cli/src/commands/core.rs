@@ -2,19 +2,24 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Initializes the Simplex project (TODO)
-    Init,
-    /// Prints the current Simplex config in use
+    /// Initializes Simplex project
+    Init {
+        #[command(flatten)]
+        additional_flags: InitFlags,
+    },
+    /// Prints current Simplex config in use
     Config,
     /// Spins up the local Electrs + Elements regtest
     Regtest,
-    /// Runs the Simplex tests
+    /// Runs Simplex tests
     Test {
         #[command(subcommand)]
         command: TestCommand,
     },
     /// Generates the simplicity contracts artifacts
     Build,
+    /// Clean Simplex artifacts in the current directory
+    Clean,
 }
 
 #[derive(Debug, Subcommand)]
@@ -45,4 +50,11 @@ pub struct TestFlags {
     /// Run ignored tests
     #[arg(long)]
     pub ignored: bool,
+}
+
+#[derive(Debug, Args, Copy, Clone)]
+pub struct InitFlags {
+    /// Generate a draft Rust library instead of just `Simplex.toml`
+    #[arg(long)]
+    pub lib: bool,
 }

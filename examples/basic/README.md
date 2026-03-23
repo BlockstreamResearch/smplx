@@ -6,7 +6,7 @@ This is an example project to get started with Simplex. The project assumes that
 
 The repository structure is the following:
 
-```ml
+```md
 root
 ├── simf — Simplicity smart contracts source directory
 ├── src — The project's Rust code (witness and transaction builders)

@@ -12,8 +12,8 @@ use serde::Deserialize;
 
 use crate::provider::SimplicityNetwork;
 
+use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
-use super::provider::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 
 pub struct EsploraProvider {
     pub esplora_url: String,
@@ -26,6 +26,15 @@ pub struct EsploraProvider {
 struct TxStatus {
     confirmed: bool,
     block_height: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct EsploraBlock {
+    id: String,
+    height: u32,
+    timestamp: u64,
+    tx_count: u32,
 }
 
 #[derive(Clone, Deserialize)]
@@ -53,7 +62,7 @@ impl EsploraProvider {
     pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
             esplora_url: url,
-            network: network,
+            network,
             timeout: Duration::from_secs(DEFAULT_ESPLORA_TIMEOUT_SECS),
         }
     }
@@ -64,11 +73,8 @@ impl EsploraProvider {
         Ok(OutPoint::new(txid, utxo.vout))
     }
 
-    fn populate_txouts_from_outpoints(
-        &self,
-        outpoints: &Vec<OutPoint>,
-    ) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
-        let set: HashSet<_> = outpoints.into_iter().collect();
+    fn populate_txouts_from_outpoints(&self, outpoints: &[OutPoint]) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+        let set: HashSet<_> = outpoints.iter().collect();
         let mut map = HashMap::new();
 
         // filter unique transactions
@@ -117,14 +123,14 @@ impl ProviderTrait for EsploraProvider {
             });
         }
 
-        Ok(Txid::from_str(&body).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?)
+        Txid::from_str(&body).map_err(|e| ProviderError::InvalidTxid(e.to_string()))
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
         let url = format!("{}/tx/{}/status", self.esplora_url, txid);
         let timeout_secs = self.timeout.as_secs();
 
-        let confirmation_poll = match self.network.clone() {
+        let confirmation_poll = match self.network {
             SimplicityNetwork::ElementsRegtest { .. } => Duration::from_millis(100),
             _ => Duration::from_secs(10),
         };
@@ -151,6 +157,75 @@ impl ProviderTrait for EsploraProvider {
         }
 
         Err(ProviderError::Confirmation())
+    }
+
+    fn fetch_tip_height(&self) -> Result<u32, ProviderError> {
+        let url = format!("{}/blocks/tip/height", self.esplora_url);
+        let timeout_secs = self.timeout.as_secs();
+
+        let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
+            .send()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+        if response.status_code != 200 {
+            return Err(ProviderError::Request(format!(
+                "HTTP {}: {}",
+                response.status_code, response.reason_phrase
+            )));
+        }
+
+        let body_str = response
+            .as_str()
+            .map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+        let height: u32 = body_str
+            .trim()
+            .parse()
+            .map_err(|e: std::num::ParseIntError| ProviderError::Deserialize(e.to_string()))?;
+
+        Ok(height)
+    }
+
+    fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
+        let timeout_secs = self.timeout.as_secs();
+
+        let hash_url = format!("{}/blocks/tip/hash", self.esplora_url);
+        let hash_response = minreq::get(&hash_url)
+            .with_timeout(timeout_secs)
+            .send()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+        if hash_response.status_code != 200 {
+            return Err(ProviderError::Request(format!(
+                "HTTP {}: {}",
+                hash_response.status_code, hash_response.reason_phrase
+            )));
+        }
+
+        let tip_hash = hash_response
+            .as_str()
+            .map_err(|e| ProviderError::Deserialize(e.to_string()))?
+            .trim();
+
+        let block_url = format!("{}/block/{}", self.esplora_url, tip_hash);
+        let block_response = minreq::get(&block_url)
+            .with_timeout(timeout_secs)
+            .send()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+        if block_response.status_code != 200 {
+            return Err(ProviderError::Request(format!(
+                "HTTP {}: {}",
+                block_response.status_code, block_response.reason_phrase
+            )));
+        }
+
+        let block: EsploraBlock = block_response
+            .json()
+            .map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+        Ok(block.timestamp)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
@@ -194,10 +269,10 @@ impl ProviderTrait for EsploraProvider {
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
-            .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
+            .map(|utxo| self.esplora_utxo_to_outpoint(utxo))
             .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
-        Ok(self.populate_txouts_from_outpoints(&outpoints)?)
+        self.populate_txouts_from_outpoints(&outpoints)
     }
 
     fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
@@ -223,10 +298,10 @@ impl ProviderTrait for EsploraProvider {
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
-            .map(|utxo| Ok(self.esplora_utxo_to_outpoint(&utxo)?))
+            .map(|utxo| self.esplora_utxo_to_outpoint(utxo))
             .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
-        Ok(self.populate_txouts_from_outpoints(&outpoints)?)
+        self.populate_txouts_from_outpoints(&outpoints)
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {

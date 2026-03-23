@@ -4,6 +4,7 @@ use smplx_sdk::provider::ElementsRpc;
 use smplx_sdk::provider::SimplexProvider;
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
+use smplx_sdk::utils::btc2sat;
 
 use super::RegtestConfig;
 use super::client::RegtestClient;
@@ -12,7 +13,7 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn new(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+    pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
         let client = RegtestClient::new();
 
         let provider = Box::new(SimplexProvider::new(
@@ -24,21 +25,20 @@ impl Regtest {
 
         let signer = Signer::new(config.mnemonic.as_str(), provider)?;
 
-        Self::prepare_signer(&client, &signer)?;
+        Self::prepare_signer(&client, &signer, config.bitcoins)?;
 
         Ok((client, signer))
     }
 
-    fn prepare_signer(client: &RegtestClient, signer: &Signer) -> Result<(), RegtestError> {
+    fn prepare_signer(client: &RegtestClient, signer: &Signer, bitcoins: u64) -> Result<(), RegtestError> {
         let rpc_provider = ElementsRpc::new(client.rpc_url(), client.auth())?;
 
         rpc_provider.generate_blocks(1)?;
-        rpc_provider.rescanblockchain(None, None)?;
+        rpc_provider.rescan_blockchain(None, None)?;
         rpc_provider.sweep_initialfreecoins()?;
         rpc_provider.generate_blocks(100)?;
 
-        // 20 million BTC
-        rpc_provider.sendtoaddress(&signer.get_wpkh_address()?, 20_000_000 * u64::pow(10, 8), None)?;
+        rpc_provider.send_to_address(&signer.get_wpkh_address()?, btc2sat(bitcoins), None)?;
 
         // wait for electrs to index
         let mut attempts = 0;

@@ -1290,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-build"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "glob",
  "globwalk",
@@ -1307,15 +1307,15 @@ dependencies = [
 
 [[package]]
 name = "smplx-cli"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "clap",
  "ctrlc",
  "dotenvy",
- "electrsd",
+ "minreq",
  "serde",
- "simplicityhl",
+ "serde_json",
  "smplx-build",
  "smplx-regtest",
  "smplx-sdk",
@@ -1323,11 +1323,12 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
+ "toml_edit",
 ]
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1336,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "electrsd",
  "serde",
@@ -1347,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1365,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "either",
  "serde",
@@ -1378,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "electrsd",
  "proc-macro2",
@@ -1552,6 +1553,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32c2555c699578a4f59f0cc68e5116c8d7cabbd45e1409b989d4be085b53f13e"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.23.10+spec-1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84c8b9f757e028cee9fa244aea147aab2a9ec09d5325a9b01e0a49730c2b5269"
+dependencies = [
+ "indexmap",
+ "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
 ]
 
 [[package]]
@@ -1877,6 +1891,9 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "wit-bindgen"

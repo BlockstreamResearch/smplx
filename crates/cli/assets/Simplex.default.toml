@@ -1,4 +1,4 @@
-# TEST CONFIG 
+# DEFAULT CONFIG 
 
 # [build]
 # src_dir = "./simf"
@@ -7,9 +7,11 @@
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+# bitcoins = 10_000_000
 
 # [test]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+# bitcoins = 10_000_000
 
 # [test.esplora]
 # url = "<esplora url>"

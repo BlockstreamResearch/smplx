@@ -1,9 +1,11 @@
 [package]
 name = "smplx-regtest"
-version = "0.0.1"
+version = "0.0.2"
 description = "Simplex regtest command internal implementation"
 license.workspace = true
 edition.workspace = true
+repository = "https://github.com/BlockstreamResearch/smplx"
+readme = "../../README.md"
 
 [lints]
 workspace = true

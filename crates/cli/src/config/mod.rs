@@ -1,4 +1,4 @@
-pub mod config;
+pub mod core;
 pub mod error;
 
-pub use config::{Config, INIT_CONFIG};
+pub use core::{CONFIG_FILENAME, Config, INIT_CONFIG};

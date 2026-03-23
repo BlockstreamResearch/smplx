@@ -1,3 +1,3 @@
-pub mod macros;
+pub mod core;
 
-pub use macros::expand;
+pub use core::expand;

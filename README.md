@@ -57,9 +57,11 @@ out_dir = "./src/artifacts"
 
 [regtest]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+bitcoins = 10_000_000
 
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+bitcoins = 10_000_000
 
 [test.esplora]
 url = "<esplora url>"
@@ -79,6 +81,7 @@ Where:
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
+  - `bitcoins` - Initial coins available to the signer
 - `test` (`simplex test` config)
   - `esplora`
     - `url` - Esplora API endpoint url
@@ -88,16 +91,18 @@ Where:
     - `username` - Elements RPC username
     - `password` - Elements RPC password
   - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
+  - `bitcoins` - Initial coins available to the signer
 
 ### CLI
 
 Simplex CLI provides the following commands:
 
-- `simplex init` - Initializes a Simplex project.
+- `simplex init` - Initializes a new Simplex project.
 - `simplex config` - Prints the current config.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
+- `simplex clean` - Cleans up generated artifacts.
 
 To view the available options, run the help command:
 
@@ -115,7 +120,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 ## Future work
 
-- [ ] Complete `simplex init` and `simplex clean` tasks.
+- [x] Complete `simplex init` and `simplex clean` tasks.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.

@@ -1,12 +1,12 @@
+pub mod core;
 pub mod error;
 pub mod esplora;
 pub mod network;
-pub mod provider;
 pub mod rpc;
 pub mod simplex;
 
+pub use core::ProviderTrait;
 pub use esplora::EsploraProvider;
-pub use provider::ProviderTrait;
 pub use rpc::elements::ElementsRpc;
 pub use simplex::SimplexProvider;
 

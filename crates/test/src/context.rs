@@ -26,13 +26,13 @@ impl TestContext {
 
         Ok(Self {
             _client: client,
-            config: config,
-            signer: signer,
+            config,
+            signer,
         })
     }
 
-    pub fn get_provider(&self) -> &Box<dyn ProviderTrait> {
-        &self.signer.get_provider()
+    pub fn get_provider(&self) -> &dyn ProviderTrait {
+        self.signer.get_provider()
     }
 
     pub fn get_config(&self) -> &TestConfig {
@@ -40,7 +40,7 @@ impl TestContext {
     }
 
     pub fn get_network(&self) -> &SimplicityNetwork {
-        &self.signer.get_provider().get_network()
+        self.signer.get_provider().get_network()
     }
 
     pub fn get_signer(&self) -> &Signer {
@@ -81,7 +81,7 @@ impl TestContext {
             },
             None => {
                 // simplex inner network
-                let (regtest_client, regtest_signer) = Regtest::new(config.to_regtest_config())?;
+                let (regtest_client, regtest_signer) = Regtest::from_config(config.to_regtest_config())?;
 
                 client = Some(regtest_client);
                 signer = regtest_signer;

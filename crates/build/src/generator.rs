@@ -79,14 +79,14 @@ impl ArtifactsGenerator {
     fn generate_bindings(out_dir: &Path, path_tree: TreeNode) -> Result<Vec<String>, BuildError> {
         fs::create_dir_all(out_dir)?;
 
-        let mut mod_filenames = Self::generate_simfs(&out_dir, &path_tree.files)?;
+        let mut mod_filenames = Self::generate_simfs(out_dir, &path_tree.files)?;
 
         for (dir_name, tree_node) in path_tree.dirs.into_iter() {
             Self::generate_bindings(&out_dir.join(&dir_name), tree_node)?;
             mod_filenames.push(dir_name);
         }
 
-        Self::generate_mod_rs(&out_dir, &mod_filenames)?;
+        Self::generate_mod_rs(out_dir, &mod_filenames)?;
 
         Ok(mod_filenames)
     }
@@ -156,10 +156,8 @@ impl ArtifactsGenerator {
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
 
-        let pathdiff = pathdiff::diff_paths(&simf_file, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
-            cwd: cwd,
-            simf_file: simf_file,
-        })?;
+        let pathdiff = pathdiff::diff_paths(&simf_file, &cwd)
+            .ok_or(BuildError::FailedToFindCorrectRelativePath { cwd, simf_file })?;
         let pathdiff = pathdiff.to_string_lossy().into_owned();
 
         let code = quote! {
@@ -199,6 +197,8 @@ impl ArtifactsGenerator {
         let mod_names = mod_names.iter().map(|x| format_ident!("{x}")).collect::<Vec<_>>();
 
         let code = quote! {
+            #![allow(clippy::all)]
+
             #(pub mod #mod_names);*;
         };
 
