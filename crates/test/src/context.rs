@@ -71,7 +71,8 @@ impl TestContext {
                     let network = match esplora.network.as_str() {
                         "Liquid" => SimplicityNetwork::Liquid,
                         "LiquidTestnet" => SimplicityNetwork::LiquidTestnet,
-                        _ => panic!("Impossible branch reached, please report a bug"),
+                        "ElementsRegtest" => SimplicityNetwork::default_regtest(),
+                        other => return Err(TestError::BadNetworkName(other.to_string())),
                     };
                     let provider = Box::new(EsploraProvider::new(esplora.url, network));
 
@@ -89,5 +90,36 @@ impl TestContext {
         }
 
         Ok((signer, client))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    #[test]
+    fn invalid_network_returns_error() {
+        let config = r#"
+            mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+            bitcoins = 10000
+
+            [esplora]
+            url = "http://localhost:3000"
+            network = "InvalidNetwork"
+        "#;
+
+        let path = std::env::temp_dir().join("smplx_test_invalid_network.toml");
+        fs::write(&path, config).unwrap();
+
+        let result = TestContext::new(path);
+        let Err(e) = result else {
+            panic!("expected BadNetworkName error")
+        };
+        assert!(
+            matches!(e, TestError::BadNetworkName(ref s) if s == "InvalidNetwork"),
+            "expected BadNetworkName, got: {e}"
+        );
     }
 }

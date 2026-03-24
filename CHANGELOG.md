@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Handle `ElementsRegtest` in test context instead of panicking; return clear error for invalid network values.
+
 ## [0.0.2]
 
 - Implemented `simplex init` and `simplex clean` commands.

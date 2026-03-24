@@ -21,4 +21,7 @@ pub enum TestError {
 
     #[error("io error occurred: '{0}'")]
     Io(#[from] io::Error),
+
+    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
+    BadNetworkName(String),
 }
