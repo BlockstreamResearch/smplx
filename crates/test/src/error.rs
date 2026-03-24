@@ -19,6 +19,9 @@ pub enum TestError {
     #[error("Failed to deserialize config: '{0}'")]
     ConfigDeserialize(#[from] toml::de::Error),
 
+    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
+    BadNetworkName(String),
+
     #[error("io error occurred: '{0}'")]
     Io(#[from] io::Error),
 }

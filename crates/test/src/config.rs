@@ -43,8 +43,10 @@ impl TestConfig {
 
         file.read_to_string(&mut content)?;
 
-        // TODO: check that network name is correct
-        Ok(toml::from_str(&content)?)
+        let config: Self = toml::from_str(&content)?;
+        Self::validate(&config)?;
+
+        Ok(config)
     }
 
     pub fn to_regtest_config(&self) -> RegtestConfig {
@@ -63,6 +65,22 @@ impl TestConfig {
 
         file.write_all(toml::to_string_pretty(&self).unwrap().as_bytes())?;
         file.flush()?;
+
+        Ok(())
+    }
+
+    fn validate(config: &Self) -> Result<(), TestError> {
+        if let Some(esplora_config) = &config.esplora {
+            Self::validate_network(&esplora_config.network)?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_network(network: &str) -> Result<(), TestError> {
+        if network != "Liquid" && network != "LiquidTestnet" && network != "ElementsRegtest" {
+            return Err(TestError::BadNetworkName(network.to_string()));
+        }
 
         Ok(())
     }
