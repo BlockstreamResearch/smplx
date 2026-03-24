@@ -77,7 +77,7 @@ Where:
 
 - `build` (`simplex build` config)
   - `src_dir` - The simplicity contracts source directory.
-  - `simf_files` - A glob pattern incidating which contracts are in scope.
+  - `simf_files` - A glob pattern indicating which contracts are in scope.
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.

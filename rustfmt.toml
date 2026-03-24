@@ -1,4 +1,4 @@
-# WARNING: Formatting in this project is non-standard and unfortunetely `cargo fmt` does not support "out of the box" formatting.
+# WARNING: Formatting in this project is non-standard and unfortunately `cargo fmt` does not support "out of the box" formatting.
 # Here you can find the closest possible set of settings for `cargo fmt`, but it is not even close to desirable.
 # use '+nightly' option for formatting (cargo +nightly fmt)
 
