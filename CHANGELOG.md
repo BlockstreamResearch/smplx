@@ -9,6 +9,7 @@
 - Fixed regtest not accepting transactions with multiple OP_RETURNs.
 - Added `send` method to the signer to be able to quickly send a policy asset.
 - Extended `get_wpkh_utxos` method to be able to filter signer's UTXOs on the fly.
+- Validated `test.esplora.network` values when loading test config to fail early on invalid network names.
 
 ## [0.0.1]
 
