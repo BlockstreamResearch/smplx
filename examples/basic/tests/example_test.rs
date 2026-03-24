@@ -1,9 +1,7 @@
 use simplex::simplicityhl::elements::{Script, Txid};
 
 use simplex::constants::DUMMY_SIGNATURE;
-use simplex::transaction::{
-    FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature,
-};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 use simplex::utils::tr_unspendable_key;
 
 use simplex_example::artifacts::p2pk::P2pkProgram;
@@ -28,15 +26,7 @@ fn spend_p2wpkh(context: &simplex::TestContext) -> Txid {
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let mut ft = FinalTransaction::new(*context.get_network());
-
-    ft.add_output(PartialOutput::new(
-        p2pk_script.clone(),
-        50,
-        context.get_network().policy_asset(),
-    ));
-
-    let (tx, _) = signer.finalize(&ft, 1).unwrap();
+    let (tx, _) = signer.send(p2pk_script.clone(), 50).unwrap();
     let res = provider.broadcast_transaction(&tx).unwrap();
 
     println!("Broadcast: {}", res);
@@ -67,7 +57,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> Txid {
     )
     .unwrap();
 
-    let (tx, _) = signer.finalize(&ft, 1).unwrap();
+    let (tx, _) = signer.finalize(&ft).unwrap();
     let res = provider.broadcast_transaction(&tx).unwrap();
 
     println!("Broadcast: {}", res);
@@ -80,13 +70,11 @@ fn dummy_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let provider = context.get_provider();
 
     let tx = spend_p2wpkh(&context);
-
     provider.wait(&tx)?;
 
     println!("Confirmed");
 
     let tx = spend_p2pk(&context);
-
     provider.wait(&tx)?;
 
     println!("Confirmed");
