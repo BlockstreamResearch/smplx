@@ -129,12 +129,20 @@ impl Signer {
     }
 
     // TODO: add an ability to send arbitrary assets
-    pub fn send(&self, to: Script, amount: u64) -> Result<(Transaction, u64), SignerError> {
+    pub fn send(&self, to: Script, amount: u64) -> Result<Txid, SignerError> {
         let mut ft = FinalTransaction::new(self.network);
 
         ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
 
-        self.finalize(&ft)
+        let (tx, _fee) = self.finalize(&ft)?;
+
+        Ok(self.provider.broadcast_transaction(&tx)?)
+    }
+
+    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<Txid, SignerError> {
+        let (tx, _fee) = self.finalize(tx)?;
+
+        Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
@@ -165,7 +173,7 @@ impl Signer {
                 }
             }
 
-            fee_tx.add_input(PartialInput::new(utxo.0, utxo.1), RequiredSignature::NativeEcdsa)?;
+            fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa)?;
         }
 
         // need to try one more time after the loop

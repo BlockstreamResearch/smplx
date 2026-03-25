@@ -22,12 +22,10 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
 
 fn spend_p2wpkh(context: &simplex::TestContext) -> Txid {
     let signer = context.get_signer();
-    let provider = context.get_provider();
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let (tx, _) = signer.send(p2pk_script.clone(), 50).unwrap();
-    let res = provider.broadcast_transaction(&tx).unwrap();
+    let res = signer.send(p2pk_script.clone(), 50).unwrap();
 
     println!("Broadcast: {}", res);
 
@@ -51,14 +49,13 @@ fn spend_p2pk(context: &simplex::TestContext) -> Txid {
     };
 
     ft.add_program_input(
-        PartialInput::new(p2pk_utxos[0].0, p2pk_utxos[0].1.clone()),
+        PartialInput::new(p2pk_utxos[0].clone()),
         ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     )
     .unwrap();
 
-    let (tx, _) = signer.finalize(&ft).unwrap();
-    let res = provider.broadcast_transaction(&tx).unwrap();
+    let res = signer.broadcast(&ft).unwrap();
 
     println!("Broadcast: {}", res);
 

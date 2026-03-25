@@ -35,24 +35,24 @@ pub struct IssuanceInput {
 }
 
 impl PartialInput {
-    pub fn new(outpoint: OutPoint, txout: TxOut) -> Self {
-        Self::new_sequence(outpoint, txout, Default::default())
+    pub fn new(utxo: (OutPoint, TxOut)) -> Self {
+        Self::new_sequence(utxo, Default::default())
     }
 
-    pub fn new_sequence(outpoint: OutPoint, txout: TxOut, sequence: Sequence) -> Self {
-        let amount = match txout.value {
+    pub fn new_sequence(utxo: (OutPoint, TxOut), sequence: Sequence) -> Self {
+        let amount = match utxo.1.value {
             Value::Explicit(value) => Some(value),
             _ => None,
         };
-        let asset = match txout.asset {
+        let asset = match utxo.1.asset {
             Asset::Explicit(asset) => Some(asset),
             _ => None,
         };
 
         Self {
-            witness_txid: outpoint.txid,
-            witness_output_index: outpoint.vout,
-            witness_utxo: txout,
+            witness_txid: utxo.0.txid,
+            witness_output_index: utxo.0.vout,
+            witness_utxo: utxo.1,
             sequence,
             amount,
             asset,
