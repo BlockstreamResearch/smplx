@@ -43,6 +43,9 @@ pub enum SignerError {
     #[error("Failed to construct a wpkh descriptor: {0}")]
     WpkhDescriptor(String),
 
+    #[error("Failed to construct a slip77 descriptor: {0}")]
+    Slip77Descriptor(String),
+
     #[error("Failed to convert a descriptor: {0}")]
     DescriptorConversion(#[from] elements_miniscript::descriptor::ConversionError),
 

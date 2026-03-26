@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use elements_miniscript::Descriptor;
 use elements_miniscript::bitcoin::PublicKey;
-use elements_miniscript::descriptor::Wpkh;
+use elements_miniscript::{ConfidentialDescriptor, Descriptor};
 
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
@@ -27,6 +26,7 @@ use elements_miniscript::{
     },
     elementssig_to_rawsig,
     psbt::PsbtExt,
+    slip77::MasterBlindingKey,
 };
 
 use super::error::SignerError;
@@ -58,6 +58,7 @@ pub trait SignerTrait {
 }
 
 pub struct Signer {
+    mnemonic: Mnemonic,
     xprv: Xpriv,
     provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
@@ -121,6 +122,7 @@ impl Signer {
         let network = *provider.get_network();
 
         Ok(Self {
+            mnemonic,
             xprv,
             provider,
             network,
@@ -213,17 +215,23 @@ impl Signer {
         self.provider.as_ref()
     }
 
+    pub fn get_wpkh_confidential_address(&self) -> Result<Address, SignerError> {
+        let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor()?)
+            .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))?;
+
+        // confidential descriptor doesn't support multipath
+        descriptor.descriptor = descriptor.descriptor.into_single_descriptors()?[0].clone();
+
+        Ok(descriptor
+            .at_derivation_index(1)?
+            .address(&self.secp, self.network.address_params())?)
+    }
+
     pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let xpub = self.derive_xpub(&path)?;
+        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor()?)
+            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?;
 
-        let desc = format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)");
-
-        let descriptor: Descriptor<DescriptorPublicKey> =
-            Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?);
-
-        Ok(descriptor.clone().into_single_descriptors()?[0]
+        Ok(descriptor.into_single_descriptors()?[0]
             .at_derivation_index(1)?
             .address(self.network.address_params())?)
     }
@@ -393,6 +401,12 @@ impl Signer {
         Ok(WitnessValues::from(hm))
     }
 
+    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
+        let seed = self.mnemonic.to_seed("");
+
+        Ok(MasterBlindingKey::from_seed(&seed[..]))
+    }
+
     fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
         Ok(self.xprv.derive_priv(&self.secp, &path)?)
     }
@@ -415,6 +429,21 @@ impl Signer {
         Ok(self.master_xpub()?.fingerprint())
     }
 
+    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
+        let wpkh_descriptor = self.get_wpkh_descriptor()?;
+        let blinding_key = self.master_slip77()?;
+
+        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
+    }
+
+    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
+        let fingerprint = self.fingerprint()?;
+        let path = self.get_derivation_path()?;
+        let xpub = self.derive_xpub(&path)?;
+
+        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
+    }
+
     fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
@@ -429,22 +458,34 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn keys_correspond_to_address() {
+    fn create_signer() -> Signer {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        let signer = Signer::new(
+        Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
             Box::new(EsploraProvider::new(url, network)),
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn keys_correspond_to_address() {
+        let signer = create_signer();
 
         let address = signer.get_wpkh_address().unwrap();
         let pubkey = signer.get_ecdsa_public_key().unwrap();
 
-        let derived_addr = Address::p2wpkh(&pubkey, None, network.address_params());
+        let derived_addr = Address::p2wpkh(&pubkey, None, signer.get_provider().get_network().address_params());
 
         assert_eq!(derived_addr.to_string(), address.to_string());
+    }
+
+    #[test]
+    fn descriptors() {
+        let signer = create_signer();
+
+        println!("{}", signer.get_wpkh_address().unwrap());
+        println!("{}", signer.get_wpkh_confidential_address().unwrap());
     }
 }
