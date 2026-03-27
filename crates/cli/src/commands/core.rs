@@ -1,7 +1,17 @@
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Creates a new Simplex project in a new directory
+    New {
+        /// Name of the new project
+        name: String,
+    },
+    /// Scaffolds an example Simplex project into a new directory
+    Example {
+        /// Name of the example to scaffold
+        example: ExampleName,
+    },
     /// Initializes Simplex project
     Init {
         #[command(flatten)]
@@ -20,6 +30,12 @@ pub enum Command {
     Build,
     /// Clean Simplex artifacts in the current directory
     Clean,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum ExampleName {
+    /// Basic p2pk example with contract scaffolding
+    Basic,
 }
 
 #[derive(Debug, Subcommand)]

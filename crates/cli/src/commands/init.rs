@@ -36,7 +36,7 @@ impl Init {
         let manifest = {
             let mut manifest = toml_edit::DocumentMut::new();
             manifest["package"] = toml_edit::Item::Table(toml_edit::Table::new());
-            manifest["package"]["name"] = toml_edit::value(name);
+            manifest["package"]["name"] = toml_edit::value(&name);
             manifest["package"]["version"] = toml_edit::value("0.1.0");
             manifest["package"]["edition"] = toml_edit::value("2024");
 
@@ -47,20 +47,62 @@ impl Init {
                     Self::get_smplx_max_version()?,
                 ))),
             );
+            dep_table.insert(
+                "anyhow",
+                toml_edit::Item::Value(toml_edit::Value::String(toml_edit::Formatted::new("1".to_string()))),
+            );
 
             manifest["dependencies"] = toml_edit::Item::Table(dep_table);
             manifest
         };
 
         let default_lib_rs_file_content: &[u8] = { b"pub mod artifacts;" };
-        let default_test_file_content: &[u8] = {
-            b"\
+        let default_test_file_content = format!(
+            "\
+use {name}::artifacts::p2pk::P2pkProgram;
+use {name}::artifacts::p2pk::derived_p2pk::{{P2pkArguments, P2pkWitness}};
+
+use simplex::constants::DUMMY_SIGNATURE;
+use simplex::transaction::{{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature}};
+use simplex::utils::tr_unspendable_key;
+
 #[simplex::test]
-fn dummy_test(context: simplex::TestContext) {
-    // your test code here
-    todo!()
-}"
-        };
+fn p2pk_test(context: simplex::TestContext) -> anyhow::Result<()> {{
+    let signer = context.get_signer();
+    let provider = context.get_provider();
+
+    // Build the p2pk program with its arguments
+    let arguments = P2pkArguments {{
+        public_key: signer.get_schnorr_public_key().unwrap().serialize(),
+    }};
+    let program = P2pkProgram::new(tr_unspendable_key(), arguments);
+    let script = program.get_program().get_script_pubkey(context.get_network()).unwrap();
+
+    // Fund the p2pk script output
+    let mut ft = FinalTransaction::new(*context.get_network());
+    ft.add_output(PartialOutput::new(script.clone(), 50, context.get_network().policy_asset()));
+    let (tx, _) = signer.finalize(&ft).unwrap();
+    let txid = provider.broadcast_transaction(&tx).unwrap();
+    provider.wait(&txid)?;
+
+    // Spend the p2pk output by providing the witness signature
+    let mut utxos = provider.fetch_scripthash_utxos(&script).unwrap();
+    utxos.retain(|el| el.1.asset.explicit().unwrap() == context.get_network().policy_asset());
+
+    let witness = P2pkWitness {{ signature: DUMMY_SIGNATURE }};
+    let mut ft = FinalTransaction::new(*context.get_network());
+    ft.add_program_input(
+        PartialInput::new(utxos[0].0, utxos[0].1.clone()),
+        ProgramInput::new(Box::new(program.get_program().clone()), Box::new(witness)),
+        RequiredSignature::Witness(\"SIGNATURE\".to_string()),
+    ).unwrap();
+    let (tx, _) = signer.finalize(&ft).unwrap();
+    let txid = provider.broadcast_transaction(&tx).unwrap();
+    provider.wait(&txid)?;
+
+    Ok(())
+}}"
+        );
         let default_p2pk_simf_file_content: &[u8] = {
             b"\
 fn main() {
@@ -77,7 +119,7 @@ fn main() {
 
         Self::write_to_file(manifest_path, manifest.to_string())?;
         Self::write_to_file(&lib_rs_path, default_lib_rs_file_content)?;
-        Self::write_to_file(&test_rs_path, default_test_file_content)?;
+        Self::write_to_file(&test_rs_path, default_test_file_content.as_bytes())?;
         Self::write_to_file(&p2pk_simf_content, default_p2pk_simf_file_content)?;
         Self::write_to_file(&gitignore_path, default_gitignore_file_content)?;
 
@@ -98,7 +140,7 @@ fn main() {
         Ok(format!("simplex_{}", file_name))
     }
 
-    fn get_smplx_max_version() -> Result<String, InitError> {
+    pub(crate) fn get_smplx_max_version() -> Result<String, InitError> {
         let url = format!("https://crates.io/api/v1/crates/{}", SIMPLEX_CRATE_NAME);
 
         let response = minreq::get(&url)
@@ -120,7 +162,7 @@ fn main() {
         Ok(latest_version.to_string())
     }
 
-    fn write_to_file(path: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<(), InitError> {
+    pub(crate) fn write_to_file(path: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<(), InitError> {
         let path = path.as_ref();
 
         fs::create_dir_all(

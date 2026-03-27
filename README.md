@@ -31,13 +31,23 @@ See the [simplexup manual](simplexup/README.md) for more details.
 
 ## Getting started
 
-Add `smplx-std` dependency to cargo:
+Create a new Simplex project in a new directory:
 
 ```bash
-cargo add --dev smplx-std
+simplex new <name>
 ```
 
-Optionally, initialize a new project:
+This scaffolds a complete project with a `Simplex.toml`, `Cargo.toml`, a p2pk contract in `simf/p2pk.simf`, and a working integration test in `tests/p2pk_test.rs`.
+
+To scaffold a full working example instead:
+
+```bash
+simplex example basic
+```
+
+This creates a `basic/` directory containing the complete basic example project, including several contract examples and an integration test you can run immediately after building.
+
+Alternatively, initialize a Simplex project in the current directory:
 
 ```bash
 simplex init
@@ -97,7 +107,9 @@ Where:
 
 Simplex CLI provides the following commands:
 
-- `simplex init` - Initializes a new Simplex project.
+- `simplex new <name>` - Creates a new Simplex project in a new `<name>` directory.
+- `simplex example <name>` - Scaffolds a complete example project into a new directory (e.g. `simplex example basic`).
+- `simplex init` - Initializes a Simplex project in the current directory.
 - `simplex config` - Prints the current config.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
@@ -110,9 +122,115 @@ To view the available options, run the help command:
 simplex -h
 ```
 
-### Example
+### Typical workflow
 
-Check out the complete project examples in the `examples` directory to learn more.
+```bash
+# Create a new project
+simplex new mycontract
+cd mycontract
+
+# Build artifacts from .simf contracts
+simplex build
+
+# Start a local regtest node and run integration tests
+simplex test integration
+```
+
+### Using `smplx-std` as a library
+
+`smplx-std` is the Rust library that backs your Simplex project. Add it to `Cargo.toml`:
+
+```toml
+[dependencies]
+smplx-std = "x.y.z"
+```
+
+Everything is re-exported from the `simplex` crate name:
+
+```rust
+use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature};
+use simplex::utils::tr_unspendable_key;
+use simplex::constants::DUMMY_SIGNATURE;
+```
+
+#### Building and spending a program
+
+The generated artifacts for each `.simf` contract live in `src/artifacts/` after running `simplex build`. Each contract exposes a typed program struct, an arguments struct, and a witness struct:
+
+```rust
+// Generated from simf/p2pk.simf
+use my_project::artifacts::p2pk::P2pkProgram;
+use my_project::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+```
+
+Instantiate the program by passing a Taproot internal key and the typed arguments:
+
+```rust
+let arguments = P2pkArguments {
+    public_key: signer.get_schnorr_public_key().unwrap().serialize(),
+};
+let program = P2pkProgram::new(tr_unspendable_key(), arguments);
+let script = program.get_program().get_script_pubkey(context.get_network()).unwrap();
+```
+
+Fund the script by adding it as an output to a `FinalTransaction`:
+
+```rust
+let mut ft = FinalTransaction::new(*context.get_network());
+ft.add_output(PartialOutput::new(script.clone(), 50, context.get_network().policy_asset()));
+let (tx, _) = signer.finalize(&ft).unwrap();
+provider.broadcast_transaction(&tx).unwrap();
+```
+
+Spend from the script by constructing the witness and calling `add_program_input`. Use `DUMMY_SIGNATURE` as a placeholder — the signer replaces it with a real signature identified by the `RequiredSignature::Witness` name:
+
+```rust
+let witness = P2pkWitness { signature: DUMMY_SIGNATURE };
+let mut ft = FinalTransaction::new(*context.get_network());
+ft.add_program_input(
+    PartialInput::new(utxo_outpoint, utxo_txout),
+    ProgramInput::new(Box::new(program.get_program().clone()), Box::new(witness)),
+    RequiredSignature::Witness("SIGNATURE".to_string()),
+).unwrap();
+let (tx, _) = signer.finalize(&ft).unwrap();
+provider.broadcast_transaction(&tx).unwrap();
+```
+
+#### Key types
+
+| Type | Description |
+|---|---|
+| `FinalTransaction` | Transaction builder — holds inputs and outputs |
+| `PartialInput` | A UTXO to spend, identified by outpoint and `TxOut` |
+| `PartialOutput` | An output with script, amount, and asset |
+| `ProgramInput` | Pairs a compiled Simplicity program with its witness |
+| `RequiredSignature` | Tells the signer which witness field to fill (`Witness("NAME")`) |
+| `tr_unspendable_key()` | Returns the standard unspendable Taproot internal key used for Simplicity outputs |
+| `DUMMY_SIGNATURE` | 64-byte placeholder replaced by the signer at finalization time |
+
+#### Test macro
+
+Annotate integration test functions with `#[simplex::test]` to get an injected `TestContext` wired to the configured regtest or remote network:
+
+```rust
+#[simplex::test]
+fn my_test(context: simplex::TestContext) -> anyhow::Result<()> {
+    let signer = context.get_signer();
+    let provider = context.get_provider();
+    // ...
+    Ok(())
+}
+```
+
+Run tests with:
+
+```bash
+simplex test integration
+```
+
+### Examples
+
+Check out the complete project examples in the `examples` directory, or scaffold one locally with `simplex example basic`.
 
 ## Contributing
 
@@ -120,7 +238,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 ## Future work
 
-- [x] Complete `simplex init` and `simplex clean` tasks.
+- [x] Complete `simplex init`, `simplex new`, `simplex example`, and `simplex clean` commands.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
