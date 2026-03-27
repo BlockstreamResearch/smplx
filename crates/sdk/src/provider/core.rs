@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
+use crate::transaction::UTXO;
 
 use super::error::ProviderError;
 
@@ -22,9 +23,9 @@ pub trait ProviderTrait {
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError>;
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError>;
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 

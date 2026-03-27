@@ -5,6 +5,8 @@ use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, Txid}
 use crate::program::ProgramTrait;
 use crate::program::WitnessTrait;
 
+use super::UTXO;
+
 #[derive(Debug, Clone)]
 pub enum RequiredSignature {
     None,
@@ -36,20 +38,20 @@ pub struct IssuanceInput {
 }
 
 impl PartialInput {
-    pub fn new(utxo: (OutPoint, TxOut)) -> Self {
-        let amount = match utxo.1.value {
+    pub fn new(utxo: UTXO) -> Self {
+        let amount = match utxo.txout.value {
             Value::Explicit(value) => Some(value),
             _ => None,
         };
-        let asset = match utxo.1.asset {
+        let asset = match utxo.txout.asset {
             Asset::Explicit(asset) => Some(asset),
             _ => None,
         };
 
         Self {
-            witness_txid: utxo.0.txid,
-            witness_output_index: utxo.0.vout,
-            witness_utxo: utxo.1,
+            witness_txid: utxo.outpoint.txid,
+            witness_output_index: utxo.outpoint.vout,
+            witness_utxo: utxo.txout,
             sequence: Sequence::default(),
             locktime: LockTime::ZERO,
             amount,

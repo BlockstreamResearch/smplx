@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
+use crate::transaction::UTXO;
 
 use super::core::ProviderTrait;
 use super::error::ProviderError;
-
 use super::{ElementsRpc, EsploraProvider};
 
 pub struct SimplexProvider {
@@ -59,11 +59,11 @@ impl ProviderTrait for SimplexProvider {
         self.esplora.fetch_transaction(txid)
     }
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError> {
         self.esplora.fetch_address_utxos(address)
     }
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError> {
         self.esplora.fetch_scripthash_utxos(script)
     }
 

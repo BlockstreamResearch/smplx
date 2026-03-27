@@ -29,15 +29,13 @@ use elements_miniscript::{
     slip77::MasterBlindingKey,
 };
 
-use super::error::SignerError;
 use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::transaction::FinalTransaction;
-use crate::transaction::PartialInput;
-use crate::transaction::PartialOutput;
-use crate::transaction::RequiredSignature;
+use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+
+use super::error::SignerError;
 
 pub const PLACEHOLDER_FEE: u64 = 1;
 
@@ -158,8 +156,8 @@ impl Signer {
             });
         }
 
-        signer_utxos.retain(|(outpoint, _)| !set.contains(outpoint));
-        signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+        signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
+        signer_utxos.sort_by(|a, b| b.txout.value.cmp(&a.txout.value));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
@@ -236,22 +234,22 @@ impl Signer {
             .address(self.network.address_params())?)
     }
 
-    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
+    pub fn get_wpkh_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
         self.get_wpkh_utxos_filter(|_| true)
     }
 
-    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(_, txout)| txout.asset.explicit().unwrap() == asset)
+    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
+        self.get_wpkh_utxos_filter(|utxo| utxo.txout.asset.explicit().unwrap() == asset)
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
-    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(outpoint, _)| outpoint.txid == txid)
+    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
+        self.get_wpkh_utxos_filter(|utxo| utxo.outpoint.txid == txid)
     }
 
-    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<(OutPoint, TxOut)>, SignerError>
+    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<UTXO>, SignerError>
     where
-        F: FnMut(&(OutPoint, TxOut)) -> bool,
+        F: FnMut(&UTXO) -> bool,
     {
         let mut utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
 
