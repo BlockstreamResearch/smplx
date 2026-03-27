@@ -5,7 +5,9 @@ use clap::Parser;
 use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
+use crate::commands::example::Example;
 use crate::commands::init::Init;
+use crate::commands::new::New;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
 use crate::config::Config;
@@ -24,6 +26,8 @@ pub struct Cli {
 impl Cli {
     pub async fn run(&self) -> Result<(), CliError> {
         match &self.command {
+            Command::New { name } => Ok(New::run(name)?),
+            Command::Example { example } => Ok(Example::run(example)?),
             Command::Init { additional_flags } => {
                 let simplex_conf_path = Config::get_default_path()?;
 
