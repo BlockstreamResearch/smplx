@@ -1,15 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use elements_miniscript::Descriptor;
 use elements_miniscript::bitcoin::PublicKey;
-use elements_miniscript::descriptor::Wpkh;
+use elements_miniscript::{ConfidentialDescriptor, Descriptor};
 
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
@@ -27,17 +26,16 @@ use elements_miniscript::{
     },
     elementssig_to_rawsig,
     psbt::PsbtExt,
+    slip77::MasterBlindingKey,
 };
 
-use super::error::SignerError;
 use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::transaction::FinalTransaction;
-use crate::transaction::PartialInput;
-use crate::transaction::PartialOutput;
-use crate::transaction::RequiredSignature;
+use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+
+use super::error::SignerError;
 
 pub const PLACEHOLDER_FEE: u64 = 1;
 
@@ -58,6 +56,7 @@ pub trait SignerTrait {
 }
 
 pub struct Signer {
+    mnemonic: Mnemonic,
     xprv: Xpriv,
     provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
@@ -121,6 +120,7 @@ impl Signer {
         let network = *provider.get_network();
 
         Ok(Self {
+            mnemonic,
             xprv,
             provider,
             network,
@@ -156,8 +156,9 @@ impl Signer {
             });
         }
 
-        signer_utxos.retain(|(outpoint, _)| !set.contains(outpoint));
-        signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+        signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
+        // FIXME: sorting should account confidential utxos
+        signer_utxos.sort_by(|a, b| b.txout.value.cmp(&a.txout.value));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
@@ -213,43 +214,65 @@ impl Signer {
         self.provider.as_ref()
     }
 
+    pub fn get_wpkh_confidential_address(&self) -> Result<Address, SignerError> {
+        let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor()?)
+            .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))?;
+
+        // confidential descriptor doesn't support multipath
+        descriptor.descriptor = descriptor.descriptor.into_single_descriptors()?[0].clone();
+
+        Ok(descriptor
+            .at_derivation_index(1)?
+            .address(&self.secp, self.network.address_params())?)
+    }
+
     pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let xpub = self.derive_xpub(&path)?;
+        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor()?)
+            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?;
 
-        let desc = format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)");
-
-        let descriptor: Descriptor<DescriptorPublicKey> =
-            Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?);
-
-        Ok(descriptor.clone().into_single_descriptors()?[0]
+        Ok(descriptor.into_single_descriptors()?[0]
             .at_derivation_index(1)?
             .address(self.network.address_params())?)
     }
 
-    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|_| true)
+    pub fn get_wpkh_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
+        self.get_wpkh_utxos_filter(&|_| true, &|_| true)
     }
 
-    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(_, txout)| txout.asset.explicit().unwrap() == asset)
+    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
+        self.get_wpkh_utxos_filter(&|utxo| utxo.txout.asset.explicit().unwrap() == asset, &|utxo| {
+            utxo.secrets.unwrap().asset == asset
+        })
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
-    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(outpoint, _)| outpoint.txid == txid)
+    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
+        self.get_wpkh_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
-    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<(OutPoint, TxOut)>, SignerError>
-    where
-        F: FnMut(&(OutPoint, TxOut)) -> bool,
-    {
-        let mut utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+    pub fn get_wpkh_utxos_filter(
+        &self,
+        explicit_filter: &dyn Fn(&UTXO) -> bool,
+        confidential_filter: &dyn Fn(&UTXO) -> bool,
+    ) -> Result<Vec<UTXO>, SignerError> {
+        // fetch explicit utxos
+        let mut explicit_utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+        // fetch confidential utxos
+        let confidential_utxos = self
+            .provider
+            .fetch_address_utxos(&self.get_wpkh_confidential_address()?)?;
 
-        utxos.retain(filter);
+        // unblind
+        let mut confidential_utxos = self.unblind(confidential_utxos)?;
 
-        Ok(utxos)
+        // filter out
+        explicit_utxos.retain(explicit_filter);
+        confidential_utxos.retain(confidential_filter);
+
+        // push unblinded utxos to explicit ones
+        explicit_utxos.extend(confidential_utxos);
+
+        Ok(explicit_utxos)
     }
 
     pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
@@ -273,6 +296,21 @@ impl Signer {
         let ext_derived = master_xprv.derive_priv(&self.secp, &derived)?;
 
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
+    }
+
+    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
+        let mut unblinded: Vec<UTXO> = Vec::new();
+
+        for mut utxo in utxos {
+            let blinding_key = self.master_slip77()?.blinding_private_key(&utxo.txout.script_pubkey);
+            let secrets = utxo.txout.unblind(&self.secp, blinding_key)?;
+
+            utxo.secrets = Some(secrets);
+
+            unblinded.push(utxo);
+        }
+
+        Ok(unblinded)
     }
 
     fn estimate_tx(
@@ -393,6 +431,12 @@ impl Signer {
         Ok(WitnessValues::from(hm))
     }
 
+    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
+        let seed = self.mnemonic.to_seed("");
+
+        Ok(MasterBlindingKey::from_seed(&seed[..]))
+    }
+
     fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
         Ok(self.xprv.derive_priv(&self.secp, &path)?)
     }
@@ -415,6 +459,21 @@ impl Signer {
         Ok(self.master_xpub()?.fingerprint())
     }
 
+    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
+        let wpkh_descriptor = self.get_wpkh_descriptor()?;
+        let blinding_key = self.master_slip77()?;
+
+        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
+    }
+
+    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
+        let fingerprint = self.fingerprint()?;
+        let path = self.get_derivation_path()?;
+        let xpub = self.derive_xpub(&path)?;
+
+        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
+    }
+
     fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
@@ -429,22 +488,34 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn keys_correspond_to_address() {
+    fn create_signer() -> Signer {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        let signer = Signer::new(
+        Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
             Box::new(EsploraProvider::new(url, network)),
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    #[test]
+    fn keys_correspond_to_address() {
+        let signer = create_signer();
 
         let address = signer.get_wpkh_address().unwrap();
         let pubkey = signer.get_ecdsa_public_key().unwrap();
 
-        let derived_addr = Address::p2wpkh(&pubkey, None, network.address_params());
+        let derived_addr = Address::p2wpkh(&pubkey, None, signer.get_provider().get_network().address_params());
 
         assert_eq!(derived_addr.to_string(), address.to_string());
+    }
+
+    #[test]
+    fn descriptors() {
+        let signer = create_signer();
+
+        println!("{}", signer.get_wpkh_address().unwrap());
+        println!("{}", signer.get_wpkh_confidential_address().unwrap());
     }
 }

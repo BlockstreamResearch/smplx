@@ -19,6 +19,9 @@ pub enum SignerError {
     #[error("Failed to extract tx from pst: {0}")]
     TxExtraction(#[from] simplicityhl::elements::pset::Error),
 
+    #[error("Failed to unblind txout: {0}")]
+    Unblind(#[from] simplicityhl::elements::UnblindError),
+
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 
@@ -42,6 +45,9 @@ pub enum SignerError {
 
     #[error("Failed to construct a wpkh descriptor: {0}")]
     WpkhDescriptor(String),
+
+    #[error("Failed to construct a slip77 descriptor: {0}")]
+    Slip77Descriptor(String),
 
     #[error("Failed to convert a descriptor: {0}")]
     DescriptorConversion(#[from] elements_miniscript::descriptor::ConversionError),

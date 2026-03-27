@@ -43,7 +43,6 @@ impl TestConfig {
 
         file.read_to_string(&mut content)?;
 
-        // TODO: check that network name is correct
         Ok(toml::from_str(&content)?)
     }
 
