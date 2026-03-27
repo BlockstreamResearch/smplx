@@ -6,7 +6,7 @@ use std::time::Duration;
 use simplicityhl::elements::hashes::{Hash, sha256};
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};
 
 use serde::Deserialize;
 
@@ -90,6 +90,7 @@ impl EsploraProvider {
             .map(|point| UTXO {
                 outpoint: *point,
                 txout: map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
+                secrets: None,
             })
             .collect())
     }

@@ -1,6 +1,6 @@
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
-use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, Txid};
+use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
 
 use crate::program::ProgramTrait;
 use crate::program::WitnessTrait;
@@ -23,6 +23,7 @@ pub struct PartialInput {
     pub locktime: LockTime,
     pub amount: Option<u64>,
     pub asset: Option<AssetId>,
+    pub secrets: Option<TxOutSecrets>,
 }
 
 #[derive(Clone)]

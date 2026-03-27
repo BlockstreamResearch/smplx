@@ -170,6 +170,7 @@ impl FinalTransaction {
         self.outputs.len()
     }
 
+    // FIXME: confidential inputs
     pub fn calculate_fee_delta(&self) -> i64 {
         let available_amount = self
             .inputs

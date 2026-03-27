@@ -8,7 +8,7 @@ use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
@@ -157,6 +157,7 @@ impl Signer {
         }
 
         signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
+        // FIXME: sorting should account confidential utxos
         signer_utxos.sort_by(|a, b| b.txout.value.cmp(&a.txout.value));
 
         let mut fee_tx = tx.clone();
@@ -235,27 +236,43 @@ impl Signer {
     }
 
     pub fn get_wpkh_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(|_| true)
+        self.get_wpkh_utxos_filter(&|_| true, &|_| true)
     }
 
     pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(|utxo| utxo.txout.asset.explicit().unwrap() == asset)
+        self.get_wpkh_utxos_filter(&|utxo| utxo.txout.asset.explicit().unwrap() == asset, &|utxo| {
+            utxo.secrets.unwrap().asset == asset
+        })
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
     pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(|utxo| utxo.outpoint.txid == txid)
+        self.get_wpkh_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
-    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<UTXO>, SignerError>
-    where
-        F: FnMut(&UTXO) -> bool,
-    {
-        let mut utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+    pub fn get_wpkh_utxos_filter(
+        &self,
+        explicit_filter: &dyn Fn(&UTXO) -> bool,
+        confidential_filter: &dyn Fn(&UTXO) -> bool,
+    ) -> Result<Vec<UTXO>, SignerError> {
+        // fetch explicit utxos
+        let mut explicit_utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+        // fetch confidential utxos
+        let confidential_utxos = self
+            .provider
+            .fetch_address_utxos(&self.get_wpkh_confidential_address()?)?;
 
-        utxos.retain(filter);
+        // unblind
+        let mut confidential_utxos = self.unblind(confidential_utxos)?;
 
-        Ok(utxos)
+        // filter out
+        explicit_utxos.retain(explicit_filter);
+        confidential_utxos.retain(confidential_filter);
+
+        // push unblinded utxos to explicit ones
+        explicit_utxos.extend(confidential_utxos);
+
+        Ok(explicit_utxos)
     }
 
     pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
@@ -279,6 +296,21 @@ impl Signer {
         let ext_derived = master_xprv.derive_priv(&self.secp, &derived)?;
 
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
+    }
+
+    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
+        let mut unblinded: Vec<UTXO> = Vec::new();
+
+        for mut utxo in utxos {
+            let blinding_key = self.master_slip77()?.blinding_private_key(&utxo.txout.script_pubkey);
+            let secrets = utxo.txout.unblind(&self.secp, blinding_key)?;
+
+            utxo.secrets = Some(secrets);
+
+            unblinded.push(utxo);
+        }
+
+        Ok(unblinded)
     }
 
     fn estimate_tx(
