@@ -265,24 +265,29 @@ impl Signer {
         explicit_filter: &dyn Fn(&UTXO) -> bool,
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
-        // fetch explicit utxos
-        let mut explicit_utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
-        // fetch confidential utxos
-        let confidential_utxos = self
+        // fetch explicit and confidential utxos
+        let mut all_utxos = self
             .provider
             .fetch_address_utxos(&self.get_wpkh_confidential_address()?)?;
 
-        // unblind
-        let mut confidential_utxos = self.unblind(confidential_utxos)?;
+        // filter out only confidential utxos and unblind them
+        let mut confidential_utxos = self.unblind(
+            all_utxos
+                .iter()
+                .filter(|utxo| utxo.txout.value.is_confidential())
+                .cloned()
+                .collect(),
+        )?;
+        // leave only explicit utxos
+        all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
 
-        // filter out
-        explicit_utxos.retain(explicit_filter);
+        all_utxos.retain(explicit_filter);
         confidential_utxos.retain(confidential_filter);
 
         // push unblinded utxos to explicit ones
-        explicit_utxos.extend(confidential_utxos);
+        all_utxos.extend(confidential_utxos);
 
-        Ok(explicit_utxos)
+        Ok(all_utxos)
     }
 
     pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
@@ -425,7 +430,9 @@ impl Signer {
             }
         }
 
-        pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        }
 
         Ok(pst.extract_tx()?)
     }

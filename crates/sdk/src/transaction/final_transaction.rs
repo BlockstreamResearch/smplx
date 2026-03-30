@@ -29,6 +29,12 @@ pub struct FinalTransaction {
     outputs: Vec<PartialOutput>,
 }
 
+impl Default for FinalTransaction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FinalTransaction {
     pub fn new() -> Self {
         Self {
@@ -173,6 +179,10 @@ impl FinalTransaction {
         self.outputs.len()
     }
 
+    pub fn needs_blinding(&self) -> bool {
+        self.outputs.iter().any(|el| el.blinding_key.is_some())
+    }
+
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
         let mut available_amount = 0;
 
@@ -226,7 +236,7 @@ impl FinalTransaction {
                 pst_input.blinded_issuance = issue.blinded_issuance;
             }
 
-            match final_input.partial_input.secrets.clone() {
+            match final_input.partial_input.secrets {
                 // insert input secrets if present
                 Some(secrets) => input_secrets.insert(i, secrets),
                 // else populate input secrets with "explicit" amounts

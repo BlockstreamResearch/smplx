@@ -40,9 +40,9 @@ fn spend_p2pk(context: &simplex::TestContext) -> Txid {
 
     let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
 
-    p2pk_utxos.retain(|el| el.1.asset.explicit().unwrap() == context.get_network().policy_asset());
+    p2pk_utxos.retain(|utxo| utxo.txout.asset.explicit().unwrap() == context.get_network().policy_asset());
 
-    let mut ft = FinalTransaction::new(*context.get_network());
+    let mut ft = FinalTransaction::new();
 
     let witness = P2pkWitness {
         signature: DUMMY_SIGNATURE,
