@@ -22,6 +22,9 @@ pub enum SignerError {
     #[error("Failed to unblind txout: {0}")]
     Unblind(#[from] simplicityhl::elements::UnblindError),
 
+    #[error("Failed to blind a PST: {0}")]
+    PsetBlind(#[from] simplicityhl::elements::pset::PsetBlindError),
+
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 

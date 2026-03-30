@@ -1,9 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use elements_miniscript::bitcoin::PublicKey;
-use elements_miniscript::{ConfidentialDescriptor, Descriptor};
-
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
@@ -15,10 +12,11 @@ use simplicityhl::str::WitnessName;
 use simplicityhl::value::ValueConstructible;
 
 use bip39::Mnemonic;
+use bip39::rand::thread_rng;
 
 use elements_miniscript::{
-    DescriptorPublicKey,
-    bitcoin::{NetworkKind, PrivateKey, bip32::DerivationPath},
+    ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
+    bitcoin::{NetworkKind, PrivateKey, PublicKey, bip32::DerivationPath},
     elements::{
         EcdsaSighashType,
         bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
@@ -130,7 +128,7 @@ impl Signer {
 
     // TODO: add an ability to send arbitrary assets
     pub fn send(&self, to: Script, amount: u64) -> Result<Txid, SignerError> {
-        let mut ft = FinalTransaction::new(self.network);
+        let mut ft = FinalTransaction::new();
 
         ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
 
@@ -157,15 +155,27 @@ impl Signer {
         }
 
         signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
-        // FIXME: sorting should account confidential utxos
-        signer_utxos.sort_by(|a, b| b.txout.value.cmp(&a.txout.value));
+
+        // descending sort of both confidential and explicit utxos
+        signer_utxos.sort_by(|a, b| {
+            let a_value = match a.secrets {
+                Some(secrets) => secrets.value,
+                None => a.txout.value.explicit().unwrap(),
+            };
+            let b_value = match b.secrets {
+                Some(secrets) => secrets.value,
+                None => b.txout.value.explicit().unwrap(),
+            };
+
+            b_value.cmp(&a_value)
+        });
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
         let fee_rate = self.provider.fetch_fee_rate(1)?;
 
         for utxo in signer_utxos {
-            let policy_amount_delta = fee_tx.calculate_fee_delta();
+            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
             if policy_amount_delta >= curr_fee as i64 {
                 match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
@@ -178,7 +188,7 @@ impl Signer {
         }
 
         // need to try one more time after the loop
-        let policy_amount_delta = fee_tx.calculate_fee_delta();
+        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
         if policy_amount_delta >= curr_fee as i64 {
             match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
@@ -195,7 +205,7 @@ impl Signer {
         tx: &FinalTransaction,
         target_blocks: u32,
     ) -> Result<(Transaction, u64), SignerError> {
-        let policy_amount_delta = tx.calculate_fee_delta();
+        let policy_amount_delta = tx.calculate_fee_delta(&self.network);
 
         if policy_amount_delta < MIN_FEE as i64 {
             return Err(SignerError::DustAmount(policy_amount_delta));
@@ -286,6 +296,10 @@ impl Signer {
         Ok(self.get_private_key()?.public_key(&self.secp))
     }
 
+    pub fn get_blinding_public_key(&self, script_pubkey: &Script) -> Result<PublicKey, SignerError> {
+        Ok(self.get_blinding_private_key(script_pubkey)?.public_key(&self.secp))
+    }
+
     pub fn get_private_key(&self) -> Result<PrivateKey, SignerError> {
         let master_xprv = self.master_xpriv()?;
         let full_path = self.get_derivation_path()?;
@@ -298,12 +312,18 @@ impl Signer {
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
     }
 
+    pub fn get_blinding_private_key(&self, script_pubkey: &Script) -> Result<PrivateKey, SignerError> {
+        let blinding_key = self.master_slip77()?.blinding_private_key(script_pubkey);
+
+        Ok(PrivateKey::new(blinding_key, NetworkKind::Test))
+    }
+
     fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
         let mut unblinded: Vec<UTXO> = Vec::new();
 
         for mut utxo in utxos {
-            let blinding_key = self.master_slip77()?.blinding_private_key(&utxo.txout.script_pubkey);
-            let secrets = utxo.txout.unblind(&self.secp, blinding_key)?;
+            let blinding_key = self.get_blinding_private_key(&utxo.txout.script_pubkey)?;
+            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
 
             utxo.secrets = Some(secrets);
 
@@ -321,6 +341,7 @@ impl Signer {
     ) -> Result<Estimate, SignerError> {
         // estimate the tx fee with the change
         // use this wpkh address as a change script
+        // TODO: should this be confidential?
         fee_tx.add_output(PartialOutput::new(
             self.get_wpkh_address()?.script_pubkey(),
             PLACEHOLDER_FEE,
@@ -334,7 +355,7 @@ impl Signer {
         ));
 
         let final_tx = self.sign_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
             // we have enough funds to cover the change UTXO
@@ -352,7 +373,7 @@ impl Signer {
         fee_tx.remove_output(fee_tx.n_outputs() - 2);
 
         let final_tx = self.sign_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
             return Ok(Estimate::Failure(fee));
@@ -370,7 +391,7 @@ impl Signer {
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
-        let mut pst = tx.extract_pst();
+        let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
         for (index, input_i) in inputs.iter().enumerate() {
@@ -403,6 +424,8 @@ impl Signer {
                 pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
             }
         }
+
+        pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
 
         Ok(pst.extract_tx()?)
     }

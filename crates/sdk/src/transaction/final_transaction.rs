@@ -1,5 +1,10 @@
-use simplicityhl::elements::AssetId;
+use std::collections::HashMap;
+
 use simplicityhl::elements::pset::PartiallySignedTransaction;
+use simplicityhl::elements::{
+    AssetId, TxOutSecrets,
+    confidential::{AssetBlindingFactor, ValueBlindingFactor},
+};
 
 use crate::provider::SimplicityNetwork;
 use crate::utils::asset_entropy;
@@ -20,15 +25,13 @@ pub struct FinalInput {
 
 #[derive(Clone)]
 pub struct FinalTransaction {
-    pub network: SimplicityNetwork,
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
 }
 
 impl FinalTransaction {
-    pub fn new(network: SimplicityNetwork) -> Self {
+    pub fn new() -> Self {
         Self {
-            network,
             inputs: Vec::new(),
             outputs: Vec::new(),
         }
@@ -170,18 +173,30 @@ impl FinalTransaction {
         self.outputs.len()
     }
 
-    // FIXME: confidential inputs
-    pub fn calculate_fee_delta(&self) -> i64 {
-        let available_amount = self
-            .inputs
-            .iter()
-            .filter(|input| input.partial_input.asset.unwrap() == self.network.policy_asset())
-            .fold(0_u64, |acc, input| acc + input.partial_input.amount.unwrap());
+    pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
+        let mut available_amount = 0;
+
+        for input in &self.inputs {
+            match input.partial_input.secrets {
+                // this is an unblinded confidential input
+                Some(secrets) => {
+                    if secrets.asset == network.policy_asset() {
+                        available_amount += secrets.value;
+                    }
+                }
+                // this is an explicit input
+                None => {
+                    if input.partial_input.asset.unwrap() == network.policy_asset() {
+                        available_amount += input.partial_input.amount.unwrap();
+                    }
+                }
+            }
+        }
 
         let consumed_amount = self
             .outputs
             .iter()
-            .filter(|output| output.asset == self.network.policy_asset())
+            .filter(|output| output.asset == network.policy_asset())
             .fold(0_u64, |acc, output| acc + output.amount);
 
         available_amount as i64 - consumed_amount as i64
@@ -193,29 +208,46 @@ impl FinalTransaction {
         (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
-    pub fn extract_pst(&self) -> PartiallySignedTransaction {
+    pub fn extract_pst(&self) -> (PartiallySignedTransaction, HashMap<usize, TxOutSecrets>) {
+        let mut input_secrets = HashMap::new();
         let mut pst = PartiallySignedTransaction::new_v2();
 
-        self.inputs.iter().for_each(|el| {
-            let mut input = el.partial_input.input();
+        for i in 0..self.inputs.len() {
+            let final_input = &self.inputs[i];
+            let mut pst_input = final_input.partial_input.to_input();
 
             // populate the input manually since `input.merge` is private
-            if el.issuance_input.is_some() {
-                let issue = el.issuance_input.clone().unwrap().input();
+            if final_input.issuance_input.is_some() {
+                let issue = final_input.issuance_input.clone().unwrap().to_input();
 
-                input.issuance_value_amount = issue.issuance_value_amount;
-                input.issuance_asset_entropy = issue.issuance_asset_entropy;
-                input.issuance_inflation_keys = issue.issuance_inflation_keys;
-                input.blinded_issuance = issue.blinded_issuance;
+                pst_input.issuance_value_amount = issue.issuance_value_amount;
+                pst_input.issuance_asset_entropy = issue.issuance_asset_entropy;
+                pst_input.issuance_inflation_keys = issue.issuance_inflation_keys;
+                pst_input.blinded_issuance = issue.blinded_issuance;
             }
 
-            pst.add_input(input);
-        });
+            match final_input.partial_input.secrets.clone() {
+                // insert input secrets if present
+                Some(secrets) => input_secrets.insert(i, secrets),
+                // else populate input secrets with "explicit" amounts
+                None => input_secrets.insert(
+                    i,
+                    TxOutSecrets {
+                        asset: pst_input.asset.unwrap(),
+                        asset_bf: AssetBlindingFactor::zero(),
+                        value: pst_input.amount.unwrap(),
+                        value_bf: ValueBlindingFactor::zero(),
+                    },
+                ),
+            };
+
+            pst.add_input(pst_input);
+        }
 
         self.outputs.iter().for_each(|el| {
             pst.add_output(el.to_output());
         });
 
-        pst
+        (pst, input_secrets)
     }
 }

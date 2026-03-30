@@ -21,8 +21,10 @@ pub struct PartialInput {
     pub witness_utxo: TxOut,
     pub sequence: Sequence,
     pub locktime: LockTime,
+    // if utxo is explicit, amount and asset are Some
     pub amount: Option<u64>,
     pub asset: Option<AssetId>,
+    // if utxo is confidential, secrets are Some
     pub secrets: Option<TxOutSecrets>,
 }
 
@@ -57,6 +59,7 @@ impl PartialInput {
             locktime: LockTime::ZERO,
             amount,
             asset,
+            secrets: utxo.secrets,
         }
     }
 
@@ -79,7 +82,7 @@ impl PartialInput {
         }
     }
 
-    pub fn input(&self) -> Input {
+    pub fn to_input(&self) -> Input {
         let time_locktime = match self.locktime {
             LockTime::Seconds(value) => Some(value),
             _ => None,
@@ -118,7 +121,7 @@ impl IssuanceInput {
         }
     }
 
-    pub fn input(&self) -> Input {
+    pub fn to_input(&self) -> Input {
         Input {
             issuance_value_amount: Some(self.issuance_amount),
             issuance_asset_entropy: Some(self.asset_entropy),
