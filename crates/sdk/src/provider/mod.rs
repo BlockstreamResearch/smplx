@@ -5,7 +5,7 @@ pub mod network;
 pub mod rpc;
 pub mod simplex;
 
-pub use core::{ProviderTrait, ProviderInfo};
+pub use core::{ProviderInfo, ProviderTrait};
 pub use esplora::EsploraProvider;
 pub use rpc::elements::ElementsRpc;
 pub use simplex::SimplexProvider;
