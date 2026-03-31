@@ -5,7 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 
-use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplexProvider, SimplicityNetwork};
+use smplx_sdk::provider::{EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 
 use crate::config::TestConfig;
@@ -14,6 +14,8 @@ use crate::error::TestError;
 #[allow(dead_code)]
 pub struct TestContext {
     _client: Option<RegtestClient>,
+    // since providers can't be cloned, we need this variable to create new signers
+    _provider_info: ProviderInfo,
     config: TestConfig,
     signer: Signer,
 }
@@ -22,16 +24,41 @@ impl TestContext {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
 
-        let (signer, client) = Self::setup(&config)?;
+        let (signer, provider_info, client) = Self::setup(&config)?;
 
         Ok(Self {
             _client: client,
+            _provider_info: provider_info,
             config,
             signer,
         })
     }
 
-    pub fn get_provider(&self) -> &dyn ProviderTrait {
+    pub fn create_signer(&self, mnemonic: &str) -> Result<Signer, TestError> {
+        let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
+            // local regtest or external regtest
+            Box::new(SimplexProvider::new(
+                self._provider_info.esplora_url.clone(),
+                self._provider_info.elements_url.clone().unwrap(),
+                self._provider_info.auth.clone().unwrap(),
+                *self.get_network(),
+            )?)
+        } else {
+            // external esplora
+            Box::new(EsploraProvider::new(
+                self._provider_info.esplora_url.clone(),
+                *self.get_network(),
+            ))
+        };
+
+        Ok(Signer::new(mnemonic, provider)?)
+    }
+
+    pub fn get_default_signer(&self) -> &Signer {
+        &self.signer
+    }
+
+    pub fn get_default_provider(&self) -> &dyn ProviderTrait {
         self.signer.get_provider()
     }
 
@@ -43,12 +70,9 @@ impl TestContext {
         self.signer.get_provider().get_network()
     }
 
-    pub fn get_signer(&self) -> &Signer {
-        &self.signer
-    }
-
-    fn setup(config: &TestConfig) -> Result<(Signer, Option<RegtestClient>), TestError> {
+    fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {
         let client: Option<RegtestClient>;
+        let provider_info: ProviderInfo;
         let signer: Signer;
 
         match config.esplora.clone() {
@@ -57,12 +81,17 @@ impl TestContext {
                     // custom regtest case
                     let auth = Auth::UserPass(rpc.username, rpc.password);
                     let provider = Box::new(SimplexProvider::new(
-                        esplora.url,
-                        rpc.url,
-                        auth,
+                        esplora.url.clone(),
+                        rpc.url.clone(),
+                        auth.clone(),
                         SimplicityNetwork::default_regtest(),
                     )?);
 
+                    provider_info = ProviderInfo {
+                        esplora_url: esplora.url,
+                        elements_url: Some(rpc.url),
+                        auth: Some(auth),
+                    };
                     signer = Signer::new(config.mnemonic.as_str(), provider)?;
                     client = None;
                 }
@@ -74,8 +103,13 @@ impl TestContext {
                         "ElementsRegtest" => SimplicityNetwork::default_regtest(),
                         other => return Err(TestError::BadNetworkName(other.to_string())),
                     };
-                    let provider = Box::new(EsploraProvider::new(esplora.url, network));
+                    let provider = Box::new(EsploraProvider::new(esplora.url.clone(), network));
 
+                    provider_info = ProviderInfo {
+                        esplora_url: esplora.url,
+                        elements_url: None,
+                        auth: None,
+                    };
                     signer = Signer::new(config.mnemonic.as_str(), provider)?;
                     client = None;
                 }
@@ -84,12 +118,17 @@ impl TestContext {
                 // simplex inner network
                 let (regtest_client, regtest_signer) = Regtest::from_config(config.to_regtest_config())?;
 
-                client = Some(regtest_client);
+                provider_info = ProviderInfo {
+                    esplora_url: regtest_client.esplora_url(),
+                    elements_url: Some(regtest_client.rpc_url()),
+                    auth: Some(regtest_client.auth()),
+                };
                 signer = regtest_signer;
+                client = Some(regtest_client);
             }
         }
 
-        Ok((signer, client))
+        Ok((signer, provider_info, client))
     }
 }
 

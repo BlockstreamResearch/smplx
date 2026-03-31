@@ -29,13 +29,8 @@ pub struct FinalTransaction {
     outputs: Vec<PartialOutput>,
 }
 
-impl Default for FinalTransaction {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl FinalTransaction {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             inputs: Vec::new(),

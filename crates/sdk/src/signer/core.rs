@@ -144,7 +144,7 @@ impl Signer {
     }
 
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
-        let mut signer_utxos = self.get_wpkh_utxos_asset(self.network.policy_asset())?;
+        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
         let mut set = HashSet::new();
 
         for input in tx.inputs() {
@@ -224,7 +224,7 @@ impl Signer {
         self.provider.as_ref()
     }
 
-    pub fn get_wpkh_confidential_address(&self) -> Result<Address, SignerError> {
+    pub fn get_confidential_address(&self) -> Result<Address, SignerError> {
         let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor()?)
             .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))?;
 
@@ -236,7 +236,7 @@ impl Signer {
             .address(&self.secp, self.network.address_params())?)
     }
 
-    pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
+    pub fn get_address(&self) -> Result<Address, SignerError> {
         let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor()?)
             .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?;
 
@@ -245,30 +245,28 @@ impl Signer {
             .address(self.network.address_params())?)
     }
 
-    pub fn get_wpkh_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(&|_| true, &|_| true)
+    pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|_| true, &|_| true)
     }
 
-    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(&|utxo| utxo.txout.asset.explicit().unwrap() == asset, &|utxo| {
+    pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|utxo| utxo.txout.asset.explicit().unwrap() == asset, &|utxo| {
             utxo.secrets.unwrap().asset == asset
         })
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
-    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
-        self.get_wpkh_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
+    pub fn get_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
-    pub fn get_wpkh_utxos_filter(
+    pub fn get_utxos_filter(
         &self,
         explicit_filter: &dyn Fn(&UTXO) -> bool,
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
         // fetch explicit and confidential utxos
-        let mut all_utxos = self
-            .provider
-            .fetch_address_utxos(&self.get_wpkh_confidential_address()?)?;
+        let mut all_utxos = self.provider.fetch_address_utxos(&self.get_confidential_address()?)?;
 
         // filter out only confidential utxos and unblind them
         let mut confidential_utxos = self.unblind(
@@ -301,8 +299,8 @@ impl Signer {
         Ok(self.get_private_key()?.public_key(&self.secp))
     }
 
-    pub fn get_blinding_public_key(&self, script_pubkey: &Script) -> Result<PublicKey, SignerError> {
-        Ok(self.get_blinding_private_key(script_pubkey)?.public_key(&self.secp))
+    pub fn get_blinding_public_key(&self) -> Result<PublicKey, SignerError> {
+        Ok(self.get_blinding_private_key()?.public_key(&self.secp))
     }
 
     pub fn get_private_key(&self) -> Result<PrivateKey, SignerError> {
@@ -317,8 +315,10 @@ impl Signer {
         Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
     }
 
-    pub fn get_blinding_private_key(&self, script_pubkey: &Script) -> Result<PrivateKey, SignerError> {
-        let blinding_key = self.master_slip77()?.blinding_private_key(script_pubkey);
+    pub fn get_blinding_private_key(&self) -> Result<PrivateKey, SignerError> {
+        let blinding_key = self
+            .master_slip77()?
+            .blinding_private_key(&self.get_address()?.script_pubkey());
 
         Ok(PrivateKey::new(blinding_key, NetworkKind::Test))
     }
@@ -327,7 +327,7 @@ impl Signer {
         let mut unblinded: Vec<UTXO> = Vec::new();
 
         for mut utxo in utxos {
-            let blinding_key = self.get_blinding_private_key(&utxo.txout.script_pubkey)?;
+            let blinding_key = self.get_blinding_private_key()?;
             let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
 
             utxo.secrets = Some(secrets);
@@ -346,9 +346,9 @@ impl Signer {
     ) -> Result<Estimate, SignerError> {
         // estimate the tx fee with the change
         // use this wpkh address as a change script
-        // TODO: should this be confidential?
+        // TODO: this should be confidential
         fee_tx.add_output(PartialOutput::new(
-            self.get_wpkh_address()?.script_pubkey(),
+            self.get_address()?.script_pubkey(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
         ));
@@ -399,6 +399,10 @@ impl Signer {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        }
+
         for (index, input_i) in inputs.iter().enumerate() {
             // we need to prune the program
             if let Some(program_input) = &input_i.program_input {
@@ -428,10 +432,6 @@ impl Signer {
 
                 pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
             }
-        }
-
-        if tx.needs_blinding() {
-            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
         }
 
         Ok(pst.extract_tx()?)
@@ -533,7 +533,7 @@ mod tests {
     fn keys_correspond_to_address() {
         let signer = create_signer();
 
-        let address = signer.get_wpkh_address().unwrap();
+        let address = signer.get_address().unwrap();
         let pubkey = signer.get_ecdsa_public_key().unwrap();
 
         let derived_addr = Address::p2wpkh(&pubkey, None, signer.get_provider().get_network().address_params());
@@ -545,7 +545,7 @@ mod tests {
     fn descriptors() {
         let signer = create_signer();
 
-        println!("{}", signer.get_wpkh_address().unwrap());
-        println!("{}", signer.get_wpkh_confidential_address().unwrap());
+        println!("{}", signer.get_address().unwrap());
+        println!("{}", signer.get_confidential_address().unwrap());
     }
 }

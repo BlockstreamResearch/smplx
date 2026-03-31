@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
+
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
@@ -9,6 +11,13 @@ use super::error::ProviderError;
 
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
 pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
+
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub esplora_url: String,
+    pub elements_url: Option<String>,
+    pub auth: Option<Auth>,
+}
 
 pub trait ProviderTrait {
     fn get_network(&self) -> &SimplicityNetwork;

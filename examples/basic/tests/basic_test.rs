@@ -8,7 +8,7 @@ use simplex_example::artifacts::p2pk::P2pkProgram;
 use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
-    let signer = context.get_signer();
+    let signer = context.get_default_signer();
 
     let arguments = P2pkArguments {
         public_key: signer.get_schnorr_public_key().unwrap().serialize(),
@@ -21,7 +21,7 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
 }
 
 fn spend_p2wpkh(context: &simplex::TestContext) -> Txid {
-    let signer = context.get_signer();
+    let signer = context.get_default_signer();
 
     let (_, p2pk_script) = get_p2pk(context);
 
@@ -33,8 +33,8 @@ fn spend_p2wpkh(context: &simplex::TestContext) -> Txid {
 }
 
 fn spend_p2pk(context: &simplex::TestContext) -> Txid {
-    let signer = context.get_signer();
-    let provider = context.get_provider();
+    let signer = context.get_default_signer();
+    let provider = context.get_default_provider();
 
     let (p2pk, p2pk_script) = get_p2pk(context);
 
@@ -63,8 +63,8 @@ fn spend_p2pk(context: &simplex::TestContext) -> Txid {
 }
 
 #[simplex::test]
-fn dummy_test(context: simplex::TestContext) -> anyhow::Result<()> {
-    let provider = context.get_provider();
+fn basic_test(context: simplex::TestContext) -> anyhow::Result<()> {
+    let provider = context.get_default_provider();
 
     let tx = spend_p2wpkh(&context);
     provider.wait(&tx)?;
@@ -75,8 +75,6 @@ fn dummy_test(context: simplex::TestContext) -> anyhow::Result<()> {
     provider.wait(&tx)?;
 
     println!("Confirmed");
-
-    println!("OK");
 
     Ok(())
 }

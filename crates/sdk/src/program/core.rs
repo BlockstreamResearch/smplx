@@ -5,11 +5,11 @@ use dyn_clone::DynClone;
 use simplicityhl::CompiledProgram;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::{Address, Script, Transaction, TxOut, script, taproot};
+use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
+use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 use super::arguments::ArgumentsTrait;
@@ -110,6 +110,7 @@ impl ProgramTrait for Program {
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
+        // TODO: global config for TrackerLogLevel
         let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
 
         let env = self.get_env(pst, input_index, network)?;
@@ -180,11 +181,12 @@ impl Program {
 
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
         let cmr = self.load()?.commit().cmr();
-        let script = script::Script::from(cmr.as_ref().to_vec());
+        let script = Script::from(cmr.as_ref().to_vec());
 
-        Ok((script, simplicityhl::simplicity::leaf_version()))
+        Ok((script, leaf_version()))
     }
 
+    // TODO: taproot storage
     fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;
