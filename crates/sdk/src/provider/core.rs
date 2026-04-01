@@ -1,13 +1,23 @@
 use std::collections::HashMap;
 
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
+
+use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
+use crate::transaction::UTXO;
 
 use super::error::ProviderError;
 
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
 pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
+
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub esplora_url: String,
+    pub elements_url: Option<String>,
+    pub auth: Option<Auth>,
+}
 
 pub trait ProviderTrait {
     fn get_network(&self) -> &SimplicityNetwork;
@@ -22,9 +32,9 @@ pub trait ProviderTrait {
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError>;
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError>;
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError>;
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 

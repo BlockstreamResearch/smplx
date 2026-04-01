@@ -1,7 +1,6 @@
 use std::io;
 
 use smplx_sdk::provider::ProviderError;
-use smplx_sdk::signer::SignerError;
 
 use smplx_regtest::error::RegtestError;
 
@@ -12,9 +11,6 @@ pub enum TestError {
 
     #[error(transparent)]
     Provider(#[from] ProviderError),
-
-    #[error(transparent)]
-    Signer(#[from] SignerError),
 
     #[error("Failed to deserialize config: '{0}'")]
     ConfigDeserialize(#[from] toml::de::Error),

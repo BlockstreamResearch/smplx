@@ -40,8 +40,6 @@ You will see the test passing.
 
 Under the hood, Simplex spins up a local Electrs + Elements regtest, establishes the connection, prefunds the signer specified in the `simplex.toml`, and runs the test marked via macros `#[simplex::test]`. 
 
-You are free to experiment with the other simplicity contracts provided in the example.
-
 ### Regtest
 
 If you wish to keep the blockchain's state between the integration tests, you will need to spin un a local regest separately:
