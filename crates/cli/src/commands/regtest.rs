@@ -10,7 +10,7 @@ pub struct Regtest {}
 
 impl Regtest {
     pub fn run(config: RegtestConfig) -> Result<(), CommandError> {
-        let (mut client, signer) = RegtestRunner::from_config(config)?;
+        let (mut client, signer) = RegtestRunner::new(config)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();
@@ -29,7 +29,7 @@ impl Regtest {
         println!("Esplora: {}", client.esplora_url());
         println!("User: {:?}, Password: {:?}", auth.0.unwrap(), auth.1.unwrap());
         println!();
-        println!("Signer: {:?}", signer.get_address()?);
+        println!("Signer: {:?}", signer.get_address());
         println!("======================================");
 
         while running.load(Ordering::SeqCst) {}

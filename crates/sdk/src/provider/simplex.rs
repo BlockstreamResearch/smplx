@@ -17,16 +17,11 @@ pub struct SimplexProvider {
 }
 
 impl SimplexProvider {
-    pub fn new(
-        esplora_url: String,
-        elements_url: String,
-        auth: Auth,
-        network: SimplicityNetwork,
-    ) -> Result<Self, ProviderError> {
-        Ok(Self {
+    pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
+        Self {
             esplora: EsploraProvider::new(esplora_url, network),
-            elements: ElementsRpc::new(elements_url, auth)?,
-        })
+            elements: ElementsRpc::new(elements_url, auth).unwrap(),
+        }
     }
 }
 

@@ -13,7 +13,7 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+    pub fn new(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
         let client = RegtestClient::new();
 
         let provider = Box::new(SimplexProvider::new(
@@ -21,9 +21,9 @@ impl Regtest {
             client.rpc_url(),
             client.auth(),
             SimplicityNetwork::default_regtest(),
-        )?);
+        ));
 
-        let signer = Signer::new(config.mnemonic.as_str(), provider)?;
+        let signer = Signer::new(config.mnemonic.as_str(), provider);
 
         Self::prepare_signer(&client, &signer, config.bitcoins)?;
 
@@ -38,7 +38,7 @@ impl Regtest {
         rpc_provider.sweep_initialfreecoins()?;
         rpc_provider.generate_blocks(100)?;
 
-        rpc_provider.send_to_address(&signer.get_address()?, btc2sat(bitcoins), None)?;
+        rpc_provider.send_to_address(&signer.get_address(), btc2sat(bitcoins), None)?;
 
         // wait for electrs to index
         let mut attempts = 0;

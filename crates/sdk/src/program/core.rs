@@ -71,7 +71,7 @@ impl ProgramTrait for Program {
         }
 
         let target_utxo = &utxos[input_index];
-        let script_pubkey = self.get_tr_address(network)?.script_pubkey();
+        let script_pubkey = self.get_tr_address(network).script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
             return Err(ProgramError::ScriptPubkeyMismatch {
@@ -153,24 +153,24 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Result<Address, ProgramError> {
-        let spend_info = self.taproot_spending_info()?;
+    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
+        let spend_info = self.taproot_spending_info().unwrap();
 
-        Ok(Address::p2tr(
+        Address::p2tr(
             secp256k1::SECP256K1,
             spend_info.internal_key(),
             spend_info.merkle_root(),
             None,
             network.address_params(),
-        ))
+        )
     }
 
-    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Result<Script, ProgramError> {
-        Ok(self.get_tr_address(network)?.script_pubkey())
+    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
+        self.get_tr_address(network).script_pubkey()
     }
 
-    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> Result<[u8; 32], ProgramError> {
-        Ok(hash_script(&self.get_script_pubkey(network)?))
+    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
+        hash_script(&self.get_script_pubkey(network))
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {

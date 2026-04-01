@@ -1,6 +1,5 @@
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
-use crate::transaction::TransactionError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
@@ -9,9 +8,6 @@ pub enum SignerError {
 
     #[error(transparent)]
     Provider(#[from] ProviderError),
-
-    #[error(transparent)]
-    Transaction(#[from] TransactionError),
 
     #[error("Failed to parse a mnemonic: {0}")]
     Mnemonic(String),

@@ -11,36 +11,35 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
     let signer = context.get_default_signer();
 
     let arguments = P2pkArguments {
-        public_key: signer.get_schnorr_public_key().unwrap().serialize(),
+        public_key: signer.get_schnorr_public_key().serialize(),
     };
 
     let p2pk = P2pkProgram::new(tr_unspendable_key(), arguments);
-    let p2pk_script = p2pk.get_program().get_script_pubkey(context.get_network()).unwrap();
+    let p2pk_script = p2pk.get_program().get_script_pubkey(context.get_network());
 
     (p2pk, p2pk_script)
 }
 
-fn spend_p2wpkh(context: &simplex::TestContext) -> Txid {
+fn spend_p2wpkh(context: &simplex::TestContext) -> anyhow::Result<Txid> {
     let signer = context.get_default_signer();
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let res = signer.send(p2pk_script.clone(), 50).unwrap();
-
+    let res = signer.send(p2pk_script.clone(), 50)?;
     println!("Broadcast: {}", res);
 
-    res
+    Ok(res)
 }
 
-fn spend_p2pk(context: &simplex::TestContext) -> Txid {
+fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
 
     let (p2pk, p2pk_script) = get_p2pk(context);
 
-    let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script).unwrap();
+    let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script)?;
 
-    p2pk_utxos.retain(|utxo| utxo.txout.asset.explicit().unwrap() == context.get_network().policy_asset());
+    p2pk_utxos.retain(|utxo| utxo.explicit_asset() == context.get_network().policy_asset());
 
     let mut ft = FinalTransaction::new();
 
@@ -52,28 +51,26 @@ fn spend_p2pk(context: &simplex::TestContext) -> Txid {
         PartialInput::new(p2pk_utxos[0].clone()),
         ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
-    )
-    .unwrap();
+    );
 
-    let res = signer.broadcast(&ft).unwrap();
-
+    let res = signer.broadcast(&ft)?;
     println!("Broadcast: {}", res);
 
-    res
+    Ok(res)
 }
 
 #[simplex::test]
 fn basic_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let provider = context.get_default_provider();
 
-    let tx = spend_p2wpkh(&context);
-    provider.wait(&tx)?;
+    let tx = spend_p2wpkh(&context)?;
 
+    provider.wait(&tx)?;
     println!("Confirmed");
 
-    let tx = spend_p2pk(&context);
-    provider.wait(&tx)?;
+    let tx = spend_p2pk(&context)?;
 
+    provider.wait(&tx)?;
     println!("Confirmed");
 
     Ok(())

@@ -34,7 +34,7 @@ impl TestContext {
         })
     }
 
-    pub fn create_signer(&self, mnemonic: &str) -> Result<Signer, TestError> {
+    pub fn create_signer(&self, mnemonic: &str) -> Signer {
         let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
             // local regtest or external regtest
             Box::new(SimplexProvider::new(
@@ -42,7 +42,7 @@ impl TestContext {
                 self._provider_info.elements_url.clone().unwrap(),
                 self._provider_info.auth.clone().unwrap(),
                 *self.get_network(),
-            )?)
+            ))
         } else {
             // external esplora
             Box::new(EsploraProvider::new(
@@ -51,7 +51,7 @@ impl TestContext {
             ))
         };
 
-        Ok(Signer::new(mnemonic, provider)?)
+        Signer::new(mnemonic, provider)
     }
 
     pub fn get_default_signer(&self) -> &Signer {
@@ -85,14 +85,14 @@ impl TestContext {
                         rpc.url.clone(),
                         auth.clone(),
                         SimplicityNetwork::default_regtest(),
-                    )?);
+                    ));
 
                     provider_info = ProviderInfo {
                         esplora_url: esplora.url,
                         elements_url: Some(rpc.url),
                         auth: Some(auth),
                     };
-                    signer = Signer::new(config.mnemonic.as_str(), provider)?;
+                    signer = Signer::new(config.mnemonic.as_str(), provider);
                     client = None;
                 }
                 None => {
@@ -110,13 +110,13 @@ impl TestContext {
                         elements_url: None,
                         auth: None,
                     };
-                    signer = Signer::new(config.mnemonic.as_str(), provider)?;
+                    signer = Signer::new(config.mnemonic.as_str(), provider);
                     client = None;
                 }
             },
             None => {
                 // simplex inner network
-                let (regtest_client, regtest_signer) = Regtest::from_config(config.to_regtest_config())?;
+                let (regtest_client, regtest_signer) = Regtest::new(config.to_regtest_config())?;
 
                 provider_info = ProviderInfo {
                     esplora_url: regtest_client.esplora_url(),

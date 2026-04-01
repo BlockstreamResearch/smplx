@@ -9,7 +9,6 @@ use simplicityhl::elements::{
 use crate::provider::SimplicityNetwork;
 use crate::utils::asset_entropy;
 
-use super::error::TransactionError;
 use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
 
@@ -38,15 +37,9 @@ impl FinalTransaction {
         }
     }
 
-    pub fn add_input(
-        &mut self,
-        partial_input: PartialInput,
-        required_sig: RequiredSignature,
-    ) -> Result<(), TransactionError> {
+    pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
         if let RequiredSignature::Witness(_) = required_sig {
-            return Err(TransactionError::SignatureRequest(
-                "Requested signature is not NativeEcdsa or None".to_string(),
-            ));
+            panic!("Requested signature is not NativeEcdsa or None");
         }
 
         self.inputs.push(FinalInput {
@@ -55,8 +48,6 @@ impl FinalTransaction {
             issuance_input: None,
             required_sig,
         });
-
-        Ok(())
     }
 
     pub fn add_program_input(
@@ -64,11 +55,9 @@ impl FinalTransaction {
         partial_input: PartialInput,
         program_input: ProgramInput,
         required_sig: RequiredSignature,
-    ) -> Result<(), TransactionError> {
+    ) {
         if let RequiredSignature::NativeEcdsa = required_sig {
-            return Err(TransactionError::SignatureRequest(
-                "Requested signature is not Witness or None".to_string(),
-            ));
+            panic!("Requested signature is not Witness or None");
         }
 
         self.inputs.push(FinalInput {
@@ -77,8 +66,6 @@ impl FinalTransaction {
             issuance_input: None,
             required_sig,
         });
-
-        Ok(())
     }
 
     pub fn add_issuance_input(
@@ -86,11 +73,9 @@ impl FinalTransaction {
         partial_input: PartialInput,
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> Result<AssetId, TransactionError> {
+    ) -> AssetId {
         if let RequiredSignature::Witness(_) = required_sig {
-            return Err(TransactionError::SignatureRequest(
-                "Requested signature is not NativeEcdsa or None".to_string(),
-            ));
+            panic!("Requested signature is not NativeEcdsa or None");
         }
 
         let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
@@ -102,7 +87,7 @@ impl FinalTransaction {
             required_sig,
         });
 
-        Ok(asset_id)
+        asset_id
     }
 
     pub fn add_program_issuance_input(
@@ -111,11 +96,9 @@ impl FinalTransaction {
         program_input: ProgramInput,
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> Result<AssetId, TransactionError> {
+    ) -> AssetId {
         if let RequiredSignature::NativeEcdsa = required_sig {
-            return Err(TransactionError::SignatureRequest(
-                "Requested signature is not Witness or None".to_string(),
-            ));
+            panic!("Requested signature is not Witness or None");
         }
 
         let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
@@ -127,7 +110,7 @@ impl FinalTransaction {
             required_sig,
         });
 
-        Ok(asset_id)
+        asset_id
     }
 
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {
