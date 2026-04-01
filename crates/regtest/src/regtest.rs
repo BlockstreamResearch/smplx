@@ -13,7 +13,7 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn new(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+    pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
         let client = RegtestClient::new();
 
         let provider = Box::new(SimplexProvider::new(

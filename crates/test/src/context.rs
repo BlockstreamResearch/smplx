@@ -116,7 +116,7 @@ impl TestContext {
             },
             None => {
                 // simplex inner network
-                let (regtest_client, regtest_signer) = Regtest::new(config.to_regtest_config())?;
+                let (regtest_client, regtest_signer) = Regtest::from_config(config.to_regtest_config())?;
 
                 provider_info = ProviderInfo {
                     esplora_url: regtest_client.esplora_url(),
