@@ -21,7 +21,7 @@ simplexup
 To install a specific version (in this case the `v0.1.0` version):
 
 ```bash
-simplexup --install 0.1.0
+simplexup --install v0.1.0
 ```
 
 To list all versions installed:
@@ -33,7 +33,7 @@ simplexup --list
 To switch between different versions:
 
 ```bash
-simplexup --use 0.1.0
+simplexup --use v0.1.0
 ```
 
 To update `simplexup`:
