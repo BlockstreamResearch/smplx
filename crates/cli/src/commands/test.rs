@@ -13,7 +13,7 @@ impl Test {
         let cache_path = Self::get_test_config_cache_name()?;
         config.to_file(&cache_path)?;
 
-        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, &tests, &flags);
+        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, tests, flags);
 
         let output = cargo_test_command.output()?;
 
