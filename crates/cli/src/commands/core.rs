@@ -13,8 +13,11 @@ pub enum Command {
     Regtest,
     /// Runs Simplex tests
     Test {
-        #[command(subcommand)]
-        command: TestCommand,
+        /// The list of test names to run
+        #[arg(long)]
+        tests: Vec<String>,
+        #[command(flatten)]
+        additional_flags: TestFlags,
     },
     /// Generates the simplicity contracts artifacts
     Build,
@@ -22,21 +25,11 @@ pub enum Command {
     Clean,
 }
 
-#[derive(Debug, Subcommand)]
-pub enum TestCommand {
-    /// Runs integration tests
-    Integration {
-        #[command(flatten)]
-        additional_flags: TestFlags,
-    },
-    /// Runs specific tests
-    Run {
-        /// The list of test names to run
-        #[arg(long)]
-        tests: Vec<String>,
-        #[command(flatten)]
-        additional_flags: TestFlags,
-    },
+#[derive(Debug, Args, Copy, Clone)]
+pub struct InitFlags {
+    /// Generate a draft Rust library instead of just `Simplex.toml`
+    #[arg(long)]
+    pub lib: bool,
 }
 
 #[derive(Debug, Args, Copy, Clone)]
@@ -50,11 +43,4 @@ pub struct TestFlags {
     /// Run ignored tests
     #[arg(long)]
     pub ignored: bool,
-}
-
-#[derive(Debug, Args, Copy, Clone)]
-pub struct InitFlags {
-    /// Generate a draft Rust library instead of just `Simplex.toml`
-    #[arg(long)]
-    pub lib: bool,
 }

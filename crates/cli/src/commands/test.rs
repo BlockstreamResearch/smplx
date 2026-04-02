@@ -3,17 +3,17 @@ use std::process::Stdio;
 
 use smplx_test::TestConfig;
 
-use super::core::{TestCommand, TestFlags};
+use super::core::TestFlags;
 use super::error::CommandError;
 
 pub struct Test {}
 
 impl Test {
-    pub fn run(config: TestConfig, command: &TestCommand) -> Result<(), CommandError> {
+    pub fn run(config: TestConfig, tests: &[String], flags: &TestFlags) -> Result<(), CommandError> {
         let cache_path = Self::get_test_config_cache_name()?;
         config.to_file(&cache_path)?;
 
-        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, command);
+        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, &tests, &flags);
 
         let output = cargo_test_command.output()?;
 
@@ -33,48 +33,10 @@ impl Test {
         Ok(())
     }
 
-    fn build_cargo_test_command(cache_path: &PathBuf, command: &TestCommand) -> std::process::Command {
-        let mut command_as_arg = String::new();
-
-        match command {
-            TestCommand::Integration { additional_flags } => {
-                command_as_arg.push_str("cargo test --tests");
-
-                let flag_args = Self::build_test_flags(additional_flags);
-
-                if !flag_args.is_empty() {
-                    command_as_arg.push_str(" --");
-                    command_as_arg.push_str(&flag_args);
-                }
-            }
-            TestCommand::Run {
-                tests,
-                additional_flags,
-            } => {
-                // TODO: check this behavior
-                if tests.is_empty() {
-                    command_as_arg.push_str("cargo test --tests");
-                } else {
-                    let mut arg = "cargo test".to_string();
-
-                    for test_name in tests {
-                        arg.push_str(&format!(" --test {test_name}"));
-                    }
-
-                    command_as_arg.push_str(&arg);
-                }
-
-                let flag_args = Self::build_test_flags(additional_flags);
-
-                if !flag_args.is_empty() {
-                    command_as_arg.push_str(" --");
-                    command_as_arg.push_str(&flag_args);
-                }
-            }
-        }
-
+    fn build_cargo_test_command(cache_path: &PathBuf, tests: &[String], flags: &TestFlags) -> std::process::Command {
         let mut cargo_test_command = std::process::Command::new("sh");
-        cargo_test_command.args(["-c".to_string(), command_as_arg]);
+
+        cargo_test_command.args(["-c".to_string(), Self::build_test_command(tests, flags)]);
 
         cargo_test_command
             .env(smplx_test::TEST_ENV_NAME, cache_path)
@@ -83,6 +45,31 @@ impl Test {
             .stdout(Stdio::inherit());
 
         cargo_test_command
+    }
+
+    fn build_test_command(tests: &[String], flags: &TestFlags) -> String {
+        let mut command_as_arg = String::new();
+
+        if tests.is_empty() {
+            command_as_arg.push_str("cargo test --tests");
+        } else {
+            let mut arg = "cargo test".to_string();
+
+            for test_name in tests {
+                arg.push_str(&format!(" --test {test_name}"));
+            }
+
+            command_as_arg.push_str(&arg);
+        }
+
+        let flag_args = Self::build_test_flags(flags);
+
+        if !flag_args.is_empty() {
+            command_as_arg.push_str(" --");
+            command_as_arg.push_str(&flag_args);
+        }
+
+        command_as_arg
     }
 
     fn build_test_flags(flags: &TestFlags) -> String {

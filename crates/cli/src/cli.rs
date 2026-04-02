@@ -27,7 +27,7 @@ impl Cli {
             Command::Init { additional_flags } => {
                 let simplex_conf_path = Config::get_default_path()?;
 
-                Ok(Init::run(*additional_flags, simplex_conf_path)?)
+                Ok(Init::run(simplex_conf_path, additional_flags)?)
             }
             Command::Config => {
                 let config_path = Config::get_default_path()?;
@@ -37,11 +37,14 @@ impl Cli {
 
                 Ok(())
             }
-            Command::Test { command } => {
+            Command::Test {
+                tests,
+                additional_flags,
+            } => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Test::run(loaded_config.test, command)?)
+                Ok(Test::run(loaded_config.test, tests, additional_flags)?)
             }
             Command::Regtest => {
                 let config_path = Config::get_default_path()?;
