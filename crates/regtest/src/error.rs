@@ -1,14 +1,10 @@
 use std::io;
 
-use smplx_sdk::provider::ProviderError;
 use smplx_sdk::provider::RpcError;
 use smplx_sdk::signer::SignerError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RegtestError {
-    #[error(transparent)]
-    Provider(#[from] ProviderError),
-
     #[error(transparent)]
     Rpc(#[from] RpcError),
 

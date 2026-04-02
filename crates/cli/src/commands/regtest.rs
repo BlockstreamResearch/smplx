@@ -29,7 +29,7 @@ impl Regtest {
         println!("Esplora: {}", client.esplora_url());
         println!("User: {:?}, Password: {:?}", auth.0.unwrap(), auth.1.unwrap());
         println!();
-        println!("Signer: {:?}", signer.get_wpkh_address()?);
+        println!("Signer: {:?}", signer.get_address());
         println!("======================================");
 
         while running.load(Ordering::SeqCst) {}

@@ -1,25 +1,22 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use elements_miniscript::Descriptor;
-use elements_miniscript::bitcoin::PublicKey;
-use elements_miniscript::descriptor::Wpkh;
-
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
 use simplicityhl::value::ValueConstructible;
 
 use bip39::Mnemonic;
+use bip39::rand::thread_rng;
 
 use elements_miniscript::{
-    DescriptorPublicKey,
-    bitcoin::{NetworkKind, PrivateKey, bip32::DerivationPath},
+    ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
+    bitcoin::{NetworkKind, PrivateKey, PublicKey, bip32::DerivationPath},
     elements::{
         EcdsaSighashType,
         bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
@@ -27,17 +24,16 @@ use elements_miniscript::{
     },
     elementssig_to_rawsig,
     psbt::PsbtExt,
+    slip77::MasterBlindingKey,
 };
 
-use super::error::SignerError;
 use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::transaction::FinalTransaction;
-use crate::transaction::PartialInput;
-use crate::transaction::PartialOutput;
-use crate::transaction::RequiredSignature;
+use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+
+use super::error::SignerError;
 
 pub const PLACEHOLDER_FEE: u64 = 1;
 
@@ -58,6 +54,7 @@ pub trait SignerTrait {
 }
 
 pub struct Signer {
+    mnemonic: Mnemonic,
     xprv: Xpriv,
     provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
@@ -75,7 +72,7 @@ impl SignerTrait for Signer {
         let env = program.get_env(pst, input_index, network)?;
         let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
 
-        let private_key = self.get_private_key()?;
+        let private_key = self.get_private_key();
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
         Ok(self.secp.sign_schnorr(&msg, &keypair))
@@ -95,7 +92,7 @@ impl SignerTrait for Signer {
             .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
             .to_secp_msg();
 
-        let private_key = self.get_private_key()?;
+        let private_key = self.get_private_key();
         let public_key = private_key.public_key(&self.secp);
 
         let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
@@ -110,35 +107,45 @@ enum Estimate {
 }
 
 impl Signer {
-    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Result<Self, SignerError> {
+    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Self {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
             .parse()
-            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))?;
+            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))
+            .unwrap();
         let seed = mnemonic.to_seed("");
-        let xprv = Xpriv::new_master(NetworkKind::Test, &seed)?;
+        let xprv = Xpriv::new_master(NetworkKind::Test, &seed).unwrap();
 
         let network = *provider.get_network();
 
-        Ok(Self {
+        Self {
+            mnemonic,
             xprv,
             provider,
             network,
             secp,
-        })
+        }
     }
 
     // TODO: add an ability to send arbitrary assets
-    pub fn send(&self, to: Script, amount: u64) -> Result<(Transaction, u64), SignerError> {
-        let mut ft = FinalTransaction::new(self.network);
+    pub fn send(&self, to: Script, amount: u64) -> Result<Txid, SignerError> {
+        let mut ft = FinalTransaction::new();
 
         ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
 
-        self.finalize(&ft)
+        let (tx, _fee) = self.finalize(&ft)?;
+
+        Ok(self.provider.broadcast_transaction(&tx)?)
+    }
+
+    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<Txid, SignerError> {
+        let (tx, _fee) = self.finalize(tx)?;
+
+        Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
-        let mut signer_utxos = self.get_wpkh_utxos_asset(self.network.policy_asset())?;
+        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
         let mut set = HashSet::new();
 
         for input in tx.inputs() {
@@ -148,15 +155,28 @@ impl Signer {
             });
         }
 
-        signer_utxos.retain(|(outpoint, _)| !set.contains(outpoint));
-        signer_utxos.sort_by(|a, b| b.1.value.cmp(&a.1.value));
+        signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
+
+        // descending sort of both confidential and explicit utxos
+        signer_utxos.sort_by(|a, b| {
+            let a_value = match a.secrets {
+                Some(secrets) => secrets.value,
+                None => a.explicit_amount(),
+            };
+            let b_value = match b.secrets {
+                Some(secrets) => secrets.value,
+                None => b.explicit_amount(),
+            };
+
+            b_value.cmp(&a_value)
+        });
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
         let fee_rate = self.provider.fetch_fee_rate(1)?;
 
         for utxo in signer_utxos {
-            let policy_amount_delta = fee_tx.calculate_fee_delta();
+            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
             if policy_amount_delta >= curr_fee as i64 {
                 match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
@@ -165,11 +185,11 @@ impl Signer {
                 }
             }
 
-            fee_tx.add_input(PartialInput::new(utxo.0, utxo.1), RequiredSignature::NativeEcdsa)?;
+            fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
         }
 
         // need to try one more time after the loop
-        let policy_amount_delta = fee_tx.calculate_fee_delta();
+        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
         if policy_amount_delta >= curr_fee as i64 {
             match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
@@ -186,7 +206,7 @@ impl Signer {
         tx: &FinalTransaction,
         target_blocks: u32,
     ) -> Result<(Transaction, u64), SignerError> {
-        let policy_amount_delta = tx.calculate_fee_delta();
+        let policy_amount_delta = tx.calculate_fee_delta(&self.network);
 
         if policy_amount_delta < MIN_FEE as i64 {
             return Err(SignerError::DustAmount(policy_amount_delta));
@@ -205,66 +225,129 @@ impl Signer {
         self.provider.as_ref()
     }
 
-    pub fn get_wpkh_address(&self) -> Result<Address, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let xpub = self.derive_xpub(&path)?;
+    pub fn get_confidential_address(&self) -> Address {
+        let mut descriptor =
+            ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor().unwrap())
+                .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
+                .unwrap();
 
-        let desc = format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)");
+        // confidential descriptor doesn't support multipath
+        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
 
-        let descriptor: Descriptor<DescriptorPublicKey> =
-            Descriptor::Wpkh(Wpkh::from_str(&desc).map_err(|e| SignerError::WpkhDescriptor(e.to_string()))?);
-
-        Ok(descriptor.clone().into_single_descriptors()?[0]
-            .at_derivation_index(1)?
-            .address(self.network.address_params())?)
+        descriptor
+            .at_derivation_index(1)
+            .unwrap()
+            .address(&self.secp, self.network.address_params())
+            .unwrap()
     }
 
-    pub fn get_wpkh_utxos(&self) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|_| true)
+    pub fn get_address(&self) -> Address {
+        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
+            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
+            .unwrap();
+
+        descriptor.into_single_descriptors().unwrap()[0]
+            .at_derivation_index(1)
+            .unwrap()
+            .address(self.network.address_params())
+            .unwrap()
     }
 
-    pub fn get_wpkh_utxos_asset(&self, asset: AssetId) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(_, txout)| txout.asset.explicit().unwrap() == asset)
+    pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|_| true, &|_| true)
+    }
+
+    pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|utxo| utxo.explicit_asset() == asset, &|utxo| {
+            utxo.unblinded_asset() == asset
+        })
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
-    pub fn get_wpkh_utxos_txid(&self, txid: Txid) -> Result<Vec<(OutPoint, TxOut)>, SignerError> {
-        self.get_wpkh_utxos_filter(|(outpoint, _)| outpoint.txid == txid)
+    pub fn get_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
+        self.get_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
-    pub fn get_wpkh_utxos_filter<F>(&self, filter: F) -> Result<Vec<(OutPoint, TxOut)>, SignerError>
-    where
-        F: FnMut(&(OutPoint, TxOut)) -> bool,
-    {
-        let mut utxos = self.provider.fetch_address_utxos(&self.get_wpkh_address()?)?;
+    pub fn get_utxos_filter(
+        &self,
+        explicit_filter: &dyn Fn(&UTXO) -> bool,
+        confidential_filter: &dyn Fn(&UTXO) -> bool,
+    ) -> Result<Vec<UTXO>, SignerError> {
+        // fetch explicit and confidential utxos
+        let mut all_utxos = self.provider.fetch_address_utxos(&self.get_confidential_address())?;
 
-        utxos.retain(filter);
+        // filter out only confidential utxos and unblind them
+        let mut confidential_utxos = self.unblind(
+            all_utxos
+                .iter()
+                .filter(|utxo| utxo.txout.value.is_confidential())
+                .cloned()
+                .collect(),
+        )?;
+        // leave only explicit utxos
+        all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
 
-        Ok(utxos)
+        all_utxos.retain(explicit_filter);
+        confidential_utxos.retain(confidential_filter);
+
+        // push unblinded utxos to explicit ones
+        all_utxos.extend(confidential_utxos);
+
+        Ok(all_utxos)
     }
 
-    pub fn get_schnorr_public_key(&self) -> Result<XOnlyPublicKey, SignerError> {
-        let private_key = self.get_private_key()?;
+    pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
+        let private_key = self.get_private_key();
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
-        Ok(keypair.x_only_public_key().0)
+        keypair.x_only_public_key().0
     }
 
-    pub fn get_ecdsa_public_key(&self) -> Result<PublicKey, SignerError> {
-        Ok(self.get_private_key()?.public_key(&self.secp))
+    pub fn get_ecdsa_public_key(&self) -> PublicKey {
+        self.get_private_key().public_key(&self.secp)
     }
 
-    pub fn get_private_key(&self) -> Result<PrivateKey, SignerError> {
-        let master_xprv = self.master_xpriv()?;
-        let full_path = self.get_derivation_path()?;
+    pub fn get_blinding_public_key(&self) -> PublicKey {
+        self.get_blinding_private_key().public_key(&self.secp)
+    }
 
-        let derived =
-            full_path.extend(DerivationPath::from_str("0/1").map_err(|e| SignerError::DerivationPath(e.to_string()))?);
+    pub fn get_private_key(&self) -> PrivateKey {
+        let master_xprv = self.master_xpriv().unwrap();
+        let full_path = self.get_derivation_path().unwrap();
 
-        let ext_derived = master_xprv.derive_priv(&self.secp, &derived)?;
+        let derived = full_path.extend(
+            DerivationPath::from_str("0/1")
+                .map_err(|e| SignerError::DerivationPath(e.to_string()))
+                .unwrap(),
+        );
 
-        Ok(PrivateKey::new(ext_derived.private_key, NetworkKind::Test))
+        let ext_derived = master_xprv.derive_priv(&self.secp, &derived).unwrap();
+
+        PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
+    }
+
+    pub fn get_blinding_private_key(&self) -> PrivateKey {
+        let blinding_key = self
+            .master_slip77()
+            .unwrap()
+            .blinding_private_key(&self.get_address().script_pubkey());
+
+        PrivateKey::new(blinding_key, NetworkKind::Test)
+    }
+
+    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
+        let mut unblinded: Vec<UTXO> = Vec::new();
+
+        for mut utxo in utxos {
+            let blinding_key = self.get_blinding_private_key();
+            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
+
+            utxo.secrets = Some(secrets);
+
+            unblinded.push(utxo);
+        }
+
+        Ok(unblinded)
     }
 
     fn estimate_tx(
@@ -275,8 +358,9 @@ impl Signer {
     ) -> Result<Estimate, SignerError> {
         // estimate the tx fee with the change
         // use this wpkh address as a change script
+        // TODO: this should be confidential
         fee_tx.add_output(PartialOutput::new(
-            self.get_wpkh_address()?.script_pubkey(),
+            self.get_address().script_pubkey(),
             PLACEHOLDER_FEE,
             self.network.policy_asset(),
         ));
@@ -288,7 +372,7 @@ impl Signer {
         ));
 
         let final_tx = self.sign_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
             // we have enough funds to cover the change UTXO
@@ -306,7 +390,7 @@ impl Signer {
         fee_tx.remove_output(fee_tx.n_outputs() - 2);
 
         let final_tx = self.sign_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.weight(), fee_rate);
+        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
             return Ok(Estimate::Failure(fee));
@@ -324,8 +408,12 @@ impl Signer {
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
-        let mut pst = tx.extract_pst();
+        let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
+
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        }
 
         for (index, input_i) in inputs.iter().enumerate() {
             // we need to prune the program
@@ -385,6 +473,12 @@ impl Signer {
         Ok(WitnessValues::from(hm))
     }
 
+    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
+        let seed = self.mnemonic.to_seed("");
+
+        Ok(MasterBlindingKey::from_seed(&seed[..]))
+    }
+
     fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
         Ok(self.xprv.derive_priv(&self.secp, &path)?)
     }
@@ -407,6 +501,21 @@ impl Signer {
         Ok(self.master_xpub()?.fingerprint())
     }
 
+    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
+        let wpkh_descriptor = self.get_wpkh_descriptor()?;
+        let blinding_key = self.master_slip77()?;
+
+        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
+    }
+
+    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
+        let fingerprint = self.fingerprint()?;
+        let path = self.get_derivation_path()?;
+        let xpub = self.derive_xpub(&path)?;
+
+        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
+    }
+
     fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
@@ -421,22 +530,33 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn keys_correspond_to_address() {
+    fn create_signer() -> Signer {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        let signer = Signer::new(
+        Signer::new(
             "exist carry drive collect lend cereal occur much tiger just involve mean",
             Box::new(EsploraProvider::new(url, network)),
         )
-        .unwrap();
+    }
 
-        let address = signer.get_wpkh_address().unwrap();
-        let pubkey = signer.get_ecdsa_public_key().unwrap();
+    #[test]
+    fn keys_correspond_to_address() {
+        let signer = create_signer();
 
-        let derived_addr = Address::p2wpkh(&pubkey, None, network.address_params());
+        let address = signer.get_address();
+        let pubkey = signer.get_ecdsa_public_key();
+
+        let derived_addr = Address::p2wpkh(&pubkey, None, signer.get_provider().get_network().address_params());
 
         assert_eq!(derived_addr.to_string(), address.to_string());
+    }
+
+    #[test]
+    fn descriptors() {
+        let signer = create_signer();
+
+        println!("{}", signer.get_address());
+        println!("{}", signer.get_confidential_address());
     }
 }

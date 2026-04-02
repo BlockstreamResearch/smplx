@@ -77,7 +77,7 @@ Where:
 
 - `build` (`simplex build` config)
   - `src_dir` - The simplicity contracts source directory.
-  - `simf_files` - A glob pattern incidating which contracts are in scope.
+  - `simf_files` - A glob pattern indicating which contracts are in scope.
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
@@ -122,6 +122,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 - [x] Complete `simplex init` and `simplex clean` tasks.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
+- [ ] Simplicity storage compatibility.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
 - [ ] Browser compatibility.
