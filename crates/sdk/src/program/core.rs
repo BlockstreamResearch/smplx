@@ -5,11 +5,11 @@ use dyn_clone::DynClone;
 use simplicityhl::CompiledProgram;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::{Address, Script, Transaction, TxOut, script, taproot};
+use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, RedeemNode, Value};
+use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 use super::arguments::ArgumentsTrait;
@@ -71,7 +71,7 @@ impl ProgramTrait for Program {
         }
 
         let target_utxo = &utxos[input_index];
-        let script_pubkey = self.get_tr_address(network)?.script_pubkey();
+        let script_pubkey = self.get_tr_address(network).script_pubkey();
 
         if target_utxo.script_pubkey != script_pubkey {
             return Err(ProgramError::ScriptPubkeyMismatch {
@@ -110,6 +110,7 @@ impl ProgramTrait for Program {
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
+        // TODO: global config for TrackerLogLevel
         let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
 
         let env = self.get_env(pst, input_index, network)?;
@@ -152,24 +153,24 @@ impl Program {
         }
     }
 
-    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Result<Address, ProgramError> {
-        let spend_info = self.taproot_spending_info()?;
+    pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
+        let spend_info = self.taproot_spending_info().unwrap();
 
-        Ok(Address::p2tr(
+        Address::p2tr(
             secp256k1::SECP256K1,
             spend_info.internal_key(),
             spend_info.merkle_root(),
             None,
             network.address_params(),
-        ))
+        )
     }
 
-    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Result<Script, ProgramError> {
-        Ok(self.get_tr_address(network)?.script_pubkey())
+    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
+        self.get_tr_address(network).script_pubkey()
     }
 
-    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> Result<[u8; 32], ProgramError> {
-        Ok(hash_script(&self.get_script_pubkey(network)?))
+    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
+        hash_script(&self.get_script_pubkey(network))
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
@@ -180,11 +181,12 @@ impl Program {
 
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
         let cmr = self.load()?.commit().cmr();
-        let script = script::Script::from(cmr.as_ref().to_vec());
+        let script = Script::from(cmr.as_ref().to_vec());
 
-        Ok((script, simplicityhl::simplicity::leaf_version()))
+        Ok((script, leaf_version()))
     }
 
+    // TODO: taproot storage
     fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;

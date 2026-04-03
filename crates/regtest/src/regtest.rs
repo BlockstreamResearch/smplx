@@ -21,9 +21,9 @@ impl Regtest {
             client.rpc_url(),
             client.auth(),
             SimplicityNetwork::default_regtest(),
-        )?);
+        ));
 
-        let signer = Signer::new(config.mnemonic.as_str(), provider)?;
+        let signer = Signer::new(config.mnemonic.as_str(), provider);
 
         Self::prepare_signer(&client, &signer, config.bitcoins)?;
 
@@ -38,13 +38,14 @@ impl Regtest {
         rpc_provider.sweep_initialfreecoins()?;
         rpc_provider.generate_blocks(100)?;
 
-        rpc_provider.send_to_address(&signer.get_wpkh_address()?, btc2sat(bitcoins), None)?;
+        rpc_provider.send_to_address(&signer.get_address(), btc2sat(bitcoins), None)?;
+        rpc_provider.generate_blocks(1)?;
 
         // wait for electrs to index
         let mut attempts = 0;
 
         loop {
-            if !(signer.get_wpkh_utxos()?).is_empty() {
+            if !(signer.get_utxos()?).is_empty() {
                 break;
             }
 

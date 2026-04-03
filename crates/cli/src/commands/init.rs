@@ -9,8 +9,8 @@ pub const SIMPLEX_CRATE_NAME: &str = "smplx-std";
 pub struct Init;
 
 impl Init {
-    pub fn run(conf: InitFlags, smplx_conf_path: impl AsRef<Path>) -> Result<(), CommandError> {
-        if conf.lib {
+    pub fn run(smplx_conf_path: impl AsRef<Path>, flags: &InitFlags) -> Result<(), CommandError> {
+        if flags.lib {
             Self::generate_lib_inplace(&smplx_conf_path)?
         }
 

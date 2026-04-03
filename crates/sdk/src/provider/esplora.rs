@@ -6,11 +6,12 @@ use std::time::Duration;
 use simplicityhl::elements::hashes::{Hash, sha256};
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, TxOut, Txid};
+use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};
 
 use serde::Deserialize;
 
 use crate::provider::SimplicityNetwork;
+use crate::transaction::UTXO;
 
 use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
@@ -73,7 +74,7 @@ impl EsploraProvider {
         Ok(OutPoint::new(txid, utxo.vout))
     }
 
-    fn populate_txouts_from_outpoints(&self, outpoints: &[OutPoint]) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+    fn populate_txouts_from_outpoints(&self, outpoints: &[OutPoint]) -> Result<Vec<UTXO>, ProviderError> {
         let set: HashSet<_> = outpoints.iter().collect();
         let mut map = HashMap::new();
 
@@ -86,11 +87,10 @@ impl EsploraProvider {
         // populate TxOuts
         Ok(outpoints
             .iter()
-            .map(|point| {
-                (
-                    *point,
-                    map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
-                )
+            .map(|point| UTXO {
+                outpoint: *point,
+                txout: map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
+                secrets: None,
             })
             .collect())
     }
@@ -250,7 +250,7 @@ impl ProviderTrait for EsploraProvider {
         Ok(tx)
     }
 
-    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+    fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError> {
         let url = format!("{}/address/{}/utxo", self.esplora_url, address);
         let timeout_secs = self.timeout.as_secs();
 
@@ -275,7 +275,7 @@ impl ProviderTrait for EsploraProvider {
         self.populate_txouts_from_outpoints(&outpoints)
     }
 
-    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<(OutPoint, TxOut)>, ProviderError> {
+    fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError> {
         let hash = sha256::Hash::hash(script.as_bytes());
         let hash_bytes = hash.to_byte_array();
         let scripthash = hex::encode(hash_bytes);
