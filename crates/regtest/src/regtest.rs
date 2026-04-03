@@ -39,6 +39,7 @@ impl Regtest {
         rpc_provider.generate_blocks(100)?;
 
         rpc_provider.send_to_address(&signer.get_address(), btc2sat(bitcoins), None)?;
+        rpc_provider.generate_blocks(1)?;
 
         // wait for electrs to index
         let mut attempts = 0;
