@@ -207,3 +207,101 @@ impl Program {
         Ok(info.control_block(&script_ver).expect("control block should exist"))
     }
 }
+#[cfg(test)]
+mod tests {
+
+    use simplicityhl::{
+        Arguments,
+        elements::{AssetId, TxOutWitness, confidential, pset::Input},
+    };
+
+    use super::*;
+
+    // simplicityhl/examples/cat.simf
+    const DUMMY_PROGRAM: &str = r#"
+        fn main() {
+            let ab: u16 = <(u8, u8)>::into((0x10, 0x01));
+            let c: u16 = 0x1001;
+            assert!(jet::eq_16(ab, c));
+            let ab: u8 = <(u4, u4)>::into((0b1011, 0b1101));
+            let c: u8 = 0b10111101;
+            assert!(jet::eq_8(ab, c));
+        }
+    "#;
+
+    #[derive(Clone)]
+    struct EmptyArguments;
+
+    impl ArgumentsTrait for EmptyArguments {
+        fn build_arguments(&self) -> Arguments {
+            Arguments::default()
+        }
+    }
+
+    fn dummy_pubkey(seed: u64) -> XOnlyPublicKey {
+        let mut rng = <secp256k1::rand::rngs::StdRng as secp256k1::rand::SeedableRng>::seed_from_u64(seed);
+        secp256k1::Keypair::new_global(&mut rng).x_only_public_key().0
+    }
+
+    fn dummy_program() -> Program {
+        Program::new(DUMMY_PROGRAM, dummy_pubkey(0), Box::new(EmptyArguments))
+    }
+
+    fn dummy_network() -> SimplicityNetwork {
+        SimplicityNetwork::default_regtest()
+    }
+
+    fn make_pst_with_script(script: Script) -> PartiallySignedTransaction {
+        let txout = TxOut {
+            asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
+            value: confidential::Value::Explicit(1000),
+            nonce: confidential::Nonce::Null,
+            script_pubkey: script,
+            witness: TxOutWitness::default(),
+        };
+
+        let input = Input {
+            witness_utxo: Some(txout),
+            ..Default::default()
+        };
+
+        let mut pst = PartiallySignedTransaction::new_v2();
+        pst.add_input(input);
+
+        pst
+    }
+
+    fn dummy_asset_id(byte: u8) -> AssetId {
+        AssetId::from_slice(&[byte; 32]).unwrap()
+    }
+
+    #[test]
+    fn test_get_env_idx() {
+        let program = dummy_program();
+        let network = dummy_network();
+
+        let correct_script = program.get_script_pubkey(&network);
+        let wrong_script = Script::new();
+
+        let mut pst = make_pst_with_script(wrong_script);
+        let correct_txout = TxOut {
+            asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
+            value: confidential::Value::Explicit(1000),
+            nonce: confidential::Nonce::Null,
+            script_pubkey: correct_script,
+            witness: TxOutWitness::default(),
+        };
+        pst.add_input(Input {
+            witness_utxo: Some(correct_txout),
+            ..Default::default()
+        });
+
+        // take script with wrong pubkey
+        assert!(matches!(
+            program.get_env(&pst, 0, &network).unwrap_err(),
+            ProgramError::ScriptPubkeyMismatch { .. }
+        ));
+
+        assert!(program.get_env(&pst, 1, &network).is_ok());
+    }
+}
