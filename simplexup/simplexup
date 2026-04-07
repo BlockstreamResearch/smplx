@@ -347,8 +347,10 @@ use() {
       cp "$SIMPLEX_VERSION_DIR/$bin" "$bin_path"
       # Print usage msg
       case $bin in
-        simplex) 
+        simplex)
           say "- $(ensure "$bin_path" -V)"
+          # Create smplx alias pointing to the simplex binary
+          ln -sf "$bin_path" "$SIMPLEX_BIN_DIR/smplx"
         ;;
       esac
 
