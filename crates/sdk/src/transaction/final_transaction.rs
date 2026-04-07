@@ -38,7 +38,7 @@ impl FinalTransaction {
     }
 
     pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
-        if let RequiredSignature::Witness(_) = required_sig {
+        if let RequiredSignature::Witness(_, _) = required_sig {
             panic!("Requested signature is not NativeEcdsa or None");
         }
 
@@ -74,7 +74,7 @@ impl FinalTransaction {
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
     ) -> AssetId {
-        if let RequiredSignature::Witness(_) = required_sig {
+        if let RequiredSignature::Witness(_, _) = required_sig {
             panic!("Requested signature is not NativeEcdsa or None");
         }
 

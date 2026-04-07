@@ -53,4 +53,16 @@ pub enum SignerError {
 
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
+
+    #[error("Failed to obtain program witness types: {0}")]
+    ProgramGenAbiMeta(String),
+
+    #[error("Missing such witness field: {0}")]
+    WtnsFieldNotFound(String),
+
+    #[error("Invalid witness signature path")]
+    InvalidSigPath,
+
+    #[error("Failed to parse witness signature path")]
+    WtnsSigParse,
 }

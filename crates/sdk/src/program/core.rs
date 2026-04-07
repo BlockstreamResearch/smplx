@@ -41,6 +41,8 @@ pub trait ProgramTrait: DynClone {
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
+
+    fn load(&self) -> Result<CompiledProgram, ProgramError>;
 }
 
 #[derive(Clone)]
@@ -142,6 +144,10 @@ impl ProgramTrait for Program {
             self.control_block()?.serialize(),
         ])
     }
+
+    fn load(&self) -> Result<CompiledProgram, ProgramError> {
+        self.load()
+    }
 }
 
 impl Program {
@@ -173,7 +179,7 @@ impl Program {
         hash_script(&self.get_script_pubkey(network))
     }
 
-    fn load(&self) -> Result<CompiledProgram, ProgramError> {
+    pub fn load(&self) -> Result<CompiledProgram, ProgramError> {
         let compiled = CompiledProgram::new(self.source, self.arguments.build_arguments(), true)
             .map_err(ProgramError::Compilation)?;
         Ok(compiled)

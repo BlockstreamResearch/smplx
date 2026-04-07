@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
@@ -9,7 +8,9 @@ use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Tx
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
+use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
+use simplicityhl::{ResolvedType, Value};
 
 use bip39::Mnemonic;
 use bip39::rand::thread_rng;
@@ -420,11 +421,12 @@ impl Signer {
             if let Some(program_input) = &input_i.program_input {
                 let signed_witness: Result<WitnessValues, SignerError> = match &input_i.required_sig {
                     // sign the program and insert the signature into the witness
-                    RequiredSignature::Witness(witness_name) => Ok(self.get_signed_program_witness(
+                    RequiredSignature::Witness(witness_name, sig_path) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
                         witness_name,
+                        sig_path,
                         index,
                     )?),
                     // just build the passed witness
@@ -455,20 +457,35 @@ impl Signer {
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
         witness_name: &str,
+        sig_path: &Option<String>,
         index: usize,
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
+        // put signature right after wtns field name if path is not provided
+        let sig_val = match sig_path {
+            Some(path) => {
+                let parsed_path = parse_sig_path(path)?;
+                let compiled = program.load().map_err(SignerError::Program)?;
+
+                let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
+
+                let witness_type = abi_meta
+                    .witness_types
+                    .get(&WitnessName::from_str_unchecked(witness_name))
+                    .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+                wrap_signature_along_path(witness_type, Value::byte_array(signature.serialize()), &parsed_path)?
+            }
+            None => Value::byte_array(signature.serialize()),
+        };
         let mut hm = HashMap::new();
 
         witness.iter().for_each(|el| {
             hm.insert(el.0.clone(), el.1.clone());
         });
 
-        hm.insert(
-            WitnessName::from_str_unchecked(witness_name),
-            Value::byte_array(signature.serialize()),
-        );
+        hm.insert(WitnessName::from_str_unchecked(witness_name), sig_val);
 
         Ok(WitnessValues::from(hm))
     }
@@ -522,6 +539,61 @@ impl Signer {
 
         DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
     }
+}
+
+enum EitherDirection {
+    Left,
+    Right,
+}
+
+fn parse_sig_path(path: &str) -> Result<Vec<EitherDirection>, SignerError> {
+    let mut res = Vec::new();
+
+    for dir in path.split_ascii_whitespace() {
+        match dir {
+            "Left" | "L" | "0" => res.push(EitherDirection::Left),
+            "Right" | "R" | "1" => res.push(EitherDirection::Right),
+            _ => return Err(SignerError::WtnsSigParse),
+        }
+    }
+    Ok(res)
+}
+
+fn wrap_signature_along_path(ty: &ResolvedType, sig: Value, path: &[EitherDirection]) -> Result<Value, SignerError> {
+    let mut stack = Vec::new();
+    let mut current_ty = ty;
+
+    for direction in path {
+        match current_ty.as_inner() {
+            TypeInner::Either(left_ty, right_ty) => match direction {
+                EitherDirection::Left => {
+                    stack.push((EitherDirection::Left, (**right_ty).clone()));
+                    current_ty = left_ty;
+                }
+                EitherDirection::Right => {
+                    stack.push((EitherDirection::Right, (**left_ty).clone()));
+                    current_ty = right_ty;
+                }
+            },
+            _ => return Err(SignerError::InvalidSigPath),
+        }
+    }
+
+    match current_ty.as_inner() {
+        TypeInner::Array(inner, 64) if matches!(inner.as_inner(), TypeInner::UInt(UIntType::U8)) => {}
+        _ => return Err(SignerError::InvalidSigPath),
+    }
+
+    let mut value = sig;
+
+    for (direction, sibling_ty) in stack.into_iter().rev() {
+        value = match direction {
+            EitherDirection::Left => Value::left(value, sibling_ty),
+            EitherDirection::Right => Value::right(sibling_ty, value),
+        };
+    }
+
+    Ok(value)
 }
 
 #[cfg(test)]

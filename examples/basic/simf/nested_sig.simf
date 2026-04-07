@@ -1,0 +1,26 @@
+fn checksig(pk: Pubkey, sig: Signature) {
+    let msg: u256 = jet::sig_all_hash();
+    jet::bip_0340_verify((pk, msg), sig);
+}
+
+fn inherit_spend(inheritor_sig: Signature) {
+    checksig(param::PUBLIC_KEY, inheritor_sig);
+}
+
+fn cold_spend(cold_sig: Signature) {
+    checksig(param::PUBLIC_KEY, cold_sig);
+}
+
+fn hot_spend(hot_sig: Signature) {
+    checksig(param::PUBLIC_KEY, hot_sig);
+}
+
+fn main() {
+    match witness::INHERIT_OR_NOT {
+        Left(inheritor_sig: Signature) => inherit_spend(inheritor_sig),
+        Right(cold_or_hot: Either<Signature, Signature>) => match cold_or_hot {
+            Left(cold_sig: Signature) => cold_spend(cold_sig),
+            Right(hot_sig: Signature) => hot_spend(hot_sig),
+        },
+    }
+}
