@@ -207,12 +207,12 @@ impl Program {
         Ok(info.control_block(&script_ver).expect("control block should exist"))
     }
 }
+
 #[cfg(test)]
 mod tests {
-
     use simplicityhl::{
         Arguments,
-        elements::{AssetId, TxOutWitness, confidential, pset::Input},
+        elements::{AssetId, confidential, pset::Input},
     };
 
     use super::*;
@@ -238,6 +238,10 @@ mod tests {
         }
     }
 
+    fn dummy_asset_id(byte: u8) -> AssetId {
+        AssetId::from_slice(&[byte; 32]).unwrap()
+    }
+
     fn dummy_pubkey(seed: u64) -> XOnlyPublicKey {
         let mut rng = <secp256k1::rand::rngs::StdRng as secp256k1::rand::SeedableRng>::seed_from_u64(seed);
         secp256k1::Keypair::new_global(&mut rng).x_only_public_key().0
@@ -255,24 +259,19 @@ mod tests {
         let txout = TxOut {
             asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
             value: confidential::Value::Explicit(1000),
-            nonce: confidential::Nonce::Null,
             script_pubkey: script,
-            witness: TxOutWitness::default(),
+            ..Default::default()
         };
-
         let input = Input {
             witness_utxo: Some(txout),
             ..Default::default()
         };
 
         let mut pst = PartiallySignedTransaction::new_v2();
+
         pst.add_input(input);
 
         pst
-    }
-
-    fn dummy_asset_id(byte: u8) -> AssetId {
-        AssetId::from_slice(&[byte; 32]).unwrap()
     }
 
     #[test]
@@ -284,19 +283,20 @@ mod tests {
         let wrong_script = Script::new();
 
         let mut pst = make_pst_with_script(wrong_script);
+
         let correct_txout = TxOut {
             asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
             value: confidential::Value::Explicit(1000),
-            nonce: confidential::Nonce::Null,
             script_pubkey: correct_script,
-            witness: TxOutWitness::default(),
+            ..Default::default()
         };
+
         pst.add_input(Input {
             witness_utxo: Some(correct_txout),
             ..Default::default()
         });
 
-        // take script with wrong pubkey
+        // take a script with a wrong pubkey
         assert!(matches!(
             program.get_env(&pst, 0, &network).unwrap_err(),
             ProgramError::ScriptPubkeyMismatch { .. }

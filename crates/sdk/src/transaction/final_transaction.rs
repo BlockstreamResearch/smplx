@@ -239,10 +239,12 @@ impl FinalTransaction {
         (pst, input_secrets)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use bitcoin_hashes::Hash;
-    use simplicityhl::elements::{OutPoint, Script, TxOut, TxOutWitness, Txid, confidential};
+
+    use simplicityhl::elements::{OutPoint, Script, TxOut, Txid};
 
     use crate::transaction::UTXO;
 
@@ -267,13 +269,7 @@ mod tests {
     fn confidential_utxo(txid_byte: u8, vout: u32, asset: AssetId, value: u64) -> UTXO {
         UTXO {
             outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
-            txout: TxOut {
-                asset: confidential::Asset::Null,
-                value: confidential::Value::Null,
-                nonce: confidential::Nonce::Null,
-                script_pubkey: Script::new(),
-                witness: TxOutWitness::default(),
-            },
+            txout: TxOut::default(),
             secrets: Some(TxOutSecrets::new(
                 asset,
                 AssetBlindingFactor::zero(),
@@ -282,6 +278,7 @@ mod tests {
             )),
         }
     }
+
     // Manually construct PST and check extract_pst correctness based on it
     #[test]
     fn extract_pst_single_explicit_input_single_output() {
