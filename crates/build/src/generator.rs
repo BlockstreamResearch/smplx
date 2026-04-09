@@ -162,7 +162,7 @@ impl ArtifactsGenerator {
 
         let code = quote! {
             use simplex::include_simf;
-            use simplex::program::{ArgumentsTrait, Program};
+            use simplex::program::{ArgumentsTrait, Program, ProgramStorage};
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
             pub struct #program_name {
@@ -178,12 +178,30 @@ impl ArtifactsGenerator {
                     }
                 }
 
+                pub fn new_with_storage(
+                    public_key: XOnlyPublicKey,
+                    arguments: impl ArgumentsTrait + 'static,
+                    storage_slots_count: usize,
+                ) -> Self {
+                    Self {
+                        program: Program::new_with_storage(Self::SOURCE, public_key, Box::new(arguments), storage_slots_count),
+                    }
+                }
+
                 pub fn get_program(&self) -> &Program {
                     &self.program
                 }
 
                 pub fn get_program_mut(&mut self) -> &mut Program {
                     &mut self.program
+                }
+
+                pub fn get_storage(&self) -> &ProgramStorage {
+                    self.program.storage()
+                }
+
+                pub fn get_storage_mut(&mut self) -> &mut ProgramStorage {
+                    self.program.storage_mut()
                 }
             }
 

@@ -1,3 +1,4 @@
+use bitcoin_hashes::HashEngine;
 use sha2::{Digest, Sha256};
 
 use simplicityhl::elements::{AssetId, ContractHash, OutPoint, Script};
@@ -16,6 +17,15 @@ pub fn tr_unspendable_key() -> secp256k1::XOnlyPublicKey {
 pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> sha256::Midstate {
     let contract_hash = ContractHash::from_byte_array(entropy);
     AssetId::generate_asset_entropy(*outpoint, contract_hash)
+}
+
+pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
+    let tag = sha256::Hash::hash(b"TapData");
+    let mut eng = sha256::Hash::engine();
+    eng.input(tag.as_byte_array());
+    eng.input(tag.as_byte_array());
+    eng.input(data);
+    sha256::Hash::from_engine(eng)
 }
 
 pub fn hash_script(script: &Script) -> [u8; 32] {

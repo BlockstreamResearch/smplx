@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use dyn_clone::DynClone;
@@ -15,8 +16,9 @@ use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
+use crate::program::ProgramStorage;
 use crate::provider::SimplicityNetwork;
-use crate::utils::hash_script;
+use crate::utils::{hash_script, tap_data_hash};
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -48,6 +50,7 @@ pub struct Program {
     source: &'static str,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
+    storage: ProgramStorage,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -150,6 +153,21 @@ impl Program {
             source,
             pub_key,
             arguments,
+            storage: ProgramStorage::default(),
+        }
+    }
+
+    pub fn new_with_storage(
+        source: &'static str,
+        pub_key: XOnlyPublicKey,
+        arguments: Box<dyn ArgumentsTrait>,
+        storage_slots_count: usize,
+    ) -> Self {
+        Self {
+            source,
+            pub_key,
+            arguments,
+            storage: ProgramStorage::new(storage_slots_count),
         }
     }
 
@@ -173,6 +191,14 @@ impl Program {
         hash_script(&self.get_script_pubkey(network))
     }
 
+    pub fn storage(&self) -> &ProgramStorage {
+        &self.storage
+    }
+
+    pub fn storage_mut(&mut self) -> &mut ProgramStorage {
+        &mut self.storage
+    }
+
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
         let compiled = CompiledProgram::new(self.source, self.arguments.build_arguments(), true)
             .map_err(ProgramError::Compilation)?;
@@ -186,14 +212,37 @@ impl Program {
         Ok((script, leaf_version()))
     }
 
-    // TODO: taproot storage
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
-        let builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version()?;
+    fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
+        assert!(total_leaves > 0, "Taproot tree must contain at least one leaf");
 
-        let builder = builder
-            .add_leaf_with_ver(0, script, version)
+        let next_pow2 = total_leaves.next_power_of_two();
+        let depth = next_pow2.ilog2() as usize;
+
+        let shallow_count = next_pow2 - total_leaves;
+        let deep_count = total_leaves - shallow_count;
+
+        let mut depths = Vec::with_capacity(total_leaves);
+        depths.extend(iter::repeat_n(depth, deep_count));
+        if depth > 0 {
+            depths.extend(iter::repeat_n(depth - 1, shallow_count));
+        }
+        depths
+    }
+
+    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+        let mut builder = taproot::TaprootBuilder::new();
+        let (script, version) = self.script_version()?;
+        let depths = Self::taproot_leaf_depths(1 + self.storage.len());
+
+        builder = builder
+            .add_leaf_with_ver(depths[0], script, version)
             .expect("tap tree should be valid");
+
+        for (slot, depth) in self.storage.slots().iter().zip(depths.into_iter().skip(1)) {
+            builder = builder
+                .add_hidden(depth, tap_data_hash(slot))
+                .expect("tap tree should be valid");
+        }
 
         Ok(builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
@@ -303,5 +352,22 @@ mod tests {
         ));
 
         assert!(program.get_env(&pst, 1, &network).is_ok());
+    }
+
+    #[test]
+    fn test_taproot_leaf_depths_known_values() {
+        let cases = [
+            (1, vec![0]),
+            (2, vec![1, 1]),
+            (3, vec![2, 2, 1]),
+            (4, vec![2, 2, 2, 2]),
+            (5, vec![3, 3, 2, 2, 2]),
+            (6, vec![3, 3, 3, 3, 2, 2]),
+            (8, vec![3, 3, 3, 3, 3, 3, 3, 3]),
+        ];
+
+        for (n, expected) in cases {
+            assert_eq!(Program::taproot_leaf_depths(n), expected, "n={n}");
+        }
     }
 }
