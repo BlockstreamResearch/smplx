@@ -137,6 +137,8 @@ jobs:
         env:
           RUSTFLAGS: -Dwarnings
 
+  # TODO: test example
+
   ci-success:
     runs-on: ubuntu-latest
     if: always()

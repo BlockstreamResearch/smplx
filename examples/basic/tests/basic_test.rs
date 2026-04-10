@@ -2,7 +2,6 @@ use simplex::simplicityhl::elements::{Script, Txid};
 
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
-use simplex::utils::tr_unspendable_key;
 
 use simplex_example::artifacts::p2pk::P2pkProgram;
 use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
@@ -14,7 +13,7 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    let p2pk = P2pkProgram::new(tr_unspendable_key(), arguments);
+    let p2pk = P2pkProgram::new(arguments);
     let p2pk_script = p2pk.get_program().get_script_pubkey(context.get_network());
 
     (p2pk, p2pk_script)
