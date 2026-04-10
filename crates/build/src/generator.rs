@@ -190,8 +190,8 @@ impl ArtifactsGenerator {
                     self
                 }
 
-                pub fn set(&mut self, index: usize, new_value: [u8; 32]) {
-                    self.program.set(index, new_value);
+                pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+                    self.program.set_storage_at(index, new_value);
                 }
 
                 pub fn get_storage_len(&self) -> usize {

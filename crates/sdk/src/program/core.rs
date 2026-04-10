@@ -168,7 +168,7 @@ impl Program {
         self
     }
 
-    pub fn set(&mut self, index: usize, new_value: [u8; 32]) {
+    pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
         let slot = self.storage.get_mut(index).expect("Index out of bounds");
 
         *slot = new_value;
