@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
@@ -31,6 +32,7 @@ use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
+use crate::signer::wtns_parser::{parse_sig_path, wrap_value_along_path};
 use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
 
 use super::error::SignerError;
@@ -420,11 +422,12 @@ impl Signer {
             if let Some(program_input) = &input_i.program_input {
                 let signed_witness: Result<WitnessValues, SignerError> = match &input_i.required_sig {
                     // sign the program and insert the signature into the witness
-                    RequiredSignature::Witness(witness_name) => Ok(self.get_signed_program_witness(
+                    RequiredSignature::Witness(witness_name, sig_path) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
                         witness_name,
+                        sig_path,
                         index,
                     )?),
                     // just build the passed witness
@@ -455,20 +458,47 @@ impl Signer {
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
         witness_name: &str,
+        sig_path: &Option<Vec<String>>,
         index: usize,
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
+        // put signature right after wtns field name if path is not provided
+        let sig_val = match sig_path {
+            Some(path) => {
+                let parsed_path = parse_sig_path(path)?;
+                let compiled = program.load().map_err(SignerError::Program)?;
+
+                let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
+
+                let witness_type = abi_meta
+                    .witness_types
+                    .get(&WitnessName::from_str_unchecked(witness_name))
+                    .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+                let existing_witness = Arc::new(
+                    witness
+                        .get(&WitnessName::from_str_unchecked(witness_name))
+                        .expect("checked above")
+                        .clone(),
+                );
+
+                wrap_value_along_path(
+                    &existing_witness,
+                    witness_type,
+                    Value::byte_array(signature.serialize()),
+                    &parsed_path,
+                )?
+            }
+            None => Value::byte_array(signature.serialize()),
+        };
         let mut hm = HashMap::new();
 
         witness.iter().for_each(|el| {
             hm.insert(el.0.clone(), el.1.clone());
         });
 
-        hm.insert(
-            WitnessName::from_str_unchecked(witness_name),
-            Value::byte_array(signature.serialize()),
-        );
+        hm.insert(WitnessName::from_str_unchecked(witness_name), sig_val);
 
         Ok(WitnessValues::from(hm))
     }
