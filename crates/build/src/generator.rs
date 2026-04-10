@@ -172,10 +172,38 @@ impl ArtifactsGenerator {
             impl #program_name {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
-                pub fn new(public_key: XOnlyPublicKey, arguments: impl ArgumentsTrait + 'static) -> Self {
+                pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, public_key, Box::new(arguments)),
+                        program: Program::new(Self::SOURCE, Box::new(arguments)),
                     }
+                }
+
+                pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
+                    self.program = self.program.with_pub_key(pub_key);
+
+                    self
+                }
+
+                pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+                    self.program = self.program.with_storage_capacity(capacity);
+
+                    self
+                }
+
+                pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+                    self.program.set_storage_at(index, new_value);
+                }
+
+                pub fn get_storage_len(&self) -> usize {
+                    self.program.get_storage_len()
+                }
+
+                pub fn get_storage(&self) -> &[[u8; 32]] {
+                    self.program.get_storage()
+                }
+
+                pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+                    self.program.get_storage_at(index)
                 }
 
                 pub fn get_program(&self) -> &Program {

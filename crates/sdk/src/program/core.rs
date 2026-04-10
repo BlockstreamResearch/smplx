@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use dyn_clone::DynClone;
@@ -16,7 +17,7 @@ use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
-use crate::utils::hash_script;
+use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -48,6 +49,7 @@ pub struct Program {
     source: &'static str,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
+    storage: Vec<[u8; 32]>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -145,12 +147,43 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
-    pub fn new(source: &'static str, pub_key: XOnlyPublicKey, arguments: Box<dyn ArgumentsTrait>) -> Self {
+    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
             source,
-            pub_key,
+            pub_key: tr_unspendable_key(),
             arguments,
+            storage: Vec::new(),
         }
+    }
+
+    pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
+        self.pub_key = pub_key;
+
+        self
+    }
+
+    pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+        self.storage = vec![[0u8; 32]; capacity];
+
+        self
+    }
+
+    pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+        let slot = self.storage.get_mut(index).expect("Index out of bounds");
+
+        *slot = new_value;
+    }
+
+    pub fn get_storage_len(&self) -> usize {
+        self.storage.len()
+    }
+
+    pub fn get_storage(&self) -> &[[u8; 32]] {
+        &self.storage
+    }
+
+    pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+        self.storage[index]
     }
 
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
@@ -186,14 +219,39 @@ impl Program {
         Ok((script, leaf_version()))
     }
 
-    // TODO: taproot storage
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
-        let builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version()?;
+    fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
+        assert!(total_leaves > 0, "Taproot tree must contain at least one leaf");
 
-        let builder = builder
-            .add_leaf_with_ver(0, script, version)
+        let next_pow2 = total_leaves.next_power_of_two();
+        let depth = next_pow2.ilog2() as usize;
+
+        let shallow_count = next_pow2 - total_leaves;
+        let deep_count = total_leaves - shallow_count;
+
+        let mut depths = Vec::with_capacity(total_leaves);
+        depths.extend(iter::repeat_n(depth, deep_count));
+
+        if depth > 0 {
+            depths.extend(iter::repeat_n(depth - 1, shallow_count));
+        }
+
+        depths
+    }
+
+    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+        let mut builder = taproot::TaprootBuilder::new();
+        let (script, version) = self.script_version()?;
+        let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
+
+        builder = builder
+            .add_leaf_with_ver(depths[0], script, version)
             .expect("tap tree should be valid");
+
+        for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
+            builder = builder
+                .add_hidden(depth, tap_data_hash(slot))
+                .expect("tap tree should be valid");
+        }
 
         Ok(builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
@@ -242,13 +300,8 @@ mod tests {
         AssetId::from_slice(&[byte; 32]).unwrap()
     }
 
-    fn dummy_pubkey(seed: u64) -> XOnlyPublicKey {
-        let mut rng = <secp256k1::rand::rngs::StdRng as secp256k1::rand::SeedableRng>::seed_from_u64(seed);
-        secp256k1::Keypair::new_global(&mut rng).x_only_public_key().0
-    }
-
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, dummy_pubkey(0), Box::new(EmptyArguments))
+        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
     }
 
     fn dummy_network() -> SimplicityNetwork {
@@ -303,5 +356,22 @@ mod tests {
         ));
 
         assert!(program.get_env(&pst, 1, &network).is_ok());
+    }
+
+    #[test]
+    fn test_taproot_leaf_depths_known_values() {
+        let cases = [
+            (1, vec![0]),
+            (2, vec![1, 1]),
+            (3, vec![2, 2, 1]),
+            (4, vec![2, 2, 2, 2]),
+            (5, vec![3, 3, 2, 2, 2]),
+            (6, vec![3, 3, 3, 3, 2, 2]),
+            (8, vec![3, 3, 3, 3, 3, 3, 3, 3]),
+        ];
+
+        for (n, expected) in cases {
+            assert_eq!(Program::taproot_leaf_depths(n), expected, "n={n}");
+        }
     }
 }
