@@ -67,7 +67,7 @@ fn test_inherit_spend(context: simplex::TestContext) -> anyhow::Result<()> {
         inherit_or_not: simplex::either::Either::Left(DUMMY_SIGNATURE),
     };
 
-    let spend_tx = spend_nested_sig(&context, witness, Some("Left".to_string()))?;
+    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Left"]))?;
     provider.wait(&spend_tx)?;
     println!("Inherit spend confirmed");
 
@@ -86,7 +86,7 @@ fn test_cold_spend(context: simplex::TestContext) -> anyhow::Result<()> {
         inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Left(DUMMY_SIGNATURE)),
     };
 
-    let spend_tx = spend_nested_sig(&context, witness, Some("Right Left".to_string()))?;
+    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Right", "Left"]))?;
     provider.wait(&spend_tx)?;
     println!("Cold spend confirmed");
 
@@ -105,7 +105,7 @@ fn test_hot_spend(context: simplex::TestContext) -> anyhow::Result<()> {
         inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Right(DUMMY_SIGNATURE)),
     };
 
-    let spend_tx = spend_nested_sig(&context, witness, Some("Right Right".to_string()))?;
+    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Right", "Right"]))?;
     provider.wait(&spend_tx)?;
     println!("Hot spend confirmed");
 

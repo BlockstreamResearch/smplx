@@ -60,9 +60,9 @@ pub enum SignerError {
     #[error("Missing such witness field: {0}")]
     WtnsFieldNotFound(String),
 
-    #[error("Invalid witness signature path")]
-    InvalidSigPath,
-
     #[error("Failed to parse witness signature path")]
     WtnsSigParse,
+
+    #[error("Failed to inject value into witness: {0}")]
+    WtnsInjectError(String),
 }

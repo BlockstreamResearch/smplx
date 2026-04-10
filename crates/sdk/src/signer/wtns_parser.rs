@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use simplicityhl::{
     ResolvedType, Value,
-    types::{TypeInner, UIntType},
+    types::TypeInner,
     value::{ValueConstructible, ValueInner},
 };
 
@@ -45,23 +45,46 @@ pub enum EitherRoute {
 #[derive(Clone, Copy, Debug)]
 pub struct EnumerableRoute(usize);
 
-pub fn parse_sig_path(path: &str) -> Result<Vec<EitherRoute>, SignerError> {
+pub fn parse_sig_path(path: &Vec<String>) -> Result<Vec<WtnsPathRoute>, SignerError> {
     let mut res = Vec::new();
 
-    for dir in path.split_ascii_whitespace() {
-        match dir {
-            "Left" | "L" | "0" => res.push(EitherRoute::Left),
-            "Right" | "R" | "1" => res.push(EitherRoute::Right),
+    for route in path {
+        let parsed = match route.as_str() {
+            "Left" => WtnsPathRoute::Either(EitherRoute::Left),
+            "Right" => WtnsPathRoute::Either(EitherRoute::Right),
+            _ if route.parse::<usize>().is_ok() => {
+                WtnsPathRoute::Tuple(EnumerableRoute(route.parse::<usize>().unwrap()))
+            }
             _ => return Err(SignerError::WtnsSigParse),
-        }
+        };
+        res.push(parsed);
     }
     Ok(res)
 }
 
 pub enum WtnsWrappingError {
     UnsupportedPathType,
-    TupleOutOfBounds,
+    TupleOutOfBounds(usize, usize),
     RootTypeMismatch,
+}
+
+impl std::fmt::Display for WtnsWrappingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RootTypeMismatch => write!(f, "injected value's type does not match with type declared in witness"),
+            Self::UnsupportedPathType => write!(f, "unsupported path type; only Either, Array and Tuple are available"),
+            Self::TupleOutOfBounds(expected, input) => {
+                let msg = format!("index out of bound; length is {}, got {}", expected, input);
+                write!(f, "{}", msg)
+            }
+        }
+    }
+}
+
+impl From<WtnsWrappingError> for SignerError {
+    fn from(value: WtnsWrappingError) -> Self {
+        Self::WtnsInjectError(value.to_string())
+    }
 }
 
 pub fn wrap_value_along_path(
@@ -73,7 +96,7 @@ pub fn wrap_value_along_path(
     enum StackItem {
         Either(EitherRoute, Arc<ResolvedType>),
         Array(EnumerableRoute, Arc<ResolvedType>, Arc<[Value]>),
-        Tuple(EnumerableRoute, Arc<[Arc<ResolvedType>]>, Arc<[Value]>),
+        Tuple(EnumerableRoute, Arc<[Value]>),
     }
 
     fn downcast_either(val: &Value, direction: EitherRoute) -> Arc<Value> {
@@ -131,7 +154,7 @@ pub fn wrap_value_along_path(
                 let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                 if idx.0 >= *len {
-                    return Err(WtnsWrappingError::TupleOutOfBounds);
+                    return Err(WtnsWrappingError::TupleOutOfBounds(*len, idx.0));
                 }
 
                 let arr_val = downcast_array(&current_val);
@@ -145,12 +168,12 @@ pub fn wrap_value_along_path(
                 let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                 if idx.0 >= tuple.len() {
-                    return Err(WtnsWrappingError::TupleOutOfBounds);
+                    return Err(WtnsWrappingError::TupleOutOfBounds(tuple.len(), idx.0));
                 }
 
                 let tuple_val = downcast_tuple(&current_val);
 
-                stack.push(StackItem::Tuple(idx, Arc::clone(tuple), Arc::clone(&tuple_val)));
+                stack.push(StackItem::Tuple(idx, Arc::clone(&tuple_val)));
 
                 current_ty = &tuple[idx.0];
                 current_val = Arc::new(tuple_val[idx.0].clone());
@@ -176,48 +199,11 @@ pub fn wrap_value_along_path(
                 elements[idx.0] = value;
                 Value::array(elements, (*elem_ty).clone())
             }
-            StackItem::Tuple(idx, _, tuple_vals) => {
+            StackItem::Tuple(idx, tuple_vals) => {
                 let mut elements = tuple_vals.to_vec();
                 elements[idx.0] = value;
                 Value::tuple(elements)
             }
-        };
-    }
-
-    Ok(value)
-}
-
-pub fn wrap_signature_along_path(ty: &ResolvedType, sig: Value, path: &[EitherRoute]) -> Result<Value, SignerError> {
-    let mut stack = Vec::new();
-    let mut current_ty = ty;
-
-    for direction in path {
-        match current_ty.as_inner() {
-            TypeInner::Either(left_ty, right_ty) => match direction {
-                EitherRoute::Left => {
-                    stack.push((EitherRoute::Left, (**right_ty).clone()));
-                    current_ty = left_ty;
-                }
-                EitherRoute::Right => {
-                    stack.push((EitherRoute::Right, (**left_ty).clone()));
-                    current_ty = right_ty;
-                }
-            },
-            _ => return Err(SignerError::InvalidSigPath),
-        }
-    }
-
-    match current_ty.as_inner() {
-        TypeInner::Array(inner, 64) if matches!(inner.as_inner(), TypeInner::UInt(UIntType::U8)) => {}
-        _ => return Err(SignerError::InvalidSigPath),
-    }
-
-    let mut value = sig;
-
-    for (direction, sibling_ty) in stack.into_iter().rev() {
-        value = match direction {
-            EitherRoute::Left => Value::left(value, sibling_ty),
-            EitherRoute::Right => Value::right(sibling_ty, value),
         };
     }
 
