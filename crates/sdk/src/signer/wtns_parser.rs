@@ -11,7 +11,7 @@ use crate::signer::SignerError;
 #[derive(Clone, Copy, Debug)]
 pub enum WtnsPathRoute {
     Either(EitherRoute),
-    Tuple(EnumerableRoute),
+    Enumerable(EnumerableRoute),
 }
 
 impl TryInto<EitherRoute> for WtnsPathRoute {
@@ -30,7 +30,7 @@ impl TryInto<EnumerableRoute> for WtnsPathRoute {
 
     fn try_into(self) -> Result<EnumerableRoute, Self::Error> {
         match self {
-            Self::Tuple(tuple) => Ok(tuple),
+            Self::Enumerable(tuple) => Ok(tuple),
             _ => Err(self),
         }
     }
@@ -45,6 +45,18 @@ pub enum EitherRoute {
 #[derive(Clone, Copy, Debug)]
 pub struct EnumerableRoute(usize);
 
+/// ## Usage
+/// ```rust,ignore
+/// // .simf script
+/// match witness::SOMETHING {
+///     Left(x: u64) => ...,
+///     Right([y, z]: [u64, u64]) => ...
+/// }
+/// // path for each variable
+/// vec!["Left"] // for x
+/// vec!["Right", "0"] // for y
+/// vec!["Right", "1"] // for z
+/// ```
 pub fn parse_sig_path(path: &Vec<String>) -> Result<Vec<WtnsPathRoute>, SignerError> {
     let mut res = Vec::new();
 
@@ -53,7 +65,7 @@ pub fn parse_sig_path(path: &Vec<String>) -> Result<Vec<WtnsPathRoute>, SignerEr
             "Left" => WtnsPathRoute::Either(EitherRoute::Left),
             "Right" => WtnsPathRoute::Either(EitherRoute::Right),
             _ if route.parse::<usize>().is_ok() => {
-                WtnsPathRoute::Tuple(EnumerableRoute(route.parse::<usize>().unwrap()))
+                WtnsPathRoute::Enumerable(EnumerableRoute(route.parse::<usize>().unwrap()))
             }
             _ => return Err(SignerError::WtnsSigParse),
         };
@@ -64,7 +76,7 @@ pub fn parse_sig_path(path: &Vec<String>) -> Result<Vec<WtnsPathRoute>, SignerEr
 
 pub enum WtnsWrappingError {
     UnsupportedPathType,
-    TupleOutOfBounds(usize, usize),
+    IdxOutOfBounds(usize, usize),
     RootTypeMismatch,
 }
 
@@ -73,7 +85,7 @@ impl std::fmt::Display for WtnsWrappingError {
         match self {
             Self::RootTypeMismatch => write!(f, "injected value's type does not match with type declared in witness"),
             Self::UnsupportedPathType => write!(f, "unsupported path type; only Either, Array and Tuple are available"),
-            Self::TupleOutOfBounds(expected, input) => {
+            Self::IdxOutOfBounds(expected, input) => {
                 let msg = format!("index out of bound; length is {}, got {}", expected, input);
                 write!(f, "{}", msg)
             }
@@ -87,6 +99,11 @@ impl From<WtnsWrappingError> for SignerError {
     }
 }
 
+/// Injects `injected_val` into `existing_witness` at the position described by `path`.
+///
+/// `existing_witness` and `ty` must be consistent — `ty` must be the declared
+/// `ResolvedType` of `existing_witness`. The existing witness values at non-injected
+/// positions are preserved during tuple and array reconstruction.
 pub fn wrap_value_along_path(
     existing_witness: &Arc<Value>,
     ty: &ResolvedType,
@@ -99,6 +116,8 @@ pub fn wrap_value_along_path(
         Tuple(EnumerableRoute, Arc<[Value]>),
     }
 
+    // invocations of these functions below determined from types during traversal
+    // matches! guard at top of loop guarantees that types and routes are
     fn downcast_either(val: &Value, direction: EitherRoute) -> Arc<Value> {
         match (direction, val.inner()) {
             (EitherRoute::Left, ValueInner::Either(either)) => Arc::clone(either.as_ref().unwrap_left()),
@@ -128,8 +147,8 @@ pub fn wrap_value_along_path(
     for route in path {
         if !matches!(
             (route, current_ty.as_inner()),
-            (WtnsPathRoute::Tuple(_), TypeInner::Array(_, _))
-                | (WtnsPathRoute::Tuple(_), TypeInner::Tuple(_))
+            (WtnsPathRoute::Enumerable(_), TypeInner::Array(_, _))
+                | (WtnsPathRoute::Enumerable(_), TypeInner::Tuple(_))
                 | (WtnsPathRoute::Either(_), TypeInner::Either(_, _))
         ) {
             return Err(WtnsWrappingError::UnsupportedPathType);
@@ -154,7 +173,7 @@ pub fn wrap_value_along_path(
                 let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                 if idx.0 >= *len {
-                    return Err(WtnsWrappingError::TupleOutOfBounds(*len, idx.0));
+                    return Err(WtnsWrappingError::IdxOutOfBounds(*len, idx.0));
                 }
 
                 let arr_val = downcast_array(&current_val);
@@ -168,7 +187,7 @@ pub fn wrap_value_along_path(
                 let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                 if idx.0 >= tuple.len() {
-                    return Err(WtnsWrappingError::TupleOutOfBounds(tuple.len(), idx.0));
+                    return Err(WtnsWrappingError::IdxOutOfBounds(tuple.len(), idx.0));
                 }
 
                 let tuple_val = downcast_tuple(&current_val);

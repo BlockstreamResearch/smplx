@@ -28,10 +28,10 @@ fn fund_nested_sig(context: &simplex::TestContext) -> anyhow::Result<Txid> {
     Ok(txid)
 }
 
-fn spend_nested_sig(
+fn spend_nested_sig<'a>(
     context: &simplex::TestContext,
     witness: NestedSigWitness,
-    sig_path: Option<String>,
+    sig_path: Option<Vec<&'a str>>,
 ) -> anyhow::Result<Txid> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
@@ -46,7 +46,10 @@ fn spend_nested_sig(
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(program.get_program().clone()), Box::new(witness)),
-        RequiredSignature::Witness("INHERIT_OR_NOT".to_string(), sig_path),
+        RequiredSignature::Witness(
+            "INHERIT_OR_NOT".to_string(),
+            sig_path.map(|vec| vec.iter().map(|s| s.to_string()).collect()),
+        ),
     );
 
     let txid = signer.broadcast(&ft)?;
@@ -64,10 +67,10 @@ fn test_inherit_spend(context: simplex::TestContext) -> anyhow::Result<()> {
 
     // Left — inheritor sig injected by signer at path L
     let witness = NestedSigWitness {
-        inherit_or_not: simplex::either::Either::Left(DUMMY_SIGNATURE),
+        inherit_or_not: simplex::either::Either::Left((DUMMY_SIGNATURE, [0; 32])),
     };
 
-    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Left"]))?;
+    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Left", "0"]))?;
     provider.wait(&spend_tx)?;
     println!("Inherit spend confirmed");
 
@@ -102,10 +105,10 @@ fn test_hot_spend(context: simplex::TestContext) -> anyhow::Result<()> {
 
     // Right Right — hot sig injected by signer at path R R
     let witness = NestedSigWitness {
-        inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Right(DUMMY_SIGNATURE)),
+        inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Right([DUMMY_SIGNATURE, [0; 64]])),
     };
 
-    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Right", "Right"]))?;
+    let spend_tx = spend_nested_sig(&context, witness, Some(vec!["Right", "Right", "0"]))?;
     provider.wait(&spend_tx)?;
     println!("Hot spend confirmed");
 

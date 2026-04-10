@@ -466,7 +466,7 @@ impl Signer {
         // put signature right after wtns field name if path is not provided
         let sig_val = match sig_path {
             Some(path) => {
-                let parsed_path = parse_sig_path(path.as_ref())?;
+                let parsed_path = parse_sig_path(path)?;
                 let compiled = program.load().map_err(SignerError::Program)?;
 
                 let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
