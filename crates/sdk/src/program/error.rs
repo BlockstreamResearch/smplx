@@ -26,10 +26,4 @@ pub enum ProgramError {
 
     #[error("Input index exceeds u32 maximum: {0}")]
     InputIndexOverflow(#[from] std::num::TryFromIntError),
-
-    #[error("Storage slot index {index} out of bounds (have {slots_count} slots)")]
-    StorageSlotOutOfBounds { index: usize, slots_count: usize },
-
-    #[error("Storage slot count mismatch: expected {expected}, got {actual}")]
-    StorageSlotCountMismatch { expected: usize, actual: usize },
 }

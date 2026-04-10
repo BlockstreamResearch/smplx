@@ -16,9 +16,8 @@ use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
-use crate::program::ProgramStorage;
 use crate::provider::SimplicityNetwork;
-use crate::utils::{hash_script, tap_data_hash};
+use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -50,7 +49,7 @@ pub struct Program {
     source: &'static str,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
-    storage: ProgramStorage,
+    storage: Vec<[u8; 32]>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -148,27 +147,43 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
-    pub fn new(source: &'static str, pub_key: XOnlyPublicKey, arguments: Box<dyn ArgumentsTrait>) -> Self {
+    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
             source,
-            pub_key,
+            pub_key: tr_unspendable_key(),
             arguments,
-            storage: ProgramStorage::default(),
+            storage: Vec::new(),
         }
     }
 
-    pub fn new_with_storage(
-        source: &'static str,
-        pub_key: XOnlyPublicKey,
-        arguments: Box<dyn ArgumentsTrait>,
-        storage_slots_count: usize,
-    ) -> Self {
-        Self {
-            source,
-            pub_key,
-            arguments,
-            storage: ProgramStorage::new(storage_slots_count),
-        }
+    pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
+        self.pub_key = pub_key;
+
+        self
+    }
+
+    pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+        self.storage = vec![[0u8; 32]; capacity];
+
+        self
+    }
+
+    pub fn set(&mut self, index: usize, new_value: [u8; 32]) {
+        let slot = self.storage.get_mut(index).expect("Index out of bounds");
+
+        *slot = new_value;
+    }
+
+    pub fn get_storage_len(&self) -> usize {
+        self.storage.len()
+    }
+
+    pub fn get_storage(&self) -> &[[u8; 32]] {
+        &self.storage
+    }
+
+    pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+        self.storage[index]
     }
 
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
@@ -189,14 +204,6 @@ impl Program {
 
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
-    }
-
-    pub fn storage(&self) -> &ProgramStorage {
-        &self.storage
-    }
-
-    pub fn storage_mut(&mut self) -> &mut ProgramStorage {
-        &mut self.storage
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
@@ -223,22 +230,24 @@ impl Program {
 
         let mut depths = Vec::with_capacity(total_leaves);
         depths.extend(iter::repeat_n(depth, deep_count));
+
         if depth > 0 {
             depths.extend(iter::repeat_n(depth - 1, shallow_count));
         }
+
         depths
     }
 
     fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let mut builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;
-        let depths = Self::taproot_leaf_depths(1 + self.storage.len());
+        let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
 
         builder = builder
             .add_leaf_with_ver(depths[0], script, version)
             .expect("tap tree should be valid");
 
-        for (slot, depth) in self.storage.slots().iter().zip(depths.into_iter().skip(1)) {
+        for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
             builder = builder
                 .add_hidden(depth, tap_data_hash(slot))
                 .expect("tap tree should be valid");
@@ -291,13 +300,8 @@ mod tests {
         AssetId::from_slice(&[byte; 32]).unwrap()
     }
 
-    fn dummy_pubkey(seed: u64) -> XOnlyPublicKey {
-        let mut rng = <secp256k1::rand::rngs::StdRng as secp256k1::rand::SeedableRng>::seed_from_u64(seed);
-        secp256k1::Keypair::new_global(&mut rng).x_only_public_key().0
-    }
-
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, dummy_pubkey(0), Box::new(EmptyArguments))
+        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
     }
 
     fn dummy_network() -> SimplicityNetwork {

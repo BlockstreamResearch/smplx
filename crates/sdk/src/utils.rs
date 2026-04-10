@@ -21,10 +21,12 @@ pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> sha256::Midstate
 
 pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
     let tag = sha256::Hash::hash(b"TapData");
+
     let mut eng = sha256::Hash::engine();
     eng.input(tag.as_byte_array());
     eng.input(tag.as_byte_array());
     eng.input(data);
+
     sha256::Hash::from_engine(eng)
 }
 
