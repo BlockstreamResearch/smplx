@@ -1,0 +1,9 @@
+pub const REPO_OWNER: &str = "BlockstreamResearch";
+pub const REPO_NAME: &str = "SimplicityHL";
+pub const GITHUB_API_RELEASES_URL: &str = "https://api.github.com/repos/BlockstreamResearch/SimplicityHL/releases";
+pub const USER_AGENT: &str = "smplx-framework";
+pub const SMPLX_CACHE_DIR: &str = ".simplex";
+pub const COMPILERS_DIR_NAME: &str = "compilers";
+pub const DOWNLOAD_LOCK_FILE: &str = ".download.lock";
+pub const MIN_SUPPORTED_COMPILER_VERSION: &str = "0.3.0";
+pub const MAX_SUPPORTED_COMPILER_VERSION: &str = "0.4.1";

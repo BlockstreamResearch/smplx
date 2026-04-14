@@ -23,6 +23,8 @@ pub enum Command {
     Build,
     /// Clean Simplex artifacts in the current directory
     Clean,
+    /// Lists locally installed Simplicity compiler versions
+    Compilers,
 }
 
 #[derive(Debug, Args, Copy, Clone)]

@@ -30,4 +30,19 @@ pub enum BuildError {
 
     #[error("Failed to find prefix for a file: {0}")]
     NoBasePathForGeneration(#[from] std::path::StripPrefixError),
+
+    #[error("Failed to download compiler: {0}")]
+    Download(#[from] reqwest::Error),
+
+    #[error("Could not resolve compiler version: {0}")]
+    VersionResolution(String),
+
+    #[error("Compiler verification failed after download")]
+    VerificationFailed,
+
+    #[error("Compilation failed with exit code: {0}")]
+    CompilationFailed(String),
+
+    #[error("Missing compiler version in '{0}'. Please add `#![compiler_version(\"...\")]` to the top of the file.")]
+    MissingCompilerVersion(PathBuf),
 }

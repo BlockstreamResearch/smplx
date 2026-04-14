@@ -10,10 +10,8 @@ impl Build {
         let src_dir = ArtifactsResolver::resolve_local_dir(&config.src_dir)?;
         let files_to_build = ArtifactsResolver::resolve_files_to_build(&config.src_dir, &config.simf_files)?;
 
-        Ok(ArtifactsGenerator::generate_artifacts(
-            &output_dir,
-            &src_dir,
-            &files_to_build,
-        )?)
+        tokio::task::block_in_place(|| ArtifactsGenerator::generate_artifacts(&output_dir, &src_dir, &files_to_build))?;
+
+        Ok(())
     }
 }
