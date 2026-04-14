@@ -5,6 +5,7 @@ use clap::Parser;
 use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
+use crate::commands::compilers::Compilers;
 use crate::commands::init::Init;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
@@ -64,6 +65,7 @@ impl Cli {
 
                 Ok(Clean::run(loaded_config.build)?)
             }
+            Command::Compilers => Ok(Compilers::run()?),
         }
     }
 }

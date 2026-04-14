@@ -14,6 +14,7 @@ use crate::macros::codegen::{
 use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
+use crate::compiler::Simc;
 
 pub struct ArtifactsGenerator {}
 
@@ -30,8 +31,9 @@ impl ArtifactsGenerator {
         simfs: &[impl AsRef<Path>],
     ) -> Result<(), BuildError> {
         let tree = Self::build_directory_tree(&base_dir, simfs)?;
+        let mut compilers_cache = HashMap::new();
 
-        Self::generate_bindings(out_dir.as_ref(), tree)?;
+        Self::generate_bindings(out_dir.as_ref(), tree, &mut compilers_cache)?;
 
         Ok(())
     }
@@ -76,13 +78,17 @@ impl ArtifactsGenerator {
         Ok(root)
     }
 
-    fn generate_bindings(out_dir: &Path, path_tree: TreeNode) -> Result<Vec<String>, BuildError> {
+    fn generate_bindings(
+        out_dir: &Path,
+        path_tree: TreeNode,
+        compilers: &mut HashMap<String, Simc>,
+    ) -> Result<Vec<String>, BuildError> {
         fs::create_dir_all(out_dir)?;
 
-        let mut mod_filenames = Self::generate_simfs(out_dir, &path_tree.files)?;
+        let mut mod_filenames = Self::generate_simfs(out_dir, &path_tree.files, compilers)?;
 
         for (dir_name, tree_node) in path_tree.dirs.into_iter() {
-            Self::generate_bindings(&out_dir.join(&dir_name), tree_node)?;
+            Self::generate_bindings(&out_dir.join(&dir_name), tree_node, compilers)?;
             mod_filenames.push(dir_name);
         }
 
@@ -91,33 +97,63 @@ impl ArtifactsGenerator {
         Ok(mod_filenames)
     }
 
-    fn generate_simfs(out_dir: impl AsRef<Path>, simfs: &[impl AsRef<Path>]) -> Result<Vec<String>, BuildError> {
+    fn generate_simfs(
+        out_dir: impl AsRef<Path>,
+        simfs: &[impl AsRef<Path>],
+        compilers: &mut HashMap<String, Simc>,
+    ) -> Result<Vec<String>, BuildError> {
         let mut module_files = Vec::with_capacity(simfs.len());
 
         for simf_file_path in simfs {
-            let mod_name = Self::generate_simf_file(out_dir.as_ref(), simf_file_path)?;
+            let mod_name = Self::generate_simf_file(out_dir.as_ref(), simf_file_path, compilers)?;
             module_files.push(mod_name);
         }
 
         Ok(module_files)
     }
 
-    fn generate_simf_file(out_dir: impl AsRef<Path>, simf_file_path: impl AsRef<Path>) -> Result<String, BuildError> {
+    fn generate_simf_file(
+        out_dir: impl AsRef<Path>,
+        simf_file_path: impl AsRef<Path>,
+        compilers: &mut HashMap<String, Simc>,
+    ) -> Result<String, BuildError> {
         let simf_file_buf = PathBuf::from(simf_file_path.as_ref());
+
         let simf_content =
             SimfContent::extract_content_from_path(&simf_file_buf).map_err(BuildError::FailedToExtractContent)?;
 
-        let contract_name = simf_content.contract_name.clone();
-        let output_file = out_dir.as_ref().join(format!("{}.rs", &contract_name));
+        let raw_req = simf_content
+            .extract_version()
+            .ok_or_else(|| BuildError::MissingCompilerVersion(simf_file_buf.clone()))?;
 
+        let simc = if let Some(cached) = compilers.get(&raw_req) {
+            cached.clone()
+        } else {
+            println!(
+                "--> Detected compiler requirement: {} (for {})",
+                raw_req,
+                simf_file_buf.display()
+            );
+            let resolved = Simc::resolve(&raw_req)?;
+            compilers.insert(raw_req.clone(), resolved.clone());
+            resolved
+        };
+
+        let contract_name = simf_content.contract_name.clone();
+
+        let output_rs_file = out_dir.as_ref().join(format!("{}.rs", &contract_name));
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(&output_file)?;
-        let code = Self::generate_simf_binding_code(simf_content, simf_file_buf)?;
+            .open(&output_rs_file)?;
 
+        let code = Self::generate_simf_binding_code(simf_content, simf_file_buf.clone())?;
         Self::expand_file(code, &mut file)?;
+
+        let output_bin_file = out_dir.as_ref().join(format!("{}.bin", &contract_name));
+        println!("Compiling {}...", simf_file_buf.display());
+        simc.compile(&simf_file_buf, &output_bin_file)?;
 
         Ok(contract_name)
     }

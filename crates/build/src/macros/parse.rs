@@ -151,6 +151,20 @@ impl SimfContent {
         syn::parse_str::<syn::Ident>(s).is_err()
     }
 
+    /// Extracts the compiler version requirement from the loaded content
+    pub fn extract_version(&self) -> Option<String> {
+        for line in self.content.lines() {
+            if let Some(version) = line
+                .trim()
+                .strip_prefix("#![compiler_version(\"")
+                .and_then(|r| r.strip_suffix("\")]"))
+            {
+                return Some(version.to_string());
+            }
+        }
+        None
+    }
+
     pub fn extract_content_from_path(path: &PathBuf) -> std::io::Result<SimfContent> {
         let contract_name = {
             let name = path
