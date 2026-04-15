@@ -160,7 +160,10 @@ pub fn generate_artifacts(config_path: impl AsRef<Path>) -> Result<(), BuildErro
 /// fn main() {
 ///     smplx_build::generate_artifacts!();
 /// }
+/// ```
 ///
+/// With explicit config
+/// ```no_run
 /// // explicit config path
 /// fn main() {
 ///     smplx_build::generate_artifacts!("Simplex.toml");
