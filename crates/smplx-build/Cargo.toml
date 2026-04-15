@@ -1,0 +1,14 @@
+[package]
+name = "smplx-build"
+version = "0.0.1"
+description = "Build script helper for generating Simplex contract artifacts"
+license.workspace = true
+edition.workspace = true
+repository = "https://github.com/BlockstreamResearch/smplx"
+readme = "../../README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+smplx-build-internal = { workspace = true }

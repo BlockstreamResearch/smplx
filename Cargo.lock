@@ -1290,6 +1290,13 @@ dependencies = [
 
 [[package]]
 name = "smplx-build"
+version = "0.0.1"
+dependencies = [
+ "smplx-build-internal",
+]
+
+[[package]]
+name = "smplx-build-internal"
 version = "0.0.3"
 dependencies = [
  "glob",
@@ -1316,7 +1323,7 @@ dependencies = [
  "minreq",
  "serde",
  "serde_json",
- "smplx-build",
+ "smplx-build-internal",
  "smplx-regtest",
  "smplx-sdk",
  "smplx-test",
@@ -1330,7 +1337,7 @@ dependencies = [
 name = "smplx-macros"
 version = "0.0.3"
 dependencies = [
- "smplx-build",
+ "smplx-build-internal",
  "smplx-test",
  "syn",
 ]

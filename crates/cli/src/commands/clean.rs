@@ -1,6 +1,6 @@
 use std::{fmt::Display, fs, path::PathBuf};
 
-use smplx_build::{ArtifactsResolver, BuildConfig};
+use smplx_build_internal::{ArtifactsResolver, BuildConfig};
 
 use crate::commands::error::CleanError;
 use crate::commands::error::CommandError;

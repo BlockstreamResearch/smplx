@@ -1158,6 +1158,7 @@ name = "simplex_example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "smplx-build",
  "smplx-std",
 ]
 
@@ -1209,7 +1210,14 @@ dependencies = [
 
 [[package]]
 name = "smplx-build"
-version = "0.0.2"
+version = "0.0.1"
+dependencies = [
+ "smplx-build-internal",
+]
+
+[[package]]
+name = "smplx-build-internal"
+version = "0.0.3"
 dependencies = [
  "glob",
  "globwalk",
@@ -1226,16 +1234,16 @@ dependencies = [
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
- "smplx-build",
+ "smplx-build-internal",
  "smplx-test",
  "syn",
 ]
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "electrsd",
  "serde",
@@ -1246,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1264,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "either",
  "serde",
@@ -1276,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "electrsd",
  "proc-macro2",

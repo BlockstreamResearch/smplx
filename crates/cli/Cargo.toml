@@ -17,7 +17,7 @@ workspace = true
 [dependencies]
 smplx-regtest = { workspace = true }
 smplx-test = { workspace = true }
-smplx-build = { workspace = true }
+smplx-build-internal = { workspace = true }
 smplx-sdk = { workspace = true }
 
 thiserror = { workspace = true }

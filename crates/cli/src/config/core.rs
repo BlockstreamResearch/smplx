@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use smplx_build::BuildConfig;
+use smplx_build_internal::BuildConfig;
 use smplx_regtest::RegtestConfig;
 use smplx_test::TestConfig;
 
