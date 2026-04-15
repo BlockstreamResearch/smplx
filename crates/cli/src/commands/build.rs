@@ -1,4 +1,4 @@
-use smplx_build::{ArtifactsGenerator, ArtifactsResolver, BuildConfig};
+use smplx_build_internal::{ArtifactsGenerator, ArtifactsResolver, BuildConfig};
 
 use super::error::CommandError;
 

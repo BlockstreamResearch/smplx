@@ -14,7 +14,8 @@ multiple_crate_versions = "allow"
 
 [workspace.dependencies]
 smplx-macros = { path = "./crates/macros", version = "0.0.3" }
-smplx-build = { path = "./crates/build", version = "0.0.3" }
+smplx-build-internal = { path = "./crates/build", version = "0.0.3" }
+smplx-build = { path = "./crates/smplx-build", version = "0.0.1" }
 smplx-test = { path = "./crates/test", version = "0.0.3" }
 smplx-regtest = { path = "./crates/regtest", version = "0.0.3" }
 smplx-sdk = { path = "./crates/sdk", version = "0.0.3" }

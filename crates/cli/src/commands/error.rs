@@ -12,7 +12,7 @@ pub enum CommandError {
     Test(#[from] smplx_test::error::TestError),
 
     #[error(transparent)]
-    Build(#[from] smplx_build::error::BuildError),
+    Build(#[from] smplx_build_internal::error::BuildError),
 
     #[error(transparent)]
     Init(#[from] InitError),
