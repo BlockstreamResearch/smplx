@@ -1,5 +1,6 @@
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
+use simplicityhl::elements::secp256k1_zkp::Tweak;
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
 
 use crate::program::ProgramTrait;
@@ -38,6 +39,8 @@ pub struct ProgramInput {
 pub struct IssuanceInput {
     pub issuance_amount: u64,
     pub asset_entropy: [u8; 32],
+    pub reissuance_amount: Option<u64>,
+    pub blinding_nonce: Option<Tweak>,
 }
 
 impl PartialInput {
@@ -118,14 +121,29 @@ impl IssuanceInput {
         Self {
             issuance_amount,
             asset_entropy,
+            reissuance_amount: None,
+            blinding_nonce: None,
         }
+    }
+
+    pub fn with_reissuance(mut self, reissuance_amount: u64) -> Self {
+        self.reissuance_amount = Some(reissuance_amount);
+
+        self
+    }
+
+    pub fn with_blinding_nonce(mut self, blinding_nonce: [u8; 32]) -> Self {
+        self.blinding_nonce = Some(Tweak::from_inner(blinding_nonce).expect("valid blinding_nonce"));
+
+        self
     }
 
     pub fn to_input(&self) -> Input {
         Input {
             issuance_value_amount: Some(self.issuance_amount),
             issuance_asset_entropy: Some(self.asset_entropy),
-            issuance_inflation_keys: None,
+            issuance_inflation_keys: self.reissuance_amount,
+            issuance_blinding_nonce: self.blinding_nonce,
             blinded_issuance: Some(0x00),
             ..Default::default()
         }

@@ -24,10 +24,10 @@ fn spend_p2wpkh(context: &simplex::TestContext) -> anyhow::Result<Txid> {
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let res = signer.send(p2pk_script.clone(), 50)?;
-    println!("Broadcast: {}", res);
+    let txid = signer.send(p2pk_script.clone(), 50)?;
+    println!("Broadcast: {}", txid);
 
-    Ok(res)
+    Ok(txid)
 }
 
 fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
@@ -52,24 +52,24 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 
-    let res = signer.broadcast(&ft)?;
-    println!("Broadcast: {}", res);
+    let txid = signer.broadcast(&ft)?;
+    println!("Broadcast: {}", txid);
 
-    Ok(res)
+    Ok(txid)
 }
 
 #[simplex::test]
 fn basic_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let provider = context.get_default_provider();
 
-    let tx = spend_p2wpkh(&context)?;
+    let txid = spend_p2wpkh(&context)?;
 
-    provider.wait(&tx)?;
+    provider.wait(&txid)?;
     println!("Confirmed");
 
-    let tx = spend_p2pk(&context)?;
+    let txid = spend_p2pk(&context)?;
 
-    provider.wait(&tx)?;
+    provider.wait(&txid)?;
     println!("Confirmed");
 
     Ok(())
