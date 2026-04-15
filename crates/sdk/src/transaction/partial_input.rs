@@ -11,7 +11,8 @@ use super::UTXO;
 pub enum RequiredSignature {
     None,
     NativeEcdsa,
-    Witness(String, Option<Vec<String>>),
+    Witness(String),
+    WitnessWithPath(String, Vec<String>),
 }
 
 #[derive(Debug, Clone)]

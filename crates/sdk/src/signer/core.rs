@@ -32,7 +32,7 @@ use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::signer::wtns_parser::{parse_sig_path, wrap_value_along_path};
+use crate::signer::wtns_injector::WtnsInjector;
 use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
 
 use super::error::SignerError;
@@ -420,9 +420,14 @@ impl Signer {
         for (index, input_i) in inputs.iter().enumerate() {
             // we need to prune the program
             if let Some(program_input) = &input_i.program_input {
-                let signed_witness: Result<WitnessValues, SignerError> = match &input_i.required_sig {
-                    // sign the program and insert the signature into the witness
-                    RequiredSignature::Witness(witness_name, sig_path) => Ok(self.get_signed_program_witness(
+                let signing_info: Option<(&String, &[String])> = match &input_i.required_sig {
+                    RequiredSignature::Witness(wnts_name) => Some((wnts_name, &[])),
+                    RequiredSignature::WitnessWithPath(wnts_name, sig_path) => Some((wnts_name, sig_path)),
+                    _ => None,
+                };
+
+                let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
+                    Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
@@ -430,9 +435,9 @@ impl Signer {
                         sig_path,
                         index,
                     )?),
-                    // just build the passed witness
-                    _ => Ok(program_input.witness.build_witness()),
+                    None => Ok(program_input.witness.build_witness()),
                 };
+
                 let pruned_witness = program_input
                     .program
                     .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
@@ -458,39 +463,34 @@ impl Signer {
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
         witness_name: &str,
-        sig_path: &Option<Vec<String>>,
+        sig_path: &[String],
         index: usize,
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
         // put signature right after wtns field name if path is not provided
-        let sig_val = match sig_path {
-            Some(path) => {
-                let parsed_path = parse_sig_path(path)?;
-                let compiled = program.load().map_err(SignerError::Program)?;
+        let sig_val = if !sig_path.is_empty() {
+            let wtns_injector = WtnsInjector::new(sig_path)?;
 
-                let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
+            let compiled = program.load().map_err(SignerError::Program)?;
 
-                let witness_type = abi_meta
-                    .witness_types
+            let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
+
+            let witness_types = abi_meta
+                .witness_types
+                .get(&WitnessName::from_str_unchecked(witness_name))
+                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+            let local_wtns = Arc::new(
+                witness
                     .get(&WitnessName::from_str_unchecked(witness_name))
-                    .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+                    .expect("checked above")
+                    .clone(),
+            );
 
-                let existing_witness = Arc::new(
-                    witness
-                        .get(&WitnessName::from_str_unchecked(witness_name))
-                        .expect("checked above")
-                        .clone(),
-                );
-
-                wrap_value_along_path(
-                    &existing_witness,
-                    witness_type,
-                    Value::byte_array(signature.serialize()),
-                    &parsed_path,
-                )?
-            }
-            None => Value::byte_array(signature.serialize()),
+            wtns_injector.inject_value(&local_wtns, witness_types, Value::byte_array(signature.serialize()))?
+        } else {
+            Value::byte_array(signature.serialize())
         };
         let mut hm = HashMap::new();
 

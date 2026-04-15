@@ -60,9 +60,18 @@ pub enum SignerError {
     #[error("Missing such witness field: {0}")]
     WtnsFieldNotFound(String),
 
-    #[error("Failed to parse witness signature path")]
-    WtnsSigParse,
+    #[error(transparent)]
+    WtnsInjectError(#[from] WtnsWrappingError),
+}
 
-    #[error("Failed to inject value into witness: {0}")]
-    WtnsInjectError(String),
+#[derive(Debug, thiserror::Error)]
+pub enum WtnsWrappingError {
+    #[error("Failed to parse path")]
+    ParsingError,
+    #[error("Unsupported path type: {0}")]
+    UnsupportedPathType(String),
+    #[error("Path index out of bounds: len is {0}, got {1}")]
+    IdxOutOfBounds(usize, usize),
+    #[error("Root type mismatch: expected {0}, got {1}")]
+    RootTypeMismatch(String, String),
 }
