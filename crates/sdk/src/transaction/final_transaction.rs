@@ -79,6 +79,7 @@ impl FinalTransaction {
         }
 
         let entropy = asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy);
+
         let issuance_asset_id = AssetId::from_entropy(entropy);
         let reissuance_asset_id = AssetId::reissuance_token_from_entropy(entropy, false);
 
@@ -98,12 +99,15 @@ impl FinalTransaction {
         program_input: ProgramInput,
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> AssetId {
+    ) -> (AssetId, AssetId) {
         if let RequiredSignature::NativeEcdsa = required_sig {
             panic!("Requested signature is not Witness or None");
         }
 
-        let asset_id = AssetId::from_entropy(asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy));
+        let entropy = asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy);
+
+        let issuance_asset_id = AssetId::from_entropy(entropy);
+        let reissuance_asset_id = AssetId::reissuance_token_from_entropy(entropy, false);
 
         self.inputs.push(FinalInput {
             partial_input,
@@ -112,7 +116,7 @@ impl FinalTransaction {
             required_sig,
         });
 
-        asset_id
+        (issuance_asset_id, reissuance_asset_id)
     }
 
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {
