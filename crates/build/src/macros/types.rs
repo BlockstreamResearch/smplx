@@ -44,6 +44,19 @@ impl Display for RustTypeContext {
     }
 }
 
+impl RustTypeContext {
+    fn is_deref_needed(&self) -> bool {
+        match self {
+            RustTypeContext::Array => false,
+            RustTypeContext::Tuple => false,
+            RustTypeContext::Either => true,
+            RustTypeContext::EitherLeft => true,
+            RustTypeContext::EitherRight => true,
+            RustTypeContext::Option => true,
+        }
+    }
+}
+
 impl RustType {
     pub fn from_resolved_type(ty: &ResolvedType) -> syn::Result<Self> {
         use simplicityhl::types::{TypeInner, UIntType};
@@ -118,27 +131,44 @@ impl RustType {
     }
 
     pub fn generate_to_simplicity_conversion(&self, value_expr: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+        self.generate_to_simplicity_conversion_inner(value_expr, None)
+    }
+
+    fn generate_to_simplicity_conversion_inner(
+        &self,
+        value_expr: &proc_macro2::TokenStream,
+        prev_type: Option<RustTypeContext>,
+    ) -> proc_macro2::TokenStream {
+        let deref = {
+            if let Some(type_context) = prev_type
+                && type_context.is_deref_needed()
+            {
+                quote! { * }
+            } else {
+                quote! {}
+            }
+        };
         match self {
             RustType::Bool => {
-                quote! { Value::from(#value_expr) }
+                quote! { Value::from(#deref #value_expr) }
             }
             RustType::U8 => {
-                quote! { Value::from(UIntValue::U8(#value_expr)) }
+                quote! { Value::from(UIntValue::U8(#deref #value_expr)) }
             }
             RustType::U16 => {
-                quote! { Value::from(UIntValue::U16(#value_expr)) }
+                quote! { Value::from(UIntValue::U16(#deref #value_expr)) }
             }
             RustType::U32 => {
-                quote! { Value::from(UIntValue::U32(#value_expr)) }
+                quote! { Value::from(UIntValue::U32(#deref #value_expr)) }
             }
             RustType::U64 => {
-                quote! { Value::from(UIntValue::U64(#value_expr)) }
+                quote! { Value::from(UIntValue::U64(#deref #value_expr)) }
             }
             RustType::U128 => {
-                quote! { Value::from(UIntValue::U128(#value_expr)) }
+                quote! { Value::from(UIntValue::U128(#deref #value_expr)) }
             }
             RustType::U256Array => {
-                quote! { Value::from(UIntValue::U256(U256::from_byte_array(#value_expr))) }
+                quote! { Value::from(UIntValue::U256(U256::from_byte_array(#deref #value_expr))) }
             }
             RustType::Array(element, size) => {
                 let indices: Vec<_> = (0..*size).map(syn::Index::from).collect();
@@ -146,7 +176,7 @@ impl RustType {
                     .iter()
                     .map(|idx| {
                         let elem_expr = quote! { #value_expr[#idx] };
-                        element.generate_to_simplicity_conversion(&elem_expr)
+                        element.generate_to_simplicity_conversion_inner(&elem_expr, Some(RustTypeContext::Array))
                     })
                     .collect();
 
@@ -166,7 +196,7 @@ impl RustType {
                     let tuple_conversions = elements.iter().enumerate().map(|(i, elem_ty)| {
                         let idx = syn::Index::from(i);
                         let elem_expr = quote! { #value_expr.#idx };
-                        elem_ty.generate_to_simplicity_conversion(&elem_expr)
+                        elem_ty.generate_to_simplicity_conversion_inner(&elem_expr, Some(RustTypeContext::Tuple))
                     });
 
                     quote! {
@@ -175,8 +205,10 @@ impl RustType {
                 }
             }
             RustType::Either(left, right) => {
-                let left_conv = left.generate_to_simplicity_conversion(&quote! { left_val });
-                let right_conv = right.generate_to_simplicity_conversion(&quote! { right_val });
+                let left_conv = left
+                    .generate_to_simplicity_conversion_inner(&quote! { left_val }, Some(RustTypeContext::EitherLeft));
+                let right_conv = right
+                    .generate_to_simplicity_conversion_inner(&quote! { right_val }, Some(RustTypeContext::EitherRight));
                 let left_ty = left.generate_simplicity_type_construction();
                 let right_ty = right.generate_simplicity_type_construction();
 
@@ -198,7 +230,8 @@ impl RustType {
                 }
             }
             RustType::Option(inner) => {
-                let inner_conv = inner.generate_to_simplicity_conversion(&quote! { inner_val });
+                let inner_conv =
+                    inner.generate_to_simplicity_conversion_inner(&quote! { inner_val }, Some(RustTypeContext::Option));
                 let inner_ty = inner.generate_simplicity_type_construction();
 
                 quote! {
