@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use dyn_clone::DynClone;
@@ -16,7 +17,7 @@ use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
-use crate::utils::hash_script;
+use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
 pub trait ProgramTrait: DynClone {
     fn get_env(
@@ -50,6 +51,7 @@ pub struct Program {
     source: &'static str,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
+    storage: Vec<[u8; 32]>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -151,12 +153,43 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
-    pub fn new(source: &'static str, pub_key: XOnlyPublicKey, arguments: Box<dyn ArgumentsTrait>) -> Self {
+    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
             source,
-            pub_key,
+            pub_key: tr_unspendable_key(),
             arguments,
+            storage: Vec::new(),
         }
+    }
+
+    pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
+        self.pub_key = pub_key;
+
+        self
+    }
+
+    pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+        self.storage = vec![[0u8; 32]; capacity];
+
+        self
+    }
+
+    pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+        let slot = self.storage.get_mut(index).expect("Index out of bounds");
+
+        *slot = new_value;
+    }
+
+    pub fn get_storage_len(&self) -> usize {
+        self.storage.len()
+    }
+
+    pub fn get_storage(&self) -> &[[u8; 32]] {
+        &self.storage
+    }
+
+    pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+        self.storage[index]
     }
 
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
@@ -192,14 +225,39 @@ impl Program {
         Ok((script, leaf_version()))
     }
 
-    // TODO: taproot storage
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
-        let builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version()?;
+    fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
+        assert!(total_leaves > 0, "Taproot tree must contain at least one leaf");
 
-        let builder = builder
-            .add_leaf_with_ver(0, script, version)
+        let next_pow2 = total_leaves.next_power_of_two();
+        let depth = next_pow2.ilog2() as usize;
+
+        let shallow_count = next_pow2 - total_leaves;
+        let deep_count = total_leaves - shallow_count;
+
+        let mut depths = Vec::with_capacity(total_leaves);
+        depths.extend(iter::repeat_n(depth, deep_count));
+
+        if depth > 0 {
+            depths.extend(iter::repeat_n(depth - 1, shallow_count));
+        }
+
+        depths
+    }
+
+    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+        let mut builder = taproot::TaprootBuilder::new();
+        let (script, version) = self.script_version()?;
+        let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
+
+        builder = builder
+            .add_leaf_with_ver(depths[0], script, version)
             .expect("tap tree should be valid");
+
+        for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
+            builder = builder
+                .add_hidden(depth, tap_data_hash(slot))
+                .expect("tap tree should be valid");
+        }
 
         Ok(builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
@@ -211,5 +269,115 @@ impl Program {
         let script_ver = self.script_version()?;
 
         Ok(info.control_block(&script_ver).expect("control block should exist"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use simplicityhl::{
+        Arguments,
+        elements::{AssetId, confidential, pset::Input},
+    };
+
+    use super::*;
+
+    // simplicityhl/examples/cat.simf
+    const DUMMY_PROGRAM: &str = r#"
+        fn main() {
+            let ab: u16 = <(u8, u8)>::into((0x10, 0x01));
+            let c: u16 = 0x1001;
+            assert!(jet::eq_16(ab, c));
+            let ab: u8 = <(u4, u4)>::into((0b1011, 0b1101));
+            let c: u8 = 0b10111101;
+            assert!(jet::eq_8(ab, c));
+        }
+    "#;
+
+    #[derive(Clone)]
+    struct EmptyArguments;
+
+    impl ArgumentsTrait for EmptyArguments {
+        fn build_arguments(&self) -> Arguments {
+            Arguments::default()
+        }
+    }
+
+    fn dummy_asset_id(byte: u8) -> AssetId {
+        AssetId::from_slice(&[byte; 32]).unwrap()
+    }
+
+    fn dummy_program() -> Program {
+        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
+    }
+
+    fn dummy_network() -> SimplicityNetwork {
+        SimplicityNetwork::default_regtest()
+    }
+
+    fn make_pst_with_script(script: Script) -> PartiallySignedTransaction {
+        let txout = TxOut {
+            asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
+            value: confidential::Value::Explicit(1000),
+            script_pubkey: script,
+            ..Default::default()
+        };
+        let input = Input {
+            witness_utxo: Some(txout),
+            ..Default::default()
+        };
+
+        let mut pst = PartiallySignedTransaction::new_v2();
+
+        pst.add_input(input);
+
+        pst
+    }
+
+    #[test]
+    fn test_get_env_idx() {
+        let program = dummy_program();
+        let network = dummy_network();
+
+        let correct_script = program.get_script_pubkey(&network);
+        let wrong_script = Script::new();
+
+        let mut pst = make_pst_with_script(wrong_script);
+
+        let correct_txout = TxOut {
+            asset: confidential::Asset::Explicit(dummy_asset_id(0xAA)),
+            value: confidential::Value::Explicit(1000),
+            script_pubkey: correct_script,
+            ..Default::default()
+        };
+
+        pst.add_input(Input {
+            witness_utxo: Some(correct_txout),
+            ..Default::default()
+        });
+
+        // take a script with a wrong pubkey
+        assert!(matches!(
+            program.get_env(&pst, 0, &network).unwrap_err(),
+            ProgramError::ScriptPubkeyMismatch { .. }
+        ));
+
+        assert!(program.get_env(&pst, 1, &network).is_ok());
+    }
+
+    #[test]
+    fn test_taproot_leaf_depths_known_values() {
+        let cases = [
+            (1, vec![0]),
+            (2, vec![1, 1]),
+            (3, vec![2, 2, 1]),
+            (4, vec![2, 2, 2, 2]),
+            (5, vec![3, 3, 2, 2, 2]),
+            (6, vec![3, 3, 3, 3, 2, 2]),
+            (8, vec![3, 3, 3, 3, 3, 3, 3, 3]),
+        ];
+
+        for (n, expected) in cases {
+            assert_eq!(Program::taproot_leaf_depths(n), expected, "n={n}");
+        }
     }
 }
