@@ -1,7 +1,6 @@
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::simplicityhl::elements::{Script, Txid};
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
-use simplex::utils::tr_unspendable_key;
 
 use simplex_example::artifacts::nested_sig::NestedSigProgram;
 use simplex_example::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
@@ -13,11 +12,12 @@ fn get_nested_sig(context: &simplex::TestContext) -> (NestedSigProgram, Script) 
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    let program = NestedSigProgram::new(tr_unspendable_key(), arguments);
+    let program = NestedSigProgram::new(arguments);
     let script = program.get_program().get_script_pubkey(context.get_network());
 
     (program, script)
 }
+
 fn fund_nested_sig(context: &simplex::TestContext) -> anyhow::Result<Txid> {
     let signer = context.get_default_signer();
     let (_, script) = get_nested_sig(context);
@@ -38,8 +38,7 @@ fn spend_nested_sig(
 
     let (program, script) = get_nested_sig(context);
 
-    let mut utxos = provider.fetch_scripthash_utxos(&script)?;
-    utxos.retain(|utxo| utxo.explicit_asset() == context.get_network().policy_asset());
+    let utxos = provider.fetch_scripthash_utxos(&script)?;
 
     let mut ft = FinalTransaction::new();
 

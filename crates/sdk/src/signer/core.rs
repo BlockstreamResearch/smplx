@@ -421,12 +421,13 @@ impl Signer {
             // we need to prune the program
             if let Some(program_input) = &input_i.program_input {
                 let signing_info: Option<(&String, &[String])> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wnts_name) => Some((wnts_name, &[])),
-                    RequiredSignature::WitnessWithPath(wnts_name, sig_path) => Some((wnts_name, sig_path)),
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[])),
+                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => Some((wtns_name, sig_path)),
                     _ => None,
                 };
 
                 let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
+                    // sign the program and inject the signature into the witness
                     Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
@@ -435,6 +436,7 @@ impl Signer {
                         sig_path,
                         index,
                     )?),
+                    // just build the witness
                     None => Ok(program_input.witness.build_witness()),
                 };
 
@@ -468,16 +470,10 @@ impl Signer {
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
-        // put signature right after wtns field name if path is not provided
+        // inject the signature into the wtns name directly if the path is not provided
         let sig_val = if !sig_path.is_empty() {
-            let wtns_injector = WtnsInjector::new(sig_path)?;
-
-            let compiled = program.load().map_err(SignerError::Program)?;
-
-            let abi_meta = compiled.generate_abi_meta().map_err(SignerError::ProgramGenAbiMeta)?;
-
-            let witness_types = abi_meta
-                .witness_types
+            let witness_types = program.get_witness_types()?;
+            let witness_type = witness_types
                 .get(&WitnessName::from_str_unchecked(witness_name))
                 .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
 
@@ -488,10 +484,16 @@ impl Signer {
                     .clone(),
             );
 
-            wtns_injector.inject_value(&local_wtns, witness_types, Value::byte_array(signature.serialize()))?
+            WtnsInjector::inject_value(
+                &local_wtns,
+                witness_type,
+                sig_path,
+                Value::byte_array(signature.serialize()),
+            )?
         } else {
             Value::byte_array(signature.serialize())
         };
+
         let mut hm = HashMap::new();
 
         witness.iter().for_each(|el| {
