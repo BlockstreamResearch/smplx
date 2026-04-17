@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use simplicityhl::{
     ResolvedType, Value,
+    either::Either,
     types::TypeInner,
     value::{ValueConstructible, ValueInner},
 };
@@ -9,7 +10,7 @@ use simplicityhl::{
 use crate::signer::error::WtnsWrappingError;
 
 /// Struct for injecting specific value by given path into witness value
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WtnsInjector {
     path: Vec<WtnsPathRoute>,
 }
@@ -27,10 +28,14 @@ impl WtnsInjector {
     /// vec!["Right", "0"] // for y
     /// vec!["Right", "1"] // for z
     /// ```
-    pub fn new(path: &[String]) -> Result<Self, WtnsWrappingError> {
+    pub fn new<I>(path: I) -> Result<Self, WtnsWrappingError>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let parsed_path = path
-            .iter()
-            .map(|route| match route.as_str() {
+            .into_iter()
+            .map(|route| match route.as_ref() {
                 "Left" => Ok(WtnsPathRoute::Either(EitherRoute::Left)),
                 "Right" => Ok(WtnsPathRoute::Either(EitherRoute::Right)),
                 s => s
@@ -59,10 +64,9 @@ impl WtnsInjector {
 
         // invocations of these functions below determined from types during traversal
         // matches! guard at top of loop guarantees that types and routes are consistent
-        fn downcast_either(val: &Value, direction: EitherRoute) -> Arc<Value> {
-            match (direction, val.inner()) {
-                (EitherRoute::Left, ValueInner::Either(either)) => Arc::clone(either.as_ref().unwrap_left()),
-                (EitherRoute::Right, ValueInner::Either(either)) => Arc::clone(either.as_ref().unwrap_right()),
+        fn downcast_either(val: &Value) -> &Either<Arc<Value>, Arc<Value>> {
+            match val.inner() {
+                ValueInner::Either(either) => either,
                 _ => unreachable!(),
             }
         }
@@ -98,17 +102,21 @@ impl WtnsInjector {
             match current_ty.as_inner() {
                 TypeInner::Either(left_ty, right_ty) => {
                     let direction: EitherRoute = (*route).try_into().expect("Checked in matches! above");
-                    match direction {
-                        EitherRoute::Left => {
+                    let either_val = downcast_either(&current_val);
+
+                    match (direction, either_val.is_right()) {
+                        (EitherRoute::Left, false) => {
                             stack.push(StackItem::Either(direction, Arc::clone(right_ty)));
                             current_ty = left_ty;
+                            current_val = Arc::clone(either_val.as_ref().unwrap_left())
                         }
-                        EitherRoute::Right => {
+                        (EitherRoute::Right, true) => {
                             stack.push(StackItem::Either(direction, Arc::clone(left_ty)));
                             current_ty = right_ty;
+                            current_val = Arc::clone(either_val.as_ref().unwrap_right())
                         }
+                        _ => return Err(WtnsWrappingError::EitherBranchMismatch),
                     }
-                    current_val = downcast_either(&current_val, direction);
                 }
                 TypeInner::Array(ty, len) => {
                     let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
@@ -210,3 +218,95 @@ pub enum EitherRoute {
 
 #[derive(Clone, Copy, Debug)]
 pub struct EnumerableRoute(usize);
+
+#[cfg(test)]
+mod test {
+    use simplicityhl::types::TypeConstructible;
+
+    use super::*;
+
+    fn dummy_value() -> Value {
+        // Either<(u64, Either<u64, u64>), [u8; 4]>
+        Value::left(
+            Value::tuple([Value::u64(0), Value::right(ResolvedType::u64(), Value::u64(1))]),
+            ResolvedType::array(ResolvedType::u8(), 64),
+        )
+    }
+
+    #[test]
+    fn inject_value_success() {
+        let witness = Arc::new(dummy_value());
+        let witness_types = witness.ty();
+
+        let injector_tuple = WtnsInjector::new(&["Left", "0"]).unwrap();
+        let injector_either = WtnsInjector::new(&["Left", "1"]).unwrap();
+
+        let injected_val_tuple = injector_tuple
+            .inject_value(&witness, witness_types, Value::u64(3))
+            .unwrap();
+
+        assert_eq!(
+            injected_val_tuple,
+            Value::parse_from_str("Left((3, Right(1)))", witness_types).unwrap()
+        );
+
+        let injected_val_either = injector_either
+            .inject_value(&witness, witness_types, Value::left(Value::u64(2), ResolvedType::u64()))
+            .unwrap();
+
+        assert_eq!(
+            injected_val_either,
+            Value::parse_from_str("Left((0, Left(2)))", witness_types).unwrap()
+        );
+    }
+
+    #[test]
+    fn inject_value_idx_out_of_bounds() {
+        let witness = Arc::new(dummy_value());
+        let witness_types = witness.ty();
+
+        let injector_tuple = WtnsInjector::new(&["Left", "5"]).unwrap();
+        let err = injector_tuple
+            .inject_value(&witness, witness_types, Value::u64(0))
+            .unwrap_err();
+
+        assert!(matches!(err, WtnsWrappingError::IdxOutOfBounds(_, _)));
+    }
+
+    #[test]
+    fn inject_value_root_mismatch() {
+        let witness = Arc::new(dummy_value());
+        let witness_types = witness.ty();
+
+        let injector_either = WtnsInjector::new(&["Left", "1"]).unwrap();
+        let err = injector_either
+            .inject_value(&witness, witness_types, Value::unit())
+            .unwrap_err();
+
+        assert!(matches!(err, WtnsWrappingError::RootTypeMismatch(_, _)));
+    }
+
+    #[test]
+    fn inject_value_either_branch_mismatch() {
+        let witness = Arc::new(dummy_value());
+        let witness_types = witness.ty();
+
+        let injector_array = WtnsInjector::new(&["Right"]).unwrap();
+
+        let err = injector_array
+            .inject_value(
+                &witness,
+                witness_types,
+                Value::right(
+                    ResolvedType::tuple([
+                        ResolvedType::u64(),
+                        ResolvedType::either(ResolvedType::u64(), ResolvedType::u64()),
+                    ]),
+                    Value::array(vec![Value::u8(0)], ResolvedType::u8()),
+                ),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, WtnsWrappingError::EitherBranchMismatch));
+    }
+}

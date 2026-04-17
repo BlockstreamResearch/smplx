@@ -74,4 +74,6 @@ pub enum WtnsWrappingError {
     IdxOutOfBounds(usize, usize),
     #[error("Root type mismatch: expected {0}, got {1}")]
     RootTypeMismatch(String, String),
+    #[error("Path reached undefined branch of Either")]
+    EitherBranchMismatch,
 }
