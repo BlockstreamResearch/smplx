@@ -13,6 +13,7 @@ pub enum RequiredSignature {
     None,
     NativeEcdsa,
     Witness(String),
+    WitnessWithPath(String, Vec<String>),
 }
 
 #[derive(Debug, Clone)]

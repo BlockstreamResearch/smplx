@@ -4,7 +4,6 @@ use std::sync::Arc;
 use dyn_clone::DynClone;
 
 use simplicityhl::CompiledProgram;
-use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
@@ -12,6 +11,7 @@ use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
+use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -20,6 +20,10 @@ use crate::provider::SimplicityNetwork;
 use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
 pub trait ProgramTrait: DynClone {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError>;
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError>;
+
     fn get_env(
         &self,
         pst: &PartiallySignedTransaction,
@@ -55,6 +59,14 @@ pub struct Program {
 dyn_clone::clone_trait_object!(ProgramTrait);
 
 impl ProgramTrait for Program {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        self.get_argument_types()
+    }
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        self.get_witness_types()
+    }
+
     fn get_env(
         &self,
         pst: &PartiallySignedTransaction,
@@ -204,6 +216,20 @@ impl Program {
 
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
+    }
+
+    pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        let compiled = self.load()?;
+        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+
+        Ok(abi_meta.param_types)
+    }
+
+    pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        let compiled = self.load()?;
+        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+
+        Ok(abi_meta.witness_types)
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {

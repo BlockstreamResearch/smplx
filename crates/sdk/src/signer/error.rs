@@ -9,6 +9,9 @@ pub enum SignerError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
 
+    #[error(transparent)]
+    WtnsInjectError(#[from] WtnsWrappingError),
+
     #[error("Failed to parse a mnemonic: {0}")]
     Mnemonic(String),
 
@@ -53,4 +56,25 @@ pub enum SignerError {
 
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
+
+    #[error("Missing such witness field: {0}")]
+    WtnsFieldNotFound(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WtnsWrappingError {
+    #[error("Failed to parse path")]
+    ParsingError,
+
+    #[error("Unsupported path type: {0}")]
+    UnsupportedPathType(String),
+
+    #[error("Path index out of bounds: len is {0}, got {1}")]
+    IdxOutOfBounds(usize, usize),
+
+    #[error("Root type mismatch: expected {0}, got {1}")]
+    RootTypeMismatch(String, String),
+
+    #[error("Path reached undefined branch of Either")]
+    EitherBranchMismatch,
 }

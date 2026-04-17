@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use simplicityhl::Value;
 use simplicityhl::WitnessValues;
@@ -31,6 +32,7 @@ use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
+use crate::signer::wtns_injector::WtnsInjector;
 use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
 
 use super::error::SignerError;
@@ -418,18 +420,26 @@ impl Signer {
         for (index, input_i) in inputs.iter().enumerate() {
             // we need to prune the program
             if let Some(program_input) = &input_i.program_input {
-                let signed_witness: Result<WitnessValues, SignerError> = match &input_i.required_sig {
-                    // sign the program and insert the signature into the witness
-                    RequiredSignature::Witness(witness_name) => Ok(self.get_signed_program_witness(
+                let signing_info: Option<(&String, &[String])> = match &input_i.required_sig {
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[])),
+                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => Some((wtns_name, sig_path)),
+                    _ => None,
+                };
+
+                let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
+                    // sign the program and inject the signature into the witness
+                    Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
                         witness_name,
+                        sig_path,
                         index,
                     )?),
-                    // just build the passed witness
-                    _ => Ok(program_input.witness.build_witness()),
+                    // just build the witness
+                    None => Ok(program_input.witness.build_witness()),
                 };
+
                 let pruned_witness = program_input
                     .program
                     .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
@@ -455,9 +465,34 @@ impl Signer {
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
         witness_name: &str,
+        sig_path: &[String],
         index: usize,
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network)?;
+
+        // inject the signature into the wtns name directly if the path is not provided
+        let sig_val = if !sig_path.is_empty() {
+            let witness_types = program.get_witness_types()?;
+            let witness_type = witness_types
+                .get(&WitnessName::from_str_unchecked(witness_name))
+                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+            let local_wtns = Arc::new(
+                witness
+                    .get(&WitnessName::from_str_unchecked(witness_name))
+                    .expect("checked above")
+                    .clone(),
+            );
+
+            WtnsInjector::inject_value(
+                &local_wtns,
+                witness_type,
+                sig_path,
+                Value::byte_array(signature.serialize()),
+            )?
+        } else {
+            Value::byte_array(signature.serialize())
+        };
 
         let mut hm = HashMap::new();
 
@@ -465,10 +500,7 @@ impl Signer {
             hm.insert(el.0.clone(), el.1.clone());
         });
 
-        hm.insert(
-            WitnessName::from_str_unchecked(witness_name),
-            Value::byte_array(signature.serialize()),
-        );
+        hm.insert(WitnessName::from_str_unchecked(witness_name), sig_val);
 
         Ok(WitnessValues::from(hm))
     }

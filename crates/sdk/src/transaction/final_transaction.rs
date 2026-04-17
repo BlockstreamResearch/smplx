@@ -38,9 +38,12 @@ impl FinalTransaction {
     }
 
     pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
-        if let RequiredSignature::Witness(_) = required_sig {
-            panic!("Requested signature is not NativeEcdsa or None");
-        }
+        match required_sig {
+            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
+                panic!("Requested signature is not NativeEcdsa or None")
+            }
+            _ => {}
+        };
 
         self.inputs.push(FinalInput {
             partial_input,
@@ -74,9 +77,12 @@ impl FinalTransaction {
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
     ) -> (AssetId, AssetId) {
-        if let RequiredSignature::Witness(_) = required_sig {
-            panic!("Requested signature is not NativeEcdsa or None");
-        }
+        match required_sig {
+            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
+                panic!("Requested signature is not NativeEcdsa or None")
+            }
+            _ => {}
+        };
 
         let entropy = asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy);
 
