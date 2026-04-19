@@ -24,7 +24,10 @@ pub struct TestContext {
 impl TestContext {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
+        Self::from_test_config(config)
+    }
 
+    pub fn from_test_config(config: TestConfig) -> Result<Self, TestError> {
         let (signer, provider_info, client) = Self::setup(&config)?;
 
         Ok(Self {
@@ -36,23 +39,7 @@ impl TestContext {
     }
 
     pub fn create_signer(&self, mnemonic: &str) -> Signer {
-        let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
-            // local regtest or external regtest
-            Box::new(SimplexProvider::new(
-                self._provider_info.esplora_url.clone(),
-                self._provider_info.elements_url.clone().unwrap(),
-                self._provider_info.auth.clone().unwrap(),
-                *self.get_network(),
-            ))
-        } else {
-            // external esplora
-            Box::new(EsploraProvider::new(
-                self._provider_info.esplora_url.clone(),
-                *self.get_network(),
-            ))
-        };
-
-        Signer::new(mnemonic, provider)
+        Signer::new(mnemonic, self.create_provider())
     }
 
     pub fn random_signer(&self) -> Signer {
@@ -73,6 +60,18 @@ impl TestContext {
 
     pub fn get_network(&self) -> &SimplicityNetwork {
         self.signer.get_provider().get_network()
+    }
+
+    pub(crate) fn provider_info(&self) -> &ProviderInfo {
+        &self._provider_info
+    }
+
+    pub(crate) fn create_provider(&self) -> Box<dyn ProviderTrait> {
+        build_provider(&self._provider_info, *self.get_network())
+    }
+
+    pub(crate) fn mnemonic(&self) -> &str {
+        self.config.mnemonic.as_str()
     }
 
     fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {
@@ -134,6 +133,19 @@ impl TestContext {
         }
 
         Ok((signer, provider_info, client))
+    }
+}
+
+pub(crate) fn build_provider(provider_info: &ProviderInfo, network: SimplicityNetwork) -> Box<dyn ProviderTrait> {
+    if let Some(elements_url) = provider_info.elements_url.clone() {
+        Box::new(SimplexProvider::new(
+            provider_info.esplora_url.clone(),
+            elements_url,
+            provider_info.auth.clone().expect("elements provider requires rpc auth"),
+            network,
+        ))
+    } else {
+        Box::new(EsploraProvider::new(provider_info.esplora_url.clone(), network))
     }
 }
 
