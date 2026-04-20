@@ -17,3 +17,6 @@ thiserror = { workspace = true }
 electrsd = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

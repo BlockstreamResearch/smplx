@@ -14,7 +14,7 @@ pub struct Regtest {}
 
 impl Regtest {
     pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
-        let client = RegtestClient::new();
+        let client = RegtestClient::new(&config);
 
         let provider = Box::new(SimplexProvider::new(
             client.esplora_url(),

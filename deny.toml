@@ -101,6 +101,7 @@ allow = [
     "WTFPL",
     "Zlib",
     "MITNFA",
+    "BSD-3-Clause",
 ]
 # The confidence threshold for detecting a license from license text.
 # The higher the value, the more closely the license text must be to the

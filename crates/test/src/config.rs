@@ -50,6 +50,10 @@ impl TestConfig {
         RegtestConfig {
             mnemonic: self.mnemonic.clone(),
             bitcoins: self.bitcoins,
+            rpc_port: None,
+            esplora_port: None,
+            rpc_user: None,
+            rpc_password: None,
         }
     }
 

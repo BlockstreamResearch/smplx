@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Add the auth and ports config support for the project manifest.
+
 ## [0.0.3]
 
 - Flattened `simplex test` command interface. Removed `run` and `integration` nesting.

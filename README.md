@@ -58,6 +58,10 @@ out_dir = "./src/artifacts"
 [regtest]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 bitcoins = 10_000_000
+rpc_port = 18443
+esplora_port = 3000
+rpc_user = "user"
+rpc_password = "password"
 
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
@@ -82,6 +86,10 @@ Where:
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer
+  - `rpc_port` - The port Elements regtest node will listen on.
+  - `esplora_port` - The port Electrs will listen on.
+  - `rpc_user` - Elements regtest RPC username.
+  - `rpc_password` - Elements regtest RPC password.
 - `test` (`simplex test` config)
   - `esplora`
     - `url` - Esplora API endpoint url
