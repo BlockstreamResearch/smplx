@@ -45,7 +45,7 @@ fn spend_nested_sig(
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(program.get_program().clone()), Box::new(witness)),
-        RequiredSignature::with_path("INHERIT_OR_NOT", sig_path),
+        RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
     );
 
     let txid = signer.broadcast(&ft)?;

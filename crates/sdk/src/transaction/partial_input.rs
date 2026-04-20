@@ -17,7 +17,7 @@ pub enum RequiredSignature {
 }
 
 impl RequiredSignature {
-    pub fn with_path<I>(name: &str, path: I) -> Self
+    pub fn witness_with_path<I>(name: &str, path: I) -> Self
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
