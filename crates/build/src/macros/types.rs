@@ -26,9 +26,9 @@ pub enum RustType {
 
 #[derive(Debug, Clone, Copy)]
 enum RustTypeContext {
+    Root,
     Array,
     Tuple,
-    Either,
     EitherLeft,
     EitherRight,
     Option,
@@ -38,12 +38,12 @@ enum RustTypeContext {
 impl Display for RustTypeContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
+            RustTypeContext::Root => "root element".to_string(),
             RustTypeContext::Array => "array element".to_string(),
             RustTypeContext::Tuple => "tuple element".to_string(),
             RustTypeContext::EitherLeft => "left either branch".to_string(),
             RustTypeContext::EitherRight => "right either branch".to_string(),
             RustTypeContext::Option => "option element".to_string(),
-            RustTypeContext::Either => "either element".to_string(),
             RustTypeContext::List => "list element".to_string(),
         };
         write!(f, "{str}")
@@ -53,11 +53,8 @@ impl Display for RustTypeContext {
 impl RustTypeContext {
     fn is_deref_needed(&self) -> bool {
         match self {
-            RustTypeContext::Array | RustTypeContext::Tuple | RustTypeContext::List => false,
-            RustTypeContext::Either
-            | RustTypeContext::EitherLeft
-            | RustTypeContext::EitherRight
-            | RustTypeContext::Option => true,
+            RustTypeContext::Array | RustTypeContext::Tuple | RustTypeContext::List | RustTypeContext::Root => false,
+            RustTypeContext::EitherLeft | RustTypeContext::EitherRight | RustTypeContext::Option => true,
         }
     }
 }
@@ -352,230 +349,19 @@ impl RustType {
         args_expr: &proc_macro2::Ident,
         witness_name: &str,
     ) -> proc_macro2::TokenStream {
+        let initial_arg_name = quote! { value };
         let get_witness_expr_tokens = quote! {
             let witness_name = WitnessName::from_str_unchecked(#witness_name);
-            let value = #args_expr
+            let #initial_arg_name = #args_expr
                 .get(&witness_name)
                 .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;
         };
-        match self {
-            RustType::Bool => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::Boolean(b) => *b,
-                            _ => return Err(format!("Wrong type for {}: expected bool", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U1 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U1(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U1", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U2 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U2(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U2", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U4 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U4(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U4", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U8 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U8(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U8", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U16 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U16(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U16", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U32 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U32(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U32", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U64 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U64(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U64", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U128 => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U128(v)) => *v,
-                            _ => return Err(format!("Wrong type for {}: expected U128", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::U256Array => {
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::UInt(UIntValue::U256(u256)) => u256.to_byte_array(),
-                            _ => return Err(format!("Wrong type for {}: expected U256", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::Array(element, size) => {
-                let elem_extraction =
-                    (0..*size).map(|i| element.generate_inline_array_element_extraction(&quote! { arr_value }, i));
-
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::Array(arr_value) => {
-                                if arr_value.len() != #size {
-                                    return Err(format!("Wrong array length for {}: expected {}, got {}", #witness_name, #size, arr_value.len()));
-                                }
-                                [#(#elem_extraction),*]
-                            }
-                            _ => return Err(format!("Wrong type for {}: expected Array", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::Tuple(elements) => {
-                let elem_extractions: Vec<_> = elements
-                    .iter()
-                    .enumerate()
-                    .map(|(i, elem_ty)| elem_ty.generate_inline_tuple_element_extraction(&quote! { tuple_value }, i))
-                    .collect();
-                let elements_len = elements.len();
-
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::Tuple(tuple_value) => {
-                                if tuple_value.len() != #elements_len {
-                                    return Err(format!("Wrong tuple length for {}", #witness_name));
-                                }
-                                (#(#elem_extractions),*)
-                            }
-                            _ => return Err(format!("Wrong type for {}: expected Tuple", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::Either(left, right) => {
-                let left_extraction = left.generate_inline_either_extraction(&quote! { left_val });
-                let right_extraction = right.generate_inline_either_extraction(&quote! { right_val });
-
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::Either(either_val) => {
-                                match either_val {
-                                    simplex::either::Either::Left(left_val) => {
-                                        simplex::either::Either::Left(#left_extraction)
-                                    }
-                                    simplex::either::Either::Right(right_val) => {
-                                        simplex::either::Either::Right(#right_extraction)
-                                    }
-                                }
-                            }
-                            _ => return Err(format!("Wrong type for {}: expected Either", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::Option(inner) => {
-                let inner_extraction = inner.generate_inline_either_extraction(&quote! { some_val });
-
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::Option(opt_val) => {
-                                match opt_val {
-                                    None => None,
-                                    Some(some_val) => Some(#inner_extraction),
-                                }
-                            }
-                            _ => return Err(format!("Wrong type for {}: expected Option", #witness_name)),
-                        }
-                    }
-                }
-            }
-            RustType::List(element, _size) => {
-                let iter_index = quote! { i };
-                let list_name = quote! { list_value };
-                let elem_extraction = element.generate_inline_list_element_extraction(&list_name, &iter_index);
-
-                quote! {
-                    {
-                        #get_witness_expr_tokens
-                        match value.inner() {
-                            simplex::simplicityhl::value::ValueInner::List(#list_name, non_zero_pow2_size) => {
-                                let list_len = #list_name.len();
-                                if list_len >= non_zero_pow2_size.get() {
-                                    return Err(format!("Wrong list length for {}: expected less than {}, got {}", #witness_name, non_zero_pow2_size.get(), list_len));
-                                }
-                                let mut res = Vec::with_capacity(list_len);
-                                for #iter_index in 0..list_len {
-                                    res.push(#elem_extraction);
-                                }
-                                res
-                            }
-                            _ => return Err(format!("Wrong type for {}: expected List", #witness_name)),
-                        }
-                    }
-                }
+        let expand_value_extraction =
+            self.generate_value_extraction_from_expr(&initial_arg_name, RustTypeContext::Root);
+        quote! {
+            {
+                #get_witness_expr_tokens
+                #expand_value_extraction
             }
         }
     }
@@ -750,37 +536,6 @@ impl RustType {
                     }
                 }
             }
-        }
-    }
-
-    fn generate_inline_array_element_extraction(
-        &self,
-        arr_expr: &proc_macro2::TokenStream,
-        index: usize,
-    ) -> proc_macro2::TokenStream {
-        self.generate_value_extraction_from_expr(&quote! { #arr_expr[#index] }, RustTypeContext::Array)
-    }
-
-    fn generate_inline_list_element_extraction(
-        &self,
-        list_expr: &proc_macro2::TokenStream,
-        index: &proc_macro2::TokenStream,
-    ) -> proc_macro2::TokenStream {
-        self.generate_value_extraction_from_expr(&quote! { #list_expr[#index] }, RustTypeContext::List)
-    }
-
-    fn generate_inline_tuple_element_extraction(
-        &self,
-        tuple_expr: &proc_macro2::TokenStream,
-        index: usize,
-    ) -> proc_macro2::TokenStream {
-        self.generate_value_extraction_from_expr(&quote! { #tuple_expr[#index] }, RustTypeContext::Tuple)
-    }
-
-    fn generate_inline_either_extraction(&self, val_expr: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-        let extraction = self.generate_value_extraction_from_expr(val_expr, RustTypeContext::Either);
-        quote! {
-            #extraction
         }
     }
 }
