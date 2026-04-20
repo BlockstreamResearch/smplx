@@ -53,6 +53,11 @@ impl WalletAbiRequestBuilder {
         self
     }
 
+    pub fn raw_input_schema(mut self, schema: InputSchema) -> Self {
+        self.inputs.push(schema);
+        self
+    }
+
     pub fn wallet_input_exact(mut self, id: impl Into<String>, asset_id: AssetId, amount_sat: u64) -> Self {
         self.inputs.push(Self::input_schema(
             id,
@@ -171,6 +176,11 @@ impl WalletAbiRequestBuilder {
             lock,
             AssetVariant::AssetId { asset_id },
         ));
+        self
+    }
+
+    pub fn raw_output_schema(mut self, schema: OutputSchema) -> Self {
+        self.outputs.push(schema);
         self
     }
 
