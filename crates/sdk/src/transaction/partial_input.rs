@@ -16,6 +16,19 @@ pub enum RequiredSignature {
     WitnessWithPath(String, Vec<String>),
 }
 
+impl RequiredSignature {
+    pub fn with_path<I>(name: &str, path: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        RequiredSignature::WitnessWithPath(
+            name.to_string(),
+            path.into_iter().map(|s| s.as_ref().to_string()).collect(),
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PartialInput {
     pub witness_txid: Txid,
