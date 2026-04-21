@@ -21,6 +21,15 @@ impl PartialOutput {
         }
     }
 
+    pub fn new_metadata(data: &[u8]) -> Self {
+        Self {
+            script_pubkey: Script::new_op_return(data),
+            amount: 0,
+            asset: AssetId::default(),
+            blinding_key: None,
+        }
+    }
+
     pub fn with_blinding_key(mut self, blinding_key: PublicKey) -> Self {
         self.blinding_key = Some(blinding_key);
 
