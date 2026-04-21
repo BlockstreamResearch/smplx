@@ -1,0 +1,10 @@
+fn main () {
+    match witness::PATH {
+        Left(x: (Either<u1, u2>, Either<Option<bool>, (u1, u2, u4)>)) => {
+            let (either1, either2): (Either<u1, u2>, Either<Option<bool>, (u1, u2, u4)>) = x;
+        },
+        Right(x: List<u4, 4>) => {
+            let list1: List<u4, 4> = x;
+        },
+    }
+}

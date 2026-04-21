@@ -1,0 +1,12 @@
+fn main () {
+    let list_arg: List<Either<(u1, u2, u4, u8), (bool, Option<[u8; 10]>, u16, u32, u64, u128, u256)>, 256> = witness::DRAFT;
+
+    match witness::PATH {
+        Left(x: List<Either<(u64, u64, u64, u64), (u64, Signature, bool)>, 4>) => {
+                    let list1: List<Either<(u64, u64, u64, u64), (u64, Signature, bool)>, 4> = x;
+                },
+        Right(x: (Either<u1, u2>, Either<Option<bool>, (u1, u2, u4)>)) => {
+            let (either1, either2): (Either<u1, u2>, Either<Option<bool>, (u1, u2, u4)>) = x;
+        },
+    }
+}

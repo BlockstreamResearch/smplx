@@ -110,7 +110,7 @@ impl WitnessStruct {
                     use std::collections::HashMap;
                     use simplex::simplicityhl::{Arguments, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
-                    use simplex::simplicityhl::num::U256;
+                    use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
                     use simplex::simplicityhl::str::WitnessName;
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
@@ -184,7 +184,7 @@ impl WitnessStruct {
                     use std::collections::HashMap;
                     use simplex::simplicityhl::{WitnessValues, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
-                    use simplex::simplicityhl::num::U256;
+                    use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
                     use simplex::simplicityhl::str::WitnessName;
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
