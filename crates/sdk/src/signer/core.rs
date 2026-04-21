@@ -440,10 +440,10 @@ impl Signer {
                     None => Ok(program_input.witness.build_witness()),
                 };
 
-                let pruned_witness = program_input
-                    .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
-                    .unwrap();
+                let pruned_witness =
+                    program_input
+                        .program
+                        .finalize(&pst, &signed_witness.unwrap(), index, &self.network)?;
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {
