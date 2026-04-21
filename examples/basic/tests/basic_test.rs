@@ -14,7 +14,7 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
     };
 
     let p2pk = P2pkProgram::new(arguments);
-    let p2pk_script = p2pk.get_program().get_script_pubkey(context.get_network());
+    let p2pk_script = p2pk.get_script_pubkey(context.get_network());
 
     (p2pk, p2pk_script)
 }
@@ -48,7 +48,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
 
     ft.add_program_input(
         PartialInput::new(p2pk_utxos[0].clone()),
-        ProgramInput::new(Box::new(p2pk.get_program().clone()), Box::new(witness.clone())),
+        ProgramInput::new(Box::new(p2pk.as_ref().clone()), Box::new(witness.clone())),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 

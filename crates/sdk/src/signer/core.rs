@@ -440,10 +440,10 @@ impl Signer {
                     None => Ok(program_input.witness.build_witness()),
                 };
 
-                let pruned_witness = program_input
-                    .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
-                    .unwrap();
+                let pruned_witness =
+                    program_input
+                        .program
+                        .finalize(&pst, &signed_witness.unwrap(), index, &self.network)?;
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {
@@ -559,6 +559,7 @@ impl Signer {
 #[cfg(test)]
 mod tests {
     use crate::provider::EsploraProvider;
+    use crate::utils::random_mnemonic;
 
     use super::*;
 
@@ -566,10 +567,7 @@ mod tests {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        Signer::new(
-            "exist carry drive collect lend cereal occur much tiger just involve mean",
-            Box::new(EsploraProvider::new(url, network)),
-        )
+        Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
     }
 
     #[test]
