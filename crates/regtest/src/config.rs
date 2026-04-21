@@ -14,6 +14,10 @@ pub const DEFAULT_BITCOINS: u64 = 10_000_000;
 pub struct RegtestConfig {
     pub mnemonic: String,
     pub bitcoins: u64,
+    pub rpc_port: Option<u16>,
+    pub esplora_port: Option<u16>,
+    pub rpc_user: Option<String>,
+    pub rpc_password: Option<String>,
 }
 
 impl RegtestConfig {
@@ -32,6 +36,10 @@ impl Default for RegtestConfig {
         Self {
             mnemonic: DEFAULT_REGTEST_MNEMONIC.to_string(),
             bitcoins: DEFAULT_BITCOINS,
+            rpc_port: None,
+            esplora_port: None,
+            rpc_user: None,
+            rpc_password: None,
         }
     }
 }
