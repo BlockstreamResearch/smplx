@@ -358,6 +358,7 @@ impl RustType {
         };
         let expand_value_extraction =
             self.generate_value_extraction_from_expr(&initial_arg_name, RustTypeContext::Root);
+
         quote! {
             {
                 #get_witness_expr_tokens

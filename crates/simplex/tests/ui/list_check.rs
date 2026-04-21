@@ -33,6 +33,7 @@ fn main() -> Result<(), String> {
             simplex::either::Either::Right((5, [0; 64], true)),
         ]),
     };
+
     // Register panic hook to reduce warnings
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
@@ -40,6 +41,7 @@ fn main() -> Result<(), String> {
         original_witness.build_witness()
     });
     std::panic::set_hook(default_hook);
+
     assert!(result.is_err(), "Expected build_witness to panic, as we have Vec size equal to list size, but it succeeded.");
 
     Ok(())
