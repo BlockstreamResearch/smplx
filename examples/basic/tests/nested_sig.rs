@@ -13,7 +13,7 @@ fn get_nested_sig(context: &simplex::TestContext) -> (NestedSigProgram, Script) 
     };
 
     let program = NestedSigProgram::new(arguments);
-    let script = program.get_program().get_script_pubkey(context.get_network());
+    let script = program.get_script_pubkey(context.get_network());
 
     (program, script)
 }
@@ -44,7 +44,7 @@ fn spend_nested_sig(
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(program.get_program().clone()), Box::new(witness)),
+        ProgramInput::new(Box::new(program.as_ref().clone()), Box::new(witness)),
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
     );
 
@@ -61,7 +61,7 @@ fn test_inherit_spend(context: simplex::TestContext) -> anyhow::Result<()> {
     let fund_tx = fund_nested_sig(&context)?;
     provider.wait(&fund_tx)?;
 
-    // Left — inheritor sig injected by signer at path L
+    // Left - inheritor sig injected by signer at path L
     let witness = NestedSigWitness {
         inherit_or_not: simplex::either::Either::Left((DUMMY_SIGNATURE, [0; 32])),
     };
@@ -80,7 +80,7 @@ fn test_cold_spend(context: simplex::TestContext) -> anyhow::Result<()> {
     let fund_tx = fund_nested_sig(&context)?;
     provider.wait(&fund_tx)?;
 
-    // Right Left — cold sig injected by signer at path R L
+    // Right Left - cold sig injected by signer at path R L
     let witness = NestedSigWitness {
         inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Left(DUMMY_SIGNATURE)),
     };
@@ -99,7 +99,7 @@ fn test_hot_spend(context: simplex::TestContext) -> anyhow::Result<()> {
     let fund_tx = fund_nested_sig(&context)?;
     provider.wait(&fund_tx)?;
 
-    // Right Right — hot sig injected by signer at path R R
+    // Right Right - hot sig injected by signer at path R R
     let witness = NestedSigWitness {
         inherit_or_not: simplex::either::Either::Right(simplex::either::Either::Right([DUMMY_SIGNATURE, [0; 64]])),
     };

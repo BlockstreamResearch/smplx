@@ -50,8 +50,7 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<T
 fn confidential_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let provider = context.get_default_provider();
     let alice = context.get_default_signer();
-
-    let bob = context.create_signer("sing slogan bar group gauge sphere rescue fossil loyal vital model desert");
+    let bob = context.random_signer();
 
     let txid = make_confidential_to_bob(&alice, &bob, provider.get_network().policy_asset())?;
 

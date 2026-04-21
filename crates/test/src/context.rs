@@ -7,6 +7,7 @@ use smplx_regtest::client::RegtestClient;
 
 use smplx_sdk::provider::{EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
+use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
 use crate::error::TestError;
@@ -52,6 +53,10 @@ impl TestContext {
         };
 
         Signer::new(mnemonic, provider)
+    }
+
+    pub fn random_signer(&self) -> Signer {
+        self.create_signer(random_mnemonic().as_str())
     }
 
     pub fn get_default_signer(&self) -> &Signer {
