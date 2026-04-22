@@ -27,11 +27,12 @@ main() {
       --)               shift; break;;
 
       -v|--version)     shift; version;;
+      -C| --commit)     shift; SIMPLEX_COMMIT=$1;;
       -U|--update)      shift; update;;
       -r|--repo)        shift; SIMPLEX_REPO=$1;;
-      -i|--install)     shift; SIMPLEX_VERSION=$1;;
+      -i|--install)     shift; simplex_version=$1;;
       -l|--list)        shift; list;;
-      -u|--use)         shift; SIMPLEX_VERSION=$1; use;;
+      -u|--use)         shift; simplex_version=$1; use;;
       -f|--force)       SIMPLEXUP_IGNORE_VERIFICATION=true;;
       --arch)           shift; SIMPLEX_ARCH=$1;;
       --platform)       shift; SIMPLEX_PLATFORM=$1;;
@@ -59,27 +60,43 @@ main() {
 
   # Install by downloading binaries
   LATEST_TAG=$(latest_tag)
-  SIMPLEX_VERSION=${SIMPLEX_VERSION:-$LATEST_TAG}
+  simplex_version=${simplex_version:-$LATEST_TAG}
 
-  say "installing simplex (version ${SIMPLEX_VERSION})"
+  say "installing simplex (version ${simplex_version})"
 
   # Detect platform and architecture.
   detect_platform_arch
 
   # Compute the URL of the release tarball in the Simplex repository.
-  RELEASE_URL="https://github.com/${SIMPLEX_REPO}/releases/download/${SIMPLEX_VERSION}/"
-  ATTESTATION_URL="${RELEASE_URL}simplex-${SIMPLEX_VERSION}-${PLATFORM}-${ARCHITECTURE}.attestation.txt"
-  BIN_ARCHIVE_URL="${RELEASE_URL}simplex-${SIMPLEX_VERSION}-${PLATFORM}-${ARCHITECTURE}.tar.gz"
+  GITHUB_REPO_URL="https://github.com/${SIMPLEX_REPO}"
+  RELEASE_URL="${GITHUB_REPO_URL}/releases/download/${simplex_version}/"
+  ATTESTATION_URL="${RELEASE_URL}simplex-${simplex_version}-${PLATFORM}-${ARCHITECTURE}.attestation.txt"
+  BIN_ARCHIVE_URL="${RELEASE_URL}simplex-${simplex_version}-${PLATFORM}-${ARCHITECTURE}.tar.gz"
 
   ensure mkdir -p "$SIMPLEX_VERSIONS_DIR"
+  SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$simplex_version"
+  BINS_LOCAL="${BINS_LOCAL[*]}"
+
+  if [[ -n "$SIMPLEX_COMMIT" ]]; then
+    BINS_LOCAL=(elementsd electrs)
+
+    local author="$(echo "${SIMPLEX_REPO}" | cut -d'/' -f1 -)"
+
+    install_simplex_from_commit "${SIMPLEX_COMMIT}" "${author}" "${GITHUB_REPO_URL}" "${SIMPLEX_VERSION_DIR}"
+    say "Successfully compile simplex bin from commit: ${SIMPLEX_COMMIT} in repo: ${GITHUB_REPO_URL}"
+  fi
+
+  BINS_LIST_UX=$(form_str_list "${BINS_LOCAL[@]}")
 
   # If `--force` is set, skip the SHA verification.
-  if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = false ]; then
+  if [[ "$SIMPLEXUP_IGNORE_VERIFICATION" = false && -z "$SIMPLEX_COMMIT" ]]; then
     # Check if the version is already installed by downloading the attestation file.
-    say "checking if simplex, elementsd and electrs for $SIMPLEX_VERSION version are already installed"
+    say "checking if $BINS_LIST_UX for $simplex_version version are already installed"
 
     # Create a temporary directory to store the attestation link and artifact.
     tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+    trap 'rm -rf "$tmp_dir"' EXIT
+
     tmp="$tmp_dir/attestation.txt"
     ensure download "$ATTESTATION_URL" "$tmp"
 
@@ -100,7 +117,7 @@ main() {
     if $attestation_missing; then
       say "no attestation found for this release, skipping SHA verification"
     else
-      say "found attestation for $SIMPLEX_VERSION version, downloading attestation artifact, checking..."
+      say "found attestation for $simplex_version version, downloading attestation artifact, checking..."
 
       # Download the attestation artifact JSON file.
       tmp="$tmp_dir/simplex-attestation.sigstore.json"
@@ -128,10 +145,10 @@ main() {
 
       # Check if the binaries are already installed and match the expected hashes.
       # If they do, skip the download.
-      version_dir="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
+      version_dir="${SIMPLEX_VERSION_DIR}"
       all_match=true
 
-      for bin in "${BINS[@]}"; do
+      for bin in "${BINS_LOCAL[@]}"; do
         expected=""
 
         for i in "${!HASH_NAMES[@]}"; do
@@ -157,7 +174,7 @@ main() {
       done
 
       if $all_match; then
-        say "version $SIMPLEX_VERSION already installed and verified, activating..."
+        say "version $simplex_version already installed and verified, activating..."
         use
         say "done!"
         exit 0
@@ -169,18 +186,23 @@ main() {
   fi
 
   # Download and extract the binaries archive
-  say "downloading simplex, elementsd and electrs for $SIMPLEX_VERSION version"
+  say "downloading $BINS_LIST_UX for $simplex_version version"
 
-  tmp="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-  tmp="$tmp/simplex.tar.gz"
+  tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  tmp="$tmp_dir/simplex.tar.gz"
+  trap 'rm -rf "$tmp_dir"' EXIT
 
-  echo $BIN_ARCHIVE_URL
+  echo "$BIN_ARCHIVE_URL"
   ensure download "$BIN_ARCHIVE_URL" "$tmp"
   # Make sure it's a valid tar archive.
   ensure tar tf "$tmp" 1> /dev/null
-  ensure mkdir -p "$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
-  ensure tar -C "$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION" -xvf "$tmp"
-  rm -f "$tmp"
+  ensure mkdir -p "$SIMPLEX_VERSION_DIR"
+  ensure tar -C "$tmp_dir" -xvf "$tmp"
+
+  for bin in "${BINS_LOCAL[@]}"; do
+    mv "$tmp_dir/$bin" "$SIMPLEX_VERSION_DIR/$bin"
+  done
+  rm -rf "$tmp_dir"
 
   if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = true ]; then
     say "skipped SHA verification for downloaded binaries due to --force flag"
@@ -194,7 +216,7 @@ main() {
 
       failed=false
 
-      for bin in "${BINS[@]}"; do
+      for bin in "${BINS_LOCAL[@]}"; do
         expected=""
 
         for i in "${!HASH_NAMES[@]}"; do
@@ -204,7 +226,7 @@ main() {
           fi
         done
 
-        path="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION/$bin"
+        path="$SIMPLEX_VERSIONS_DIR/$simplex_version/$bin"
 
         if [ -z "$expected" ]; then
           say "no expected hash for $bin"
@@ -255,6 +277,7 @@ USAGE:
 OPTIONS:
     -h, --help      Print help information
     -v, --version   Print the version of simplexup
+    -C, --commit,   Install specific simplex revision from repository
     -U, --update    Update simplexup to the latest version
     -i, --install   Install a specific version from built binaries
     -l, --list      List versions installed from built binaries
@@ -278,6 +301,7 @@ update() {
 
   # Download the new version.
   tmp_file="$(mktemp)"
+  trap 'rm -rf "$tmp_file"' EXIT
   ensure download "$SIMPLEX_BIN_URL" "$tmp_file"
 
   # Extract new version from downloaded file.
@@ -336,8 +360,8 @@ list() {
 }
 
 use() {
-  [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
-  SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
+  [ -z "$simplex_version" ] && err "no version provided"
+  SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$simplex_version"
   
   if [ -d "$SIMPLEX_VERSION_DIR" ]; then
     check_bins_in_use
@@ -370,7 +394,7 @@ EOF
     done
     exit 0
   else
-    err "version $SIMPLEX_VERSION not installed"
+    err "version $simplex_version not installed"
   fi
 }
 
@@ -571,6 +595,53 @@ Contribute : https://github.com/BlockstreamResearch/smplx/blob/master/CONTRIBUTI
 -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
 
 "
+}
+
+# Form a comma separated list with 'and' for user experience
+form_str_list() {
+  local STR_LIST=("$@")
+
+  local LAST_EL="${STR_LIST[*]: -1}"
+
+  local REST_ELS=("${STR_LIST[@]:0:${#STR_LIST[@]}-1}")
+  local EL_STRING=""
+
+  if [ ${#STR_LIST[@]} -eq 1 ]; then
+    EL_STRING="${STR_LIST[0]}"
+  elif [ ${#STR_LIST[@]} -eq 2 ]; then
+    EL_STRING="${STR_LIST[0]} and ${STR_LIST[1]}"
+  else
+    SAVE_IFS="$IFS"
+    IFS=","
+    EL_STRING="${REST_ELS[*]}"
+    IFS="$SAVE_IFS"
+
+    EL_STRING="${EL_STRING//,/, } and ${LAST_EL}"
+  fi
+  echo "$EL_STRING"
+}
+
+install_simplex_from_commit() {
+  local commit=$1
+  local author=$2
+  local repo_url=$3
+  local out_dir=$4
+
+  simplex_version="simplex-${author}-${commit}"
+  tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  trap 'rm -rf "$tmp_dir"' EXIT
+
+  ensure mkdir -p "${tmp_dir}"
+  ensure cd "${tmp_dir}"
+  ensure git clone --revision="${commit}" --depth=1 "${repo_url}" "${tmp_dir}"
+
+  say "installing Simplex version $simplex_version"
+
+  ensure cargo build --release --manifest-path "${tmp_dir}/Cargo.toml"
+  ensure mv "${tmp_dir}/target/release/simplex" "${out_dir}/simplex"
+
+  say "Removing temporary directory..."
+  rm -rf "${tmp_dir}"
 }
 
 main "$@"
