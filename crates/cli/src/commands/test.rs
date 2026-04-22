@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use smplx_test::TestConfig;
+use smplx_test::{SMPLX_TEST_MARKER, TestConfig};
 
 use super::core::TestFlags;
 use super::error::CommandError;
@@ -51,7 +51,7 @@ impl Test {
         let mut command_as_arg = String::new();
 
         if tests.is_empty() {
-            command_as_arg.push_str("cargo test --tests");
+            command_as_arg.push_str(&format!("cargo test --tests -- _{}", SMPLX_TEST_MARKER));
         } else {
             let mut arg = "cargo test".to_string();
 
