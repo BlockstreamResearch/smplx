@@ -13,9 +13,14 @@ pub enum Command {
     Regtest,
     /// Runs Simplex tests
     Test {
-        /// The list of test names to run
-        #[arg(long)]
-        tests: Vec<String>,
+        /// Name of test to run
+        #[arg()]
+        filter: Option<String>,
+
+        /// Integration tests to run
+        #[arg(long = "test", num_args = 1)]
+        integration_tests: Vec<String>,
+
         #[command(flatten)]
         additional_flags: TestFlags,
     },

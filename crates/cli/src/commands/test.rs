@@ -5,15 +5,24 @@ use smplx_test::{SMPLX_TEST_MARKER, TestConfig};
 
 use super::core::TestFlags;
 use super::error::CommandError;
+pub struct TestTargets<'a> {
+    pub filter: Option<&'a str>,
+    pub integration_tests: &'a [String],
+}
+
+pub enum TestRequest<'a> {
+    All,
+    TestTargets(TestTargets<'a>),
+}
 
 pub struct Test {}
 
 impl Test {
-    pub fn run(config: TestConfig, tests: &[String], flags: &TestFlags) -> Result<(), CommandError> {
+    pub fn run(config: TestConfig, test_request: &TestRequest, flags: &TestFlags) -> Result<(), CommandError> {
         let cache_path = Self::get_test_config_cache_name()?;
         config.to_file(&cache_path)?;
 
-        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, tests, flags);
+        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, test_request, flags);
 
         let output = cargo_test_command.output()?;
 
@@ -33,10 +42,14 @@ impl Test {
         Ok(())
     }
 
-    fn build_cargo_test_command(cache_path: &PathBuf, tests: &[String], flags: &TestFlags) -> std::process::Command {
+    fn build_cargo_test_command(
+        cache_path: &PathBuf,
+        test_request: &TestRequest,
+        flags: &TestFlags,
+    ) -> std::process::Command {
         let mut cargo_test_command = std::process::Command::new("sh");
 
-        cargo_test_command.args(["-c".to_string(), Self::build_test_command(tests, flags)]);
+        cargo_test_command.args(["-c".to_string(), Self::build_test_command(test_request, flags)]);
 
         cargo_test_command
             .env(smplx_test::TEST_ENV_NAME, cache_path)
@@ -47,23 +60,34 @@ impl Test {
         cargo_test_command
     }
 
-    fn build_test_command(tests: &[String], flags: &TestFlags) -> String {
+    fn build_test_command(test_request: &TestRequest, flags: &TestFlags) -> String {
         let mut command_as_arg = String::new();
 
-        if tests.is_empty() {
-            command_as_arg.push_str(&format!("cargo test --tests -- _{}", SMPLX_TEST_MARKER));
-        } else {
-            let mut arg = "cargo test".to_string();
-
-            for test_name in tests {
-                arg.push_str(&format!(" --test {test_name}"));
+        match test_request {
+            TestRequest::All => {
+                command_as_arg.push_str(&format!("cargo test --tests -- _{SMPLX_TEST_MARKER}"));
             }
+            TestRequest::TestTargets(TestTargets {
+                filter: filter_by_name,
+                integration_tests,
+            }) => {
+                let mut arg = "cargo test".to_string();
 
-            command_as_arg.push_str(&arg);
+                if let Some(filter) = filter_by_name {
+                    arg.push_str(&format!(" {filter}_{SMPLX_TEST_MARKER}"));
+                } else {
+                    arg.push_str(&format!(" _{SMPLX_TEST_MARKER}"));
+                }
+
+                for integration_test in *integration_tests {
+                    arg.push_str(&format!(" --test {integration_test}"));
+                }
+
+                command_as_arg.push_str(&arg);
+            }
         }
 
         let flag_args = Self::build_test_flags(flags);
-
         if !flag_args.is_empty() {
             command_as_arg.push_str(" --");
             command_as_arg.push_str(&flag_args);
