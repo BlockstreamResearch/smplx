@@ -37,14 +37,13 @@ impl Cli {
 
                 Ok(())
             }
-            Command::Test {
-                tests,
-                additional_flags,
-            } => {
+            Command::Test { name, additional_flags } => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Test::run(loaded_config.test, tests, additional_flags)?)
+                let filter = name.clone().unwrap_or_default();
+
+                Ok(Test::run(loaded_config.test, filter, additional_flags)?)
             }
             Command::Regtest => {
                 let config_path = Config::get_default_path()?;

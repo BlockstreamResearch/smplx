@@ -4,3 +4,4 @@ pub mod error;
 pub mod macros;
 
 pub use config::{RpcConfig, TEST_ENV_NAME, TestConfig};
+pub use macros::core::SMPLX_TEST_MARKER;
