@@ -9,17 +9,13 @@ pub enum Command {
     },
     /// Prints current Simplex config in use
     Config,
-    /// Spins up the local Electrs + Elements regtest
+    /// Spins up local Electrs + Elements regtest
     Regtest,
     /// Runs Simplex tests
     Test {
-        /// Name of test to run
+        /// Name or a substring of the tests to run
         #[arg()]
-        filter: Option<String>,
-
-        /// Integration tests to run
-        #[arg(long = "test", num_args = 1)]
-        integration_tests: Vec<String>,
+        name: Option<String>,
 
         #[command(flatten)]
         additional_flags: TestFlags,

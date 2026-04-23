@@ -7,7 +7,7 @@ use crate::commands::build::Build;
 use crate::commands::clean::Clean;
 use crate::commands::init::Init;
 use crate::commands::regtest::Regtest;
-use crate::commands::test::{Test, TestRequest, TestTargets};
+use crate::commands::test::Test;
 use crate::config::Config;
 use crate::error::CliError;
 
@@ -37,24 +37,13 @@ impl Cli {
 
                 Ok(())
             }
-            Command::Test {
-                filter,
-                integration_tests,
-                additional_flags,
-            } => {
+            Command::Test { name, additional_flags } => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                let test_request = if filter.is_none() && integration_tests.is_empty() {
-                    TestRequest::All
-                } else {
-                    TestRequest::TestTargets(TestTargets {
-                        filter: filter.as_deref(),
-                        integration_tests,
-                    })
-                };
+                let filter = name.clone().unwrap_or_default();
 
-                Ok(Test::run(loaded_config.test, &test_request, additional_flags)?)
+                Ok(Test::run(loaded_config.test, filter, additional_flags)?)
             }
             Command::Regtest => {
                 let config_path = Config::get_default_path()?;
