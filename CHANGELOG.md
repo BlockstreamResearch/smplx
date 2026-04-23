@@ -2,7 +2,20 @@
 
 ## [Unreleased]
 
-- Add the auth and ports config support for the project manifest.
+- Sped up regtest setup 3x times by mining a block after tokens sweep.
+- Added basic taproot storage support to `Program`.
+- Added support for reissuance tokens (inflation keys) to the `FinalTransaction` builder.
+- Implemented nested witness signature injection and parsing.
+  - Users can now ask a signer to put a signature under `Either`, `Array`, and `Tuple` types.
+- Added the auth and ports config support for the project manifest.
+- Fixed a bug where the `build` macro didn't support all `SimplicityHL` types, resulting into a panic.
+- Added `get_script_pubkey` and `get_script_hash` function to artifacts.
+- Removed `get_program` and `get_program_mut` from artifacts in favor of `as_ref` and `as_mut`.
+- Added `new_metadata` function to the `PartialOutput`.
+- Added `random_mnemonic` and `random_signer` functions.
+- Changed `simplex test` interface to just accept the name (or a pattern) of the tests to run.
+  - Only simplex tests should be invoked now.
+- Implemented some unit tests.
 
 ## [0.0.3]
 

@@ -55,6 +55,7 @@ impl RegtestClient {
 
         let url = self.electrs.esplora_url.clone().unwrap();
         let port = url.split_once(":").unwrap().1;
+
         format!("http://127.0.0.1:{}", port)
     }
 
@@ -64,6 +65,7 @@ impl RegtestClient {
         }
 
         let cookie = self.elements.params.get_cookie_values().unwrap().unwrap();
+
         Auth::UserPass(cookie.user, cookie.password)
     }
 

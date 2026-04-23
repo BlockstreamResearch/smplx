@@ -51,9 +51,10 @@ pub fn get_electrs_bin_args(config: &RegtestConfig) -> Vec<String> {
 /// Generates an rpcauth string in the format `user:salt$hash`
 fn generate_rpcauth(user: &str, password: &str) -> String {
     let salt = hex::encode(user.as_bytes());
-
     let mut mac = HmacSha256::new_from_slice(salt.as_bytes()).expect("HMAC accepts key of any size");
+
     mac.update(password.as_bytes());
+
     let hash = hex::encode(mac.finalize().into_bytes());
 
     format!("{user}:{salt}${hash}")
