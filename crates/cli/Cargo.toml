@@ -1,6 +1,6 @@
 [package]
 name = "smplx-cli"
-version = "0.0.3"
+version = "0.0.4"
 description = "Simplex cli with various utilities to manage a simplicity project"
 license.workspace = true
 edition.workspace = true

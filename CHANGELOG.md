@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.0.4]
 
 - Sped up regtest setup 3x times by mining a block after tokens sweep.
 - Added basic taproot storage support to `Program`.

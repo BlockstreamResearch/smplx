@@ -8,7 +8,7 @@ Make sure that the CHANGELOG.md is up to date and starts with the following head
 ```
 # Changelog
 
-## [<version>]
+## [<version>|Unreleased]
 
 - <Pull request changes description>.
 ```

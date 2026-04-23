@@ -13,12 +13,12 @@ edition = "2024"
 multiple_crate_versions = "allow"
 
 [workspace.dependencies]
-smplx-macros = { path = "./crates/macros", version = "0.0.3" }
-smplx-build = { path = "./crates/build", version = "0.0.3" }
-smplx-test = { path = "./crates/test", version = "0.0.3" }
-smplx-regtest = { path = "./crates/regtest", version = "0.0.3" }
-smplx-sdk = { path = "./crates/sdk", version = "0.0.3" }
-smplx-std = { path = "./crates/simplex", version = "0.0.3" }
+smplx-macros = { path = "./crates/macros", version = "0.0.4" }
+smplx-build = { path = "./crates/build", version = "0.0.4" }
+smplx-test = { path = "./crates/test", version = "0.0.4" }
+smplx-regtest = { path = "./crates/regtest", version = "0.0.4" }
+smplx-sdk = { path = "./crates/sdk", version = "0.0.4" }
+smplx-std = { path = "./crates/simplex", version = "0.0.4" }
 
 serde = { version = "1.0.228", features = ["derive"]}
 hex = { version = "0.4.3" }

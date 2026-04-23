@@ -1,6 +1,6 @@
 [package]
 name = "smplx-sdk"
-version = "0.0.3"
+version = "0.0.4"
 description = "Simplex sdk to simplify the development with simplicity"
 license.workspace = true
 edition.workspace = true

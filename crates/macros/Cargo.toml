@@ -1,6 +1,6 @@
 [package]
 name = "smplx-macros"
-version = "0.0.3"
+version = "0.0.4"
 description = "Simplex macros re-export package"
 license.workspace = true
 edition.workspace = true

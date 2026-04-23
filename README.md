@@ -85,21 +85,21 @@ Where:
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
-  - `bitcoins` - Initial coins available to the signer
+  - `bitcoins` - Initial coins available to the signer.
   - `rpc_port` - The port Elements regtest node will listen on.
   - `esplora_port` - The port Electrs will listen on.
   - `rpc_user` - Elements regtest RPC username.
   - `rpc_password` - Elements regtest RPC password.
 - `test` (`simplex test` config)
+  - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
+  - `bitcoins` - Initial coins available to the signer.
   - `esplora`
-    - `url` - Esplora API endpoint url
+    - `url` - Esplora API endpoint url.
     - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
   - `rpc`
-    - `url` - Elements RPC endpoint url
-    - `username` - Elements RPC username
-    - `password` - Elements RPC password
-  - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
-  - `bitcoins` - Initial coins available to the signer
+    - `url` - Elements RPC endpoint url.
+    - `username` - Elements RPC username.
+    - `password` - Elements RPC password.
 
 ### CLI
 
@@ -129,8 +129,8 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 ## Future work
 
 - [x] Complete `simplex init` and `simplex clean` tasks.
+- [x] Simplicity storage compatibility.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
-- [ ] Simplicity storage compatibility.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
 - [ ] Browser compatibility.
