@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Added fixtures for simplex integration tests.
+
 ## [0.0.4]
 
 - Sped up regtest setup 3x times by mining a block after tokens sweep.

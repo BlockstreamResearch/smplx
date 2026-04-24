@@ -30,10 +30,10 @@ Please note that this new module gets declared in the `lib.rs` file.
 
 ### Test
 
-Once the artifacts are generated, let's run Simplex test `basic_test.rs`:
+Once the artifacts are generated, let's run Simplex test "basic_test" inside `basic_test.rs`:
 
 ```bash
-simplex test --tests "basic_test" --nocapture
+simplex test basic_test --nocapture
 ```
 
 You will see the test passing.
