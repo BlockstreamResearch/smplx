@@ -4,6 +4,7 @@ inputs:
   commit-sha:
     description: "Commit in repository to use"
     required: false
+    default: "master"
   owner-repo:
     description: "Owner repo on Github to use"
     required: false
@@ -16,6 +17,6 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        REVISION="${{ inputs.revision}}"
+        REVISION="${{ inputs.commit-sha}}"
         OWNER_REPO="${{ inputs.owner-repo }}"
         bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${REVISION}" "${OWNER_REPO}"

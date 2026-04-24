@@ -59,7 +59,7 @@ jobs:
       - name: Install simplex-cli
         uses: ./.github/actions/setup
         with:
-          revision: ${{ steps.commit.outputs.sha }}
+          commit-sha: ${{ steps.commit.outputs.sha }}
           owner-repo: ${{ matrix.owner_repo }}
 
       - name: Generate contract artifacts
@@ -101,6 +101,9 @@ jobs:
           toolchain: stable
           components: rustfmt
 
+      - name: Use Rust cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Install cargo-hack
         uses: taiki-e/install-action@v2
         with:
@@ -119,7 +122,7 @@ jobs:
       - name: Install simplex-cli
         uses: ./.github/actions/setup
         with:
-          revision: ${{ steps.commit.outputs.sha }}
+          commit-sha: ${{ steps.commit.outputs.sha }}
           owner-repo: ${{ matrix.owner_repo }}
 
       - name: Generate contract artifacts

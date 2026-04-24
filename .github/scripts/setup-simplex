@@ -35,7 +35,6 @@ main() {
   # Download the simplexup executable
   FILE_PATH="simplexup/simplexup"
   RAW_URL="https://raw.githubusercontent.com/${OWNER_REPO}/${FETCH_REF}/${FILE_PATH}"
-  say "Fetching ${FILE_PATH} from ${RAW_URL}"
 
   BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
   SIMPLEX_DIR="${SIMPLEX_DIR:-$BASE_DIR/.simplex}"
@@ -44,15 +43,17 @@ main() {
 
   # Ensure bin directory exists and download simplexup into it
   mkdir -p "$SIMPLEX_BIN_DIR"
+  say "Fetching ${FILE_PATH} from ${RAW_URL}"
+
   curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "${RAW_URL}" -o "$BIN_PATH"
   chmod +x "$BIN_PATH"
 
   # Execute simplexup, using a specific commit if provided (and not master's default release)
-  if [ -n "$COMMIT_SHA" ] && [ "$COMMIT_SHA" != "master" ]; then
-      say "Installing simplex from commit: ${COMMIT_SHA}"
-      "$BIN_PATH" --commit "${COMMIT_SHA}"
+  if [ "$FETCH_REF" != "master" ]; then
+      say "Using simplexup and simplex from commit: ${FETCH_REF}"
+      "$BIN_PATH" --commit "${FETCH_REF}"
   else
-      say "Installing simplex from latest release"
+      say "Using simplexup from master branch and installing latest simplex"
       "$BIN_PATH"
   fi
 
