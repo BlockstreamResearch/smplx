@@ -1,0 +1,21 @@
+name: setup
+
+inputs:
+  commit-sha:
+    description: "Commit in repository to use"
+    required: false
+  owner-repo:
+    description: "Owner repo on Github to use"
+    required: false
+    default: "BlockstreamResearch/smplx"
+
+runs:
+  using: composite
+  steps:
+    - name: Install simplex-cli via simplexup
+      shell: bash
+      run: |
+        set -euo pipefail
+        REVISION="${{ inputs.revision}}"
+        OWNER_REPO="${{ inputs.owner-repo }}"
+        bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${REVISION}" "${OWNER_REPO}"
