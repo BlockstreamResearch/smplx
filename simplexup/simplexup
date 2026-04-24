@@ -335,10 +335,10 @@ list() {
   if [ -d "$SIMPLEX_VERSIONS_DIR" ]; then
     for VERSION in $SIMPLEX_VERSIONS_DIR/*; do
       say "${VERSION##*/}"
-      
+
       for bin in "${BINS[@]}"; do
         case $bin in
-          simplex) 
+          simplex)
             bin_path="$VERSION/$bin"
             say "- $(ensure "$bin_path" -V)"
           ;;
@@ -349,7 +349,7 @@ list() {
   else
     for bin in "${BINS[@]}"; do
       case $bin in
-        simplex) 
+        simplex)
           bin_path="$SIMPLEX_BIN_DIR/$bin"
           say "- $(ensure "$bin_path" -V)"
         ;;
@@ -362,7 +362,7 @@ list() {
 use() {
   [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
   SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
-  
+
   if [ -d "$SIMPLEX_VERSION_DIR" ]; then
     check_bins_in_use
 
@@ -372,7 +372,7 @@ use() {
       cp "$SIMPLEX_VERSION_DIR/$bin" "$bin_path"
       # Print usage msg
       case $bin in
-        simplex) 
+        simplex)
           say "- $(ensure "$bin_path" -V)"
         ;;
       esac
@@ -627,8 +627,8 @@ banner() {
 -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-
 
                           _.|
-                     _ -../ | 
-                 _ -..::/ ||          ____  _                 _         
+                     _ -../ |
+                 _ -..::/ ||          ____  _                 _
              _ -..:::::/ |||         / ___|(_)_ __ ___  _ __ | | _____  __
         _ .....:.:.:. / ||||         \___ \| | '_ ' _ \| '_ \| |/ _ \ \/ /
      -- -- _ .:.:... /  |||           ___) | | | | | | | |_) | |  __/>  <
