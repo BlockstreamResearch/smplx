@@ -18,6 +18,19 @@ use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
 use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
+use std::cell::Cell;
+
+thread_local! {
+    static TRACKER_LOG_LEVEL: Cell<TrackerLogLevel> = const { Cell::new(TrackerLogLevel::None) };
+}
+
+pub fn set_tracker_log_level(level: TrackerLogLevel) {
+    TRACKER_LOG_LEVEL.with(|cell| cell.set(level));
+}
+
+pub fn get_tracker_log_level() -> TrackerLogLevel {
+    TRACKER_LOG_LEVEL.with(|cell| cell.get())
+}
 
 pub trait ProgramTrait: DynClone {
     fn get_argument_types(&self) -> Result<Parameters, ProgramError>;
@@ -124,8 +137,7 @@ impl ProgramTrait for Program {
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
-        // TODO: global config for TrackerLogLevel
-        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::Debug);
+        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(get_tracker_log_level());
 
         let env = self.get_env(pst, input_index, network)?;
 

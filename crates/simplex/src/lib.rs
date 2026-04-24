@@ -4,6 +4,9 @@ pub use simplicityhl;
 
 pub use smplx_sdk::*;
 
+pub use simplicityhl::tracker::TrackerLogLevel;
+pub use smplx_sdk::program::core::set_tracker_log_level;
+
 pub use smplx_test::config::TestConfig;
 pub use smplx_test::context::TestContext;
 
