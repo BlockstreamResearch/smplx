@@ -101,6 +101,11 @@ jobs:
           toolchain: stable
           components: rustfmt
 
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+
       - name: Resolve commit SHA
         id: commit
         shell: bash
