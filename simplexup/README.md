@@ -24,6 +24,12 @@ To install a specific version (in this case the `v0.1.0` version):
 simplexup --install v0.1.0
 ```
 
+To install from a specific commit:
+
+```bash
+simplexup --commit b122e8d32911c96da47e457a97046269df28c0ca
+```
+
 To list all versions installed:
 
 ```bash

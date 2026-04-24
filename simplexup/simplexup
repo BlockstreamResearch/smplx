@@ -3,7 +3,7 @@ set -eo pipefail
 
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
-SIMPLEXUP_INSTALLER_VERSION="0.0.3"
+SIMPLEXUP_INSTALLER_VERSION="0.0.4"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -89,7 +89,7 @@ main() {
     BINS_TO_DOWNLOAD=("${DEP_BINS[@]}")
 
     install_simplex_from_commit "${SIMPLEX_COMMIT}" "${author}" "${GITHUB_REPO_URL}" "${version_dir}"
-    say "Successfully compile simplex bin from commit: ${SIMPLEX_COMMIT} in repo: ${GITHUB_REPO_URL}"
+    say "Successfully compiled simplex from commit: ${SIMPLEX_COMMIT} in repo: ${GITHUB_REPO_URL}"
   fi
 
   BINS_LIST_UX=$(form_str_list "${BINS_TO_DOWNLOAD[@]}")
@@ -135,7 +135,7 @@ main() {
       # The payload is expected to be a JSON array of objects with "name" and "sha256" fields.
       while read -r name_line && read -r sha_line; do
         name=$(echo "$name_line" | sed -nE 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-        sha=$(echo "$sha_line"  | sed -nE 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
+        sha=$(echo "$sha_line" | sed -nE 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
 
         if [ -n "$name" ] && [ -n "$sha" ]; then
           HASH_NAMES+=("$name")
@@ -194,7 +194,6 @@ main() {
   tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
   tmp_tar="$tmp_dir/simplex.tar.gz"
 
-  echo "$BIN_ARCHIVE_URL"
   ensure download "$BIN_ARCHIVE_URL" "$tmp_tar"
   # Make sure it's a valid tar archive.
   ensure tar tf "$tmp_tar" 1> /dev/null
@@ -344,6 +343,7 @@ list() {
           ;;
         esac
       done
+
       printf "\n"
     done
   else
@@ -361,15 +361,17 @@ list() {
 
 use() {
   [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
+
   SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
 
   if [ -d "$SIMPLEX_VERSION_DIR" ]; then
     check_bins_in_use
+    ensure mkdir -p "$SIMPLEX_BIN_DIR"
 
     for bin in "${BINS[@]}"; do
-      ensure mkdir -p "$SIMPLEX_BIN_DIR"
       bin_path="$SIMPLEX_BIN_DIR/$bin"
       cp "$SIMPLEX_VERSION_DIR/$bin" "$bin_path"
+
       # Print usage msg
       case $bin in
         simplex)
@@ -440,6 +442,17 @@ latest_tag() {
   LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$SIMPLEX_REPO/releases/latest" | jq -r .tag_name)
 
   echo $LATEST_TAG
+}
+
+validate_tag_version() {
+  local current_version=$1
+  local simplex_repo=$2
+
+  say "Checking if version ${current_version} exists..."
+
+  if ! curl -IfsSL "https://github.com/${simplex_repo}/releases/tag/${current_version}" >/dev/null; then
+    err "Error: version '${current_version}' not found in ${simplex_repo} releases."
+  fi
 }
 
 detect_platform_arch() {
@@ -569,6 +582,25 @@ download() {
   fi
 }
 
+install_simplex_from_commit() {
+  local commit=$1
+  local author=$2
+  local repo_url=$3
+  local out_dir=$4
+
+  local simplex_version="simplex-${author}-${commit}"
+  local tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  ensure git clone --revision="${commit}" --depth=1 "${repo_url}" "${tmp_dir}"
+
+  say "Installing Simplex version $simplex_version"
+
+  ensure cargo build --release --manifest-path "${tmp_dir}/Cargo.toml"
+  ensure mv "${tmp_dir}/target/release/simplex" "${out_dir}/simplex"
+
+  say "Removing temporary directory..."
+  rm -rf "${tmp_dir}"
+}
+
 # Form a comma separated list with 'and' for user experience
 form_str_list() {
   local STR_LIST=("$@")
@@ -589,35 +621,8 @@ form_str_list() {
 
     EL_STRING="${EL_STRING//,/, } and ${LAST_EL}"
   fi
+
   echo "$EL_STRING"
-}
-
-install_simplex_from_commit() {
-  local commit=$1
-  local author=$2
-  local repo_url=$3
-  local out_dir=$4
-
-  local simplex_version="simplex-${author}-${commit}"
-  local tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-  ensure git clone --revision="${commit}" --depth=1 "${repo_url}" "${tmp_dir}"
-
-  say "installing Simplex version $simplex_version"
-
-  ensure cargo build --release --manifest-path "${tmp_dir}/Cargo.toml"
-  ensure mv "${tmp_dir}/target/release/simplex" "${out_dir}/simplex"
-
-  say "Removing temporary directory..."
-  rm -rf "${tmp_dir}"
-}
-
-validate_tag_version() {
-  local current_version=$1
-  local simplex_repo=$2
-  say "checking if version ${current_version} exists..."
-  if ! curl -IfsSL "https://github.com/${simplex_repo}/releases/tag/${current_version}" >/dev/null; then
-    err "version '${current_version}' not found in ${simplex_repo} releases"
-  fi
 }
 
 # Banner prompt for Simplex
