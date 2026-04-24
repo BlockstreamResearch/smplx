@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+say() {
+  printf "setup-simplex: %s\n" "$1"
+}
+
+err() {
+  say "$1" >&2
+  exit 1
+}
+
+main() {
+  COMMIT_SHA="${1:-}"
+  OWNER_REPO="${2:-}"
+  FETCH_REF="${COMMIT_SHA:-master}"
+  FILE_PATH="simplexup/install"
+
+  if [ -z "$OWNER_REPO" ]; then
+    err "no OWNER_REPO variable set"
+  fi
+
+  RAW_URL="https://raw.githubusercontent.com/${OWNER_REPO}/${FETCH_REF}/${FILE_PATH}"
+  echo "$FETCH_REF, $OWNER_REPO, $FILE_PATH, $RAW_URL"
+
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "${RAW_URL}" | bash
+
+  FILE_PATH="simplexup/simplexup"
+  RAW_URL="https://raw.githubusercontent.com/${OWNER_REPO}/${FETCH_REF}/${FILE_PATH}"
+  echo "$FETCH_REF, $OWNER_REPO, $FILE_PATH, $RAW_URL"
+
+  BASE_DIR="${XDG_CONFIG_HOME:-$HOME}"
+  SIMPLEX_DIR="${SIMPLEX_DIR:-$BASE_DIR/.simplex}"
+  SIMPLEX_BIN_DIR="$SIMPLEX_DIR/bin"
+  BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
+  mkdir -p "$SIMPLEX_BIN_DIR"
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 "${RAW_URL}" -o "$BIN_PATH"
+  chmod +x "$BIN_PATH"
+
+  if [ -n "$COMMIT_SHA" ]; then
+      "$BIN_PATH" --commit "${COMMIT_SHA}"
+  else
+      "$BIN_PATH"
+  fi
+  echo "$SIMPLEX_BIN_DIR" >> "$GITHUB_PATH"
+  "${SIMPLEX_BIN_DIR}/simplex" --version
+}
+
+main "$@"

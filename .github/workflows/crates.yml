@@ -1,4 +1,4 @@
-name: CI
+name: Crates
 
 on:
   workflow_dispatch:
@@ -136,21 +136,3 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
         env:
           RUSTFLAGS: -Dwarnings
-
-  # TODO: test example
-
-  ci-success:
-    runs-on: ubuntu-latest
-    if: always()
-    needs:
-      - rust-tests
-      - rustfmt
-      - crate-checks
-      - clippy
-      - deny
-    timeout-minutes: 30
-    steps:
-      - name: Decide whether the needed jobs succeeded or failed
-        uses: re-actors/alls-green@release/v1
-        with:
-          jobs: ${{ toJSON(needs) }}

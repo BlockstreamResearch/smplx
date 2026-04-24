@@ -1,0 +1,240 @@
+name: Fixtures
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+      - dev
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+  simplex-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [ "1.91.0", "stable" ]
+        build-dir: [ "fixtures" ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Use Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Resolve commit SHA
+        id: commit
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install simplex-cli via simplexup
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${COMMIT_SHA}" "BlockstreamResearch/smplx"
+
+      - name: Generate contract artifacts
+        shell: bash
+        run: |
+          cd ${{ matrix.build-dir }}
+          simplex build
+          test -f src/artifacts/mod.rs
+
+      - name: Build
+        run: |
+          cd ${{ matrix.build-dir }}                     
+          cargo build --workspace --all-features --verbose
+
+      - name: Test
+        run: |
+          cd fixtures
+          simplex test --nocapture
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        build-dir: ["fixtures"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Resolve commit SHA
+        id: commit
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install simplex-cli via simplexup
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${COMMIT_SHA}" "BlockstreamResearch/smplx"
+
+      - name: Generate contract artifacts
+        shell: bash
+        run: |
+          cd ${{ matrix.build-dir }}
+          simplex build
+          test -f src/artifacts/mod.rs
+
+      - name: Check formatting
+        run: |
+          cd ${{ matrix.build-dir }}
+          cargo fmt --all --check
+
+  crate-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        build-dir: ["fixtures"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+
+      - name: Use Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Resolve commit SHA
+        id: commit
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install simplex-cli via simplexup
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${COMMIT_SHA}" "BlockstreamResearch/smplx"
+
+      - name: Generate contract artifacts
+        shell: bash
+        run: |
+          cd ${{ matrix.build-dir }}
+          simplex build
+          test -f src/artifacts/mod.rs
+
+      - name: Check hack
+        run: |
+          cd ${{ matrix.build-dir }}
+          cargo hack check
+
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        build-dir: ["fixtures"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Resolve commit SHA
+        id: commit
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install simplex-cli via simplexup
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          bash "$GITHUB_WORKSPACE/.github/scripts/setup-simplex" "${COMMIT_SHA}" "BlockstreamResearch/smplx"
+
+      - name: Generate contract artifacts
+        shell: bash
+        run: |
+          cd ${{ matrix.build-dir }}
+          simplex build
+          test -f src/artifacts/mod.rs
+
+      - name: Run clippy checks
+        run: |
+          cd ${{ matrix.build-dir }}                     
+          cargo clippy --workspace --all-targets --all-features
+        env:
+          RUSTFLAGS: -Dwarnings
