@@ -61,6 +61,11 @@ main() {
   LATEST_TAG=$(latest_tag)
   SIMPLEX_VERSION=${SIMPLEX_VERSION:-$LATEST_TAG}
 
+  # Check if the requested version exists
+  if [[ "${SIMPLEX_VERSION}" != "${LATEST_TAG}" ]]; then
+    validate_tag_version "${SIMPLEX_VERSION}" "${SIMPLEX_REPO}"
+  fi
+
   say "installing simplex (version ${SIMPLEX_VERSION})"
 
   # Detect platform and architecture.
@@ -541,6 +546,15 @@ download() {
     else
       wget --show-progress -qO- "$1"
     fi
+  fi
+}
+
+validate_tag_version() {
+  local current_version=$1
+  local simplex_repo=$2
+  say "checking if version ${current_version} exists..."
+  if ! curl -IfsSL "https://github.com/${simplex_repo}/releases/tag/${current_version}" >/dev/null; then
+    err "version '${current_version}' not found in ${simplex_repo} releases"
   fi
 }
 
