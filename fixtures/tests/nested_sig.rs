@@ -2,8 +2,8 @@ use simplex::constants::DUMMY_SIGNATURE;
 use simplex::simplicityhl::elements::{Script, Txid};
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
-use simplex_example::artifacts::nested_sig::NestedSigProgram;
-use simplex_example::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
+use simplex_fixtures::artifacts::nested_sig::NestedSigProgram;
+use simplex_fixtures::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
 
 fn get_nested_sig(context: &simplex::TestContext) -> (NestedSigProgram, Script) {
     let signer = context.get_default_signer();

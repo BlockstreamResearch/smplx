@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "crates/*",
 ]
-exclude = ["examples/basic"]
+exclude = ["examples/basic", "fixtures"]
 
 [workspace.package]
 license = "MIT"

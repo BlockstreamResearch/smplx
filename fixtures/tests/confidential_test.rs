@@ -52,12 +52,12 @@ fn confidential_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let alice = context.get_default_signer();
     let bob = context.random_signer();
 
-    let txid = make_confidential_to_bob(&alice, &bob, provider.get_network().policy_asset())?;
+    let txid = make_confidential_to_bob(alice, &bob, provider.get_network().policy_asset())?;
 
     provider.wait(&txid)?;
     println!("Confirmed");
 
-    let txid = issue_confidential_to_alice(&alice, &bob)?;
+    let txid = issue_confidential_to_alice(alice, &bob)?;
 
     provider.wait(&txid)?;
     println!("Confirmed");

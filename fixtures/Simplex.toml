@@ -1,0 +1,21 @@
+# DEFAULT CONFIG 
+
+# [build]
+# src_dir = "./simf"
+# simf_files = ["*.simf"]
+# out_dir = "./src/artifacts"
+
+# [regtest]
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+
+# [test]
+# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+
+# [test.esplora]
+# url = "<esplora url>"
+# network = "<Liquid, LiquidTestnet, ElementsRegtest>"
+
+# [test.rpc]
+# url = "<rpc url>"
+# username = "<rpc username>"
+# password = "<rpc password>"
