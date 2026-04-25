@@ -93,6 +93,7 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "Apache-2.0",
     "CC0-1.0",
+    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "MPL-2.0",
@@ -237,7 +238,10 @@ unknown-git = "warn"
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # List of URLs for allowed Git repositories
-allow-git = []
+allow-git = [
+    "https://github.com/Blockstream/lwk",
+    "https://github.com/BlockstreamResearch/rust-simplicity",
+]
 
 [sources.allow-org]
 # github.com organizations to allow git sources for
