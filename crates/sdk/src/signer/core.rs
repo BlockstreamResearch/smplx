@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -160,18 +161,7 @@ impl Signer {
         signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
 
         // descending sort of both confidential and explicit utxos
-        signer_utxos.sort_by(|a, b| {
-            let a_value = match a.secrets {
-                Some(secrets) => secrets.value,
-                None => a.explicit_amount(),
-            };
-            let b_value = match b.secrets {
-                Some(secrets) => secrets.value,
-                None => b.explicit_amount(),
-            };
-
-            b_value.cmp(&a_value)
-        });
+        signer_utxos.sort_by_key(|utxo| Reverse(utxo.amount()));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
@@ -260,9 +250,7 @@ impl Signer {
     }
 
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.explicit_asset() == asset, &|utxo| {
-            utxo.unblinded_asset() == asset
-        })
+        self.get_utxos_filter(&|utxo| utxo.asset_id() == asset, &|utxo| utxo.asset_id() == asset)
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
@@ -529,7 +517,7 @@ impl Signer {
         self.derive_xpub(&DerivationPath::master())
     }
 
-    fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
+    pub fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
         Ok(self.master_xpub()?.fingerprint())
     }
 
@@ -548,7 +536,7 @@ impl Signer {
         Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
     }
 
-    fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
+    pub fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
         let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
 

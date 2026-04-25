@@ -27,5 +27,10 @@ simplicityhl = { workspace = true, features = ["serde"] }
 
 either = { version = "1.15.0", features = ["serde"] }
 
+lwk_common = { workspace = true }
+lwk_signer = { workspace = true }
+lwk_simplicity = { workspace = true }
+lwk_wollet = { workspace = true }
+
 [dev-dependencies]
 trybuild = { version = "1.0.115" }

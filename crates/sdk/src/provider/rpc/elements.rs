@@ -4,7 +4,8 @@ use electrsd::bitcoind::bitcoincore_rpc::{Auth, Client, RpcApi};
 
 use serde_json::Value;
 
-use simplicityhl::elements::{Address, AssetId, Txid};
+use simplicityhl::elements::encode;
+use simplicityhl::elements::{Address, AssetId, Transaction, Txid};
 use simplicityhl::simplicity::bitcoin;
 
 use super::error::RpcError;
@@ -63,6 +64,37 @@ impl ElementsRpc {
         };
 
         Ok(Txid::from_str(r.as_str().unwrap()).unwrap())
+    }
+
+    pub fn issue_asset(&self, satoshi: u64) -> Result<AssetId, RpcError> {
+        const METHOD: &str = "issueasset";
+
+        let btc = sat2btc(satoshi);
+        let btc = bitcoin::amount::Amount::from_btc(btc)
+            .unwrap()
+            .to_string_in(bitcoin::amount::Denomination::Bitcoin);
+
+        let r = self.inner.call::<Value>(METHOD, &[btc.into(), 0.into()])?;
+        let asset = r
+            .get("asset")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::ElementsRpcUnexpectedReturn(METHOD.to_string()))?;
+
+        Ok(AssetId::from_str(asset).unwrap())
+    }
+
+    pub fn get_raw_transaction(&self, txid: &Txid) -> Result<Transaction, RpcError> {
+        const METHOD: &str = "getrawtransaction";
+
+        let r = self
+            .inner
+            .call::<Value>(METHOD, &[txid.to_string().into(), false.into()])?;
+        let tx_hex = r
+            .as_str()
+            .ok_or_else(|| RpcError::ElementsRpcUnexpectedReturn(METHOD.to_string()))?;
+        let tx_bytes = hex::decode(tx_hex).map_err(|_| RpcError::ElementsRpcUnexpectedReturn(METHOD.to_string()))?;
+
+        encode::deserialize(&tx_bytes).map_err(|_| RpcError::ElementsRpcUnexpectedReturn(METHOD.to_string()))
     }
 
     pub fn rescan_blockchain(&self, start: Option<u64>, stop: Option<u64>) -> Result<(), RpcError> {

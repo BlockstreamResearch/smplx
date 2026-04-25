@@ -1,8 +1,12 @@
 use std::io;
 
-use smplx_sdk::provider::ProviderError;
+use lwk_simplicity::error::WalletAbiError;
+use smplx_sdk::provider::{ProviderError, RpcError};
+use smplx_sdk::signer::SignerError;
 
 use smplx_regtest::error::RegtestError;
+
+use crate::wallet_abi::WalletAbiAdapterError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
@@ -20,4 +24,19 @@ pub enum TestError {
 
     #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
     BadNetworkName(String),
+
+    #[error(transparent)]
+    SdkSigner(#[from] SignerError),
+
+    #[error("wallet-abi invariant violation: {0}")]
+    WalletAbiInvariant(String),
+
+    #[error(transparent)]
+    WalletAbi(#[from] WalletAbiError),
+
+    #[error(transparent)]
+    WalletAbiAdapter(#[from] WalletAbiAdapterError),
+
+    #[error(transparent)]
+    WalletAbiRpc(#[from] RpcError),
 }

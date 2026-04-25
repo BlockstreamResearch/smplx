@@ -8,3 +8,10 @@ version = "0.1.0"
 smplx-std = { path = "./../crates/simplex" }
 
 anyhow = { version = "1.0.101" }
+
+[patch.crates-io]
+simplicity-sys = { git = "https://github.com/BlockstreamResearch/rust-simplicity", tag = "simplicity-sys-0.6.1" }
+lwk_common = { git = "https://github.com/Blockstream/lwk", rev = "d384a20b8e2dde83ca0d733ba6c22dd3c5daac56" }
+lwk_signer = { git = "https://github.com/Blockstream/lwk", rev = "d384a20b8e2dde83ca0d733ba6c22dd3c5daac56" }
+lwk_simplicity = { git = "https://github.com/Blockstream/lwk", rev = "d384a20b8e2dde83ca0d733ba6c22dd3c5daac56" }
+lwk_wollet = { git = "https://github.com/Blockstream/lwk", rev = "d384a20b8e2dde83ca0d733ba6c22dd3c5daac56" }
