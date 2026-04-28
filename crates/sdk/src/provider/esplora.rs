@@ -11,7 +11,7 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};
 use serde::Deserialize;
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::UTXO;
+use crate::transaction::{Transaction as SmplxTransaction, UTXO};
 
 use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
@@ -89,7 +89,7 @@ impl EsploraProvider {
             .iter()
             .map(|point| UTXO {
                 outpoint: *point,
-                txout: map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
+                txout: map.get(&point.txid).unwrap().as_ref().output[point.vout as usize].clone(),
                 secrets: None,
             })
             .collect())
@@ -228,7 +228,7 @@ impl ProviderTrait for EsploraProvider {
         Ok(block.timestamp)
     }
 
-    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
+    fn fetch_transaction(&self, txid: &Txid) -> Result<SmplxTransaction, ProviderError> {
         let url = format!("{}/tx/{}/raw", self.esplora_url, txid);
         let timeout_secs = self.timeout.as_secs();
 
@@ -247,7 +247,7 @@ impl ProviderTrait for EsploraProvider {
         let bytes = response.as_bytes();
         let tx: Transaction = encode::deserialize(bytes).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
-        Ok(tx)
+        Ok(SmplxTransaction::from(tx))
     }
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError> {

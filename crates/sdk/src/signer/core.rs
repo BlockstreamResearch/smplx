@@ -337,7 +337,7 @@ impl Signer {
         PrivateKey::new(blinding_key, NetworkKind::Test)
     }
 
-    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
+    pub(crate) fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
         let mut unblinded: Vec<UTXO> = Vec::new();
 
         for mut utxo in utxos {
