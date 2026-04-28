@@ -12,8 +12,8 @@ fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> any
             .with_blinding_key(bob.get_blinding_public_key()),
     );
 
-    let txid = alice.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = alice.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }
@@ -42,8 +42,8 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
         .with_blinding_key(alice.get_blinding_public_key()),
     );
 
-    let txid = bob.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = bob.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }
@@ -58,8 +58,8 @@ fn confidential_test(context: simplex::TestContext) -> anyhow::Result<()> {
     issue_confidential_to_alice(alice, &bob)?;
 
     // spend confidential
-    let txid = bob.send(alice.get_address().script_pubkey(), 50)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = bob.send(alice.get_address().script_pubkey(), 50)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }

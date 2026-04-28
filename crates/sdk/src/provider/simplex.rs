@@ -5,7 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::UTXO;
+use crate::transaction::{TxReceipt, UTXO};
 
 use super::core::ProviderTrait;
 use super::error::ProviderError;
@@ -30,12 +30,12 @@ impl ProviderTrait for SimplexProvider {
         self.esplora.get_network()
     }
 
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
-        let txid = self.esplora.broadcast_transaction(tx)?;
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
+        let tx_receipt = self.esplora.broadcast_transaction(tx)?;
 
         self.elements.generate_blocks(1)?;
 
-        Ok(txid)
+        Ok(tx_receipt)
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {

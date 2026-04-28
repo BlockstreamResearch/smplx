@@ -1,7 +1,7 @@
-use simplex::simplicityhl::elements::{Script, Txid};
+use simplex::simplicityhl::elements::Script;
 
 use simplex::constants::DUMMY_SIGNATURE;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, TxReceipt};
 
 use simplex_example::artifacts::p2pk::P2pkProgram;
 use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
@@ -19,18 +19,18 @@ fn get_p2pk(context: &simplex::TestContext) -> (P2pkProgram, Script) {
     (p2pk, p2pk_script)
 }
 
-fn spend_p2wpkh(context: &simplex::TestContext) -> anyhow::Result<Txid> {
+fn spend_p2wpkh(context: &simplex::TestContext) -> anyhow::Result<TxReceipt<'_>> {
     let signer = context.get_default_signer();
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let txid = signer.send(p2pk_script.clone(), 50)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = signer.send(p2pk_script.clone(), 50)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    Ok(txid)
+    Ok(tx_receipt)
 }
 
-fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
+fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<TxReceipt<'_>> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
 
@@ -52,24 +52,22 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<Txid> {
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 
-    let txid = signer.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = signer.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    Ok(txid)
+    Ok(tx_receipt)
 }
 
 #[simplex::test]
 fn basic_test(context: simplex::TestContext) -> anyhow::Result<()> {
-    let provider = context.get_default_provider();
+    let tx_receipt = spend_p2wpkh(&context)?;
 
-    let txid = spend_p2wpkh(&context)?;
-
-    provider.wait(&txid)?;
+    tx_receipt.wait()?;
     println!("Confirmed");
 
-    let txid = spend_p2pk(&context)?;
+    let tx_receipt = spend_p2pk(&context)?;
 
-    provider.wait(&txid)?;
+    tx_receipt.wait()?;
     println!("Confirmed");
 
     Ok(())

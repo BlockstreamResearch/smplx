@@ -20,8 +20,8 @@ fn dummy_log_level(context: simplex::TestContext) -> anyhow::Result<()> {
 
     let (dummy, script) = setup_dummy(&context);
 
-    let txid = signer.send(script.clone(), 50)?;
-    println!("Funded dummy script: {}", txid);
+    let tx_receipt = signer.send(script.clone(), 50)?;
+    println!("Funded dummy script: {}", tx_receipt);
 
     let utxos = provider.fetch_scripthash_utxos(&script)?;
 
