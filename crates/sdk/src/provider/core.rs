@@ -5,7 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::UTXO;
+use crate::transaction::{Transaction as SmplxTransaction, UTXO};
 
 use super::error::ProviderError;
 
@@ -30,7 +30,7 @@ pub trait ProviderTrait {
 
     fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError>;
 
-    fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
+    fn fetch_transaction(&self, txid: &Txid) -> Result<SmplxTransaction, ProviderError>;
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError>;
 
