@@ -33,7 +33,7 @@ use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;
-use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, TxReceipt, UTXO};
 
 use super::error::SignerError;
 
@@ -130,7 +130,7 @@ impl Signer {
     }
 
     // TODO: add an ability to send arbitrary assets
-    pub fn send(&self, to: Script, amount: u64) -> Result<Txid, SignerError> {
+    pub fn send(&self, to: Script, amount: u64) -> Result<TxReceipt<'_>, SignerError> {
         let mut ft = FinalTransaction::new();
 
         ft.add_output(PartialOutput::new(to, amount, self.network.policy_asset()));
@@ -140,7 +140,7 @@ impl Signer {
         Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
-    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<Txid, SignerError> {
+    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
         let (tx, _fee) = self.finalize(tx)?;
 
         Ok(self.provider.broadcast_transaction(&tx)?)

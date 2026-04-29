@@ -22,8 +22,8 @@ fn fund_nested_sig(context: &simplex::TestContext) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
     let (_, script) = get_nested_sig(context);
 
-    let txid = signer.send(script, 50_000)?;
-    println!("Funded: {}", txid);
+    let tx_receipt = signer.send(script, 50_000)?;
+    println!("Funded: {}", tx_receipt);
 
     Ok(())
 }
@@ -48,8 +48,8 @@ fn spend_nested_sig(
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
     );
 
-    let txid = signer.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = signer.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }

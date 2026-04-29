@@ -24,8 +24,8 @@ fn spend_p2wpkh(context: &simplex::TestContext) -> anyhow::Result<()> {
 
     let (_, p2pk_script) = get_p2pk(context);
 
-    let txid = signer.send(p2pk_script.clone(), 50)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = signer.send(p2pk_script.clone(), 50)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }
@@ -50,8 +50,8 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<()> {
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 
-    let txid = signer.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = signer.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
     Ok(())
 }

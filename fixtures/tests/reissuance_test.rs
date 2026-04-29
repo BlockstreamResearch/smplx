@@ -1,10 +1,12 @@
-use simplex::simplicityhl::elements::{AssetId, Txid};
+use simplex::simplicityhl::elements::AssetId;
 
 use simplex::signer::Signer;
 use simplex::transaction::partial_input::IssuanceInput;
-use simplex::transaction::{FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature};
+use simplex::transaction::{
+    FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature, TxReceipt,
+};
 
-fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<Txid> {
+fn make_confidential_to_bob<'a>(alice: &'a Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<TxReceipt<'a>> {
     let mut ft = FinalTransaction::new();
 
     ft.add_output(
@@ -12,13 +14,16 @@ fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> any
             .with_blinding_key(bob.get_blinding_public_key()),
     );
 
-    let txid = alice.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = alice.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    Ok(txid)
+    Ok(tx_receipt)
 }
 
-fn issue_explicit_to_alice_with_reissuance(alice: &Signer, bob: &Signer) -> anyhow::Result<(Txid, IssuanceDetails)> {
+fn issue_explicit_to_alice_with_reissuance<'a>(
+    alice: &Signer,
+    bob: &'a Signer,
+) -> anyhow::Result<(TxReceipt<'a>, IssuanceDetails)> {
     let utxos = bob.get_utxos()?;
 
     let mut ft = FinalTransaction::new();
@@ -43,17 +48,17 @@ fn issue_explicit_to_alice_with_reissuance(alice: &Signer, bob: &Signer) -> anyh
         .with_blinding_key(bob.get_blinding_public_key()),
     );
 
-    let txid = bob.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = bob.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    Ok((txid, issuance_details))
+    Ok((tx_receipt, issuance_details))
 }
 
-fn reissue_tokens_to_bob(
-    bob: &Signer,
+fn reissue_tokens_to_bob<'a>(
+    bob: &'a Signer,
     issuance_details: &IssuanceDetails,
     reissuance_amount: u64,
-) -> anyhow::Result<Txid> {
+) -> anyhow::Result<TxReceipt<'a>> {
     let reissuance_token_utxo = bob.get_utxos_asset(issuance_details.inflation_asset_id)?[0].clone();
 
     let mut ft = FinalTransaction::new();
@@ -79,10 +84,10 @@ fn reissue_tokens_to_bob(
         issuance_details.asset_id,
     ));
 
-    let txid = bob.broadcast(&ft)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = bob.broadcast(&ft)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    Ok(txid)
+    Ok(tx_receipt)
 }
 
 #[simplex::test]
@@ -91,21 +96,21 @@ fn reissuance_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let alice = context.get_default_signer();
     let bob = context.random_signer();
 
-    let txid = make_confidential_to_bob(alice, &bob, provider.get_network().policy_asset())?;
+    let tx_receipt = make_confidential_to_bob(alice, &bob, provider.get_network().policy_asset())?;
 
-    provider.wait(&txid)?;
+    tx_receipt.wait()?;
     println!("Confirmed");
 
-    let (txid, issuance_details) = issue_explicit_to_alice_with_reissuance(alice, &bob)?;
+    let (tx_receipt, issuance_details) = issue_explicit_to_alice_with_reissuance(alice, &bob)?;
 
-    provider.wait(&txid)?;
+    tx_receipt.wait()?;
     println!("Confirmed");
 
     let reissuance_amount = 5000;
-    let txid = reissue_tokens_to_bob(&bob, &issuance_details, reissuance_amount)?;
-    println!("Broadcast: {}", txid);
+    let tx_receipt = reissue_tokens_to_bob(&bob, &issuance_details, reissuance_amount)?;
+    println!("Broadcast: {}", tx_receipt);
 
-    provider.wait(&txid)?;
+    tx_receipt.wait()?;
     println!("Confirmed");
 
     let bob_asset_utxos = bob.get_utxos_asset(issuance_details.asset_id)?;

@@ -11,7 +11,7 @@ use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};
 use serde::Deserialize;
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::UTXO;
+use crate::transaction::{TxReceipt, UTXO};
 
 use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
@@ -101,7 +101,7 @@ impl ProviderTrait for EsploraProvider {
         &self.network
     }
 
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError> {
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
         let timeout_secs = self.timeout.as_secs();
@@ -123,7 +123,9 @@ impl ProviderTrait for EsploraProvider {
             });
         }
 
-        Txid::from_str(&body).map_err(|e| ProviderError::InvalidTxid(e.to_string()))
+        Txid::from_str(&body)
+            .map_err(|e| ProviderError::InvalidTxid(e.to_string()))
+            .map(|tx_id| TxReceipt::new(self, tx_id))
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {

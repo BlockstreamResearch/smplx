@@ -5,7 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::UTXO;
+use crate::transaction::{TxReceipt, UTXO};
 
 use super::error::ProviderError;
 
@@ -22,7 +22,7 @@ pub struct ProviderInfo {
 pub trait ProviderTrait {
     fn get_network(&self) -> &SimplicityNetwork;
 
-    fn broadcast_transaction(&self, tx: &Transaction) -> Result<Txid, ProviderError>;
+    fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError>;
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError>;
 
