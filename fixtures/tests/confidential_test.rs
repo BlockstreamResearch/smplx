@@ -23,20 +23,23 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
 
     let mut ft = FinalTransaction::new();
 
-    let (issuance_id, reissuance_id) = ft.add_issuance_input(
+    let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
-        IssuanceInput::new(1000, [1u8; 32])
-            .with_reissuance(100),
+        IssuanceInput::new(1000, [1u8; 32]).with_reissuance(100),
         RequiredSignature::NativeEcdsa,
     );
 
     ft.add_output(
-        PartialOutput::new(alice.get_address().script_pubkey(), 1000, issuance_id)
+        PartialOutput::new(alice.get_address().script_pubkey(), 1000, issuance_details.asset_id)
             .with_blinding_key(alice.get_blinding_public_key()),
     );
     ft.add_output(
-        PartialOutput::new(alice.get_address().script_pubkey(), 100, reissuance_id)
-            .with_blinding_key(alice.get_blinding_public_key()),
+        PartialOutput::new(
+            alice.get_address().script_pubkey(),
+            100,
+            issuance_details.reissuance_asset_id,
+        )
+        .with_blinding_key(alice.get_blinding_public_key()),
     );
 
     let txid = bob.broadcast(&ft)?;

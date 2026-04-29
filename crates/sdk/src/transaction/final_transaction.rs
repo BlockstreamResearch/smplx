@@ -16,6 +16,13 @@ use super::partial_output::PartialOutput;
 
 pub const WITNESS_SCALE_FACTOR: usize = 4;
 
+#[derive(Debug, Clone)]
+pub struct IssuanceDetails {
+    pub asset_id: AssetId,
+    pub reissuance_asset_id: AssetId,
+    pub asset_entropy: sha256::Midstate,
+}
+
 #[derive(Clone)]
 pub struct FinalInput {
     pub partial_input: PartialInput,
@@ -52,6 +59,28 @@ impl FinalInput {
         self.reissuance_input = Some(reissuance_input);
 
         self
+    }
+
+    pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
+        let asset_entropy = match (&self.issuance_input, &self.reissuance_input) {
+            (None, None) => {
+                return None;
+            }
+            (Some(issuance), None) => asset_entropy(&self.partial_input.outpoint(), issuance.asset_entropy),
+            (None, Some(reissuance)) => sha256::Midstate::from_byte_array(reissuance.asset_entropy),
+            (Some(_), Some(_)) => {
+                panic!("Unable to get issuance details");
+            }
+        };
+
+        let asset_id = AssetId::from_entropy(asset_entropy);
+        let reissuance_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
+
+        Some(IssuanceDetails {
+            asset_entropy,
+            asset_id,
+            reissuance_asset_id,
+        })
     }
 
     pub fn to_input(&self) -> Input {
@@ -107,7 +136,7 @@ impl FinalTransaction {
             _ => {}
         };
 
-        self.inputs.push(FinalInput::new(partial_input, required_sig));
+        self.push_new_input(FinalInput::new(partial_input, required_sig));
     }
 
     pub fn add_program_input(
@@ -120,8 +149,7 @@ impl FinalTransaction {
             panic!("Requested signature is not Witness or None");
         }
 
-        self.inputs
-            .push(FinalInput::new(partial_input, required_sig).with_program(program_input));
+        self.push_new_input(FinalInput::new(partial_input, required_sig).with_program(program_input));
     }
 
     pub fn add_issuance_input(
@@ -129,7 +157,7 @@ impl FinalTransaction {
         partial_input: PartialInput,
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> (AssetId, AssetId) {
+    ) -> IssuanceDetails {
         match required_sig {
             RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
                 panic!("Requested signature is not NativeEcdsa or None")
@@ -137,15 +165,8 @@ impl FinalTransaction {
             _ => {}
         };
 
-        let entropy = asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy);
-
-        let issuance_asset_id = AssetId::from_entropy(entropy);
-        let reissuance_asset_id = AssetId::reissuance_token_from_entropy(entropy, false);
-
-        self.inputs
-            .push(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input));
-
-        (issuance_asset_id, reissuance_asset_id)
+        self.push_new_input(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input))
+            .unwrap()
     }
 
     pub fn add_reissuance_input(
@@ -153,7 +174,7 @@ impl FinalTransaction {
         partial_input: PartialInput,
         reissuance_input: ReissuanceInput,
         required_sig: RequiredSignature,
-    ) -> AssetId {
+    ) -> IssuanceDetails {
         match required_sig {
             RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
                 panic!("Requested signature is not NativeEcdsa or None")
@@ -165,14 +186,8 @@ impl FinalTransaction {
             panic!("Reissuance input must be confidential")
         }
 
-        let asset_entropy = sha256::Midstate::from_byte_array(reissuance_input.asset_entropy);
-
-        let issuance_asset_id = AssetId::from_entropy(asset_entropy);
-
-        self.inputs
-            .push(FinalInput::new(partial_input, required_sig).with_reissuance(reissuance_input));
-
-        issuance_asset_id
+        self.push_new_input(FinalInput::new(partial_input, required_sig).with_reissuance(reissuance_input))
+            .unwrap()
     }
 
     pub fn add_program_issuance_input(
@@ -181,23 +196,17 @@ impl FinalTransaction {
         program_input: ProgramInput,
         issuance_input: IssuanceInput,
         required_sig: RequiredSignature,
-    ) -> (AssetId, AssetId) {
+    ) -> IssuanceDetails {
         if let RequiredSignature::NativeEcdsa = required_sig {
             panic!("Requested signature is not Witness or None");
         }
 
-        let entropy = asset_entropy(&partial_input.outpoint(), issuance_input.asset_entropy);
-
-        let issuance_asset_id = AssetId::from_entropy(entropy);
-        let reissuance_asset_id = AssetId::reissuance_token_from_entropy(entropy, false);
-
-        self.inputs.push(
+        self.push_new_input(
             FinalInput::new(partial_input, required_sig)
                 .with_program(program_input)
                 .with_issuance(issuance_input),
-        );
-
-        (issuance_asset_id, reissuance_asset_id)
+        )
+        .unwrap()
     }
 
     pub fn add_program_reissuance_input(
@@ -206,7 +215,7 @@ impl FinalTransaction {
         program_input: ProgramInput,
         reissuance_input: ReissuanceInput,
         required_sig: RequiredSignature,
-    ) -> AssetId {
+    ) -> IssuanceDetails {
         if let RequiredSignature::NativeEcdsa = required_sig {
             panic!("Requested signature is not Witness or None");
         }
@@ -215,17 +224,12 @@ impl FinalTransaction {
             panic!("Reissuance input must be confidential")
         }
 
-        let asset_entropy = sha256::Midstate::from_byte_array(reissuance_input.asset_entropy);
-
-        let issuance_asset_id = AssetId::from_entropy(asset_entropy);
-
-        self.inputs.push(
+        self.push_new_input(
             FinalInput::new(partial_input, required_sig)
                 .with_program(program_input)
                 .with_reissuance(reissuance_input),
-        );
-
-        issuance_asset_id
+        )
+        .unwrap()
     }
 
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {
@@ -342,6 +346,14 @@ impl FinalTransaction {
         });
 
         (pst, input_secrets)
+    }
+
+    fn push_new_input(&mut self, new_input: FinalInput) -> Option<IssuanceDetails> {
+        let issuance_details = new_input.get_issuance_details();
+
+        self.inputs.push(new_input);
+
+        issuance_details
     }
 }
 
