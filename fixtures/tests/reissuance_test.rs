@@ -1,7 +1,7 @@
 use simplex::simplicityhl::elements::{AssetId, Txid};
 
 use simplex::signer::Signer;
-use simplex::transaction::partial_input::{IssuanceInput, ReissuanceInput};
+use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature};
 
 fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<Txid> {
@@ -25,7 +25,7 @@ fn issue_explicit_to_alice_with_reissuance(alice: &Signer, bob: &Signer) -> anyh
 
     let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
-        IssuanceInput::new(1000, [1u8; 32]).with_reissuance(100),
+        IssuanceInput::new(1000, [1u8; 32]).with_inflation_key(100),
         RequiredSignature::NativeEcdsa,
     );
 
@@ -67,9 +67,9 @@ fn reissue_tokens_to_bob(
         .with_blinding_key(bob.get_blinding_public_key()),
     );
 
-    ft.add_reissuance_input(
+    ft.add_issuance_input(
         PartialInput::new(reissuance_token_utxo),
-        ReissuanceInput::new(reissuance_amount, issuance_details.asset_entropy.0),
+        IssuanceInput::new_reissuance(reissuance_amount, issuance_details.asset_entropy.0),
         RequiredSignature::NativeEcdsa,
     );
 

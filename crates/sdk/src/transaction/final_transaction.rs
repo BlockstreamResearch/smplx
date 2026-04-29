@@ -8,7 +8,6 @@ use simplicityhl::elements::{
 };
 
 use crate::provider::SimplicityNetwork;
-use crate::transaction::partial_input::ReissuanceInput;
 use crate::utils::asset_entropy;
 
 use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
@@ -28,7 +27,6 @@ pub struct FinalInput {
     pub partial_input: PartialInput,
     pub program_input: Option<ProgramInput>,
     pub issuance_input: Option<IssuanceInput>,
-    pub reissuance_input: Option<ReissuanceInput>,
     pub required_sig: RequiredSignature,
 }
 
@@ -39,7 +37,6 @@ impl FinalInput {
             required_sig,
             program_input: None,
             issuance_input: None,
-            reissuance_input: None,
         }
     }
 
@@ -55,58 +52,49 @@ impl FinalInput {
         self
     }
 
-    pub fn with_reissuance(mut self, reissuance_input: ReissuanceInput) -> Self {
-        self.reissuance_input = Some(reissuance_input);
-
-        self
-    }
-
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
-        let asset_entropy = match (&self.issuance_input, &self.reissuance_input) {
-            (None, None) => {
-                return None;
-            }
-            (Some(issuance), None) => asset_entropy(&self.partial_input.outpoint(), issuance.asset_entropy),
-            (None, Some(reissuance)) => sha256::Midstate::from_byte_array(reissuance.asset_entropy),
-            (Some(_), Some(_)) => {
-                panic!("Unable to get issuance details");
-            }
-        };
+        match &self.issuance_input {
+            Some(issuance_input) => {
+                let asset_entropy = match issuance_input.has_reissuance() {
+                    true => sha256::Midstate::from_byte_array(issuance_input.asset_entropy),
+                    false => asset_entropy(&self.partial_input.outpoint(), issuance_input.asset_entropy),
+                };
 
-        let asset_id = AssetId::from_entropy(asset_entropy);
-        let reissuance_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
+                let asset_id = AssetId::from_entropy(asset_entropy);
+                let reissuance_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
 
-        Some(IssuanceDetails {
-            asset_entropy,
-            asset_id,
-            reissuance_asset_id,
-        })
+                Some(IssuanceDetails {
+                    asset_entropy,
+                    asset_id,
+                    reissuance_asset_id,
+                })
+            }
+            None => None,
+        }
     }
 
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
 
         // populate the input manually since `input.merge` is private
-        if self.issuance_input.is_some() {
-            let issue = self.issuance_input.clone().unwrap().to_input();
+        if let Some(issuance_input) = &self.issuance_input {
+            let issue = issuance_input.to_input();
 
             pst_input.issuance_value_amount = issue.issuance_value_amount;
             pst_input.issuance_asset_entropy = issue.issuance_asset_entropy;
             pst_input.issuance_inflation_keys = issue.issuance_inflation_keys;
             pst_input.blinded_issuance = issue.blinded_issuance;
-        } else if self.reissuance_input.is_some() {
-            let reissue = self.reissuance_input.clone().unwrap().to_input();
-            let issuance_blinding_nonce = self
-                .partial_input
-                .secrets
-                .expect("Reissuance input must be confidential")
-                .asset_bf
-                .into_inner();
 
-            pst_input.issuance_value_amount = reissue.issuance_value_amount;
-            pst_input.issuance_asset_entropy = reissue.issuance_asset_entropy;
-            pst_input.issuance_blinding_nonce = Some(issuance_blinding_nonce);
-            pst_input.blinded_issuance = reissue.blinded_issuance;
+            if issuance_input.has_reissuance() {
+                let issuance_blinding_nonce = self
+                    .partial_input
+                    .secrets
+                    .expect("Reissuance input must be confidential")
+                    .asset_bf
+                    .into_inner();
+
+                pst_input.issuance_blinding_nonce = Some(issuance_blinding_nonce);
+            }
         }
 
         pst_input
@@ -169,27 +157,6 @@ impl FinalTransaction {
             .unwrap()
     }
 
-    pub fn add_reissuance_input(
-        &mut self,
-        partial_input: PartialInput,
-        reissuance_input: ReissuanceInput,
-        required_sig: RequiredSignature,
-    ) -> IssuanceDetails {
-        match required_sig {
-            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
-                panic!("Requested signature is not NativeEcdsa or None")
-            }
-            _ => {}
-        };
-
-        if partial_input.secrets.is_none() {
-            panic!("Reissuance input must be confidential")
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig).with_reissuance(reissuance_input))
-            .unwrap()
-    }
-
     pub fn add_program_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -205,29 +172,6 @@ impl FinalTransaction {
             FinalInput::new(partial_input, required_sig)
                 .with_program(program_input)
                 .with_issuance(issuance_input),
-        )
-        .unwrap()
-    }
-
-    pub fn add_program_reissuance_input(
-        &mut self,
-        partial_input: PartialInput,
-        program_input: ProgramInput,
-        reissuance_input: ReissuanceInput,
-        required_sig: RequiredSignature,
-    ) -> IssuanceDetails {
-        if let RequiredSignature::NativeEcdsa = required_sig {
-            panic!("Requested signature is not Witness or None");
-        }
-
-        if partial_input.secrets.is_none() {
-            panic!("Reissuance input must be confidential")
-        }
-
-        self.push_new_input(
-            FinalInput::new(partial_input, required_sig)
-                .with_program(program_input)
-                .with_reissuance(reissuance_input),
         )
         .unwrap()
     }
@@ -540,17 +484,17 @@ mod tests {
 
         let conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
         let partial_input = PartialInput::new(conf_utxo);
-        let reissuance = ReissuanceInput::new(issuance_amount, entropy);
+        let reissuance_input = IssuanceInput::new_reissuance(issuance_amount, entropy);
         let partial_output = PartialOutput::new(Script::new(), 1000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_reissuance_input(partial_input.clone(), reissuance.clone(), RequiredSignature::None);
+        ft.add_issuance_input(partial_input.clone(), reissuance_input.clone(), RequiredSignature::None);
         ft.add_output(partial_output.clone());
 
         // build expected pst, merge partial_input and issuance manually
         let mut expected_pst = PartiallySignedTransaction::new_v2();
         let mut expected_input = partial_input.to_input();
-        let issuance_input = reissuance.to_input();
+        let issuance_input = reissuance_input.to_input();
         expected_input.issuance_value_amount = issuance_input.issuance_value_amount;
         expected_input.issuance_asset_entropy = issuance_input.issuance_asset_entropy;
         expected_input.issuance_inflation_keys = None;

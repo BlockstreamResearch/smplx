@@ -52,13 +52,8 @@ pub struct ProgramInput {
 pub struct IssuanceInput {
     pub issuance_amount: u64,
     pub asset_entropy: [u8; 32],
-    pub reissuance_amount: Option<u64>,
-}
-
-#[derive(Clone)]
-pub struct ReissuanceInput {
-    pub issuance_amount: u64,
-    pub asset_entropy: [u8; 32],
+    pub inflation_key_amount: Option<u64>,
+    is_reissuance: bool,
 }
 
 impl PartialInput {
@@ -139,39 +134,39 @@ impl IssuanceInput {
         Self {
             issuance_amount,
             asset_entropy,
-            reissuance_amount: None,
+            inflation_key_amount: None,
+            is_reissuance: false,
         }
     }
 
-    pub fn with_reissuance(mut self, reissuance_amount: u64) -> Self {
-        self.reissuance_amount = Some(reissuance_amount);
+    pub fn new_reissuance(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
+        Self {
+            issuance_amount,
+            asset_entropy,
+            inflation_key_amount: None,
+            is_reissuance: true,
+        }
+    }
+
+    pub fn with_inflation_key(mut self, inflation_key_amount: u64) -> Self {
+        if self.is_reissuance {
+            panic!("Unable to add inflation key amount to the reissuance input");
+        }
+
+        self.inflation_key_amount = Some(inflation_key_amount);
 
         self
     }
 
-    pub fn to_input(&self) -> Input {
-        Input {
-            issuance_value_amount: Some(self.issuance_amount),
-            issuance_asset_entropy: Some(self.asset_entropy),
-            issuance_inflation_keys: self.reissuance_amount,
-            blinded_issuance: Some(0x00),
-            ..Default::default()
-        }
-    }
-}
-
-impl ReissuanceInput {
-    pub fn new(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
-        Self {
-            issuance_amount,
-            asset_entropy,
-        }
+    pub fn has_reissuance(&self) -> bool {
+        self.is_reissuance
     }
 
     pub fn to_input(&self) -> Input {
         Input {
             issuance_value_amount: Some(self.issuance_amount),
             issuance_asset_entropy: Some(self.asset_entropy),
+            issuance_inflation_keys: self.inflation_key_amount,
             blinded_issuance: Some(0x00),
             ..Default::default()
         }

@@ -25,7 +25,7 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
 
     let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
-        IssuanceInput::new(1000, [1u8; 32]).with_reissuance(100),
+        IssuanceInput::new(1000, [1u8; 32]).with_inflation_key(100),
         RequiredSignature::NativeEcdsa,
     );
 
