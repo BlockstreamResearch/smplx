@@ -1,6 +1,5 @@
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
-use simplicityhl::elements::secp256k1_zkp::Tweak;
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
 
 use crate::program::ProgramTrait;
@@ -50,11 +49,16 @@ pub struct ProgramInput {
 }
 
 #[derive(Clone)]
-pub struct IssuanceInput {
-    pub issuance_amount: u64,
-    pub asset_entropy: [u8; 32],
-    pub reissuance_amount: Option<u64>,
-    pub blinding_nonce: Option<Tweak>,
+pub enum IssuanceInput {
+    Issuance {
+        issuance_amount: u64,
+        inflation_amount: u64,
+        asset_entropy: [u8; 32],
+    },
+    Reissuance {
+        issuance_amount: u64,
+        asset_entropy: [u8; 32],
+    },
 }
 
 impl PartialInput {
@@ -131,33 +135,42 @@ impl ProgramInput {
 }
 
 impl IssuanceInput {
-    pub fn new(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
-        Self {
+    pub fn new_issuance(issuance_amount: u64, inflation_amount: u64, asset_entropy: [u8; 32]) -> Self {
+        Self::Issuance {
             issuance_amount,
+            inflation_amount,
             asset_entropy,
-            reissuance_amount: None,
-            blinding_nonce: None,
         }
     }
 
-    pub fn with_reissuance(mut self, reissuance_amount: u64) -> Self {
-        self.reissuance_amount = Some(reissuance_amount);
-
-        self
-    }
-
-    pub fn with_blinding_nonce(mut self, blinding_nonce: [u8; 32]) -> Self {
-        self.blinding_nonce = Some(Tweak::from_inner(blinding_nonce).expect("valid blinding_nonce"));
-
-        self
+    pub fn new_reissuance(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
+        Self::Reissuance {
+            issuance_amount,
+            asset_entropy,
+        }
     }
 
     pub fn to_input(&self) -> Input {
+        let (issuance_amount, asset_entropy, inflation_amount) = match self {
+            Self::Issuance {
+                issuance_amount,
+                inflation_amount,
+                asset_entropy,
+            } => {
+                let inflation_amount = (*inflation_amount > 0).then_some(*inflation_amount);
+
+                (*issuance_amount, *asset_entropy, inflation_amount)
+            }
+            Self::Reissuance {
+                issuance_amount,
+                asset_entropy,
+            } => (*issuance_amount, *asset_entropy, None),
+        };
+
         Input {
-            issuance_value_amount: Some(self.issuance_amount),
-            issuance_asset_entropy: Some(self.asset_entropy),
-            issuance_inflation_keys: self.reissuance_amount,
-            issuance_blinding_nonce: self.blinding_nonce,
+            issuance_value_amount: Some(issuance_amount),
+            issuance_asset_entropy: Some(asset_entropy),
+            issuance_inflation_keys: inflation_amount,
             blinded_issuance: Some(0x00),
             ..Default::default()
         }
