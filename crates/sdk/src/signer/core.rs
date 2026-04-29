@@ -160,18 +160,7 @@ impl Signer {
         signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
 
         // descending sort of both confidential and explicit utxos
-        signer_utxos.sort_by(|a, b| {
-            let a_value = match a.secrets {
-                Some(secrets) => secrets.value,
-                None => a.explicit_amount(),
-            };
-            let b_value = match b.secrets {
-                Some(secrets) => secrets.value,
-                None => b.explicit_amount(),
-            };
-
-            b_value.cmp(&a_value)
-        });
+        signer_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount()));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
@@ -260,9 +249,7 @@ impl Signer {
     }
 
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.explicit_asset() == asset, &|utxo| {
-            utxo.unblinded_asset() == asset
-        })
+        self.get_utxos_filter(&|utxo| utxo.asset() == asset, &|utxo| utxo.asset() == asset)
     }
 
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
