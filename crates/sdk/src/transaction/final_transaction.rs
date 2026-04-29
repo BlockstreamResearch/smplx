@@ -451,7 +451,7 @@ mod tests {
 
         let utxo = explicit_utxo(0x01, 0, 5000, policy);
         let partial_input = PartialInput::new(utxo);
-        let issuance = IssuanceInput::new_issuance(issuance_amount, entropy, 0);
+        let issuance = IssuanceInput::new_issuance(issuance_amount, 0, entropy);
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();

@@ -52,8 +52,8 @@ pub struct ProgramInput {
 pub enum IssuanceInput {
     Issuance {
         issuance_amount: u64,
-        asset_entropy: [u8; 32],
         inflation_amount: u64,
+        asset_entropy: [u8; 32],
     },
     Reissuance {
         issuance_amount: u64,
@@ -135,7 +135,7 @@ impl ProgramInput {
 }
 
 impl IssuanceInput {
-    pub fn new_issuance(issuance_amount: u64, asset_entropy: [u8; 32], inflation_amount: u64) -> Self {
+    pub fn new_issuance(issuance_amount: u64, inflation_amount: u64, asset_entropy: [u8; 32]) -> Self {
         Self::Issuance {
             issuance_amount,
             inflation_amount,
@@ -154,8 +154,8 @@ impl IssuanceInput {
         let (issuance_amount, asset_entropy, inflation_amount) = match self {
             Self::Issuance {
                 issuance_amount,
-                asset_entropy,
                 inflation_amount,
+                asset_entropy,
             } => {
                 let inflation_amount = (*inflation_amount > 0).then_some(*inflation_amount);
 
