@@ -34,7 +34,7 @@ impl<'a> TxReceipt<'a> {
         Self { provider, tx_id }
     }
 
-    pub fn into_txid(self) -> Txid {
+    pub fn txid(self) -> Txid {
         self.tx_id
     }
 
