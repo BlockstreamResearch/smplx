@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use bitcoin_hashes::sha256;
+
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
     AssetId, TxOutSecrets,
@@ -8,7 +9,7 @@ use simplicityhl::elements::{
 };
 
 use crate::provider::SimplicityNetwork;
-use crate::utils::asset_entropy;
+use crate::utils;
 
 use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
@@ -18,7 +19,7 @@ pub const WITNESS_SCALE_FACTOR: usize = 4;
 #[derive(Debug, Clone)]
 pub struct IssuanceDetails {
     pub asset_id: AssetId,
-    pub reissuance_asset_id: AssetId,
+    pub inflation_asset_id: AssetId,
     pub asset_entropy: sha256::Midstate,
 }
 
@@ -55,18 +56,22 @@ impl FinalInput {
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
         match &self.issuance_input {
             Some(issuance_input) => {
-                let asset_entropy = match issuance_input.has_reissuance() {
-                    true => sha256::Midstate::from_byte_array(issuance_input.asset_entropy),
-                    false => asset_entropy(&self.partial_input.outpoint(), issuance_input.asset_entropy),
+                let asset_entropy = match issuance_input {
+                    IssuanceInput::Issuance { asset_entropy, .. } => {
+                        utils::asset_entropy(&self.partial_input.outpoint(), *asset_entropy)
+                    }
+                    IssuanceInput::Reissuance { asset_entropy, .. } => {
+                        sha256::Midstate::from_byte_array(*asset_entropy)
+                    }
                 };
 
                 let asset_id = AssetId::from_entropy(asset_entropy);
-                let reissuance_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
+                let inflation_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
 
                 Some(IssuanceDetails {
                     asset_entropy,
                     asset_id,
-                    reissuance_asset_id,
+                    inflation_asset_id,
                 })
             }
             None => None,
@@ -85,7 +90,7 @@ impl FinalInput {
             pst_input.issuance_inflation_keys = issue.issuance_inflation_keys;
             pst_input.blinded_issuance = issue.blinded_issuance;
 
-            if issuance_input.has_reissuance() {
+            if matches!(issuance_input, IssuanceInput::Reissuance { .. }) {
                 let issuance_blinding_nonce = self
                     .partial_input
                     .secrets
@@ -446,7 +451,7 @@ mod tests {
 
         let utxo = explicit_utxo(0x01, 0, 5000, policy);
         let partial_input = PartialInput::new(utxo);
-        let issuance = IssuanceInput::new(issuance_amount, entropy);
+        let issuance = IssuanceInput::new_issuance(issuance_amount, entropy, 0);
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();

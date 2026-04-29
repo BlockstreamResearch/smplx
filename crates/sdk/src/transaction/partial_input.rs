@@ -49,11 +49,16 @@ pub struct ProgramInput {
 }
 
 #[derive(Clone)]
-pub struct IssuanceInput {
-    pub issuance_amount: u64,
-    pub asset_entropy: [u8; 32],
-    pub inflation_key_amount: Option<u64>,
-    is_reissuance: bool,
+pub enum IssuanceInput {
+    Issuance {
+        issuance_amount: u64,
+        asset_entropy: [u8; 32],
+        inflation_amount: u64,
+    },
+    Reissuance {
+        issuance_amount: u64,
+        asset_entropy: [u8; 32],
+    },
 }
 
 impl PartialInput {
@@ -130,43 +135,42 @@ impl ProgramInput {
 }
 
 impl IssuanceInput {
-    pub fn new(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
-        Self {
+    pub fn new_issuance(issuance_amount: u64, asset_entropy: [u8; 32], inflation_amount: u64) -> Self {
+        Self::Issuance {
             issuance_amount,
+            inflation_amount,
             asset_entropy,
-            inflation_key_amount: None,
-            is_reissuance: false,
         }
     }
 
     pub fn new_reissuance(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
-        Self {
+        Self::Reissuance {
             issuance_amount,
             asset_entropy,
-            inflation_key_amount: None,
-            is_reissuance: true,
         }
-    }
-
-    pub fn with_inflation_key(mut self, inflation_key_amount: u64) -> Self {
-        if self.is_reissuance {
-            panic!("Unable to add inflation key amount to the reissuance input");
-        }
-
-        self.inflation_key_amount = Some(inflation_key_amount);
-
-        self
-    }
-
-    pub fn has_reissuance(&self) -> bool {
-        self.is_reissuance
     }
 
     pub fn to_input(&self) -> Input {
+        let (issuance_amount, asset_entropy, inflation_amount) = match self {
+            Self::Issuance {
+                issuance_amount,
+                asset_entropy,
+                inflation_amount,
+            } => {
+                let inflation_amount = (*inflation_amount > 0).then_some(*inflation_amount);
+
+                (*issuance_amount, *asset_entropy, inflation_amount)
+            }
+            Self::Reissuance {
+                issuance_amount,
+                asset_entropy,
+            } => (*issuance_amount, *asset_entropy, None),
+        };
+
         Input {
-            issuance_value_amount: Some(self.issuance_amount),
-            issuance_asset_entropy: Some(self.asset_entropy),
-            issuance_inflation_keys: self.inflation_key_amount,
+            issuance_value_amount: Some(issuance_amount),
+            issuance_asset_entropy: Some(asset_entropy),
+            issuance_inflation_keys: inflation_amount,
             blinded_issuance: Some(0x00),
             ..Default::default()
         }

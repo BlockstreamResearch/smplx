@@ -25,7 +25,7 @@ fn issue_explicit_to_alice_with_reissuance(alice: &Signer, bob: &Signer) -> anyh
 
     let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
-        IssuanceInput::new(1000, [1u8; 32]).with_inflation_key(100),
+        IssuanceInput::new_issuance(1000, [1u8; 32], 100),
         RequiredSignature::NativeEcdsa,
     );
 
@@ -38,7 +38,7 @@ fn issue_explicit_to_alice_with_reissuance(alice: &Signer, bob: &Signer) -> anyh
         PartialOutput::new(
             bob.get_address().script_pubkey(),
             100,
-            issuance_details.reissuance_asset_id,
+            issuance_details.inflation_asset_id,
         )
         .with_blinding_key(bob.get_blinding_public_key()),
     );
@@ -54,7 +54,7 @@ fn reissue_tokens_to_bob(
     issuance_details: &IssuanceDetails,
     reissuance_amount: u64,
 ) -> anyhow::Result<Txid> {
-    let reissuance_token_utxo = bob.get_utxos_asset(issuance_details.reissuance_asset_id)?[0].clone();
+    let reissuance_token_utxo = bob.get_utxos_asset(issuance_details.inflation_asset_id)?[0].clone();
 
     let mut ft = FinalTransaction::new();
 
