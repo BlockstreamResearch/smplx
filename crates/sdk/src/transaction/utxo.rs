@@ -23,4 +23,14 @@ impl UTXO {
     pub fn unblinded_amount(&self) -> u64 {
         self.secrets.expect("The UTXO is not unblinded").value
     }
+
+    pub fn asset(&self) -> AssetId {
+        self.secrets
+            .map_or_else(|| self.explicit_asset(), |secrets| secrets.asset)
+    }
+
+    pub fn amount(&self) -> u64 {
+        self.secrets
+            .map_or_else(|| self.explicit_amount(), |secrets| secrets.value)
+    }
 }
