@@ -6,12 +6,15 @@ use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 
 use smplx_sdk::global::set_global_config;
-use smplx_sdk::provider::{EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork};
+use smplx_sdk::provider::{
+    ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
+};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
 use crate::error::TestError;
+use crate::network_utils::NetworkUtils;
 
 #[allow(dead_code)]
 pub struct TestContext {
@@ -83,6 +86,22 @@ impl TestContext {
 
     pub fn get_network(&self) -> &SimplicityNetwork {
         self.signer.get_provider().get_network()
+    }
+
+    pub fn get_network_utils(&self) -> NetworkUtils {
+        let network = self.get_network();
+        assert!(
+            matches!(network, SimplicityNetwork::ElementsRegtest { policy_asset: _ }),
+            "Network utils only available in Regtest network"
+        );
+
+        let regtest_rpc = ElementsRpc::new(
+            self._provider_info.elements_url.clone().unwrap(),
+            self._provider_info.auth.clone().unwrap(),
+        )
+        .expect("Failed to create rpc client for network utils");
+        let esplora = EsploraProvider::new(self._provider_info.esplora_url.clone(), *network);
+        NetworkUtils::from_context(regtest_rpc, esplora)
     }
 
     fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {

@@ -4,6 +4,8 @@ use smplx_sdk::provider::ProviderError;
 
 use smplx_regtest::error::RegtestError;
 
+use crate::network_utils::NetworkUtilsError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
     #[error(transparent)]
@@ -20,4 +22,7 @@ pub enum TestError {
 
     #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
     BadNetworkName(String),
+
+    #[error("Occurred a network utils execution error: '{0}'")]
+    NetworkUtilsExecution(#[from] NetworkUtilsError),
 }
