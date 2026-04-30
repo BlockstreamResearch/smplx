@@ -1,0 +1,5 @@
+use crypto::verify::bip_0340_verify as verify;
+
+fn main() {
+    verify(witness::SIGNATURE);
+}

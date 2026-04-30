@@ -6,33 +6,75 @@ use std::str::FromStr;
 use proc_macro2::Span;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
-use syn::{Expr, ExprLit, Lit};
+use syn::{Expr, ExprLit, Lit, Token};
 
 pub struct SynFilePath {
     _span_file: String,
-    path_literal: String,
+
+    root_simf_path: String,
+    deps_json_path: String,
 }
 
 impl Parse for SynFilePath {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let expr = input.parse::<Expr>()?;
+        // Parsing the first argument ("simf/main.simf")
+        let expr_root = input.parse::<Expr>()?;
+        let span_file = expr_root.span().file();
 
-        let span_file = expr.span().file();
-        let path_literal = match expr {
+        let root_simf_path = match expr_root {
             Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => Ok(s.value()),
-            _ => Err(syn::Error::new(expr.span(), "Expected string literal")),
+            _ => Err(syn::Error::new(expr_root.span(), "Expected string literal")),
         }?;
+
+        input.parse::<Token![,]>()?;
+
+        // Parsing the second argument ("dependency.json")
+        let expr_deps = input.parse::<Expr>()?;
+
+        let deps_json_path = match expr_deps {
+            Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => Ok(s.value()),
+            _ => Err(syn::Error::new(
+                expr_deps.span(),
+                "Expected string for dependency.json path",
+            )),
+        }?;
+
         Ok(Self {
             _span_file: span_file,
-            path_literal,
+            root_simf_path,
+            deps_json_path,
         })
     }
 }
 
 impl SynFilePath {
     #[inline]
-    fn validate_path(&self) -> syn::Result<PathBuf> {
-        let mut path = PathBuf::from_str(&self.path_literal).unwrap();
+    pub fn validate_and_load_deps_json(&self) -> syn::Result<String> {
+        let valid_path = Self::resolve_and_validate(&self.deps_json_path)?;
+
+        let json_str = std::fs::read_to_string(&valid_path).map_err(|e| {
+            syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!(
+                    "Unable to load JSON string. IO Error: '{}'. Looked at path: '{}', is_file: {}",
+                    e, // Actual OS error
+                    valid_path.display(),
+                    valid_path.is_file()
+                ),
+            )
+        })?;
+
+        Ok(json_str)
+    }
+
+    #[inline]
+    fn validate_root_simf_path(&self) -> syn::Result<PathBuf> {
+        Self::resolve_and_validate(&self.root_simf_path)
+    }
+
+    #[inline]
+    fn resolve_and_validate(raw_path: &str) -> syn::Result<PathBuf> {
+        let mut path = PathBuf::from_str(raw_path).unwrap();
 
         if !path.is_absolute() {
             let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
@@ -43,7 +85,7 @@ impl SynFilePath {
             })?;
 
             let mut path_local = PathBuf::from(manifest_dir);
-            path_local.push(&self.path_literal);
+            path_local.push(raw_path);
 
             path = path_local;
         }
@@ -173,9 +215,10 @@ impl SimfContent {
     ///
     /// # Errors
     /// Returns a `syn::Error` if the path is invalid or the file cannot be read.
-    pub fn eval_path_expr(syn_file_path: &SynFilePath) -> syn::Result<Self> {
-        let path = syn_file_path.validate_path()?;
-        Self::extract_content_from_path(&path).map_err(|e| syn::Error::new(Span::call_site(), e))
+    pub fn eval_path_expr(syn_file_path: &SynFilePath) -> syn::Result<(Self, PathBuf)> {
+        let path = syn_file_path.validate_root_simf_path()?;
+        let res = Self::extract_content_from_path(&path).map_err(|e| syn::Error::new(Span::call_site(), e))?;
+        Ok((res, path))
     }
 }
 

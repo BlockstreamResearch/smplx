@@ -1,22 +1,13 @@
 # DEFAULT CONFIG 
 
-[build]
+# [build]
 # src_dir = "./simf"
 # simf_files = ["*.simf"]
-simf_files = ["p2pk.simf", "nested_sig.simf", "single_lib.simf"]
 # out_dir = "./src/artifacts"
 
-[dependencies]
-#std = { git = "BlockstreamResearch/simf-std@v0.0.1", path = "lib/simf-std/contracts" } 
-crypto = { path = "./simf/libs/crypto/simf/" }
-#sig = { path = "./libs/checksig/" }
-
-# STD
-# [dependencies]
-
-# ARGS
-# std=lib/simf-std/contracts
-# std:math=node_modules/simf-math/contracts
+# [dependencies
+# checksig = { git = "temp/checksig" }
+# checksig = { path = "../checksig" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
@@ -32,3 +23,4 @@ crypto = { path = "./simf/libs/crypto/simf/" }
 # url = "<rpc url>"
 # username = "<rpc username>"
 # password = "<rpc password>"
+

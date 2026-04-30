@@ -1201,9 +1201,8 @@ dependencies = [
 
 [[package]]
 name = "simplicityhl"
-version = "0.5.0-rc.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8fb4ae422c730ec6e274c1438013ce6d7b41b97152e2dec63735e8daad1f1c4"
+version = "0.6.0-rc.0"
+source = "git+https://github.com/BlockstreamResearch/SimplicityHL#3eed7a6f544e859b26b467ec0f01ad5a90df133b"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
@@ -1228,6 +1227,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "serde_json",
  "simplicityhl",
  "syn",
  "thiserror",
@@ -1272,6 +1272,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "simplicityhl",
+ "smplx-build",
  "thiserror",
 ]
 

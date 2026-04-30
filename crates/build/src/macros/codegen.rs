@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use quote::{format_ident, quote};
 
 use simplicityhl::str::WitnessName;
@@ -8,9 +10,13 @@ use crate::macros::types::RustType;
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
+    pub contract_dependency_const_name: proc_macro2::Ident,
+
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
+    pub simf_main_file: PathBuf,
     pub simf_content: SimfContent,
+    pub deps_content: String,
     pub abi_meta: AbiMeta,
 }
 
@@ -42,16 +48,28 @@ impl SimfContractMeta {
     ///
     /// # Errors
     /// Returns a `syn::Result` with an error if the arguments or witness structure cannot be generated.
-    pub fn try_from(simf_content: SimfContent, abi_meta: AbiMeta) -> syn::Result<Self> {
+    pub fn try_from(
+        simf_main_file: PathBuf,
+        simf_content: SimfContent,
+        deps_content: String,
+        abi_meta: AbiMeta,
+    ) -> syn::Result<Self> {
         let args_struct = WitnessStruct::generate_args_struct(&simf_content.contract_name, &abi_meta.param_types)?;
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
+
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
+        let contract_dependency_const_name = get_contract_dependency_source_const();
+        let deps_content = deps_content.to_string();
+
         Ok(SimfContractMeta {
             contract_source_const_name,
+            contract_dependency_const_name,
             args_struct,
             witness_struct,
+            simf_main_file,
             simf_content,
+            deps_content,
             abi_meta,
         })
     }
@@ -349,4 +367,12 @@ pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> pr
 
 pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("derived_{}", contract_name)
+}
+
+pub fn get_contract_source_path_name_const() -> proc_macro2::Ident {
+    format_ident!("{}", "source_path".to_uppercase())
+}
+
+pub fn get_contract_dependency_source_const() -> proc_macro2::Ident {
+    format_ident!("{}", "dependencies".to_uppercase())
 }
