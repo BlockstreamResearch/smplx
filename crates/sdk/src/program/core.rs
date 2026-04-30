@@ -1,17 +1,22 @@
 use std::iter;
+use std::path::Path;
 use std::sync::Arc;
 
 use dyn_clone::DynClone;
 
 use simplicityhl::CompiledProgram;
+use simplicityhl::driver::CanonSourceFile;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
+use simplicityhl::resolution::{CanonPath, DependencyMap, SourceFile};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
+
+use smplx_build::resolver::load_dependency_map;
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -48,9 +53,25 @@ pub trait ProgramTrait: DynClone {
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
+/// Need to save one program structure and be compatible with SimplicityHL
+#[derive(Clone)]
+enum ProgramMode {
+    SingleFile {
+        source: &'static str,
+    },
+
+    MultiFile {
+        /// Use this instead of `SourceFile`. Under the hood, SimplicityHL attempts
+        /// to canonicalize the path, which will fail if the `SourceFile` is missing its `Path` field.
+        /// I think it will be changed to this in SimplicityHL.
+        source: CanonSourceFile,
+        dependencies: DependencyMap,
+    },
+}
+
 #[derive(Clone)]
 pub struct Program {
-    source: &'static str,
+    mode: ProgramMode,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
     storage: Vec<[u8; 32]>,
@@ -158,10 +179,30 @@ impl ProgramTrait for Program {
     }
 }
 
+// Consider to delete single-file mode in SimplicityHL, to get rid of this here
 impl Program {
-    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
+    pub fn new_single(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
-            source,
+            mode: ProgramMode::SingleFile { source },
+            pub_key: tr_unspendable_key(),
+            arguments,
+            storage: Vec::new(),
+        }
+    }
+
+    pub fn new_multi(
+        source_path: &'static str,
+        source: &'static str,
+        dependencies: &'static str,
+        arguments: Box<dyn ArgumentsTrait>,
+    ) -> Self {
+        // Maybe `unwrap` is not the best way to do it
+        let canon_source_path = CanonPath::canonicalize(&Path::new(source_path)).unwrap();
+        let source = CanonSourceFile::new(canon_source_path, Arc::from(source));
+        let dependencies = load_dependency_map(dependencies).unwrap();
+
+        Self {
+            mode: ProgramMode::MultiFile { source, dependencies },
             pub_key: tr_unspendable_key(),
             arguments,
             storage: Vec::new(),
@@ -233,8 +274,16 @@ impl Program {
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
-        let compiled = CompiledProgram::new(self.source, self.arguments.build_arguments(), true)
-            .map_err(ProgramError::Compilation)?;
+        let compiled = match &self.mode {
+            ProgramMode::SingleFile { source } => CompiledProgram::new(*source, self.arguments.build_arguments(), true),
+
+            ProgramMode::MultiFile { source, dependencies } => {
+                let source_file = SourceFile::from(source.clone());
+                CompiledProgram::new_with_dep(source_file, dependencies, self.arguments.build_arguments(), true)
+            }
+        }
+        .map_err(ProgramError::Compilation)?;
+
         Ok(compiled)
     }
 
@@ -326,8 +375,9 @@ mod tests {
         AssetId::from_slice(&[byte; 32]).unwrap()
     }
 
+    // TODO: Add suppor for one-file program to not to break inverse dependency (maybe)
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
+        Program::new_single(DUMMY_PROGRAM, Box::new(EmptyArguments))
     }
 
     fn dummy_network() -> SimplicityNetwork {

@@ -23,11 +23,15 @@ pub enum BuildError {
     #[error("Failed to generate file: {0}")]
     GenerationFailed(String),
 
-    #[error(
-        "Failed to resolve correct relative path for include_simf! macro, cwd: '{cwd:?}', simf_file: '{simf_file:?}'"
-    )]
-    FailedToFindCorrectRelativePath { cwd: PathBuf, simf_file: PathBuf },
+    #[error("Failed to resolve correct relative path for include_simf! macro, cwd: '{cwd:?}', {name}: '{file:?}'")]
+    FailedToFindCorrectRelativePath { cwd: PathBuf, name: String, file: PathBuf },
 
     #[error("Failed to find prefix for a file: {0}")]
     NoBasePathForGeneration(#[from] std::path::StripPrefixError),
+
+    #[error("Invalid dependency '{0}': you must specify either a 'path' or a 'git' repository")]
+    InvalidDependency(String),
+
+    #[error("{0}")]
+    PathCanonicalization(String),
 }

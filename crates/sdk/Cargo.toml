@@ -11,6 +11,8 @@ readme = "../../README.md"
 workspace = true
 
 [dependencies]
+smplx-build = { workspace = true }
+
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true }

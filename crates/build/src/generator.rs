@@ -1,19 +1,22 @@
 use std::collections::HashMap;
-use std::env;
-use std::fs;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::{env, io};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::macros::codegen::{
     convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
-    convert_contract_name_to_struct_name,
+    convert_contract_name_to_struct_name, get_contract_dependency_source_const, get_contract_source_path_name_const,
 };
 use crate::macros::parse::SimfContent;
+use crate::resolver::JsonDependencyMap;
 
 use super::error::BuildError;
+
+const DEPENDENCY_JSON_NAME: &str = "dependencies.json";
 
 pub struct ArtifactsGenerator {}
 
@@ -28,9 +31,13 @@ impl ArtifactsGenerator {
         out_dir: impl AsRef<Path>,
         base_dir: impl AsRef<Path>,
         simfs: &[impl AsRef<Path>],
+        deps: &JsonDependencyMap,
     ) -> Result<(), BuildError> {
         let tree = Self::build_directory_tree(&base_dir, simfs)?;
 
+        // Must be the first
+        fs::create_dir_all(out_dir.as_ref())?;
+        Self::generate_deps_json(out_dir.as_ref(), deps)?;
         Self::generate_bindings(out_dir.as_ref(), tree)?;
 
         Ok(())
@@ -76,9 +83,16 @@ impl ArtifactsGenerator {
         Ok(root)
     }
 
+    fn generate_deps_json(out_dir: &Path, deps: &JsonDependencyMap) -> Result<(), BuildError> {
+        let file_path = out_dir.join(DEPENDENCY_JSON_NAME);
+        let file = File::create(&file_path)?;
+        serde_json::to_writer_pretty(file, deps).map_err(io::Error::from)?;
+        Ok(())
+    }
+
+    // OPTIMIZE: Why do we need a Vec<String> here? It is unnecessary overhead, especially in a recursive function.
     fn generate_bindings(out_dir: &Path, path_tree: TreeNode) -> Result<Vec<String>, BuildError> {
         fs::create_dir_all(out_dir)?;
-
         let mut mod_filenames = Self::generate_simfs(out_dir, &path_tree.files)?;
 
         for (dir_name, tree_node) in path_tree.dirs.into_iter() {
@@ -115,7 +129,7 @@ impl ArtifactsGenerator {
             .write(true)
             .truncate(true)
             .open(&output_file)?;
-        let code = Self::generate_simf_binding_code(simf_content, simf_file_buf)?;
+        let code = Self::generate_simf_binding_code(simf_content, simf_file_buf, out_dir.as_ref().to_path_buf())?;
 
         Self::expand_file(code, &mut file)?;
 
@@ -146,7 +160,11 @@ impl ArtifactsGenerator {
         Ok(())
     }
 
-    fn generate_simf_binding_code(simf_content: SimfContent, simf_file: PathBuf) -> Result<TokenStream, BuildError> {
+    fn generate_simf_binding_code(
+        simf_content: SimfContent,
+        simf_file: PathBuf,
+        out_dir: PathBuf,
+    ) -> Result<TokenStream, BuildError> {
         let cwd = env::current_dir()?;
         let contract_name = &simf_content.contract_name;
         let program_name = {
@@ -155,10 +173,26 @@ impl ArtifactsGenerator {
         };
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
+        let inclid_simf_source_path_const = get_contract_source_path_name_const();
+        let include_deps_source_const = get_contract_dependency_source_const();
 
-        let pathdiff = pathdiff::diff_paths(&simf_file, &cwd)
-            .ok_or(BuildError::FailedToFindCorrectRelativePath { cwd, simf_file })?;
-        let pathdiff = pathdiff.to_string_lossy().into_owned();
+        let simf_pathdiff =
+            pathdiff::diff_paths(&simf_file, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
+                cwd: cwd.clone(),
+                name: "simf_file".to_string(),
+                file: simf_file,
+            })?;
+        let simf_pathdiff = simf_pathdiff.to_string_lossy().into_owned();
+
+        // TODO: Here is a bug, think about better way to do it
+        let deps_json = out_dir.join(DEPENDENCY_JSON_NAME);
+        let deps_pathdiff =
+            pathdiff::diff_paths(&deps_json, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
+                cwd,
+                name: "dependency_json".to_string(),
+                file: deps_json,
+            })?;
+        let deps_pathdiff = deps_pathdiff.to_string_lossy().into_owned();
 
         let code = quote! {
             use simplex::include_simf;
@@ -172,11 +206,13 @@ impl ArtifactsGenerator {
             }
 
             impl #program_name {
+                pub const SOURCE_PATH: &'static str = #include_simf_module::#inclid_simf_source_path_const;
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
+                pub const DEPENDENCIES: &'static str = #include_simf_module::#include_deps_source_const;
 
                 pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, Box::new(arguments)),
+                        program: Program::new_multi(Self::SOURCE_PATH, Self::SOURCE, Self::DEPENDENCIES, Box::new(arguments)),
                     }
                 }
 
@@ -229,7 +265,7 @@ impl ArtifactsGenerator {
                 }
             }
 
-            include_simf!(#pathdiff);
+            include_simf!(#simf_pathdiff, #deps_pathdiff);
         };
 
         Ok(code)
