@@ -1,5 +1,6 @@
 pub mod build;
 pub mod clean;
+pub mod compilers;
 pub mod core;
 pub mod error;
 pub mod init;

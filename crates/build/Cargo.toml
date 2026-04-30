@@ -21,3 +21,11 @@ pathdiff = { version = "0.2.3" }
 prettyplease = { version = "0.2.37" }
 glob = { version = "0.3.3"}
 globwalk = { version = "0.9.1"}
+zip = "8.5.1"
+semver = "1.0"
+fs3 = "0.5"
+flate2 = "1.0"
+tar = "0.4"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+which = "6.0"
+home = "0.5"
