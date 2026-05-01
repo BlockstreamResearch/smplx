@@ -83,7 +83,7 @@ impl ElementsRpc {
         Ok(())
     }
 
-    pub fn generate_blocks(&self, block_num: u32) -> Result<(), RpcError> {
+    pub fn generate_blocks(&self, block_num: u64) -> Result<(), RpcError> {
         const METHOD: &str = "generatetoaddress";
 
         let address = self.get_new_address("")?.to_string();
@@ -108,5 +108,14 @@ impl ElementsRpc {
         )?;
 
         Ok(())
+    }
+
+    pub fn height(&self) -> Result<u64, RpcError> {
+        const METHOD: &str = "getblockcount";
+
+        self.inner
+            .call::<serde_json::Value>(METHOD, &[])?
+            .as_u64()
+            .ok_or_else(|| RpcError::ElementsRpcUnexpectedReturn(METHOD.into()))
     }
 }

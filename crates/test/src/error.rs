@@ -20,4 +20,16 @@ pub enum TestError {
 
     #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
     BadNetworkName(String),
+
+    #[error("Occurred a network utils execution error: '{0}'")]
+    NetworkUtilsExecution(#[from] NetworkUtilsError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum NetworkUtilsError {
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
+
+    #[error("Unsuccessful action completion, err: '{0}'")]
+    UnsuccessfulSync(String),
 }
