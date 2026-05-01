@@ -29,6 +29,7 @@ pub enum TestError {
 pub enum NetworkUtilsError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
+
     #[error("Unsuccessful action completion, err: '{0}'")]
     UnsuccessfulSync(String),
 }

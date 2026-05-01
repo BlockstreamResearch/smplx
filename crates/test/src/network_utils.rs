@@ -30,6 +30,7 @@ impl NetworkUtils {
 
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
+
             return Err(NetworkUtilsError::UnsuccessfulSync(format!(
                 "Failed to complete mining until height, got: '{h}', desired height: '{current_height}'",
             )));
