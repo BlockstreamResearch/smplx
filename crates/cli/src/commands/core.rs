@@ -4,8 +4,8 @@ use clap::{Args, Subcommand};
 pub enum Command {
     /// Initializes Simplex project
     Init {
-        #[command(flatten)]
-        additional_flags: InitFlags,
+        /// Name of the new project
+        name: Option<String>,
     },
     /// Prints current Simplex config in use
     Config,
@@ -24,13 +24,6 @@ pub enum Command {
     Build,
     /// Clean Simplex artifacts in the current directory
     Clean,
-}
-
-#[derive(Debug, Args, Copy, Clone)]
-pub struct InitFlags {
-    /// Generate a draft Rust library instead of just `Simplex.toml`
-    #[arg(long)]
-    pub lib: bool,
 }
 
 #[derive(Debug, Args, Clone)]

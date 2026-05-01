@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
-members = [
-    "crates/*",
-]
+members = ["crates/*"]
 exclude = ["examples/basic", "fixtures"]
 
 [workspace.package]
@@ -20,7 +18,7 @@ smplx-regtest = { path = "./crates/regtest", version = "0.0.4" }
 smplx-sdk = { path = "./crates/sdk", version = "0.0.4" }
 smplx-std = { path = "./crates/simplex", version = "0.0.4" }
 
-serde = { version = "1.0.228", features = ["derive"]}
+serde = { version = "1.0.228", features = ["derive"] }
 hex = { version = "0.4.3" }
 hmac = { version = "0.12.1" }
 sha2 = { version = "0.10.9", features = ["compress"] }
