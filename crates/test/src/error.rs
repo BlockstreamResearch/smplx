@@ -4,8 +4,6 @@ use smplx_sdk::provider::ProviderError;
 
 use smplx_regtest::error::RegtestError;
 
-use crate::network_utils::NetworkUtilsError;
-
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
     #[error(transparent)]
@@ -25,4 +23,12 @@ pub enum TestError {
 
     #[error("Occurred a network utils execution error: '{0}'")]
     NetworkUtilsExecution(#[from] NetworkUtilsError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum NetworkUtilsError {
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
+    #[error("Unsuccessful action completion, err: '{0}'")]
+    UnsuccessfulSync(String),
 }

@@ -1,4 +1,4 @@
-#[simplex::test(regtest)]
+#[simplex::test]
 fn test_blocks_mining(context: simplex::TestContext) -> anyhow::Result<()> {
     const DESIRED_HEIGHT: u64 = 1_234;
 

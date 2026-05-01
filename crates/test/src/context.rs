@@ -89,9 +89,8 @@ impl TestContext {
     }
 
     pub fn get_network_utils(&self) -> NetworkUtils {
-        let network = self.get_network();
         assert!(
-            matches!(network, SimplicityNetwork::ElementsRegtest { policy_asset: _ }),
+            self._client.is_some(),
             "Network utils only available in Regtest network"
         );
 
@@ -100,8 +99,11 @@ impl TestContext {
             self._provider_info.auth.clone().unwrap(),
         )
         .expect("Failed to create rpc client for network utils");
+
+        let network = self.get_network();
         let esplora = EsploraProvider::new(self._provider_info.esplora_url.clone(), *network);
-        NetworkUtils::from_context(regtest_rpc, esplora)
+
+        NetworkUtils::new(regtest_rpc, esplora)
     }
 
     fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {

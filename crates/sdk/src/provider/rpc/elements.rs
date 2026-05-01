@@ -112,6 +112,7 @@ impl ElementsRpc {
 
     pub fn height(&self) -> Result<u64, RpcError> {
         const METHOD: &str = "getblockcount";
+
         self.inner
             .call::<serde_json::Value>(METHOD, &[])?
             .as_u64()
