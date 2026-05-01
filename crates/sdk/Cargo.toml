@@ -7,8 +7,14 @@ edition.workspace = true
 repository = "https://github.com/BlockstreamResearch/smplx"
 readme = "../../README.md"
 
-[lints]
-workspace = true
+[lints.clippy]
+multiple_crate_versions = "allow"
+rust_2018_idioms = "warn"
+
+[lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+unreachable_pub = "warn"
 
 [dependencies]
 thiserror = { workspace = true }

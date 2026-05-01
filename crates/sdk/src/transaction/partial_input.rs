@@ -42,6 +42,7 @@ pub struct PartialInput {
     pub secrets: Option<TxOutSecrets>,
 }
 
+#[allow(missing_debug_implementations)]
 #[derive(Clone)]
 pub struct ProgramInput {
     pub program: Box<dyn ProgramTrait>,

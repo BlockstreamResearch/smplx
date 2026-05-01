@@ -9,6 +9,7 @@ edition = "2024"
 
 [workspace.lints.clippy]
 multiple_crate_versions = "allow"
+rust_2018_idioms = "warn"
 
 [workspace.dependencies]
 smplx-macros = { path = "./crates/macros", version = "0.0.4" }
