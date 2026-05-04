@@ -25,7 +25,7 @@ impl NetworkUtils {
                 h = self.esplora.fetch_tip_height()? as u64;
 
                 if h >= target_height {
-                    break;
+                    return Ok(());
                 }
 
                 std::thread::sleep(std::time::Duration::from_millis(100));
