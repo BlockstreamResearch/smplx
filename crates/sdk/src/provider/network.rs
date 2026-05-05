@@ -5,7 +5,7 @@ use simplicityhl::simplicity::hashes::{Hash, sha256};
 
 use crate::constants::{LIQUID_DEFAULT_REGTEST_ASSET_STR, LIQUID_POLICY_ASSET_STR, LIQUID_TESTNET_POLICY_ASSET_STR};
 
-/// The default Bitcoin asset ID used on Liquid testnet.
+/// The default Bitcoin `AssetId` used on Liquid testnet.
 pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> = std::sync::LazyLock::new(|| {
     elements::AssetId::from_inner(sha256::Midstate([
         0x49, 0x9a, 0x81, 0x85, 0x45, 0xf6, 0xba, 0xe3, 0x9f, 0xc0, 0x3b, 0x63, 0x7f, 0x2a, 0x4e, 0x1e, 0x64, 0xe5,
@@ -62,7 +62,7 @@ impl SimplicityNetwork {
         Self::ElementsRegtest { policy_asset }
     }
 
-    /// Returns the policy asset identifier associated with the current network.
+    /// Returns the policy `AssetId` associated with the current network.
     ///
     /// # Panics
     /// This function will panic if the provided `LIQUID_DEFAULT_REGTEST_ASSET_STR` cannot be parsed.

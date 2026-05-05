@@ -12,7 +12,7 @@ pub struct UTXO {
 }
 
 impl UTXO {
-    /// Retrieves the explicit asset ID from the transaction output (`txout`).
+    /// Retrieves the explicit `AssetId` from the transaction output (`txout`).
     ///
     /// # Panics
     /// This function will panic if the UTXO's asset is confidential.
@@ -30,12 +30,12 @@ impl UTXO {
         self.txout.value.explicit().expect("The UTXO's amount is not explicit")
     }
 
-    /// Retrieves the unblinded asset ID of the current UTXO.
+    /// Retrieves the unblinded `AssetId` of the current UTXO.
     ///
     /// # Panics
     ///
     /// This function will panic if the UTXO is not blinded. The panic occurs when
-    /// `self.secrets` is `None`, as it expects the UTXO to be in an unblinded state to retrieve the asset ID.
+    /// `self.secrets` is `None`, as it expects the UTXO to be in an unblinded state to retrieve the `AssetId`.
     #[must_use]
     pub fn unblinded_asset(&self) -> AssetId {
         self.secrets.expect("The UTXO is not unblinded").asset

@@ -21,7 +21,7 @@ pub const WITNESS_SCALE_FACTOR: usize = 4;
 ///
 /// This structure stores information related to the issuance of new tokens,
 /// the inflation mechanism for burning redundant tokens, and the entropy
-/// used to generate the associated asset identifiers. It is designed to handle
+/// used to generate the associated `AssetId`s. It is designed to handle
 /// both the issuance and reissuance (burning) processes in a secure and reliable fashion.
 #[derive(Debug, Clone)]
 pub struct IssuanceDetails {

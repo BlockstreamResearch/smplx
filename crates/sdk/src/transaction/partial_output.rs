@@ -17,7 +17,7 @@ pub struct PartialOutput {
 }
 
 impl PartialOutput {
-    /// Creates a new `PartialOutput` assigning a base script, amount, and asset ID.
+    /// Creates a new `PartialOutput` assigning a base script, amount, and `AssetId`.
     #[must_use]
     pub fn new(script: Script, amount: u64, asset: AssetId) -> Self {
         Self {

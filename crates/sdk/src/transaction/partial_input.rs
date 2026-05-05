@@ -50,7 +50,7 @@ pub struct PartialInput {
     /// The explicit amount value in Satoshis for the input, if available.
     /// Note: if UTXO is explicit, `amount` and `asset` are `Some`.
     pub amount: Option<u64>,
-    /// The explicit asset ID being spent by the input, if available.
+    /// The explicit `AssetId` being spent by the input, if available.
     pub asset: Option<AssetId>,
     /// Optional blinding secrets mapping values and asset states into confidential outputs.
     /// Note: if UTXO is confidential, `secrets` are `Some`.
@@ -75,7 +75,7 @@ pub enum IssuanceInput {
         issuance_amount: u64,
         /// The initial issuance amount for the inflation key.
         inflation_amount: u64,
-        /// The contract hash or entropy used to derive the generated asset ID.
+        /// The contract hash or entropy used to derive the generated `AssetId`.
         asset_entropy: [u8; 32],
     },
     /// Represents a reissuance of an existing asset.
