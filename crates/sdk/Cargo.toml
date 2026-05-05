@@ -7,6 +7,9 @@ edition.workspace = true
 repository = "https://github.com/BlockstreamResearch/smplx"
 readme = "../../README.md"
 
+[lints]
+workspace = true
+
 [dependencies]
 thiserror = { workspace = true }
 sha2 = { workspace = true }
@@ -21,13 +24,3 @@ elements-miniscript = { version = "0.4", features = ["base64", "serde"] }
 bip39 = { version = "2.0.0", features = ["rand"] }
 dyn-clone = { version = "1.0.20" }
 bitcoin_hashes = { version = "0.14.1" }
-
-[lints.rust]
-rust_2018_idioms = "warn"
-missing_docs = "warn"
-unreachable_pub = "warn"
-unused_lifetimes = "warn"
-deprecated_in_future = "warn"
-
-[lints.clippy]
-multiple_crate_versions = "allow"

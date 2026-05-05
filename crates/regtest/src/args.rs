@@ -5,7 +5,7 @@ use super::RegtestConfig;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub fn get_elementsd_bin_args(config: &RegtestConfig) -> Vec<String> {
+pub(super) fn get_elementsd_bin_args(config: &RegtestConfig) -> Vec<String> {
     let mut args = vec![
         "-fallbackfee=0.0001".to_string(),
         "-dustrelayfee=0.00000001".to_string(),
@@ -38,7 +38,7 @@ pub fn get_elementsd_bin_args(config: &RegtestConfig) -> Vec<String> {
     args
 }
 
-pub fn get_electrs_bin_args(config: &RegtestConfig) -> Vec<String> {
+pub(super) fn get_electrs_bin_args(config: &RegtestConfig) -> Vec<String> {
     let mut args = vec![];
 
     if let Some(port) = config.esplora_port {

@@ -7,7 +7,7 @@
 #![doc(html_root_url = "https://docs.rs/smplx-std/latest/simplex/")]
 #![cfg_attr(doc, doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR" ), "/", "README.md")))]
 #![cfg_attr(not(doc), doc = "Simplex standard library")]
-#![warn(clippy::all, clippy::pedantic)]
+#![warn(clippy::all, clippy::pedantic, missing_docs)]
 
 /// Common constants and identifiers used across the Simplex SDK.
 pub mod constants;
