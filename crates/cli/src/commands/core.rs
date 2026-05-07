@@ -13,17 +13,26 @@ pub enum Command {
     Regtest,
     /// Runs Simplex tests
     Test {
-        /// Name or a substring of the tests to run
-        #[arg()]
-        name: Option<String>,
+        #[command(flatten)]
+        args: TestArguments,
 
         #[command(flatten)]
-        additional_flags: TestFlags,
+        flags: TestFlags,
     },
     /// Generates the simplicity contracts artifacts
     Build,
     /// Clean Simplex artifacts in the current directory
     Clean,
+}
+
+#[derive(Debug, Args, Clone)]
+pub struct TestArguments {
+    /// Space-separated test name filters
+    #[arg(value_name = "FILTER", num_args = 0..)]
+    pub filters: Vec<String>,
+    /// Integration test target to run
+    #[arg(long = "target")]
+    pub target: Option<String>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -37,7 +46,13 @@ pub struct TestFlags {
     /// Run ignored tests
     #[arg(long)]
     pub ignored: bool,
+    /// Run tests regardless of failure
+    #[arg(long = "no-fail-fast")]
+    pub no_fail_fast: bool,
     /// Log simplicity pruning stack trace
     #[arg(short = 'v', long)]
     pub verbose: bool,
+    /// Display one character per test instead of one line
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
 }
