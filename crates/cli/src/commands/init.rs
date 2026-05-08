@@ -9,6 +9,13 @@ pub const SIMPLEX_CRATE_NAME: &str = "smplx-std";
 pub struct Init;
 
 impl Init {
+    /// Initialises a new Simplex project at the specified configuration path.
+    ///
+    /// This method generates the necessary project files and directories (including
+    /// `Cargo.toml`, source files, test templates, and configuration files) in place.
+    ///
+    /// # Errors
+    /// Returns a `CommandError` if creating directories, writing project files, or fetching the latest crate version from `crates.io` fails.
     pub fn run(smplx_conf_path: impl AsRef<Path>) -> Result<(), CommandError> {
         Self::generate_lib_inplace(&smplx_conf_path)?;
 

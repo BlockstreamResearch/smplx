@@ -10,8 +10,14 @@ pub struct Clean;
 pub struct DeletedItems(Vec<PathBuf>);
 
 impl Clean {
-    pub fn run(config: BuildConfig) -> Result<(), CommandError> {
-        let deleted_files = Self::delete_files(&config)?;
+    /// Cleans up generated artifacts from the project.
+    ///
+    /// This method removes compiled files and output directories based on the provided configuration.
+    ///
+    /// # Errors
+    /// Returns a `CommandError` if it fails to resolve the artifacts directory or if an error occurs while removing the directories.
+    pub fn run(config: &BuildConfig) -> Result<(), CommandError> {
+        let deleted_files = Self::delete_files(config)?;
 
         println!("Deleted files: {deleted_files}");
 

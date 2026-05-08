@@ -22,6 +22,11 @@ pub struct Cli {
 }
 
 impl Cli {
+    /// Executes the parsed command and routes it to the corresponding sub-handler.
+    ///
+    /// # Errors
+    /// Returns a `CliError` if loading the configuration fails, an underlying command execution encounters an error,
+    /// or if there are file system I/O errors (for example, attempting to initialize over an existing project directory).
     pub fn run(&self) -> Result<(), CliError> {
         match &self.command {
             Command::Init { name } => {
@@ -71,7 +76,7 @@ impl Cli {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(&config_path)?;
 
-                Ok(Clean::run(loaded_config.build)?)
+                Ok(Clean::run(&loaded_config.build)?)
             }
         }
     }

@@ -21,11 +21,28 @@ use super::error::ProgramError;
 use crate::provider::SimplicityNetwork;
 use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
+/// Executes `simplicity` programs at runtime.
+///
+/// This trait defines a core behaviour related to testing and execution.
+/// Drastically simplifies the usage of `simplicity` programs by generating
+///  an implementation with `include_simf!()` macro.
 pub trait ProgramTrait: DynClone {
+    /// Retrieves the types of arguments required by a `simplicity` program.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if parsing or generating ABI metadata fails.
     fn get_argument_types(&self) -> Result<Parameters, ProgramError>;
 
+    /// Retrieves the witness types required by a `simplicity` program.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if parsing or generating ABI metadata fails.
     fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError>;
 
+    /// Constructs the Elements environment for a specified input index, PST, and network for further program execution.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if the input index is out of bounds or if the script pubkey of the UTXO mismatches the expected program script.
     fn get_env(
         &self,
         pst: &PartiallySignedTransaction,
@@ -33,6 +50,14 @@ pub trait ProgramTrait: DynClone {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError>;
 
+    /// Executes a Simplicity program for the given input index of a partially signed transaction.
+    ///
+    /// This function evaluates a Simplicity script associated with a specific transaction input
+    /// in a given network, producing the result of the computation along with the redeem node
+    /// used during execution.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if loading the program, satisfying the witness, retrieving the environment, or executing the `BitMachine` fails.
     fn execute(
         &self,
         pst: &PartiallySignedTransaction,
@@ -41,6 +66,10 @@ pub trait ProgramTrait: DynClone {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError>;
 
+    /// Finalises and returns `pruned_witness` as output after executing the program on certain parameters.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if program execution or constructing the control block fails.
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,
@@ -50,6 +79,9 @@ pub trait ProgramTrait: DynClone {
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
+/// Represents a program structure containing its source, a public key, arguments, and associated storage.
+///
+/// Abstraction gives the power for executing programs on simplicity without specifying any additional parameters.
 #[derive(Clone)]
 pub struct Program {
     source: &'static str,
@@ -160,6 +192,7 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
+    /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
     pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
@@ -170,6 +203,7 @@ impl Program {
         }
     }
 
+    /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
     #[must_use]
     pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
         self.pub_key = pub_key;
@@ -177,6 +211,7 @@ impl Program {
         self
     }
 
+    /// Sets storage capacity for further usage.
     #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
         self.storage = vec![[0u8; 32]; capacity];
@@ -184,27 +219,41 @@ impl Program {
         self
     }
 
+    /// Sets a 32-byte value at the specified index in the storage.
+    ///
+    /// # Panics
+    /// Panics if the `index` is out of bounds for the initiasized storage.
     pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
         let slot = self.storage.get_mut(index).expect("Index out of bounds");
 
         *slot = new_value;
     }
 
+    /// Returns the number of storage chunks for a program.
     #[must_use]
     pub fn get_storage_len(&self) -> usize {
         self.storage.len()
     }
 
+    /// Returns storage as a whole array of 32-byte chunks.
     #[must_use]
     pub fn get_storage(&self) -> &[[u8; 32]] {
         &self.storage
     }
 
+    /// Returns storage value at a certain index.
+    ///
+    /// # Panics
+    /// Panics if the `index` is out of bounds for the initiated storage.
     #[must_use]
     pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
         self.storage[index]
     }
 
+    /// Returns a taproot address for a defined `SimplicityNetwork`.
+    ///
+    /// # Panics
+    /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
         let spend_info = self.taproot_spending_info().unwrap();
@@ -218,16 +267,22 @@ impl Program {
         )
     }
 
+    /// Retrieves the `ScriptPubKey` associated with the Simplicity address for the specified network.
     #[must_use]
     pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
         self.get_tr_address(network).script_pubkey()
     }
 
+    /// Retrieves the 32-byte `ScriptPubKey` hash associated with the Simplicity address for the specified network.
     #[must_use]
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
     }
 
+    /// Retrieves program ABI metadata for argument types.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
         let compiled = self.load()?;
         let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
@@ -235,6 +290,10 @@ impl Program {
         Ok(abi_meta.param_types)
     }
 
+    /// Retrieves the witness types from the compiled program's ABI metadata.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
         let compiled = self.load()?;
         let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;

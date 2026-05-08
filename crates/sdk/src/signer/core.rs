@@ -37,9 +37,15 @@ use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, Required
 
 use super::error::SignerError;
 
+/// A placeholder dummy fee amount used during transaction estimation.
 pub const PLACEHOLDER_FEE: u64 = 1;
 
+/// Common signing interface spanning over standard explicit inputs and Simplicity programs.
 pub trait SignerTrait {
+    /// Generates a Schnorr signature to satisfy a target Simplicity program input.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the elements environment fails to build or if the message digest fails to construct.
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
@@ -48,6 +54,10 @@ pub trait SignerTrait {
         network: &SimplicityNetwork,
     ) -> Result<schnorr::Signature, SignerError>;
 
+    /// Generates an ECDSA signature to spend a standard transaction input.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the transaction formatting or sighash msg extraction fails.
     fn sign_input(
         &self,
         pst: &PartiallySignedTransaction,
@@ -55,6 +65,8 @@ pub trait SignerTrait {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError>;
 }
 
+/// Core interface responsible for managing keys, interfacing with the blockchain provider,
+/// assembling descriptors, estimating fees, and finalizing/signing transactions.
 pub struct Signer {
     mnemonic: Mnemonic,
     xprv: Xpriv,
@@ -109,6 +121,10 @@ enum Estimate {
 }
 
 impl Signer {
+    /// Creates a new `Signer` instance seeded from the provided mnemonic and paired with the specified provider.
+    ///
+    /// # Panics
+    /// Panics if the mnemonic fails to parse, or if deriving the master private key fails.
     #[must_use]
     pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Self {
         let secp = Secp256k1::new();
@@ -130,6 +146,10 @@ impl Signer {
         }
     }
 
+    /// Composes, funds, and broadcasts a standard network transaction sending the specified value of the primary policy asset.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if compiling the inputs fails, there are insufficient funds/fees, or broadcast is rejected.
     // TODO: add an ability to send arbitrary assets
     pub fn send(&self, to: Script, amount: u64) -> Result<TxReceipt<'_>, SignerError> {
         let mut ft = FinalTransaction::new();
@@ -141,12 +161,20 @@ impl Signer {
         Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
+    /// Evaluates, funds, and broadcasts an already assembled `FinalTransaction`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if finalising the payload fails or if the network rejects the broadcast.
     pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
         let (tx, _fee) = self.finalize(tx)?;
 
         Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
+    /// Evaluates the input components of a `FinalTransaction`, iteratively selecting available wallet UTXOs to cover outputs and estimated fees.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the wallet contains insufficient funds to satisfy output values and target fee rates.
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
         let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
         let mut set = HashSet::new();
@@ -193,6 +221,11 @@ impl Signer {
         Err(SignerError::NotEnoughFunds(curr_fee))
     }
 
+    /// Verifies and finalises a transaction against a strict target confirmation window (in blocks).
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the assembled inputs do not meet dust limits or fail to cover the
+    ///  dynamically estimated required fee.
     pub fn finalize_strict(
         &self,
         tx: &FinalTransaction,
@@ -213,11 +246,16 @@ impl Signer {
         }
     }
 
+    /// Returns a reference to the active configured network provider.
     #[must_use]
     pub fn get_provider(&self) -> &dyn ProviderTrait {
         self.provider.as_ref()
     }
 
+    /// Returns the confidential elements address matching the local wallet logic.
+    ///
+    /// # Panics
+    /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_confidential_address(&self) -> Address {
         let mut descriptor =
@@ -235,6 +273,10 @@ impl Signer {
             .unwrap()
     }
 
+    /// Returns the standard unblinded address matching the local wallet logic.
+    ///
+    /// # Panics
+    /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_address(&self) -> Address {
         let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
@@ -248,19 +290,36 @@ impl Signer {
             .unwrap()
     }
 
+    /// Iterates against the network provider to select and unblind all known UTXOs.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if querying the network or unblinding operations fail.
     pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
         self.get_utxos_filter(&|_| true, &|_| true)
     }
 
+    /// Finds all known UTXOs belonging to the specific `AssetId`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if network interaction or confidential output decryption fails.
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
         self.get_utxos_filter(&|utxo| utxo.asset() == asset, &|utxo| utxo.asset() == asset)
     }
 
+    /// Finds all known UTXOs deriving from a targeted `Txid`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if querying the network fails.
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
     pub fn get_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
         self.get_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
+    /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
+    /// Separate filtering criteria apply natively vs confidentially.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if retrieving remote outputs or executing confidential node unblinding throws an error.
     pub fn get_utxos_filter(
         &self,
         explicit_filter: &dyn Fn(&UTXO) -> bool,
@@ -289,6 +348,7 @@ impl Signer {
         Ok(all_utxos)
     }
 
+    /// Derives the X-Only public key specifically used for Schnorr and Taproot structures.
     #[must_use]
     pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
         let private_key = self.get_private_key();
@@ -297,16 +357,22 @@ impl Signer {
         keypair.x_only_public_key().0
     }
 
+    /// Resolves the standard format ECDSA public key.
     #[must_use]
     pub fn get_ecdsa_public_key(&self) -> PublicKey {
         self.get_private_key().public_key(&self.secp)
     }
 
+    /// Resolves the corresponding blinding public key.
     #[must_use]
     pub fn get_blinding_public_key(&self) -> PublicKey {
         self.get_blinding_private_key().public_key(&self.secp)
     }
 
+    /// Internally derives and exposes the wallet's signing active private key.
+    ///
+    /// # Panics
+    /// Panics if the master private key or derivation path cannot be derived.
     #[must_use]
     pub fn get_private_key(&self) -> PrivateKey {
         let master_xprv = self.master_xpriv().unwrap();
@@ -323,6 +389,13 @@ impl Signer {
         PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
     }
 
+    /// Generates the private key linked to confidential payload blinding.
+    ///
+    /// The generated `PrivateKey` is associated with the `Test` network kind.
+    /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
+    ///
+    /// # Panics
+    /// Panics if the master SLIP77 key cannot be derived.
     #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
         let blinding_key = self

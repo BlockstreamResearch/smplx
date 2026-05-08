@@ -11,12 +11,21 @@ use super::core::ProviderTrait;
 use super::error::ProviderError;
 use super::{ElementsRpc, EsploraProvider};
 
+/// A local provider used during Regtest or local development.
+/// It wraps an `EsploraProvider` for REST API queries and an `ElementsRpc` for direct node interactions.
+#[derive(Debug)]
 pub struct SimplexProvider {
+    /// The Esplora provider for handling REST API queries.
     pub esplora: EsploraProvider,
+    /// The Elements RPC provider for direct node operations and wallet interaction.
     pub elements: ElementsRpc,
 }
 
 impl SimplexProvider {
+    /// Creates a new `SimplexProvider` with the given URLs, authentication, and network.
+    ///
+    /// # Panics
+    /// Panics if the `ElementsRpc` client fails to initialise.
     #[must_use]
     pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
         Self {

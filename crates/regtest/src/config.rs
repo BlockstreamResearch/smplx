@@ -21,6 +21,10 @@ pub struct RegtestConfig {
 }
 
 impl RegtestConfig {
+    /// Loads a `RegtestConfig` from a specified TOML file.
+    ///
+    /// # Errors
+    /// Returns a `RegtestError` if the file cannot be opened, read, or if the contents are not valid TOML.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, RegtestError> {
         let mut content = String::new();
         let mut file = OpenOptions::new().read(true).open(path)?;

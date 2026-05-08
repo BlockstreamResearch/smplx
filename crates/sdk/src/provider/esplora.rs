@@ -16,9 +16,14 @@ use crate::transaction::{TxReceipt, UTXO};
 use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
 
+/// A provider implementation that interacts with the Esplora REST API backend.
+#[derive(Debug)]
 pub struct EsploraProvider {
+    /// The base URL of the Esplora REST API.
     pub esplora_url: String,
+    /// The currently configured Simplicity network (e.g. Liquid, Testnet, Regtest).
     pub network: SimplicityNetwork,
+    /// Timeout duration used in underlying HTTP requests.
     pub timeout: Duration,
 }
 
@@ -60,6 +65,7 @@ struct EsploraUtxo {
 }
 
 impl EsploraProvider {
+    /// Creates a new `EsploraProvider` connected to the provided endpoint targeting the specific network.
     #[must_use]
     pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
@@ -69,7 +75,7 @@ impl EsploraProvider {
         }
     }
 
-    fn esplora_utxo_to_outpoint(&self, utxo: &EsploraUtxo) -> Result<OutPoint, ProviderError> {
+    fn esplora_utxo_to_outpoint(utxo: &EsploraUtxo) -> Result<OutPoint, ProviderError> {
         let txid = Txid::from_str(&utxo.txid).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?;
 
         Ok(OutPoint::new(txid, utxo.vout))
@@ -102,7 +108,7 @@ impl ProviderTrait for EsploraProvider {
         &self.network
     }
 
-    #[allow(clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
@@ -273,7 +279,7 @@ impl ProviderTrait for EsploraProvider {
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
-            .map(|utxo| self.esplora_utxo_to_outpoint(utxo))
+            .map(Self::esplora_utxo_to_outpoint)
             .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
         self.populate_txouts_from_outpoints(&outpoints)
@@ -302,7 +308,7 @@ impl ProviderTrait for EsploraProvider {
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
         let outpoints = utxos
             .iter()
-            .map(|utxo| self.esplora_utxo_to_outpoint(utxo))
+            .map(Self::esplora_utxo_to_outpoint)
             .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
         self.populate_txouts_from_outpoints(&outpoints)

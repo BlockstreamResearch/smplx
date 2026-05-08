@@ -14,7 +14,7 @@ pub struct SynFilePath {
 }
 
 impl Parse for SynFilePath {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let expr = input.parse::<Expr>()?;
 
         let span_file = expr.span().file();

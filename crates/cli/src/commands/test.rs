@@ -10,6 +10,13 @@ use super::error::CommandError;
 pub struct Test {}
 
 impl Test {
+    /// Runs tests based on the given configuration, filter, and flags.
+    ///
+    /// # Errors
+    /// Returns a `CommandError` if building the cache filename fails, writing the config to file fails, or running the system process fails.
+    ///
+    /// # Panics
+    /// Panics if the output of the cargo test command is not valid UTF-8.
     pub fn run(mut config: TestConfig, args: &TestArguments, flags: &TestFlags) -> Result<(), CommandError> {
         let cache_path = Self::get_test_config_cache_name()?;
 
@@ -80,10 +87,10 @@ impl Test {
         test_bin_args.push("--".into());
 
         // TODO: custom filters may run non-simplex tests due to cargo limitations. Figure out how to fix this
-        if !args.filters.is_empty() {
-            test_bin_args.extend(args.filters.iter().cloned());
-        } else {
+        if args.filters.is_empty() {
             test_bin_args.push(SMPLX_TEST_MARKER.to_string());
+        } else {
+            test_bin_args.extend(args.filters.iter().cloned());
         }
 
         test_bin_args.extend(Self::build_test_bin_flags(flags));

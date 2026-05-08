@@ -9,10 +9,17 @@
 #![cfg_attr(not(doc), doc = "Simplex standard library")]
 #![warn(clippy::all, clippy::pedantic)]
 
+/// Common constants and identifiers used across the Simplex SDK.
 pub mod constants;
+/// Global state, configuration, and shared context used throughout the SDK.
 pub mod global;
+/// Core abstractions, definitions, and errors for compiling and evaluating Simplicity programs.
 pub mod program;
+/// Interfaces and implementations for interacting with blockchain nodes and APIs.
 pub mod provider;
+/// Traits and mechanisms for signing transactions and satisfying witness requirements.
 pub mod signer;
+/// Constructs and builders for assembling, tracking, and managing Elements transactions.
 pub mod transaction;
+/// General utility functions, conversions, and helper tools.
 pub mod utils;

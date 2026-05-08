@@ -9,6 +9,13 @@ use crate::commands::error::CommandError;
 pub struct Regtest {}
 
 impl Regtest {
+    /// Starts the regtest environment and blocks until terminated via Ctrl-C.
+    ///
+    /// # Errors
+    /// Returns a `CommandError` if initializing the environment from the config fails, or if shutting down the client fails.
+    ///
+    /// # Panics
+    /// Panics if setting the Ctrl-C handler fails, or if required RPC authentication credentials cannot be unwrapped.
     pub fn run(config: &RegtestConfig) -> Result<(), CommandError> {
         let (mut client, signer) = RegtestRunner::from_config(config)?;
 

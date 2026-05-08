@@ -9,23 +9,27 @@ use simplicityhl::{
 
 use crate::signer::error::WtnsWrappingError;
 
+/// Represents an index-based route for array or tuple witness types.
 #[derive(Clone, Copy, Debug)]
-pub struct EnumerableRoute(usize);
+pub(super) struct EnumerableRoute(usize);
 
+/// Represents a branch route for `Either` witness type.
 #[derive(Clone, Copy, Debug)]
-pub enum EitherRoute {
+pub(super) enum EitherRoute {
     Left,
     Right,
 }
 
+/// Represents a single step in a witness path, either following a branch or an index.
 #[derive(Clone, Copy, Debug)]
-pub enum WtnsPathRoute {
+pub(super) enum WtnsPathRoute {
     Either(EitherRoute),
     Enumerable(EnumerableRoute),
 }
 
+/// Exposes utilities to safely inject values into specific locations within a Simplicity witness structure.
 #[derive(Clone)]
-pub struct WtnsInjector {}
+pub(super) struct WtnsInjector {}
 
 enum StackItem {
     Either(EitherRoute, Arc<ResolvedType>),
@@ -34,9 +38,16 @@ enum StackItem {
 }
 
 impl WtnsInjector {
-    /// Constructs new value by injecting given value into witness at the position described by `path`.
+    /// Constructs a new value by injecting a given value into the witness at the position described by `path`.
+    ///
     /// Consistency between `witness` and `witness_types` should be guaranteed by the caller.
-    pub fn inject_value<I>(
+    ///
+    /// # Errors
+    /// Returns a `WtnsWrappingError` if the path contains invalid segments, attempts to access an out-of-bounds index, navigates into an incorrect type layout, or expects a different branch representation.
+    ///
+    /// # Panics
+    /// Panics if internal type validations or downcasts fail after safety checks have passed.
+    pub(super) fn inject_value<I>(
         witness: &Arc<Value>,
         witness_types: &ResolvedType,
         path: I,
