@@ -34,6 +34,7 @@ impl<'a> TxReceipt<'a> {
         Self { provider, tx_id }
     }
 
+    #[must_use]
     pub fn txid(self) -> Txid {
         self.tx_id
     }

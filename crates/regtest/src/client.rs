@@ -17,6 +17,7 @@ pub struct RegtestClient {
 }
 
 impl RegtestClient {
+    #[must_use]
     pub fn new(config: &RegtestConfig) -> Self {
         let (electrs_path, elementsd_path) = Self::default_bin_paths();
         let zmq_addr = Self::get_zmq_addr();
@@ -30,6 +31,7 @@ impl RegtestClient {
         }
     }
 
+    #[must_use]
     pub fn default_bin_paths() -> (PathBuf, PathBuf) {
         const ELECTRS_BIN_PATH: &str = "electrs";
         const ELEMENTSD_BIN_PATH: &str = "elementsd";
@@ -54,9 +56,9 @@ impl RegtestClient {
         }
 
         let url = self.electrs.esplora_url.clone().unwrap();
-        let port = url.split_once(":").unwrap().1;
+        let port = url.split_once(':').unwrap().1;
 
-        format!("http://127.0.0.1:{}", port)
+        format!("http://127.0.0.1:{port}")
     }
 
     pub fn auth(&self) -> Auth {
@@ -94,7 +96,7 @@ impl RegtestClient {
         bin_args.push(format!("-zmqpubhashblock=tcp://{zmq_addr}"));
         bin_args.push(format!("-zmqpubsequence=tcp://{zmq_addr}"));
 
-        conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
+        conf.args = bin_args.iter().map(std::convert::AsRef::as_ref).collect::<Vec<&str>>();
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
 
@@ -112,7 +114,7 @@ impl RegtestClient {
 
         bin_args.push(format!("--zmq-addr={zmq_addr}"));
 
-        conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
+        conf.args = bin_args.iter().map(std::convert::AsRef::as_ref).collect::<Vec<&str>>();
         conf.http_enabled = config.esplora_port.is_none();
         conf.network = "liquidregtest";
 

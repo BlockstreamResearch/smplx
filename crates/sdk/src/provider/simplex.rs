@@ -17,6 +17,7 @@ pub struct SimplexProvider {
 }
 
 impl SimplexProvider {
+    #[must_use]
     pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
         Self {
             esplora: EsploraProvider::new(esplora_url, network),

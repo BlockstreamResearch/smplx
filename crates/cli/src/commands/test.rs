@@ -14,7 +14,7 @@ impl Test {
         let cache_path = Self::get_test_config_cache_name()?;
 
         if flags.verbose {
-            config.verbosity = Some(Verbosity(4))
+            config.verbosity = Some(Verbosity(4));
         }
 
         config.to_file(&cache_path)?;
@@ -25,7 +25,7 @@ impl Test {
 
         match output.status.code() {
             Some(code) => {
-                println!("Exit Status: {}", code);
+                println!("Exit Status: {code}");
 
                 if code == 0 {
                     println!("{}", String::from_utf8(output.stdout).unwrap());

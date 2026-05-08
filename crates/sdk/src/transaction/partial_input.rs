@@ -63,6 +63,7 @@ pub enum IssuanceInput {
 }
 
 impl PartialInput {
+    #[must_use]
     pub fn new(utxo: UTXO) -> Self {
         let amount = match utxo.txout.value {
             Value::Explicit(value) => Some(value),
@@ -85,18 +86,21 @@ impl PartialInput {
         }
     }
 
+    #[must_use]
     pub fn with_sequence(mut self, sequence: Sequence) -> Self {
         self.sequence = sequence;
 
         self
     }
 
+    #[must_use]
     pub fn with_locktime(mut self, locktime: LockTime) -> Self {
         self.locktime = locktime;
 
         self
     }
 
+    #[must_use]
     pub fn outpoint(&self) -> OutPoint {
         OutPoint {
             txid: self.witness_txid,
@@ -104,15 +108,16 @@ impl PartialInput {
         }
     }
 
+    #[must_use]
     pub fn to_input(&self) -> Input {
         let time_locktime = match self.locktime {
             LockTime::Seconds(value) => Some(value),
-            _ => None,
+            LockTime::Blocks(_) => None,
         };
         // zero height locktime is essentially ignored
         let height_locktime = match self.locktime {
             LockTime::Blocks(value) => Some(value),
-            _ => None,
+            LockTime::Seconds(_) => None,
         };
 
         Input {
@@ -130,12 +135,14 @@ impl PartialInput {
 }
 
 impl ProgramInput {
+    #[must_use]
     pub fn new(program: Box<dyn ProgramTrait>, witness: Box<dyn WitnessTrait>) -> Self {
         Self { program, witness }
     }
 }
 
 impl IssuanceInput {
+    #[must_use]
     pub fn new_issuance(issuance_amount: u64, inflation_amount: u64, asset_entropy: [u8; 32]) -> Self {
         Self::Issuance {
             issuance_amount,
@@ -144,6 +151,7 @@ impl IssuanceInput {
         }
     }
 
+    #[must_use]
     pub fn new_reissuance(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
         Self::Reissuance {
             issuance_amount,
@@ -151,6 +159,7 @@ impl IssuanceInput {
         }
     }
 
+    #[must_use]
     pub fn to_input(&self) -> Input {
         let (issuance_amount, asset_entropy, inflation_amount) = match self {
             Self::Issuance {

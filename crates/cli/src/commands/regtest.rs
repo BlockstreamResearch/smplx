@@ -9,7 +9,7 @@ use crate::commands::error::CommandError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn run(config: RegtestConfig) -> Result<(), CommandError> {
+    pub fn run(config: &RegtestConfig) -> Result<(), CommandError> {
         let (mut client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));

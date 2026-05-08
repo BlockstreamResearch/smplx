@@ -25,6 +25,7 @@ pub enum Command {
     Clean,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestArguments {
     /// Space-separated test name filters

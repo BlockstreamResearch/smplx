@@ -41,11 +41,13 @@ pub enum SimplicityNetwork {
 }
 
 impl SimplicityNetwork {
+    #[must_use]
     pub fn default_regtest() -> Self {
         let policy_asset = elements::AssetId::from_str(LIQUID_DEFAULT_REGTEST_ASSET_STR).unwrap();
         Self::ElementsRegtest { policy_asset }
     }
 
+    #[must_use]
     pub fn policy_asset(&self) -> elements::AssetId {
         match self {
             Self::Liquid => elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).unwrap(),
@@ -54,6 +56,7 @@ impl SimplicityNetwork {
         }
     }
 
+    #[must_use]
     pub fn genesis_block_hash(&self) -> elements::BlockHash {
         match self {
             Self::Liquid => *LIQUID_MAINNET_GENESIS,
@@ -62,10 +65,12 @@ impl SimplicityNetwork {
         }
     }
 
+    #[must_use]
     pub fn is_mainnet(&self) -> bool {
         self == &Self::Liquid
     }
 
+    #[must_use]
     pub const fn address_params(&self) -> &'static elements::AddressParams {
         match self {
             Self::Liquid => &elements::AddressParams::LIQUID,

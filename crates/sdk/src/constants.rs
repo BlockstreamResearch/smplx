@@ -1,6 +1,9 @@
+/// General public blinder key to use
 pub const PUBLIC_SECRET_BLINDER_KEY: [u8; 32] = [1; 32];
+/// Dummy signature, which is used for fee estimation
 pub const DUMMY_SIGNATURE: [u8; 64] = [1; 64];
 
+/// Minimal acceptable fee for nodes to send a transaction
 pub const MIN_FEE: u64 = 10;
 
 /// Policy asset id (hex, BE) for Liquid mainnet.

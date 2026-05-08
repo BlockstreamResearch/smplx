@@ -32,6 +32,7 @@ pub struct FinalInput {
 }
 
 impl FinalInput {
+    #[must_use]
     pub fn new(partial_input: PartialInput, required_sig: RequiredSignature) -> Self {
         Self {
             partial_input,
@@ -41,18 +42,21 @@ impl FinalInput {
         }
     }
 
+    #[must_use]
     pub fn with_program(mut self, program_input: ProgramInput) -> Self {
         self.program_input = Some(program_input);
 
         self
     }
 
+    #[must_use]
     pub fn with_issuance(mut self, issuance_input: IssuanceInput) -> Self {
         self.issuance_input = Some(issuance_input);
 
         self
     }
 
+    #[must_use]
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
         match &self.issuance_input {
             Some(issuance_input) => {
@@ -69,15 +73,16 @@ impl FinalInput {
                 let inflation_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
 
                 Some(IssuanceDetails {
-                    asset_entropy,
                     asset_id,
                     inflation_asset_id,
+                    asset_entropy,
                 })
             }
             None => None,
         }
     }
 
+    #[must_use]
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
 
@@ -113,6 +118,7 @@ pub struct FinalTransaction {
 }
 
 impl FinalTransaction {
+    #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
@@ -127,7 +133,7 @@ impl FinalTransaction {
                 panic!("Requested signature is not NativeEcdsa or None")
             }
             _ => {}
-        };
+        }
 
         self.push_new_input(FinalInput::new(partial_input, required_sig));
     }
@@ -156,7 +162,7 @@ impl FinalTransaction {
                 panic!("Requested signature is not NativeEcdsa or None")
             }
             _ => {}
-        };
+        }
 
         self.push_new_input(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input))
             .unwrap()
@@ -201,6 +207,7 @@ impl FinalTransaction {
         None
     }
 
+    #[must_use]
     pub fn inputs(&self) -> &[FinalInput] {
         &self.inputs
     }
@@ -209,6 +216,7 @@ impl FinalTransaction {
         &mut self.inputs
     }
 
+    #[must_use]
     pub fn outputs(&self) -> &[PartialOutput] {
         &self.outputs
     }
@@ -217,18 +225,22 @@ impl FinalTransaction {
         &mut self.outputs
     }
 
+    #[must_use]
     pub fn n_inputs(&self) -> usize {
         self.inputs.len()
     }
 
+    #[must_use]
     pub fn n_outputs(&self) -> usize {
         self.outputs.len()
     }
 
+    #[must_use]
     pub fn needs_blinding(&self) -> bool {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
     }
 
+    #[must_use]
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
         let mut available_amount = 0;
 
@@ -255,15 +267,22 @@ impl FinalTransaction {
             .filter(|output| output.asset == network.policy_asset())
             .fold(0_u64, |acc, output| acc + output.amount);
 
-        available_amount as i64 - consumed_amount as i64
+        available_amount.cast_signed() - consumed_amount.cast_signed()
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    #[must_use]
     pub fn calculate_fee(&self, weight: usize, fee_rate: f32) -> u64 {
         let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
 
         (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
+    #[must_use]
     pub fn extract_pst(&self) -> (PartiallySignedTransaction, HashMap<usize, TxOutSecrets>) {
         let mut input_secrets = HashMap::new();
         let mut pst = PartiallySignedTransaction::new_v2();

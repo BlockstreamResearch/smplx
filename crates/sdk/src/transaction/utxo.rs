@@ -8,27 +8,33 @@ pub struct UTXO {
 }
 
 impl UTXO {
+    #[must_use]
     pub fn explicit_asset(&self) -> AssetId {
         self.txout.asset.explicit().expect("The UTXO's asset is not explicit")
     }
 
+    #[must_use]
     pub fn explicit_amount(&self) -> u64 {
         self.txout.value.explicit().expect("The UTXO's amount is not explicit")
     }
 
+    #[must_use]
     pub fn unblinded_asset(&self) -> AssetId {
         self.secrets.expect("The UTXO is not unblinded").asset
     }
 
+    #[must_use]
     pub fn unblinded_amount(&self) -> u64 {
         self.secrets.expect("The UTXO is not unblinded").value
     }
 
+    #[must_use]
     pub fn asset(&self) -> AssetId {
         self.secrets
             .map_or_else(|| self.explicit_asset(), |secrets| secrets.asset)
     }
 
+    #[must_use]
     pub fn amount(&self) -> u64 {
         self.secrets
             .map_or_else(|| self.explicit_amount(), |secrets| secrets.value)

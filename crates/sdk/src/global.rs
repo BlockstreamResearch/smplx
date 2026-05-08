@@ -25,6 +25,5 @@ pub fn set_global_config(log_level: TrackerLogLevel) -> Result<(), GlobalConfig>
 pub fn get_log_level() -> TrackerLogLevel {
     GLOBAL_CONFIG
         .get()
-        .map(|config| config.log_level)
-        .unwrap_or(GlobalConfig::default().log_level)
+        .map_or(GlobalConfig::default().log_level, |config| config.log_level)
 }

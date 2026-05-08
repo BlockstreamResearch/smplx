@@ -160,6 +160,7 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
+    #[must_use]
     pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
         Self {
             source,
@@ -169,12 +170,14 @@ impl Program {
         }
     }
 
+    #[must_use]
     pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
         self.pub_key = pub_key;
 
         self
     }
 
+    #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
         self.storage = vec![[0u8; 32]; capacity];
 
@@ -187,18 +190,22 @@ impl Program {
         *slot = new_value;
     }
 
+    #[must_use]
     pub fn get_storage_len(&self) -> usize {
         self.storage.len()
     }
 
+    #[must_use]
     pub fn get_storage(&self) -> &[[u8; 32]] {
         &self.storage
     }
 
+    #[must_use]
     pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
         self.storage[index]
     }
 
+    #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
         let spend_info = self.taproot_spending_info().unwrap();
 
@@ -211,10 +218,12 @@ impl Program {
         )
     }
 
+    #[must_use]
     pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
         self.get_tr_address(network).script_pubkey()
     }
 
+    #[must_use]
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
     }
@@ -303,7 +312,7 @@ mod tests {
     use super::*;
 
     // simplicityhl/examples/cat.simf
-    const DUMMY_PROGRAM: &str = r#"
+    const DUMMY_PROGRAM: &str = r"
         fn main() {
             let ab: u16 = <(u8, u8)>::into((0x10, 0x01));
             let c: u16 = 0x1001;
@@ -312,7 +321,7 @@ mod tests {
             let c: u8 = 0b10111101;
             assert!(jet::eq_8(ab, c));
         }
-    "#;
+    ";
 
     #[derive(Clone)]
     struct EmptyArguments;

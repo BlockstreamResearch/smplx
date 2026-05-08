@@ -12,6 +12,7 @@ pub struct PartialOutput {
 }
 
 impl PartialOutput {
+    #[must_use]
     pub fn new(script: Script, amount: u64, asset: AssetId) -> Self {
         Self {
             script_pubkey: script,
@@ -21,6 +22,7 @@ impl PartialOutput {
         }
     }
 
+    #[must_use]
     pub fn new_metadata(data: &[u8]) -> Self {
         Self {
             script_pubkey: Script::new_op_return(data),
@@ -30,12 +32,14 @@ impl PartialOutput {
         }
     }
 
+    #[must_use]
     pub fn with_blinding_key(mut self, blinding_key: PublicKey) -> Self {
         self.blinding_key = Some(blinding_key);
 
         self
     }
 
+    #[must_use]
     pub fn to_output(&self) -> Output {
         let mut output = Output::new_explicit(self.script_pubkey.clone(), self.amount, self.asset, self.blinding_key);
 

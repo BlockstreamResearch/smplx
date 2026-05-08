@@ -60,6 +60,7 @@ struct EsploraUtxo {
 }
 
 impl EsploraProvider {
+    #[must_use]
     pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
             esplora_url: url,
@@ -101,6 +102,7 @@ impl ProviderTrait for EsploraProvider {
         &self.network
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);

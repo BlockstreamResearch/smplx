@@ -28,7 +28,6 @@ minreq = { workspace = true }
 anyhow = "1"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 toml_edit = { version = "0.23.9" }
 ctrlc = { version = "3.5.2", features = ["termination"] }
 serde_json = { version = "1.0.149" }

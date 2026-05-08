@@ -13,8 +13,8 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
-        let client = RegtestClient::new(&config);
+    pub fn from_config(config: &RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+        let client = RegtestClient::new(config);
 
         let provider = Box::new(SimplexProvider::new(
             client.esplora_url(),
@@ -51,9 +51,7 @@ impl Regtest {
 
             attempts += 1;
 
-            if attempts > 100 {
-                panic!("Electrs failed to index the sweep after 10 seconds");
-            }
+            assert!(attempts <= 100, "Electrs failed to index the sweep after 10 seconds");
 
             std::thread::sleep(Duration::from_millis(100));
         }

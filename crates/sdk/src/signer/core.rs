@@ -109,6 +109,7 @@ enum Estimate {
 }
 
 impl Signer {
+    #[must_use]
     pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Self {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
@@ -169,8 +170,8 @@ impl Signer {
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-            if policy_amount_delta >= curr_fee as i64 {
-                match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
+            if policy_amount_delta >= curr_fee.cast_signed() {
+                match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
                     Estimate::Success(tx, fee) => return Ok((tx, fee)),
                     Estimate::Failure(required_fee) => curr_fee = required_fee,
                 }
@@ -182,8 +183,8 @@ impl Signer {
         // need to try one more time after the loop
         let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-        if policy_amount_delta >= curr_fee as i64 {
-            match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta as u64)? {
+        if policy_amount_delta >= curr_fee.cast_signed() {
+            match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
                 Estimate::Success(tx, fee) => return Ok((tx, fee)),
                 Estimate::Failure(required_fee) => curr_fee = required_fee,
             }
@@ -199,23 +200,25 @@ impl Signer {
     ) -> Result<(Transaction, u64), SignerError> {
         let policy_amount_delta = tx.calculate_fee_delta(&self.network);
 
-        if policy_amount_delta < MIN_FEE as i64 {
+        if policy_amount_delta < MIN_FEE.cast_signed() {
             return Err(SignerError::DustAmount(policy_amount_delta));
         }
 
         let fee_rate = self.provider.fetch_fee_rate(target_blocks)?;
 
         // policy_amount_delta will be > 0
-        match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta as u64)? {
+        match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
             Estimate::Success(tx, fee) => Ok((tx, fee)),
             Estimate::Failure(required_fee) => Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee)),
         }
     }
 
+    #[must_use]
     pub fn get_provider(&self) -> &dyn ProviderTrait {
         self.provider.as_ref()
     }
 
+    #[must_use]
     pub fn get_confidential_address(&self) -> Address {
         let mut descriptor =
             ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor().unwrap())
@@ -232,6 +235,7 @@ impl Signer {
             .unwrap()
     }
 
+    #[must_use]
     pub fn get_address(&self) -> Address {
         let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
             .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
@@ -285,6 +289,7 @@ impl Signer {
         Ok(all_utxos)
     }
 
+    #[must_use]
     pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
         let private_key = self.get_private_key();
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
@@ -292,14 +297,17 @@ impl Signer {
         keypair.x_only_public_key().0
     }
 
+    #[must_use]
     pub fn get_ecdsa_public_key(&self) -> PublicKey {
         self.get_private_key().public_key(&self.secp)
     }
 
+    #[must_use]
     pub fn get_blinding_public_key(&self) -> PublicKey {
         self.get_blinding_private_key().public_key(&self.secp)
     }
 
+    #[must_use]
     pub fn get_private_key(&self) -> PrivateKey {
         let master_xprv = self.master_xpriv().unwrap();
         let full_path = self.get_derivation_path().unwrap();
@@ -315,6 +323,7 @@ impl Signer {
         PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
     }
 
+    #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
         let blinding_key = self
             .master_slip77()
@@ -458,7 +467,9 @@ impl Signer {
         let signature = self.sign_program(pst, program, index, &self.network)?;
 
         // inject the signature into the wtns name directly if the path is not provided
-        let sig_val = if !sig_path.is_empty() {
+        let sig_val = if sig_path.is_empty() {
+            Value::byte_array(signature.serialize())
+        } else {
             let witness_types = program.get_witness_types()?;
             let witness_type = witness_types
                 .get(&WitnessName::from_str_unchecked(witness_name))
@@ -477,8 +488,6 @@ impl Signer {
                 sig_path,
                 Value::byte_array(signature.serialize()),
             )?
-        } else {
-            Value::byte_array(signature.serialize())
         };
 
         let mut hm = HashMap::new();
@@ -492,6 +501,7 @@ impl Signer {
         Ok(WitnessValues::from(hm))
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
         let seed = self.mnemonic.to_seed("");
 

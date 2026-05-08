@@ -38,6 +38,7 @@ pub trait ProviderTrait {
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 
+    #[allow(clippy::cast_possible_truncation)]
     fn fetch_fee_rate(&self, target_blocks: u32) -> Result<f32, ProviderError> {
         let estimates = self.fetch_fee_estimates()?;
         let target_str = target_blocks.to_string();

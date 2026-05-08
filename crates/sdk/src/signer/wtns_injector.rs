@@ -52,12 +52,13 @@ impl WtnsInjector {
         let mut current_val = Arc::clone(witness);
         let mut current_ty = witness_types;
 
-        for route in parsed_path.iter() {
+        for route in &parsed_path {
             if !matches!(
                 (route, current_ty.as_inner()),
-                (WtnsPathRoute::Enumerable(_), TypeInner::Array(_, _))
-                    | (WtnsPathRoute::Enumerable(_), TypeInner::Tuple(_))
-                    | (WtnsPathRoute::Either(_), TypeInner::Either(_, _))
+                (
+                    WtnsPathRoute::Enumerable(_),
+                    TypeInner::Array(_, _) | TypeInner::Tuple(_)
+                ) | (WtnsPathRoute::Either(_), TypeInner::Either(_, _))
             ) {
                 return Err(WtnsWrappingError::UnsupportedPathType(current_ty.to_string()));
             }
@@ -71,12 +72,12 @@ impl WtnsInjector {
                         (EitherRoute::Left, false) => {
                             stack.push(StackItem::Either(direction, Arc::clone(right_ty)));
                             current_ty = left_ty;
-                            current_val = Arc::clone(either_val.as_ref().unwrap_left())
+                            current_val = Arc::clone(either_val.as_ref().unwrap_left());
                         }
                         (EitherRoute::Right, true) => {
                             stack.push(StackItem::Either(direction, Arc::clone(left_ty)));
                             current_ty = right_ty;
-                            current_val = Arc::clone(either_val.as_ref().unwrap_right())
+                            current_val = Arc::clone(either_val.as_ref().unwrap_right());
                         }
                         _ => return Err(WtnsWrappingError::EitherBranchMismatch),
                     }
@@ -189,7 +190,7 @@ impl TryInto<EitherRoute> for WtnsPathRoute {
     fn try_into(self) -> Result<EitherRoute, Self::Error> {
         match self {
             Self::Either(direction) => Ok(direction),
-            _ => Err(self),
+            Self::Enumerable(_) => Err(self),
         }
     }
 }
@@ -200,7 +201,7 @@ impl TryInto<EnumerableRoute> for WtnsPathRoute {
     fn try_into(self) -> Result<EnumerableRoute, Self::Error> {
         match self {
             Self::Enumerable(tuple) => Ok(tuple),
-            _ => Err(self),
+            Self::Either(_) => Err(self),
         }
     }
 }
