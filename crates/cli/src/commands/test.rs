@@ -79,6 +79,7 @@ impl Test {
 
         test_bin_args.push("--".into());
 
+        // TODO: custom filters may run non-simplex tests due to cargo limitations. Figure out how to fix this
         if !args.filters.is_empty() {
             test_bin_args.extend(args.filters.iter().cloned());
         } else {
