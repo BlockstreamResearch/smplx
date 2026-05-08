@@ -1,12 +1,7 @@
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/assets/img/simplex_logo.jpg"
-)]
-#![doc(
-    html_favicon_url = "https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/assets/img/simplex_logo.ico"
-)]
-#![doc(html_root_url = "https://docs.rs/smplx-std/latest/simplex/")]
+#![doc(html_logo_url = "https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/docs/simplex_logo.png")]
+#![doc(html_root_url = "https://docs.rs/smplx-sdk/latest/simplex/")]
 #![cfg_attr(doc, doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR" ), "/", "README.md")))]
-#![cfg_attr(not(doc), doc = "Simplex standard library")]
+#![cfg_attr(not(doc), doc = "Simplex SDK")]
 #![warn(clippy::all, clippy::pedantic, missing_docs)]
 
 /// Common constants and identifiers used across the Simplex SDK.

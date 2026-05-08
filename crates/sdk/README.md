@@ -1,31 +1,22 @@
 # smplx-sdk
 
-The `smplx-sdk` crate provides a comprehensive set of tools in Rust to interact with Simplicity smart contracts on
-Liquid networks.
-It simplifies building, signing, and broadcasting transactions, as well as interacting with Simplicity programs.
+The `smplx-sdk` crate is a standalone set of modules of a larger [Smplx](https://github.com/BlockstreamResearch/smplx) framework that can be used separately to interact with Simplicity smart contracts. 
+
+It also streamlines building, signing, and broadcasting transactions on Liquid.
 
 ## Features
 
-- **Signer**: Securely parse BIP39 mnemonics, manage keys, sign transactions, and derive Blinding/Confidential and
-  unconfidential addresses.
-- **Providers**: Easily connect to existing Element nodes via RPC or Esplora APIs to query UTXOs and broadcast
-  transactions.
-- **Transaction Toolkit**: High-level builder abstractions over `FinalTransaction`, `TxReceipt`, `UTXO`, `PartialInput`,
-  and `PartialOutput`.
-- **Simplicity Programs**: Effortlessly load, deploy, and interact with your compiled Simplicity (`.simf`) smart
-  contracts with Rust.
--
+- `signer` - Securely parse BIP39 mnemonics, manage keys, sign transactions, and work with confidential addresses.
+- `provider` - Connect to existing Elements nodes via RPC or Esplora APIs to query UTXOs and broadcast transactions.
+- `transaction` - High-level builder abstractions over `FinalTransaction`, `TxReceipt`, `UTXO`, `PartialInput`, and `PartialOutput`.
+- `program` - Load and interact with Simplicity (`.simf`) smart contracts.
+
+The `smplx-sdk` can be used as a standalone SDK, however, check out [Smplx](https://github.com/BlockstreamResearch/smplx) for a complete Simplicity development experience.
 
 ## Quick Start
 
-Read [simplex/README.md](../../README.md).
+Read [simplex/README.md](https://github.com/BlockstreamResearch/smplx/blob/master/README.md).
 
-# Supported platforms
+## Disclaimer
 
-Simplex currently guarantees support for the following platforms:
-
-* Linux x86-64
-* Darwin arm64
-
-Simplex will continue to support these platforms in the future. However,
-future releases may expand further support for different kinds of platforms.
+Secure DeFi. On Bitcoin.
