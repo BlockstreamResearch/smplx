@@ -10,6 +10,7 @@ use super::RegtestConfig;
 use super::error::RegtestError;
 use crate::args::{get_electrs_bin_args, get_elementsd_bin_args};
 
+/// Client for managing background `elementsd` and `electrs` nodes for Regtest environments.
 pub struct RegtestClient {
     pub electrs: ElectrsD,
     pub elements: BitcoinD,
@@ -17,6 +18,11 @@ pub struct RegtestClient {
 }
 
 impl RegtestClient {
+    /// Creates a new `RegtestClient` by starting local instances of `elementsd` and `electrs`.
+    ///
+    /// # Panics
+    /// Panics if binding to a local ZMQ port fails, or if starting the node executables fails.
+    #[must_use]
     pub fn new(config: &RegtestConfig) -> Self {
         let (electrs_path, elementsd_path) = Self::default_bin_paths();
         let zmq_addr = Self::get_zmq_addr();
@@ -30,6 +36,8 @@ impl RegtestClient {
         }
     }
 
+    /// Returns the default binary paths for `electrs` and `elementsd`.
+    #[must_use]
     pub fn default_bin_paths() -> (PathBuf, PathBuf) {
         const ELECTRS_BIN_PATH: &str = "electrs";
         const ELEMENTSD_BIN_PATH: &str = "elementsd";
@@ -40,6 +48,7 @@ impl RegtestClient {
         )
     }
 
+    /// Returns the configured or default RPC URL for the `elementsd` node.
     pub fn rpc_url(&self) -> String {
         if let Some(port) = self.config.rpc_port {
             return format!("http://127.0.0.1:{port}");
@@ -48,17 +57,25 @@ impl RegtestClient {
         self.elements.rpc_url()
     }
 
+    /// Returns the configured or default Esplora REST API URL for the `electrs` instance.
+    ///
+    /// # Panics
+    /// Panics if an automatically assigned URL cannot be properly parsed.
     pub fn esplora_url(&self) -> String {
         if let Some(port) = self.config.esplora_port {
             return format!("http://127.0.0.1:{port}");
         }
 
         let url = self.electrs.esplora_url.clone().unwrap();
-        let port = url.split_once(":").unwrap().1;
+        let port = url.split_once(':').unwrap().1;
 
-        format!("http://127.0.0.1:{}", port)
+        format!("http://127.0.0.1:{port}")
     }
 
+    /// Returns the RPC authentication credentials.
+    ///
+    /// # Panics
+    /// Panics if no explicit credentials are provided and reading the generated cookie file fails.
     pub fn auth(&self) -> Auth {
         if let (Some(user), Some(password)) = (&self.config.rpc_user, &self.config.rpc_password) {
             return Auth::UserPass(user.clone(), password.clone());
@@ -69,6 +86,12 @@ impl RegtestClient {
         Auth::UserPass(cookie.user, cookie.password)
     }
 
+    /// Terminates the running processes associated with this client.
+    ///
+    /// Note that killing the `electrs` process will typically stop the associated `elementsd` node automatically.
+    ///
+    /// # Errors
+    /// Returns a `RegtestError` if terminating the `electrs` daemon fails.
     pub fn kill(&mut self) -> Result<(), RegtestError> {
         // electrs stops elements automatically
         self.electrs.kill().map_err(|_| RegtestError::ElectrsTermination())?;
@@ -94,7 +117,7 @@ impl RegtestClient {
         bin_args.push(format!("-zmqpubhashblock=tcp://{zmq_addr}"));
         bin_args.push(format!("-zmqpubsequence=tcp://{zmq_addr}"));
 
-        conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
+        conf.args = bin_args.iter().map(std::convert::AsRef::as_ref).collect::<Vec<&str>>();
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
 
@@ -112,7 +135,7 @@ impl RegtestClient {
 
         bin_args.push(format!("--zmq-addr={zmq_addr}"));
 
-        conf.args = bin_args.iter().map(|x| x.as_ref()).collect::<Vec<&str>>();
+        conf.args = bin_args.iter().map(std::convert::AsRef::as_ref).collect::<Vec<&str>>();
         conf.http_enabled = config.esplora_port.is_none();
         conf.network = "liquidregtest";
 

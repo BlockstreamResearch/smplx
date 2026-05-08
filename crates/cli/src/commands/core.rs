@@ -25,6 +25,7 @@ pub enum Command {
     Clean,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestArguments {
     /// Space-separated test name filters
@@ -35,6 +36,7 @@ pub struct TestArguments {
     pub target: Option<String>,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
     /// Show output from successful tests

@@ -13,8 +13,18 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    pub fn from_config(config: RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
-        let client = RegtestClient::new(&config);
+    /// Initialises a Regtest environment and returns a configured client and funded signer.
+    ///
+    /// This method establishes a connection to the backend, sets up the provider,
+    /// and prepares the `Signer` by generating initial blocks and sweeping funds based on the configuration.
+    ///
+    /// # Errors
+    /// Returns a `RegtestError` if node initialisation, block generation, or RPC calls fail.
+    ///
+    /// # Panics
+    /// Panics if the background indexer (`electrs`) fails to index the unspent outputs within the timeout window (10 seconds).
+    pub fn from_config(config: &RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+        let client = RegtestClient::new(config);
 
         let provider = Box::new(SimplexProvider::new(
             client.esplora_url(),
@@ -51,9 +61,7 @@ impl Regtest {
 
             attempts += 1;
 
-            if attempts > 100 {
-                panic!("Electrs failed to index the sweep after 10 seconds");
-            }
+            assert!(attempts <= 100, "Electrs failed to index the sweep after 10 seconds");
 
             std::thread::sleep(Duration::from_millis(100));
         }

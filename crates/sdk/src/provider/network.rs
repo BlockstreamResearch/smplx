@@ -5,6 +5,7 @@ use simplicityhl::simplicity::hashes::{Hash, sha256};
 
 use crate::constants::{LIQUID_DEFAULT_REGTEST_ASSET_STR, LIQUID_POLICY_ASSET_STR, LIQUID_TESTNET_POLICY_ASSET_STR};
 
+/// The default Bitcoin `AssetId` used on Liquid testnet.
 pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> = std::sync::LazyLock::new(|| {
     elements::AssetId::from_inner(sha256::Midstate([
         0x49, 0x9a, 0x81, 0x85, 0x45, 0xf6, 0xba, 0xe3, 0x9f, 0xc0, 0x3b, 0x63, 0x7f, 0x2a, 0x4e, 0x1e, 0x64, 0xe5,
@@ -12,6 +13,7 @@ pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> 
     ]))
 });
 
+/// The genesis block hash for Liquid mainnet.
 pub static LIQUID_MAINNET_GENESIS: std::sync::LazyLock<elements::BlockHash> = std::sync::LazyLock::new(|| {
     elements::BlockHash::from_byte_array([
         0x03, 0x60, 0x20, 0x8a, 0x88, 0x96, 0x92, 0x37, 0x2c, 0x8d, 0x68, 0xb0, 0x84, 0xa6, 0x2e, 0xfd, 0xf6, 0x0e,
@@ -19,6 +21,7 @@ pub static LIQUID_MAINNET_GENESIS: std::sync::LazyLock<elements::BlockHash> = st
     ])
 });
 
+/// The genesis block hash for Liquid testnet.
 pub static LIQUID_TESTNET_GENESIS: std::sync::LazyLock<elements::BlockHash> = std::sync::LazyLock::new(|| {
     elements::BlockHash::from_byte_array([
         0xc1, 0xb1, 0x6a, 0xe2, 0x4f, 0x24, 0x23, 0xae, 0xa2, 0xea, 0x34, 0x55, 0x22, 0x92, 0x79, 0x3b, 0x5b, 0x5e,
@@ -26,6 +29,7 @@ pub static LIQUID_TESTNET_GENESIS: std::sync::LazyLock<elements::BlockHash> = st
     ])
 });
 
+/// The genesis block hash for Elements regtest environments.
 pub static LIQUID_REGTEST_GENESIS: std::sync::LazyLock<elements::BlockHash> = std::sync::LazyLock::new(|| {
     elements::BlockHash::from_byte_array([
         0x21, 0xca, 0xb1, 0xe5, 0xda, 0x47, 0x18, 0xea, 0x14, 0x0d, 0x97, 0x16, 0x93, 0x17, 0x02, 0x42, 0x2f, 0x0e,
@@ -33,19 +37,36 @@ pub static LIQUID_REGTEST_GENESIS: std::sync::LazyLock<elements::BlockHash> = st
     ])
 });
 
+/// Represents the target network configuration for Simplicity interactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimplicityNetwork {
+    /// Liquid mainnet.
     Liquid,
+    /// Liquid testnet.
     LiquidTestnet,
-    ElementsRegtest { policy_asset: elements::AssetId },
+    /// Local Elements Regtest environment.
+    ElementsRegtest {
+        /// Regtest mode `AssetId`, which is used as a default policy asset locally.
+        policy_asset: elements::AssetId,
+    },
 }
 
 impl SimplicityNetwork {
+    /// Creates a default Elements Regtest configuration.
+    ///
+    /// # Panics
+    /// This function will panic if the provided `LIQUID_DEFAULT_REGTEST_ASSET_STR` cannot be parsed.
+    #[must_use]
     pub fn default_regtest() -> Self {
         let policy_asset = elements::AssetId::from_str(LIQUID_DEFAULT_REGTEST_ASSET_STR).unwrap();
         Self::ElementsRegtest { policy_asset }
     }
 
+    /// Returns the policy `AssetId` associated with the current network.
+    ///
+    /// # Panics
+    /// This function will panic if the provided `LIQUID_DEFAULT_REGTEST_ASSET_STR` cannot be parsed.
+    #[must_use]
     pub fn policy_asset(&self) -> elements::AssetId {
         match self {
             Self::Liquid => elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).unwrap(),
@@ -54,6 +75,8 @@ impl SimplicityNetwork {
         }
     }
 
+    /// Returns the genesis block hash for the network variant.
+    #[must_use]
     pub fn genesis_block_hash(&self) -> elements::BlockHash {
         match self {
             Self::Liquid => *LIQUID_MAINNET_GENESIS,
@@ -62,10 +85,14 @@ impl SimplicityNetwork {
         }
     }
 
+    /// Determines if the current network is the mainnet (Liquid).
+    #[must_use]
     pub fn is_mainnet(&self) -> bool {
         self == &Self::Liquid
     }
 
+    /// Returns the address parameters associated with the current enum variant.
+    #[must_use]
     pub const fn address_params(&self) -> &'static elements::AddressParams {
         match self {
             Self::Liquid => &elements::AddressParams::LIQUID,
