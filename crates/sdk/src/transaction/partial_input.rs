@@ -12,7 +12,7 @@ use super::UTXO;
 pub enum RequiredSignature {
     /// No signature is required.
     None,
-    /// A standard Native ECDSA signature is required.
+    /// A standard Native ECDSA (WPKH) signature is required.
     NativeEcdsa,
     /// A generic witness payload associated with an external name.
     Witness(String),

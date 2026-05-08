@@ -1,13 +1,13 @@
 use simplicityhl::elements::{AssetId, OutPoint, TxOut, TxOutSecrets};
 
-/// Represents an Unspent Transaction Output (UTXO), with additional information from `simplex`.
+/// Represents an Unspent Transaction Output (UTXO).
 #[derive(Debug, Clone)]
 pub struct UTXO {
     /// Bounded outpoint for this object
     pub outpoint: OutPoint,
     /// Transaction output characteristics
     pub txout: TxOut,
-    /// Transaction output secrets for correct unblinding
+    /// Already unblinded transaction output secrets
     pub secrets: Option<TxOutSecrets>,
 }
 

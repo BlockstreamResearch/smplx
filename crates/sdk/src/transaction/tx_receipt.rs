@@ -5,7 +5,7 @@ use simplicityhl::elements::Txid;
 
 use crate::provider::{ProviderError, ProviderTrait};
 
-/// A receipt for a broadcasted transaction, containing the provider context and the transaction ID.
+/// A receipt for a broadcast transaction, containing the provider context and the transaction ID.
 #[derive(Clone, Copy)]
 pub struct TxReceipt<'a> {
     provider: &'a dyn ProviderTrait,

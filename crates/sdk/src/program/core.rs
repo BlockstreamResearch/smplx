@@ -81,7 +81,7 @@ pub trait ProgramTrait: DynClone {
 
 /// Represents a program structure containing its source, a public key, arguments, and associated storage.
 ///
-/// Abstraction gives the power for executing programs on simplicity without specifying any additional parameters.
+/// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
 #[derive(Clone)]
 pub struct Program {
     source: &'static str,

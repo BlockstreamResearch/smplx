@@ -18,32 +18,26 @@ use super::partial_output::PartialOutput;
 pub const WITNESS_SCALE_FACTOR: usize = 4;
 
 /// A structure representing the details of token issuance and related metadata.
-///
-/// This structure stores information related to the issuance of new tokens,
-/// the inflation mechanism for burning redundant tokens, and the entropy
-/// used to generate the associated `AssetId`s. It is designed to handle
-/// both the issuance and reissuance (burning) processes in a secure and reliable fashion.
 #[derive(Debug, Clone)]
 pub struct IssuanceDetails {
     /// The unique `AssetId` generated from the provided entropy, representing the issued tokens struct.
     pub asset_id: AssetId,
-    /// The `AssetId` corresponding to the reissuance (inflation) token, used for managing and burning excessive or redundant tokens.
+    /// The `AssetId` corresponding to the reissuance (inflation) token, used for minting new tokens.
     pub inflation_asset_id: AssetId,
     /// The entropy value (`sha256::Midstate`) that was used to derive both the `asset_id` and `inflation_asset_id`.
     pub asset_entropy: sha256::Midstate,
 }
 
-/// Represents the final input structure required for processing, containing all necessary parts
-/// to perform specific operations. This struct consolidates various inputs into one cohesive entity.
+/// Represents the final input structure put into a `FinalTransaction` for processing.
 #[derive(Clone)]
 pub struct FinalInput {
     /// Holds the base input data required for the operation.
     pub partial_input: PartialInput,
-    /// Hold program inputs, which is used for program building
+    /// Holds program inputs, which are used for program witness finalisation.
     pub program_input: Option<ProgramInput>,
     /// Contains optional issuance-related information.
     pub issuance_input: Option<IssuanceInput>,
-    /// Required signature for finalising transaction
+    /// Required signature for finalising the transaction.
     pub required_sig: RequiredSignature,
 }
 
@@ -107,7 +101,7 @@ impl FinalInput {
         }
     }
 
-    /// Converts the current object into an `Input` representation, incorporating any
+    /// Converts the current object into an `Input` representation, including any
     /// issuance input and partial input details.
     ///
     /// # Panics
@@ -144,8 +138,7 @@ impl FinalInput {
     }
 }
 
-/// A struct representing a finalised transaction. This transaction includes finalised inputs
-/// and partially completed outputs that may require further processing or validation.
+/// A struct representing a final (but not yet signed) transaction.
 #[derive(Clone)]
 pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
@@ -153,7 +146,7 @@ pub struct FinalTransaction {
 }
 
 impl FinalTransaction {
-    /// Creates a new instance of the struct with default values.
+    /// Creates a new instance of the final transaction with default values.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -179,11 +172,11 @@ impl FinalTransaction {
         self.push_new_input(FinalInput::new(partial_input, required_sig));
     }
 
-    /// Adds a new program input to the data structure.
+    /// Adds a new program input to the transaction.
     ///
     /// # Panics
     /// The function will panic if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`,
-    /// as this type of signature is not supported for program inputs.
+    /// as this type of signature is not applicable for program inputs.
     pub fn add_program_input(
         &mut self,
         partial_input: PartialInput,
@@ -197,7 +190,7 @@ impl FinalTransaction {
         self.push_new_input(FinalInput::new(partial_input, required_sig).with_program(program_input));
     }
 
-    /// Adds an issuance input to the current transaction input list.
+    /// Adds an issuance (or reissuance) input to the transaction.
     ///
     /// # Panics
     /// This function panics if the `required_sig` is of type `Witness` or
@@ -219,7 +212,7 @@ impl FinalTransaction {
             .unwrap()
     }
 
-    /// Adds an issuance input to the program with the specified parameters.
+    /// Adds an issuance program input to the transaction with the specified parameters.
     ///
     /// # Panics
     /// Panics if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`.
@@ -374,7 +367,7 @@ impl FinalTransaction {
     /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.
     ///
     /// # Panics
-    /// Function will panic if pst input is confidential.
+    /// Function will panic if the pst input is a confidential issuance.
     #[must_use]
     pub fn extract_pst(&self) -> (PartiallySignedTransaction, HashMap<usize, TxOutSecrets>) {
         let mut input_secrets = HashMap::new();

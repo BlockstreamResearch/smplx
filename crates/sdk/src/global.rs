@@ -18,7 +18,7 @@ impl Default for GlobalConfig {
 
 static GLOBAL_CONFIG: OnceLock<GlobalConfig> = OnceLock::new();
 
-/// Sets the global configuration for the application.
+/// Sets the global configuration for the SDK.
 ///
 /// This function allows setting a global configuration which includes
 /// the logging level for `simplicity` contracts execution.

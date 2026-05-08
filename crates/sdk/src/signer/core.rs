@@ -222,6 +222,7 @@ impl Signer {
     }
 
     /// Verifies and finalises a transaction against a strict target confirmation window (in blocks).
+    /// This function also assumes that the transaction already includes the coin selection.
     ///
     /// # Errors
     /// Returns a `SignerError` if the assembled inputs do not meet dust limits or fail to cover the
@@ -316,7 +317,7 @@ impl Signer {
     }
 
     /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
-    /// Separate filtering criteria apply natively vs confidentially.
+    /// Separate filtering criteria apply explicitly vs confidentially.
     ///
     /// # Errors
     /// Returns a `SignerError` if retrieving remote outputs or executing confidential node unblinding throws an error.
@@ -391,7 +392,7 @@ impl Signer {
 
     /// Generates the private key linked to confidential payload blinding.
     ///
-    /// The generated `PrivateKey` is associated with the `Test` network kind.
+    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin-mainnet) network kind.
     /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
     ///
     /// # Panics
