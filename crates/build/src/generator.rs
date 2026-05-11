@@ -183,8 +183,8 @@ impl ArtifactsGenerator {
                 }
 
                 #[must_use]
-                pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
-                    self.program = self.program.with_pub_key(pub_key);
+                pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
+                    self.program = self.program.with_taproot_pubkey(pub_key);
 
                     self
                 }
