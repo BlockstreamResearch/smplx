@@ -25,7 +25,7 @@ use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 ///
 /// This trait defines a core behaviour related to testing and execution.
 /// Drastically simplifies the usage of `simplicity` programs by generating
-///  an implementation with `include_simf!()` macro.
+/// an implementation with `include_simf!()` macro.
 pub trait ProgramTrait: DynClone {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
@@ -204,8 +204,9 @@ impl Program {
     }
 
     /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
+    /// This is used to set the taproot public key for the program.
     #[must_use]
-    pub fn with_pub_key(mut self, pub_key: XOnlyPublicKey) -> Self {
+    pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
         self.pub_key = pub_key;
 
         self
