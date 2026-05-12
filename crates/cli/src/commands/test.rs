@@ -2,10 +2,14 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use smplx_sdk::global::Verbosity;
-use smplx_test::{SMPLX_TEST_MARKER, TestConfig};
+use smplx_test::TestConfig;
 
 use super::core::{TestArguments, TestFlags};
 use super::error::CommandError;
+
+// TODO: it's impossible to insert "_smplx_test" constant value in concat macro, remove or reuse constant
+/// Nextest dsl variable to filter and use only simplex tests
+const SMPLX_DSL_TEST_MARKER: &str = concat!("test(/", "_smplx_test", "$/)");
 
 pub struct Test {}
 
@@ -54,9 +58,10 @@ impl Test {
         flags: &TestFlags,
     ) -> std::process::Command {
         let mut cargo_test_command = std::process::Command::new("cargo");
-        cargo_test_command.arg("test");
+        cargo_test_command.arg("nextest");
+        cargo_test_command.arg("run");
 
-        cargo_test_command.args(Self::build_cargo_test_args(args, flags));
+        cargo_test_command.args(Self::build_cargo_nextest_args(args, flags));
         cargo_test_command.args(Self::build_test_bin_args(args, flags));
 
         cargo_test_command
@@ -68,55 +73,57 @@ impl Test {
         cargo_test_command
     }
 
-    fn build_cargo_test_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
+    fn build_cargo_nextest_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
         let mut cargo_test_args = Vec::new();
 
-        if let Some(target) = &args.target {
-            cargo_test_args.push("--test".into());
-            cargo_test_args.push(target.clone());
+        if args.filters.is_empty() {
+            cargo_test_args.push("--filterset".into());
+
+            if let Some(target) = &args.target {
+                cargo_test_args.push(format!("binary({target}) and {SMPLX_DSL_TEST_MARKER}"));
+            } else {
+                cargo_test_args.push(SMPLX_DSL_TEST_MARKER.into());
+            }
+        } else {
+            cargo_test_args.extend(args.filters.iter().cloned());
         }
 
         if flags.no_fail_fast {
             cargo_test_args.push("--no-fail-fast".into());
         }
+        if flags.nocapture {
+            cargo_test_args.push("--nocapture".into());
+        }
+        if flags.quiet {
+            cargo_test_args.push("--cargo-quiet".into());
+        }
+        if flags.verbose != 0 {
+            cargo_test_args.push("--verbose".into());
+            cargo_test_args.push("--cargo-verbose".into());
+        }
 
         cargo_test_args
     }
 
-    fn build_test_bin_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
+    fn build_test_bin_args(_args: &TestArguments, flags: &TestFlags) -> Vec<String> {
         let mut test_bin_args = Vec::new();
 
-        test_bin_args.push("--".into());
-
-        // TODO: custom filters may run non-simplex tests due to cargo limitations. Figure out how to fix this
-        if args.filters.is_empty() {
-            test_bin_args.push(SMPLX_TEST_MARKER.to_string());
-        } else {
-            test_bin_args.extend(args.filters.iter().cloned());
-        }
-
         test_bin_args.extend(Self::build_test_bin_flags(flags));
+        if !test_bin_args.is_empty() {
+            test_bin_args.insert(0, "--".into());
+        }
 
         test_bin_args
     }
 
     fn build_test_bin_flags(flags: &TestFlags) -> Vec<String> {
-        let mut test_bin_args = Vec::new();
+        let mut test_bin_flags = Vec::new();
 
-        if flags.nocapture {
-            test_bin_args.push("--nocapture".into());
-        }
-        if flags.show_output {
-            test_bin_args.push("--show-output".into());
-        }
         if flags.ignored {
-            test_bin_args.push("--ignored".into());
-        }
-        if flags.quiet {
-            test_bin_args.push("--quiet".into());
+            test_bin_flags.push("--ignored".into());
         }
 
-        test_bin_args
+        test_bin_flags
     }
 
     fn get_test_config_cache_name() -> Result<PathBuf, CommandError> {
