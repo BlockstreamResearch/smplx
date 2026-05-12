@@ -164,7 +164,7 @@ impl Signer {
     /// Evaluates, funds, and broadcasts an already assembled `FinalTransaction`.
     ///
     /// # Errors
-    /// Returns a `SignerError` if finalising the payload fails or if the network rejects the broadcast.
+    /// Returns a `SignerError` if finalizing the payload fails or if the network rejects the broadcast.
     pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
         let (tx, _fee) = self.finalize(tx)?;
 
@@ -221,7 +221,7 @@ impl Signer {
         Err(SignerError::NotEnoughFunds(curr_fee))
     }
 
-    /// Verifies and finalises a transaction against a strict target confirmation window (in blocks).
+    /// Verifies and finalizes a transaction against a strict target confirmation window (in blocks).
     /// This function also assumes that the transaction already includes the coin selection.
     ///
     /// # Errors

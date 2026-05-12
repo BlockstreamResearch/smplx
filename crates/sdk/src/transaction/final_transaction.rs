@@ -33,11 +33,11 @@ pub struct IssuanceDetails {
 pub struct FinalInput {
     /// Holds the base input data required for the operation.
     pub partial_input: PartialInput,
-    /// Holds program inputs, which are used for program witness finalisation.
+    /// Holds program inputs, which are used for program witness finalization.
     pub program_input: Option<ProgramInput>,
     /// Contains optional issuance-related information.
     pub issuance_input: Option<IssuanceInput>,
-    /// Required signature for finalising the transaction.
+    /// Required signature for finalizing the transaction.
     pub required_sig: RequiredSignature,
 }
 

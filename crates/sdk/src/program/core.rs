@@ -23,9 +23,7 @@ use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
 
 /// Executes `simplicity` programs at runtime.
 ///
-/// This trait defines a core behaviour related to testing and execution.
-/// Drastically simplifies the usage of `simplicity` programs by generating
-/// an implementation with `include_simf!()` macro.
+/// This trait defines a core behavior related to testing and execution.
 pub trait ProgramTrait: DynClone {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
@@ -66,7 +64,7 @@ pub trait ProgramTrait: DynClone {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError>;
 
-    /// Finalises and returns `pruned_witness` as output after executing the program on certain parameters.
+    /// Finalizes and returns `pruned_witness` as output after executing the program on certain parameters.
     ///
     /// # Errors
     /// Returns a `ProgramError` if program execution or constructing the control block fails.

@@ -1,8 +1,8 @@
-/// Represents a fully finalised target transaction schema ready for signing and broadcasting.
+/// Represents a fully finalized target transaction schema ready for signing and broadcasting.
 pub mod final_transaction;
-/// Represents inputs under construction before transaction finalisation.
+/// Represents inputs under construction before transaction finalization.
 pub mod partial_input;
-/// Represents outputs under construction before transaction finalisation.
+/// Represents outputs under construction before transaction finalization.
 pub mod partial_output;
 /// Contains data representing the submission status of a broadcast transaction.
 pub mod tx_receipt;
