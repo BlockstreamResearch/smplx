@@ -4,6 +4,7 @@ set -eo pipefail
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
 SIMPLEXUP_INSTALLER_VERSION="0.0.4"
+NEXTEST_VERSION="0.9.133"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -62,6 +63,9 @@ main() {
   # Install by downloading binaries
   LATEST_TAG=$(latest_tag)
   SIMPLEX_VERSION=${SIMPLEX_VERSION:-$LATEST_TAG}
+
+  # Install default version of nextest for simplex
+  install_nextest_version "$NEXTEST_VERSION"
 
   # Check if the requested version exists
   if [[ "${SIMPLEX_VERSION}" != "${LATEST_TAG}" ]]; then
@@ -599,6 +603,26 @@ install_simplex_from_commit() {
 
   say "Removing temporary directory..."
   rm -rf "${tmp_dir}"
+}
+
+install_nextest_version() {
+  local nextest_version=$1
+
+  # Check if cargo-nextest is already installed and matches the required version
+  say "Installing cargo-nextest version..."
+  if check_cmd cargo-nextest --no-pager; then
+    local current_version
+    current_version=$(cargo nextest show-config version --no-pager | head -n 1 | awk '{print $4}')
+
+    if [[ "$current_version" == "$nextest_version" ]]; then
+      say "cargo-nextest $nextest_version is already installed, skipping installation."
+      return 0
+    fi
+  fi
+
+  say "Installing cargo-nextest version $nextest_version..."
+  ensure cargo install cargo-nextest --version "$nextest_version" --locked --force
+  return 0
 }
 
 # Form a comma separated list with 'and' for user experience
