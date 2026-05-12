@@ -1201,9 +1201,9 @@ dependencies = [
 
 [[package]]
 name = "simplicityhl"
-version = "0.5.0-rc.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8fb4ae422c730ec6e274c1438013ce6d7b41b97152e2dec63735e8daad1f1c4"
+checksum = "25de8990174fe3e1a843df138cacc4265d05839ebd2550c18b9196f567d55e81"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
@@ -1219,7 +1219,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-build"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "glob",
  "globwalk",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "electrsd",
  "hex",
@@ -1259,7 +1259,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "either",
  "serde",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "electrsd",
  "proc-macro2",
