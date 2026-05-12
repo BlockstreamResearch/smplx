@@ -6,6 +6,10 @@
 
 - Added some documentation to the public simplex functions.
 - Implemented "global configuration" singleton in the SDK.
+- Added `TxReceipt` object that gets returned upon transaction broadcasting for blocks confirmation convenience.
+- Fixed `FinalTransaction` issuance inputs that didn't work correctly with inflation tokens.
+- Renamed `with_pub_key` program method to `with_taproot_pubkey`.
+- Added `asset` and `amount` methods to the `UTXO` struct.
 - Refactored `simplex test` command:
   - Added compatibility for custom test name filters.
   - Added `--target` flag that isolates tests to a specific integration test module.
@@ -16,7 +20,6 @@
   - The `mine_until_height` function is provided.
 - Added a `-v` flag to `simplex test` that logs simplicity pruning traces.
 - Fixed `rustfmt` warning on generated artifacts. Now they are skipped.
-- Renamed `with_pub_key` program method to `with_taproot_pubkey`.
 - Added fixtures for simplex integration tests.
 
 ### Simplexup
