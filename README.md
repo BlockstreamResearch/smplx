@@ -41,7 +41,7 @@ cargo add --dev smplx-std
 Optionally, initialize a new project:
 
 ```bash
-simplex init <NAME>
+simplex init <name>
 ```
 
 ## Usage

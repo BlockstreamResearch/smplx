@@ -36,9 +36,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<TxReceipt<'_>> {
 
     let (p2pk, p2pk_script) = get_p2pk(context);
 
-    let mut p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script)?;
-
-    p2pk_utxos.retain(|utxo| utxo.explicit_asset() == context.get_network().policy_asset());
+    let p2pk_utxos = provider.fetch_scripthash_utxos(&p2pk_script)?;
 
     let mut ft = FinalTransaction::new();
 

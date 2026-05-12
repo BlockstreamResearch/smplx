@@ -13,13 +13,13 @@ use super::error::RegtestError;
 pub struct Regtest {}
 
 impl Regtest {
-    /// Initialises a Regtest environment and returns a configured client and funded signer.
+    /// Initializes a Regtest environment and returns a configured client and funded signer.
     ///
     /// This method establishes a connection to the backend, sets up the provider,
     /// and prepares the `Signer` by generating initial blocks and sweeping funds based on the configuration.
     ///
     /// # Errors
-    /// Returns a `RegtestError` if node initialisation, block generation, or RPC calls fail.
+    /// Returns a `RegtestError` if node initialization, block generation, or RPC calls fail.
     ///
     /// # Panics
     /// Panics if the background indexer (`electrs`) fails to index the unspent outputs within the timeout window (10 seconds).

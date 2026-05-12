@@ -25,7 +25,7 @@ impl SimplexProvider {
     /// Creates a new `SimplexProvider` with the given URLs, authentication, and network.
     ///
     /// # Panics
-    /// Panics if the `ElementsRpc` client fails to initialise.
+    /// Panics if the `ElementsRpc` client fails to initialize.
     #[must_use]
     pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
         Self {

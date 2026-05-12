@@ -9,7 +9,7 @@ pub const SIMPLEX_CRATE_NAME: &str = "smplx-std";
 pub struct Init;
 
 impl Init {
-    /// Initialises a new Simplex project at the specified configuration path.
+    /// Initializes a new Simplex project at the specified configuration path.
     ///
     /// This method generates the necessary project files and directories (including
     /// `Cargo.toml`, source files, test templates, and configuration files) in place.

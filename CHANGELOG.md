@@ -1,8 +1,26 @@
 # Changelog
 
-## [Unreleased]
+## [0.0.5]
 
+### Simplex
+
+- Renamed `with_pub_key` program function to `with_taproot_pubkey`.
+- Added some documentation to the public functions.
+- Refactored `simplex test` command:
+  - Added compatibility for custom test name filters.
+  - Added `--target` flag that isolates the build to a specific integration test module.
+  - Added `--no-fail-fast` flag to allow tests to keep running even if one fails.
+  - Added `--quiet` flag to suppress some simplex logging.
+- Refactored `simplex new` command to set up a new project by accepting its name.  
+- Added `NetworkUtils` to `TestContext` for some "network cheatcodes":
+  - The `mine_until_height` function is provided.
+- Added a `-v` flag to `simplex test` that logs simplicity pruning traces.
+- Fixed `rustfmt` warning on generated artifacts. Now they are skipped.
 - Added fixtures for simplex integration tests.
+
+### Simplexup
+
+- Added ability to fetch specific simplex commits.
 
 ## [0.0.4]
 

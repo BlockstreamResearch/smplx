@@ -25,7 +25,7 @@ static GLOBAL_CONFIG: OnceLock<GlobalConfig> = OnceLock::new();
 /// It must be called exactly once during the application's lifetime.
 ///
 /// # Errors
-/// Returns an error containing the newly created `GlobalConfig` if the global configuration has already been initialised.
+/// Returns an error containing the newly created `GlobalConfig` if the global configuration has already been initialized.
 pub fn set_global_config(log_level: TrackerLogLevel) -> Result<(), GlobalConfig> {
     GLOBAL_CONFIG.set(GlobalConfig { log_level })
 }
