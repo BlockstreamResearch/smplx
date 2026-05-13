@@ -20,6 +20,8 @@ pub enum Command {
         #[command(flatten)]
         additional_flags: TestFlags,
     },
+    /// Install the simplicity dependency
+    Install,
     /// Generates the simplicity contracts artifacts
     Build,
     /// Clean Simplex artifacts in the current directory

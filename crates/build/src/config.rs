@@ -40,6 +40,9 @@ impl Default for BuildConfig {
     }
 }
 
+/// It will be located inside the `src_dir`
+pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
+
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 pub struct DependencyConfig {

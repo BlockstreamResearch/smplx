@@ -5,7 +5,7 @@
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 
-# [dependencies
+# [dependencies]
 # checksig = { git = "temp/checksig" }
 # checksig = { path = "../checksig" }
 

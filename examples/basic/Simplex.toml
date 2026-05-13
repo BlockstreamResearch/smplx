@@ -7,9 +7,10 @@ simf_files = ["p2pk.simf", "nested_sig.simf", "single_lib.simf"]
 # out_dir = "./src/artifacts"
 
 [dependencies]
-#std = { git = "BlockstreamResearch/simf-std@v0.0.1", path = "lib/simf-std/contracts" } 
-crypto = { path = "./simf/libs/crypto/simf/" }
-#sig = { path = "./libs/checksig/" }
+#std = { git = "BlockstreamResearch/simf-std@v0.0.1", path = "lib/simf-std/contracts" }
+#sig = { path = "./libs/checksig/" } 
+rust_simf = { git = "https://github.com/BlockstreamResearch/rust-simplicity" }
+test_crate = { git = "https://github.com/LesterEvSe/test-simplex-crate" }
 
 # STD
 # [dependencies]

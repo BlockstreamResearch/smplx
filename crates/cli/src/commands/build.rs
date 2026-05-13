@@ -7,12 +7,12 @@ use super::error::CommandError;
 pub struct Build {}
 
 impl Build {
-    pub fn run(config: BuildConfig, deps: &DependencyConfig) -> Result<(), CommandError> {
+    pub fn run(config: BuildConfig, deps: DependencyConfig) -> Result<(), CommandError> {
         let output_dir = ArtifactsResolver::resolve_local_dir(&config.out_dir)?;
         let src_dir = ArtifactsResolver::resolve_local_dir(&config.src_dir)?;
 
         // NOTE: Assume that remappings already install
-        let files_remapping = ArtifactsResolver::resolve_remappings(deps, CONFIG_FILENAME)?;
+        let files_remapping = ArtifactsResolver::resolve_remappings(&deps, CONFIG_FILENAME)?;
 
         dbg!(files_remapping.clone());
 
