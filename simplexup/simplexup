@@ -610,9 +610,9 @@ install_nextest_version() {
 
   # Check if cargo-nextest is already installed and matches the required version
   say "Installing cargo-nextest version..."
-  if check_cmd cargo-nextest --no-pager; then
+  if check_cmd cargo-nextest nextest; then
     local current_version
-    current_version=$(cargo nextest show-config version --no-pager | head -n 1 | awk '{print $4}')
+    current_version=$(cargo nextest show-config version | head -n 1 | awk '{print $4}')
 
     if [[ "$current_version" == "$nextest_version" ]]; then
       say "cargo-nextest $nextest_version is already installed, skipping installation."
