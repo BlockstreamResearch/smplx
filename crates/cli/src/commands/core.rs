@@ -51,9 +51,9 @@ pub struct TestFlags {
     /// Run tests regardless of failure
     #[arg(long = "no-fail-fast")]
     pub no_fail_fast: bool,
-    /// Log simplicity pruning stack trace
-    #[arg(short = 'v', long)]
-    pub verbose: bool,
+    /// Verbosity level for test output (-v for debug, -vv for trace)
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
     /// Display one character per test instead of one line
     #[arg(short = 'q', long)]
     pub quiet: bool,

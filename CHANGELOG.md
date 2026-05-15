@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Rewrote verbosity configuration in both `simplex test` and SDK to check if debug symbols should be included in program compilation.
+
 ## [0.0.5]
 
 ### Simplex

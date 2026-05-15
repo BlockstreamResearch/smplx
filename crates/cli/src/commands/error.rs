@@ -22,6 +22,9 @@ pub enum CommandError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Verbosity level should be either -v or -vv, got: -v x {0}")]
+    BadVersbosityMode(u8),
 }
 
 #[derive(thiserror::Error, Debug)]

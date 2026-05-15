@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use smplx_test::config::Verbosity;
+use smplx_sdk::global::Verbosity;
 use smplx_test::{SMPLX_TEST_MARKER, TestConfig};
 
 use super::core::{TestArguments, TestFlags};
@@ -20,9 +20,11 @@ impl Test {
     pub fn run(mut config: TestConfig, args: &TestArguments, flags: &TestFlags) -> Result<(), CommandError> {
         let cache_path = Self::get_test_config_cache_name()?;
 
-        if flags.verbose {
-            config.verbosity = Some(Verbosity(4));
+        if flags.verbose > Verbosity::MAX_VERBOSITY_LEVEL {
+            return Err(CommandError::BadVersbosityMode(flags.verbose));
         }
+
+        config.verbosity = std::cmp::max(config.verbosity, Verbosity::new(flags.verbose));
 
         config.to_file(&cache_path)?;
 

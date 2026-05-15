@@ -13,7 +13,7 @@ use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::DefaultTracker;
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
-use crate::global::get_log_level;
+use crate::global::{get_include_debug_symbols, get_log_level};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -301,8 +301,13 @@ impl Program {
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
-        let compiled = CompiledProgram::new(self.source, self.arguments.build_arguments(), true)
-            .map_err(ProgramError::Compilation)?;
+        let compiled = CompiledProgram::new(
+            self.source,
+            self.arguments.build_arguments(),
+            get_include_debug_symbols(),
+        )
+        .map_err(ProgramError::Compilation)?;
+
         Ok(compiled)
     }
 

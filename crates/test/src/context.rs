@@ -30,13 +30,7 @@ impl TestContext {
         let config = TestConfig::from_file(&config_path)?;
 
         // error is ignored because we assume that all tests use the same verbosity
-        let _ = set_global_config(
-            config
-                .verbosity
-                .expect("This will be set")
-                .try_into()
-                .expect("Validated in CLI"),
-        );
+        let _ = set_global_config(config.verbosity);
 
         let (signer, provider_info, client) = Self::setup(&config)?;
 
