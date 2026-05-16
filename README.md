@@ -67,7 +67,7 @@ rpc_password = "password"
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 bitcoins = 10_000_000
-verbosity = 3 # 1 - none, 2 - warning, 3 - debug, 4 - trace
+verbosity = 0 # 0 - none, 1 - debug, 2 - trace
 
 [test.esplora]
 url = "<esplora url>"

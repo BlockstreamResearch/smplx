@@ -16,7 +16,7 @@
 # [test]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 # bitcoins = 10_000_000
-# verbosity = 3
+# verbosity = 0
 
 # [test.esplora]
 # url = "<esplora url>"
