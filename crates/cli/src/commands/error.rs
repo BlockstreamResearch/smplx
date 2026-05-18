@@ -20,6 +20,9 @@ pub enum CommandError {
     #[error(transparent)]
     Clean(#[from] CleanError),
 
+    #[error(transparent)]
+    NextestVersionCheck(#[from] NextestVersionCheckError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -64,4 +67,24 @@ pub enum CleanError {
 
     #[error("Failed to remove file '{1}': {0}")]
     RemoveFile(std::io::Error, PathBuf),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum NextestVersionCheckError {
+    #[error("Nextest is not installed. Please run `simplexup` to install.")]
+    NextestNotInstalled,
+
+    #[error("Failed to parse nextest version string '{0}': {1}")]
+    NextestVersionParseError(String, semver::Error),
+
+    #[error("Failed to parse the required version bound '{0}': {1}")]
+    NextestVersionReqParseError(String, semver::Error),
+
+    #[error(
+        "Your nextest version {current_version} does not meet the requirement: {required_bound}. Please run `simplexup` to install."
+    )]
+    UnsupportedNextestVersion {
+        current_version: String,
+        required_bound: String,
+    },
 }

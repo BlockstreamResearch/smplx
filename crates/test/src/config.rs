@@ -14,6 +14,7 @@ use super::error::TestError;
 pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
 pub const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
 pub const DEFAULT_BITCOINS: u64 = 10_000_000;
+const DEFAULT_NEXTEST_SEMVER_REQUIREMENT: &str = "=0.9.133";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -23,6 +24,9 @@ pub struct TestConfig {
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
     pub verbosity: Verbosity,
+    #[doc(hidden)]
+    #[serde(skip, default = "get_default_nextest_semver_requirement")]
+    pub nextest_semver_requirement: String,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -81,6 +85,12 @@ impl Default for TestConfig {
             esplora: None,
             rpc: None,
             verbosity: Verbosity::None,
+            nextest_semver_requirement: get_default_nextest_semver_requirement(),
         }
     }
+}
+
+#[inline]
+fn get_default_nextest_semver_requirement() -> String {
+    DEFAULT_NEXTEST_SEMVER_REQUIREMENT.into()
 }
