@@ -3,7 +3,14 @@ use syn::parse::Parser;
 
 use crate::TEST_ENV_NAME;
 
-pub const SMPLX_TEST_MARKER: &str = "_smplx_test";
+#[macro_export]
+macro_rules! smplx_test_marker {
+    () => {
+        "_smplx_test"
+    };
+}
+
+pub const SMPLX_TEST_MARKER: &str = smplx_test_marker!();
 
 type AttributeArgs = syn::punctuated::Punctuated<syn::Meta, syn::Token![,]>;
 

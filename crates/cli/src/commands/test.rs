@@ -2,14 +2,13 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use smplx_sdk::global::Verbosity;
-use smplx_test::TestConfig;
+use smplx_test::{TestConfig, smplx_test_marker};
 
 use super::core::{TestArguments, TestFlags};
 use super::error::CommandError;
 
-// TODO: it's impossible to insert "_smplx_test" constant value in concat macro, remove or reuse constant
 /// Nextest dsl variable to filter and use only simplex tests
-const SMPLX_DSL_TEST_MARKER: &str = concat!("test(/", "_smplx_test", "$/)");
+const SMPLX_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
 
 pub struct Test {}
 
@@ -57,7 +56,7 @@ impl Test {
         args: &TestArguments,
         flags: &TestFlags,
     ) -> std::process::Command {
-        let mut cargo_test_command = std::process::Command::new("cargo");
+        let mut cargo_test_command = std::process::Command::new("smplx-nextest");
         cargo_test_command.arg("nextest");
         cargo_test_command.arg("run");
 
@@ -100,6 +99,11 @@ impl Test {
         if flags.verbose != 0 {
             cargo_test_args.push("--verbose".into());
             cargo_test_args.push("--cargo-verbose".into());
+
+            // `-vvv` verbosity level
+            if flags.verbose == Verbosity::MAX_VERBOSITY_LEVEL {
+                cargo_test_args.push("--cargo-verbose".into());
+            }
         }
 
         cargo_test_args

@@ -26,7 +26,7 @@ pub enum Verbosity {
 
 impl Verbosity {
     /// The maximum allowed verbosity level.
-    pub const MAX_VERBOSITY_LEVEL: u8 = 2;
+    pub const MAX_VERBOSITY_LEVEL: u8 = 3;
 
     /// Creates a `Verbosity` instance from the number of verbosity flags provided (e.g., -v, -vv).
     #[must_use]
