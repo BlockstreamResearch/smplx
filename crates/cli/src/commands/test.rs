@@ -8,7 +8,7 @@ use super::core::{TestArguments, TestFlags};
 use super::error::CommandError;
 
 /// Nextest dsl variable to filter and use only simplex tests
-const SMPLX_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
+const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
 
 pub struct Test {}
 
@@ -31,9 +31,9 @@ impl Test {
 
         config.to_file(&cache_path)?;
 
-        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, args, flags);
+        let mut cargo_nextest_command = Self::build_cargo_nextest_command(&cache_path, args, flags);
 
-        let output = cargo_test_command.output()?;
+        let output = cargo_nextest_command.output()?;
 
         match output.status.code() {
             Some(code) => {
@@ -51,62 +51,62 @@ impl Test {
         Ok(())
     }
 
-    fn build_cargo_test_command(
+    fn build_cargo_nextest_command(
         cache_path: &PathBuf,
         args: &TestArguments,
         flags: &TestFlags,
     ) -> std::process::Command {
-        let mut cargo_test_command = std::process::Command::new("smplx-nextest");
-        cargo_test_command.arg("nextest");
-        cargo_test_command.arg("run");
+        let mut cargo_nextest_command = std::process::Command::new("smplx-nextest");
+        cargo_nextest_command.arg("nextest");
+        cargo_nextest_command.arg("run");
 
-        cargo_test_command.args(Self::build_cargo_nextest_args(args, flags));
-        cargo_test_command.args(Self::build_test_bin_args(args, flags));
+        cargo_nextest_command.args(Self::build_cargo_nextest_args(args, flags));
+        cargo_nextest_command.args(Self::build_test_bin_args(args, flags));
 
-        cargo_test_command
+        cargo_nextest_command
             .env(smplx_test::TEST_ENV_NAME, cache_path)
             .stdin(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit());
 
-        cargo_test_command
+        cargo_nextest_command
     }
 
     fn build_cargo_nextest_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
-        let mut cargo_test_args = Vec::new();
+        let mut cargo_nextest_args = Vec::new();
 
         if args.filters.is_empty() {
-            cargo_test_args.push("--filterset".into());
+            cargo_nextest_args.push("--filterset".into());
 
             if let Some(target) = &args.target {
-                cargo_test_args.push(format!("binary({target}) and {SMPLX_DSL_TEST_MARKER}"));
+                cargo_nextest_args.push(format!("binary({target}) and {SMPLX_NEXTEST_DSL_TEST_MARKER}"));
             } else {
-                cargo_test_args.push(SMPLX_DSL_TEST_MARKER.into());
+                cargo_nextest_args.push(SMPLX_NEXTEST_DSL_TEST_MARKER.into());
             }
         } else {
-            cargo_test_args.extend(args.filters.iter().cloned());
+            cargo_nextest_args.extend(args.filters.iter().cloned());
         }
 
         if flags.no_fail_fast {
-            cargo_test_args.push("--no-fail-fast".into());
+            cargo_nextest_args.push("--no-fail-fast".into());
         }
         if flags.nocapture {
-            cargo_test_args.push("--nocapture".into());
+            cargo_nextest_args.push("--nocapture".into());
         }
         if flags.quiet {
-            cargo_test_args.push("--cargo-quiet".into());
+            cargo_nextest_args.push("--cargo-quiet".into());
         }
         if flags.verbose != 0 {
-            cargo_test_args.push("--verbose".into());
-            cargo_test_args.push("--cargo-verbose".into());
+            cargo_nextest_args.push("--verbose".into());
+            cargo_nextest_args.push("--cargo-verbose".into());
 
             // `-vvv` verbosity level
             if flags.verbose == Verbosity::MAX_VERBOSITY_LEVEL {
-                cargo_test_args.push("--cargo-verbose".into());
+                cargo_nextest_args.push("--cargo-verbose".into());
             }
         }
 
-        cargo_test_args
+        cargo_nextest_args
     }
 
     fn build_test_bin_args(_args: &TestArguments, flags: &TestFlags) -> Vec<String> {
