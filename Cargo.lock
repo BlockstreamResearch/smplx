@@ -1319,7 +1319,6 @@ dependencies = [
  "ctrlc",
  "dotenvy",
  "minreq",
- "semver",
  "serde",
  "serde_json",
  "smplx-build",
