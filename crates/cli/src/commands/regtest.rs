@@ -1,7 +1,8 @@
-use smplx_regtest::Regtest as RegtestRunner;
-use smplx_regtest::RegtestConfig;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use smplx_regtest::Regtest as RegtestRunner;
+use smplx_regtest::RegtestConfig;
 
 use crate::commands::error::CommandError;
 
