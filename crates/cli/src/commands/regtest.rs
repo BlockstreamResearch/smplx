@@ -22,8 +22,11 @@ impl Regtest {
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();
 
+        let main_thread = std::thread::current();
+
         ctrlc::set_handler(move || {
             r.store(false, Ordering::SeqCst);
+            main_thread.unpark();
         })
         .expect("Error setting Ctrl-C handler");
 
@@ -39,7 +42,9 @@ impl Regtest {
         println!("Signer: {:?}", signer.get_address());
         println!("======================================");
 
-        while running.load(Ordering::SeqCst) {}
+        while running.load(Ordering::SeqCst) {
+            std::thread::park();
+        }
 
         Ok(client.kill()?)
     }
