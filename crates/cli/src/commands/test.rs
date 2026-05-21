@@ -61,7 +61,7 @@ impl Test {
         cargo_nextest_command.arg("run");
 
         cargo_nextest_command.args(Self::build_cargo_nextest_args(args, flags));
-        cargo_nextest_command.args(Self::build_test_bin_args(args, flags));
+        cargo_nextest_command.args(Self::build_test_bin_flags(flags));
 
         cargo_nextest_command
             .env(smplx_test::TEST_ENV_NAME, cache_path)
@@ -120,25 +120,18 @@ impl Test {
         cargo_nextest_flags
     }
 
-    fn build_test_bin_args(_args: &TestArguments, flags: &TestFlags) -> Vec<String> {
+    fn build_test_bin_flags(flags: &TestFlags) -> Vec<String> {
         let mut test_bin_args = Vec::new();
 
-        test_bin_args.extend(Self::build_test_bin_flags(flags));
+        if flags.ignored {
+            test_bin_args.push("--ignored".into());
+        }
+
         if !test_bin_args.is_empty() {
             test_bin_args.insert(0, "--".into());
         }
 
         test_bin_args
-    }
-
-    fn build_test_bin_flags(flags: &TestFlags) -> Vec<String> {
-        let mut test_bin_flags = Vec::new();
-
-        if flags.ignored {
-            test_bin_flags.push("--ignored".into());
-        }
-
-        test_bin_flags
     }
 
     fn get_test_config_cache_name() -> Result<PathBuf, CommandError> {
