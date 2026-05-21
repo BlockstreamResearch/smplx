@@ -87,26 +87,37 @@ impl Test {
             cargo_nextest_args.extend(args.filters.iter().cloned());
         }
 
+        cargo_nextest_args.extend(Self::build_cargo_nextest_flags(flags));
+
+        cargo_nextest_args
+    }
+
+    fn build_cargo_nextest_flags(flags: &TestFlags) -> Vec<String> {
+        let mut cargo_nextest_flags = Vec::new();
+
         if flags.no_fail_fast {
-            cargo_nextest_args.push("--no-fail-fast".into());
+            cargo_nextest_flags.push("--no-fail-fast".into());
         }
+
         if flags.nocapture {
-            cargo_nextest_args.push("--nocapture".into());
+            cargo_nextest_flags.push("--nocapture".into());
         }
+
         if flags.quiet {
-            cargo_nextest_args.push("--cargo-quiet".into());
+            cargo_nextest_flags.push("--cargo-quiet".into());
         }
+
         if flags.verbose != 0 {
-            cargo_nextest_args.push("--verbose".into());
-            cargo_nextest_args.push("--cargo-verbose".into());
+            cargo_nextest_flags.push("--verbose".into());
+            cargo_nextest_flags.push("--cargo-verbose".into());
 
             // `-vvv` verbosity level
             if flags.verbose == Verbosity::MAX_VERBOSITY_LEVEL {
-                cargo_nextest_args.push("--cargo-verbose".into());
+                cargo_nextest_flags.push("--cargo-verbose".into());
             }
         }
 
-        cargo_nextest_args
+        cargo_nextest_flags
     }
 
     fn build_test_bin_args(_args: &TestArguments, flags: &TestFlags) -> Vec<String> {
