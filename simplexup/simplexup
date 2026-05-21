@@ -621,7 +621,7 @@ install_nextest_binary() {
 
   if check_cmd "${smplx_nextest_bin_full_path}" nextest; then
     local current_version
-    current_version=$(${SMPLX_NEXTEST_NAME} nextest show-config version | head -n 1 | awk '{print $4}')
+    current_version=$(${SMPLX_NEXTEST_NAME} --version | head -n 1 | awk '{print $2}')
 
     if [[ "$current_version" == "$nextest_version" ]]; then
       say "${SMPLX_NEXTEST_NAME} $nextest_version is already installed, skipping installation."
