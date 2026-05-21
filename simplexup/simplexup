@@ -618,6 +618,7 @@ install_nextest_binary() {
   # Check if smplx-nextest is already installed and matches the required version
   say "Checking ${SMPLX_NEXTEST_NAME} version..."
   local smplx_nextest_bin_full_path="${install_dir}/${SMPLX_NEXTEST_NAME}"
+
   if check_cmd "${smplx_nextest_bin_full_path}" nextest; then
     local current_version
     current_version=$(${SMPLX_NEXTEST_NAME} nextest show-config version | head -n 1 | awk '{print $4}')
@@ -628,10 +629,10 @@ install_nextest_binary() {
     fi
   fi
 
-
   say "Installing ${SMPLX_NEXTEST_NAME} version ${nextest_version} into ${install_dir}..."
   ensure cargo binstall cargo-nextest@"${nextest_version}" --only-signed --install-path "${install_dir}" --no-track --force --min-tls-version 1.3 -y
   mv "${install_dir}/cargo-nextest" "${smplx_nextest_bin_full_path}"
+
   return 0
 }
 
@@ -647,6 +648,7 @@ install_binstall_version() {
 
   say "Installing cargo-binstall version $binstall_version..."
   ensure cargo install cargo-binstall --version "$binstall_version" --locked --force
+
   return 0
 }
 
