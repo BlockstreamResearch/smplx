@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::iter;
 use std::sync::Arc;
 
@@ -10,10 +11,12 @@ use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
-use simplicityhl::tracker::DefaultTracker;
+use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
-use crate::global::{get_include_debug_symbols, get_log_level};
+use crate::global::{
+    CostInfo, buffer_cost_log, buffer_trace_log, clear_logs, get_include_debug_symbols, get_log_level, is_verbose,
+};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -156,11 +159,36 @@ impl ProgramTrait for Program {
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
-        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(get_log_level());
+        clear_logs();
+
+        // execute() is called multiple times during fee estimation; output is buffered
+        // so only the final successful execution's logs are emitted to stderr.
+        let mut tracker = if is_verbose() {
+            apply_buffered_log_level(DefaultTracker::new(satisfied.debug_symbols()), get_log_level())
+        } else {
+            DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::None)
+        };
 
         let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
+
+        if is_verbose() {
+            let bounds = pruned.bounds();
+            // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed
+            let mw: u32 = unsafe { std::mem::transmute(bounds.cost) };
+            let encoded = pruned.to_vec_with_witness();
+            let (program_size, witness_size) = (encoded.0.len(), encoded.1.len());
+            let cmr_bytes = pruned.cmr().to_byte_array();
+
+            buffer_cost_log(CostInfo {
+                cmr: std::array::from_fn(|i| cmr_bytes[i]),
+                cost: mw / 1000,
+                program_size,
+                witness_size,
+            });
+        }
+
         let mut mac = BitMachine::for_program(&pruned)?;
 
         let result = mac.exec(&pruned, &env)?;
@@ -186,6 +214,50 @@ impl ProgramTrait for Program {
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
         ])
+    }
+}
+
+/// Mirrors logic of `tracker::with_log_level()` for custom sink
+fn apply_buffered_log_level(tracker: DefaultTracker<'_>, log_level: TrackerLogLevel) -> DefaultTracker<'_> {
+    let tracker = if log_level >= TrackerLogLevel::Debug {
+        tracker.with_debug_sink(|label, value| {
+            buffer_trace_log(format!("  DBG: {label} = {value}"));
+        })
+    } else {
+        tracker
+    };
+
+    let tracker = if log_level >= TrackerLogLevel::Warning {
+        tracker.with_warning_sink(|msg| {
+            buffer_trace_log(format!("  WARN: {msg}"));
+        })
+    } else {
+        tracker
+    };
+
+    if log_level >= TrackerLogLevel::Trace {
+        tracker.with_jet_trace_sink(|jet, args, result| {
+            let mut msg = format!("  {jet:?}(");
+            if let Some(args) = args {
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        msg.push_str(", ");
+                    }
+                    let _ = write!(msg, "{arg}");
+                }
+            } else {
+                msg.push_str("...");
+            }
+            match result {
+                Some(value) => {
+                    let _ = write!(msg, ") = {value}");
+                }
+                None => msg.push_str(") -> [failed]"),
+            }
+            buffer_trace_log(msg);
+        })
+    } else {
+        tracker
     }
 }
 

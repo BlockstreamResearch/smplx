@@ -29,6 +29,7 @@ use elements_miniscript::{
 };
 
 use crate::constants::MIN_FEE;
+use crate::global::flush_logs;
 use crate::program::ProgramTrait;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
@@ -200,7 +201,10 @@ impl Signer {
 
             if policy_amount_delta >= curr_fee.cast_signed() {
                 match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                    Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                    Estimate::Success(tx, fee) => {
+                        flush_logs();
+                        return Ok((tx, fee));
+                    }
                     Estimate::Failure(required_fee) => curr_fee = required_fee,
                 }
             }
@@ -213,7 +217,10 @@ impl Signer {
 
         if policy_amount_delta >= curr_fee.cast_signed() {
             match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                Estimate::Success(tx, fee) => {
+                    flush_logs();
+                    return Ok((tx, fee));
+                }
                 Estimate::Failure(required_fee) => curr_fee = required_fee,
             }
         }
