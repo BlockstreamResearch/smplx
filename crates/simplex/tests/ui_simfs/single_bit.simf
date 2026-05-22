@@ -1,0 +1,3 @@
+fn main() {
+    assert!(jet::eq_1(param::FLAG, witness::BIT));
+}
