@@ -164,13 +164,13 @@ impl RustType {
                 quote! { Value::from(#deref #value_expr) }
             }
             RustType::U1 => {
-                quote! { Value::from(UIntValue::u1(#deref #value_expr).expect(&format!("Failed to create U1 type, got: '{}', [value size in bits: '{}']", #value_expr.ilog2(), #value_expr))) }
+                quote! { Value::from(UIntValue::u1(#deref #value_expr).map_err(|_e| format!("Failed to create U1 type, got: '{}', [value size in bits: '{}']", #value_expr.checked_ilog2().unwrap_or_default(), #value_expr)).unwrap()) }
             }
             RustType::U2 => {
-                quote! { Value::from(UIntValue::u2(#deref #value_expr).expect(&format!("Failed to create U2 type, got: '{}', [value size in bits: '{}']", #value_expr.ilog2(), #value_expr))) }
+                quote! { Value::from(UIntValue::u2(#deref #value_expr).map_err(|_e| format!("Failed to create U2 type, got: '{}', [value size in bits: '{}']", #value_expr.checked_ilog2().unwrap_or_default(), #value_expr)).unwrap()) }
             }
             RustType::U4 => {
-                quote! { Value::from(UIntValue::u4(#deref #value_expr).expect(&format!("Failed to create U4 type, got: '{}', [value size in bits: '{}']", #value_expr.ilog2(), #value_expr))) }
+                quote! { Value::from(UIntValue::u4(#deref #value_expr).map_err(|_e| format!("Failed to create U4 type, got: '{}', [value size in bits: '{}']", #value_expr.checked_ilog2().unwrap_or_default(), #value_expr)).unwrap()) }
             }
             RustType::U8 => {
                 quote! { Value::from(UIntValue::U8(#deref #value_expr)) }
@@ -275,7 +275,7 @@ impl RustType {
                 quote! {
                     {
                         let elements = #value_expr.iter().map(|& #iter_tmp_var_name| #element_conversion).collect::<Vec<_>>();
-                        let non_zero_pow2_size = NonZeroPow2Usize::new(#size).expect(&format!("Failed to create non zero pow2 length, got size: '{}'", #size));
+                        let non_zero_pow2_size = NonZeroPow2Usize::new(#size).ok_or_else(|| format!("Failed to create non zero pow2 length, got size: '{}'", #size)).unwrap();
                         assert!(elements.len() < non_zero_pow2_size.get(), "There must be fewer list elements than the bound '{}'", non_zero_pow2_size.get());
                         Value::list(elements, #elem_ty_generation, non_zero_pow2_size)
                     }
@@ -338,7 +338,7 @@ impl RustType {
             }
             RustType::List(element, size) => {
                 let elem_ty = element.generate_simplicity_type_construction();
-                quote! { ResolvedType::list(#elem_ty, NonZeroPow2Usize::new(#size).expect(&format!("Failed to create non zero pow2 length, got size: '{}'", #size))) }
+                quote! { ResolvedType::list(#elem_ty, NonZeroPow2Usize::new(#size).ok_or_else(|| format!("Failed to create non zero pow2 length, got size: '{}'", #size)).unwrap()) }
             }
         }
     }
