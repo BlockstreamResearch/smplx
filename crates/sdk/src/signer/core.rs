@@ -29,8 +29,8 @@ use elements_miniscript::{
 };
 
 use crate::constants::MIN_FEE;
-use crate::global::flush_logs;
 use crate::program::ProgramTrait;
+use crate::program::logger::flush_logs;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;

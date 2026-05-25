@@ -14,9 +14,8 @@ use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
-use crate::global::{
-    CostInfo, buffer_cost_log, buffer_trace_log, clear_logs, get_include_debug_symbols, get_log_level, is_verbose,
-};
+use crate::global::{get_include_debug_symbols, get_log_level, is_max_verbose};
+use crate::program::logger::{CostInfo, buffer_cost_log, buffer_trace_log, clear_logs};
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -163,7 +162,7 @@ impl ProgramTrait for Program {
 
         // execute() is called multiple times during fee estimation; output is buffered
         // so only the final successful execution's logs are emitted to stderr.
-        let mut tracker = if is_verbose() {
+        let mut tracker = if is_max_verbose() {
             apply_buffered_log_level(DefaultTracker::new(satisfied.debug_symbols()), get_log_level())
         } else {
             DefaultTracker::new(satisfied.debug_symbols()).with_log_level(TrackerLogLevel::None)
@@ -173,7 +172,7 @@ impl ProgramTrait for Program {
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
 
-        if is_verbose() {
+        if is_max_verbose() {
             let bounds = pruned.bounds();
             // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed
             let mw: u32 = unsafe { std::mem::transmute(bounds.cost) };

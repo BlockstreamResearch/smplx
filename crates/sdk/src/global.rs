@@ -1,5 +1,4 @@
-use std::fmt::Write;
-use std::{cell::RefCell, sync::OnceLock};
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -87,90 +86,10 @@ pub fn get_include_debug_symbols() -> bool {
         })
 }
 
-/// Returns `true` if the log level corresponds to the `-vv` flag passed to `simplex test`.
+/// Returns `true` if the log level orresponds to [`Verbosity::MAX_VERBOSITY_LEVEL`]
 ///
-/// Equivalent to [`TrackerLogLevel::Trace`] being set as the global log level.
+/// Equivalent to the `-vv` flag passed to `simplex test`.
 #[must_use]
-pub fn is_verbose() -> bool {
-    get_log_level() >= TrackerLogLevel::Trace
-}
-
-/// Helper struct for gathering info from `node.bounds()`
-pub struct CostInfo {
-    /// truncated cmr
-    pub cmr: [u8; 8],
-    /// inner value of `Cost`
-    pub cost: u32,
-    /// program size in bytes
-    pub program_size: usize,
-    /// witness size in bytes
-    pub witness_size: usize,
-}
-
-/// Global logger state for buffering program execution output.
-///
-/// Buffers are flushed to stderr only on successful transaction finalization,
-/// discarding output from intermediate estimation passes.
-pub struct GlobalLogger {
-    /// Cost metrics from the most recent program execution.
-    pub cost_info: Option<CostInfo>,
-    /// Execution trace lines in insertion order.
-    pub trace_buffer: Vec<String>,
-}
-
-thread_local! {
-    static GLOBAL_LOGGER: RefCell<GlobalLogger> = const { RefCell::new(GlobalLogger { cost_info: None, trace_buffer: Vec::new() }) };
-
-}
-
-/// Buffers a cost log entry for the given program source.
-///
-/// Overwrites any previous entry for the same source, ensuring only
-/// the most recent execution's cost is reported.
-pub fn buffer_trace_log(tracker_logs: String) {
-    GLOBAL_LOGGER.with(|logger| logger.borrow_mut().trace_buffer.push(tracker_logs));
-}
-
-/// Buffers a line of execution trace output.
-pub fn buffer_cost_log(stats: CostInfo) {
-    GLOBAL_LOGGER.with(|logger| {
-        logger.borrow_mut().cost_info = Some(stats);
-    });
-}
-/// Flushes all buffered cost and trace output to stderr, then clears buffers.
-///
-/// Call this on successful transaction finalization.
-pub fn flush_logs() {
-    GLOBAL_LOGGER.with(|logger| {
-        let logger = logger.borrow();
-
-        if let Some(cost_info) = &logger.cost_info {
-            let cmr_hex: String = cost_info.cmr.iter().fold(String::new(), |mut output, b| {
-                let _ = write!(output, "{b:02x}");
-                output
-            });
-
-            eprintln!(
-                "Program info: cmr=[{}] cost={}wu  prog={}b  witness={}b",
-                cmr_hex, cost_info.cost, cost_info.program_size, cost_info.witness_size,
-            );
-        }
-
-        if !logger.trace_buffer.is_empty() {
-            eprintln!("── trace ──────────────────");
-            for msg in &logger.trace_buffer {
-                eprintln!("{msg}");
-            }
-        }
-    });
-
-    clear_logs();
-}
-
-/// Discards all buffered output without printing.
-pub fn clear_logs() {
-    GLOBAL_LOGGER.with(|logger| {
-        logger.borrow_mut().cost_info = None;
-        logger.borrow_mut().trace_buffer.clear();
-    });
+pub fn is_max_verbose() -> bool {
+    get_log_level() == Verbosity::new(Verbosity::MAX_VERBOSITY_LEVEL).tracker_log_level()
 }
