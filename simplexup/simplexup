@@ -5,7 +5,6 @@ set -eo pipefail
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
 SIMPLEXUP_INSTALLER_VERSION="0.0.5"
 NEXTEST_VERSION="0.9.133"
-BINSTALL_VERSION="1.19.1"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -17,7 +16,6 @@ SIMPLEXUP_IGNORE_VERIFICATION=false
 DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
 
 SMPLX_NEXTEST_NAME="smplx-nextest"
-CARGO_BINSTALL_NAME="cargo-binstall"
 SMPLX_BIN_NAME="simplex"
 DEP_BINS=(elementsd electrs)
 BINS=("${SMPLX_BIN_NAME}" "${SMPLX_NEXTEST_NAME}" "${DEP_BINS[@]}")
@@ -88,8 +86,6 @@ main() {
   version_dir="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_VERSION}"
   ensure mkdir -p "$version_dir"
 
-  # Install `cargo-binstall` for installing various binaries from the internet
-  install_binstall_version "$BINSTALL_VERSION"
   # Install default version of `nextest` for simplex
   install_nextest_binary "$NEXTEST_VERSION" "$version_dir"
 
@@ -631,29 +627,9 @@ install_nextest_binary() {
   fi
 
   say "Installing ${SMPLX_NEXTEST_NAME} version ${nextest_version} into ${install_dir}..."
-  ensure "${CARGO_BINSTALL_NAME}" cargo-nextest@"${nextest_version}" --only-signed --install-path "${install_dir}" --no-track --force --min-tls-version 1.3 -y
-  mv "${install_dir}/cargo-nextest" "${smplx_nextest_bin_full_path}"
-
-  return 0
-}
-
-install_binstall_version() {
-  local binstall_version=$1
-
-  # Check if cargo-binstall is already installed and matches the required version
-  say "Checking ${CARGO_BINSTALL_NAME} version..."
-  if check_cmd ${CARGO_BINSTALL_NAME}; then
-      local current_version
-      current_version=$(${CARGO_BINSTALL_NAME} -V | head -n 1 | awk '{print $1}')
-
-      if [[ "$current_version" == "$binstall_version" ]]; then
-        say "${CARGO_BINSTALL_NAME} ${binstall_version} is already installed, skipping installation."
-        return 0
-      fi
-  fi
-
-  say "Installing ${CARGO_BINSTALL_NAME} version $binstall_version..."
-  ensure cargo install "${CARGO_BINSTALL_NAME}" --version "$binstall_version" --locked --force
+  ensure cargo install cargo-nextest --version "${nextest_version}" --root "${install_dir}" --locked --force
+  ensure mv "${install_dir}/bin/cargo-nextest" "${smplx_nextest_bin_full_path}"
+  rm -rf "${install_dir}/bin"
 
   return 0
 }
