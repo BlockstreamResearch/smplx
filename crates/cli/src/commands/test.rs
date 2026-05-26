@@ -81,10 +81,16 @@ impl Test {
 
         cargo_nextest_args.push("--filterset".into());
 
-        if let Some(target) = &args.target {
-            cargo_nextest_args.push(format!("binary({target}) and {SMPLX_NEXTEST_DSL_TEST_MARKER}"));
+        let dsl_marker = if flags.no_simplex {
+            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER}")
         } else {
-            cargo_nextest_args.push(SMPLX_NEXTEST_DSL_TEST_MARKER.into());
+            SMPLX_NEXTEST_DSL_TEST_MARKER.into()
+        };
+
+        if let Some(target) = &args.target {
+            cargo_nextest_args.push(format!("binary({target}) and {dsl_marker}"));
+        } else {
+            cargo_nextest_args.push(dsl_marker);
         }
 
         cargo_nextest_args.extend(Self::build_cargo_nextest_flags(flags));
@@ -99,8 +105,8 @@ impl Test {
             cargo_nextest_flags.push("--no-fail-fast".into());
         }
 
-        if flags.nocapture {
-            cargo_nextest_flags.push("--nocapture".into());
+        if flags.no_capture {
+            cargo_nextest_flags.push("--no-capture".into());
         }
 
         if flags.quiet {

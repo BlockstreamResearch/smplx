@@ -40,8 +40,8 @@ pub struct TestArguments {
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
     /// Show output from successful tests
-    #[arg(long)]
-    pub nocapture: bool,
+    #[arg(long = "no-capture")]
+    pub no_capture: bool,
     /// Show grouped output after the test completion
     #[arg(long = "show-output")]
     pub show_output: bool,
@@ -57,4 +57,7 @@ pub struct TestFlags {
     /// Display one character per test instead of one line
     #[arg(short = 'q', long)]
     pub quiet: bool,
+    /// Run tests without including simplex ones
+    #[arg(long = "no-simplex")]
+    pub no_simplex: bool,
 }
