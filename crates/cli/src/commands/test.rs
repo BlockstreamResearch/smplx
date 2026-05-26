@@ -75,16 +75,16 @@ impl Test {
     fn build_cargo_nextest_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
         let mut cargo_nextest_args = Vec::new();
 
-        if args.filters.is_empty() {
-            cargo_nextest_args.push("--filterset".into());
-
-            if let Some(target) = &args.target {
-                cargo_nextest_args.push(format!("binary({target}) and {SMPLX_NEXTEST_DSL_TEST_MARKER}"));
-            } else {
-                cargo_nextest_args.push(SMPLX_NEXTEST_DSL_TEST_MARKER.into());
-            }
-        } else {
+        if !args.filters.is_empty() {
             cargo_nextest_args.extend(args.filters.iter().cloned());
+        }
+
+        cargo_nextest_args.push("--filterset".into());
+
+        if let Some(target) = &args.target {
+            cargo_nextest_args.push(format!("binary({target}) and {SMPLX_NEXTEST_DSL_TEST_MARKER}"));
+        } else {
+            cargo_nextest_args.push(SMPLX_NEXTEST_DSL_TEST_MARKER.into());
         }
 
         cargo_nextest_args.extend(Self::build_cargo_nextest_flags(flags));
