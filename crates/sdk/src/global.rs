@@ -12,6 +12,47 @@ pub struct GlobalConfig {
     verbosity: Verbosity,
 }
 
+impl GlobalConfig {
+    /// Sets the global configuration for the SDK.
+    ///
+    /// This function allows setting a global configuration which includes
+    /// the logging level for `simplicity` contracts execution.
+    /// It must be called exactly once during the application's lifetime.
+    ///
+    /// # Errors
+    /// Returns an error containing the newly created `GlobalConfig` if the global configuration has already been initialized.
+    pub fn set_global_config(verbosity: Verbosity) -> Result<(), GlobalConfig> {
+        GLOBAL_CONFIG.set(GlobalConfig { verbosity })
+    }
+
+    /// Returns the default log level if `GLOBAL_CONFIG` is not initialized
+    pub fn get_log_level() -> TrackerLogLevel {
+        GLOBAL_CONFIG
+            .get()
+            .map_or(GlobalConfig::default().verbosity.tracker_log_level(), |config| {
+                config.verbosity.tracker_log_level()
+            })
+    }
+
+    /// Returns whether the global configuration includes debug symbols,
+    /// defaulting to `false` if `GLOBAL_CONFIG` is not initialized.
+    pub fn get_include_debug_symbols() -> bool {
+        GLOBAL_CONFIG
+            .get()
+            .map_or(GlobalConfig::default().verbosity.include_debug_symbols(), |config| {
+                config.verbosity.include_debug_symbols()
+            })
+    }
+
+    /// Returns `true` if the log level corresponds to [`Verbosity::MAX_VERBOSITY_LEVEL`]
+    ///
+    /// Equivalent to the `-vv` flag passed to `simplex test`.
+    #[must_use]
+    pub fn is_max_verbose() -> bool {
+        Self::get_log_level() == Verbosity::new(Verbosity::MAX_VERBOSITY_LEVEL).tracker_log_level()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 /// An enumeration to represent the verbosity levels of the Simplicity execution logging.
 pub enum Verbosity {
@@ -53,43 +94,4 @@ impl Verbosity {
     pub fn include_debug_symbols(&self) -> bool {
         matches!(self, Verbosity::Debug | Verbosity::Trace)
     }
-}
-
-/// Sets the global configuration for the SDK.
-///
-/// This function allows setting a global configuration which includes
-/// the logging level for `simplicity` contracts execution.
-/// It must be called exactly once during the application's lifetime.
-///
-/// # Errors
-/// Returns an error containing the newly created `GlobalConfig` if the global configuration has already been initialized.
-pub fn set_global_config(verbosity: Verbosity) -> Result<(), GlobalConfig> {
-    GLOBAL_CONFIG.set(GlobalConfig { verbosity })
-}
-
-/// Returns the default log level if `GLOBAL_CONFIG` is not initialized
-pub fn get_log_level() -> TrackerLogLevel {
-    GLOBAL_CONFIG
-        .get()
-        .map_or(GlobalConfig::default().verbosity.tracker_log_level(), |config| {
-            config.verbosity.tracker_log_level()
-        })
-}
-
-/// Returns whether the global configuration includes debug symbols,
-/// defaulting to `false` if `GLOBAL_CONFIG` is not initialized.
-pub fn get_include_debug_symbols() -> bool {
-    GLOBAL_CONFIG
-        .get()
-        .map_or(GlobalConfig::default().verbosity.include_debug_symbols(), |config| {
-            config.verbosity.include_debug_symbols()
-        })
-}
-
-/// Returns `true` if the log level orresponds to [`Verbosity::MAX_VERBOSITY_LEVEL`]
-///
-/// Equivalent to the `-vv` flag passed to `simplex test`.
-#[must_use]
-pub fn is_max_verbose() -> bool {
-    get_log_level() == Verbosity::new(Verbosity::MAX_VERBOSITY_LEVEL).tracker_log_level()
 }
