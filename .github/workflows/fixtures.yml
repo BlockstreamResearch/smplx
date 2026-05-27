@@ -77,7 +77,7 @@ jobs:
       - name: Test
         run: |
           cd ${{ matrix.build-dir }}                     
-          simplex test --nocapture
+          simplex test --no-capture
 
   lint-checks:
     runs-on: ubuntu-latest
