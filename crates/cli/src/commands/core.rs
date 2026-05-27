@@ -57,7 +57,7 @@ pub struct TestFlags {
     /// Display one character per test instead of one line
     #[arg(short = 'q', long)]
     pub quiet: bool,
-    /// Run tests without including simplex ones
+    /// Run non-simplex tests (may be used for running unit tests)
     #[arg(long = "no-simplex")]
     pub no_simplex: bool,
 }
