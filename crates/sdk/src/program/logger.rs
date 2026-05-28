@@ -143,11 +143,13 @@ impl ProgramLogger {
             }
 
             if !logger.trace_buffer.is_empty() {
-                eprintln!("── trace ──────────────────");
+                eprintln!("───────────── trace ─────────────");
 
                 for msg in &logger.trace_buffer {
                     eprintln!("{msg}");
                 }
+
+                eprintln!();
             }
         });
 
