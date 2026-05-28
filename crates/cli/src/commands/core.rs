@@ -34,6 +34,9 @@ pub struct TestArguments {
     /// Integration test target to run
     #[arg(long = "target")]
     pub target: Option<String>,
+    /// Number of tests to run simultaneously
+    #[arg(long = "test-threads", default_value_t = 1)]
+    pub test_threads: usize,
 }
 
 #[allow(clippy::struct_excessive_bools)]
