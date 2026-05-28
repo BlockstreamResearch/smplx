@@ -33,7 +33,7 @@ Please note that this new module gets declared in the `lib.rs` file.
 Once the artifacts are generated, let's run Simplex test "basic_test" inside `basic_test.rs`:
 
 ```bash
-simplex test basic_test --no-capture
+simplex test basic_test -v
 ```
 
 You will see the test passing.
