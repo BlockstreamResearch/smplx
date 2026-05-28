@@ -39,9 +39,6 @@ pub struct TestArguments {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
-    /// Show output from successful tests
-    #[arg(long = "no-capture", alias = "nocapture")]
-    pub no_capture: bool,
     /// Show grouped output after the test completion
     #[arg(long = "show-output")]
     pub show_output: bool,

@@ -105,22 +105,13 @@ impl Test {
             cargo_nextest_flags.push("--no-fail-fast".into());
         }
 
-        if flags.no_capture {
-            cargo_nextest_flags.push("--no-capture".into());
-        }
-
         if flags.quiet {
             cargo_nextest_flags.push("--cargo-quiet".into());
         }
 
         if flags.verbose != 0 {
             cargo_nextest_flags.push("--verbose".into());
-            cargo_nextest_flags.push("--cargo-verbose".into());
-
-            // `-vvv` verbosity level
-            if flags.verbose == Verbosity::MAX_VERBOSITY_LEVEL {
-                cargo_nextest_flags.push("--cargo-verbose".into());
-            }
+            cargo_nextest_flags.push("--no-capture".into());
         }
 
         cargo_nextest_flags
