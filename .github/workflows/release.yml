@@ -33,6 +33,7 @@ jobs:
             attestation: linux-x86_64.attestation.txt
             elementsd_target: "x86_64-linux-gnu"
             electrs_target: "linux"
+            nextest_target: "x86_64-unknown-linux-gnu"
 
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -40,6 +41,7 @@ jobs:
             attestation: darwin-arm64.attestation.txt
             elementsd_target: "arm64-apple-darwin"
             electrs_target: "macos"
+            nextest_target: "universal-apple-darwin"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -65,21 +67,29 @@ jobs:
           cargo build --target $TARGET --profile $RUST_PROFILE --bins
           mv $OUT_DIR/${{ env.RUST_PROFILE }}/simplex simplex
 
-      - name: Download elementsd and electrs
+      - name: Download nextest, elementsd and electrs
         env:
+          NEXTEST_VERSION: "0.9.137"
           ELEMENTSD_VERSION: "23.3.1"
           ELEMENTSD_TARGET: ${{ matrix.elementsd_target }}
           ELECTRS_TARGET: ${{ matrix.electrs_target }}
+          NEXTEST_TARGET: ${{ matrix.nextest_target }}
         run: |
           ELEMENTSD_FILENAME="elements-${ELEMENTSD_VERSION}-${ELEMENTSD_TARGET}.tar.gz"
           ELECTRS_FILENAME="electrs_${ELECTRS_TARGET}_esplora_027e38d3ebc2f85b28ae76f8f3448438ee4fc7b1_liquid.zip"
-
+          NEXTEST_FILENAME="cargo-nextest-${NEXTEST_VERSION}-${NEXTEST_TARGET}.tar.gz"
+          
           curl -Ls "https://github.com/ElementsProject/elements/releases/download/elements-${ELEMENTSD_VERSION}/${ELEMENTSD_FILENAME}" -o ${ELEMENTSD_FILENAME}
           tar -xzf ${ELEMENTSD_FILENAME} && rm ${ELEMENTSD_FILENAME}
           mv elements-${ELEMENTSD_VERSION}/bin/elementsd elementsd
+          rm -rf elements-${ELEMENTSD_VERSION}
           
           curl -Ls "https://github.com/RCasatta/electrsd/releases/download/electrs_releases/${ELECTRS_FILENAME}" -o ${ELECTRS_FILENAME}
           unzip ${ELECTRS_FILENAME} && rm ${ELECTRS_FILENAME}
+          
+          curl -Ls "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${NEXTEST_FILENAME}" -o ${NEXTEST_FILENAME}
+          tar -xzf ${NEXTEST_FILENAME} && rm ${NEXTEST_FILENAME}
+          mv cargo-nextest smplx-nextest
 
       - name: Sign elementsd binary
         run: |

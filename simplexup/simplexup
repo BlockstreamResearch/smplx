@@ -4,7 +4,6 @@ set -eo pipefail
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
 SIMPLEXUP_INSTALLER_VERSION="0.0.5"
-NEXTEST_VERSION="0.9.133"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -15,10 +14,9 @@ SIMPLEX_BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
 SIMPLEXUP_IGNORE_VERIFICATION=false
 DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
 
-SMPLX_NEXTEST_NAME="smplx-nextest"
 SMPLX_BIN_NAME="simplex"
-DEP_BINS=(elementsd electrs)
-BINS=("${SMPLX_BIN_NAME}" "${SMPLX_NEXTEST_NAME}" "${DEP_BINS[@]}")
+DEP_BINS=(elementsd electrs smplx-nextest)
+BINS=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
 HASH_NAMES=()
 HASH_VALUES=()
 
@@ -85,9 +83,6 @@ main() {
 
   version_dir="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_VERSION}"
   ensure mkdir -p "$version_dir"
-
-  # Install default version of `nextest` for simplex
-  install_nextest_binary "$NEXTEST_VERSION" "$version_dir"
 
   local BINS_TO_DOWNLOAD=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
 
@@ -606,32 +601,6 @@ install_simplex_from_commit() {
 
   say "Removing temporary directory..."
   rm -rf "${tmp_dir}"
-}
-
-install_nextest_binary() {
-  local nextest_version=$1
-  local install_dir=$2
-
-  # Check if smplx-nextest is already installed and matches the required version
-  say "Checking ${SMPLX_NEXTEST_NAME} version..."
-  local smplx_nextest_bin_full_path="${install_dir}/${SMPLX_NEXTEST_NAME}"
-
-  if check_cmd "${smplx_nextest_bin_full_path}" nextest; then
-    local current_version
-    current_version=$(${smplx_nextest_bin_full_path} --version | head -n 1 | awk '{print $2}')
-
-    if [[ "$current_version" == "$nextest_version" ]]; then
-      say "${SMPLX_NEXTEST_NAME} $nextest_version is already installed, skipping installation."
-      return 0
-    fi
-  fi
-
-  say "Installing ${SMPLX_NEXTEST_NAME} version ${nextest_version} into ${install_dir}..."
-  ensure cargo install cargo-nextest --version "${nextest_version}" --root "${install_dir}" --locked --force
-  ensure mv "${install_dir}/bin/cargo-nextest" "${smplx_nextest_bin_full_path}"
-  rm -rf "${install_dir}/bin"
-
-  return 0
 }
 
 # Form a comma separated list with 'and' for user experience
