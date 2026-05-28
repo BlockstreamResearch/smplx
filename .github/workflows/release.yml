@@ -105,6 +105,7 @@ jobs:
             simplex
             elementsd
             electrs
+            smplx-nextest
 
       - name: Record attestation URL
         env:
@@ -115,7 +116,7 @@ jobs:
       - name: Archive binaries
         env:
           ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
-        run: tar czf ${ARCHIVE} simplex elementsd electrs
+        run: tar czf ${ARCHIVE} simplex elementsd electrs smplx-nextest
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
