@@ -30,6 +30,7 @@ use elements_miniscript::{
 
 use crate::constants::MIN_FEE;
 use crate::program::ProgramTrait;
+use crate::program::logger::ProgramLogger;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;
@@ -200,7 +201,10 @@ impl Signer {
 
             if policy_amount_delta >= curr_fee.cast_signed() {
                 match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                    Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                    Estimate::Success(tx, fee) => {
+                        ProgramLogger::flush_logs();
+                        return Ok((tx, fee));
+                    }
                     Estimate::Failure(required_fee) => curr_fee = required_fee,
                 }
             }
@@ -213,7 +217,10 @@ impl Signer {
 
         if policy_amount_delta >= curr_fee.cast_signed() {
             match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                Estimate::Success(tx, fee) => return Ok((tx, fee)),
+                Estimate::Success(tx, fee) => {
+                    ProgramLogger::flush_logs();
+                    return Ok((tx, fee));
+                }
                 Estimate::Failure(required_fee) => curr_fee = required_fee,
             }
         }
@@ -242,7 +249,10 @@ impl Signer {
 
         // policy_amount_delta will be > 0
         match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-            Estimate::Success(tx, fee) => Ok((tx, fee)),
+            Estimate::Success(tx, fee) => {
+                ProgramLogger::flush_logs();
+                Ok((tx, fee))
+            }
             Estimate::Failure(required_fee) => Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee)),
         }
     }

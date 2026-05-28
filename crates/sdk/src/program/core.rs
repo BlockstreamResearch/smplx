@@ -10,10 +10,10 @@ use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
-use simplicityhl::tracker::DefaultTracker;
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
-use crate::global::{get_include_debug_symbols, get_log_level};
+use crate::global::GlobalConfig;
+use crate::program::logger::ProgramLogger;
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
@@ -156,11 +156,18 @@ impl ProgramTrait for Program {
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
-        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_log_level(get_log_level());
+        // execute() is called multiple times during fee estimation; output is buffered
+        // so only the final successful execution's logs are emitted to stderr.
+        let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), GlobalConfig::get_log_level());
 
         let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
+
+        if GlobalConfig::is_max_verbose() {
+            ProgramLogger::buffer_cost_log(&pruned);
+        }
+
         let mut mac = BitMachine::for_program(&pruned)?;
 
         let result = mac.exec(&pruned, &env)?;
@@ -304,7 +311,7 @@ impl Program {
         let compiled = CompiledProgram::new(
             self.source,
             self.arguments.build_arguments(),
-            get_include_debug_symbols(),
+            GlobalConfig::get_include_debug_symbols(),
         )
         .map_err(ProgramError::Compilation)?;
 
