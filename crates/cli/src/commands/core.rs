@@ -21,7 +21,7 @@ pub enum Command {
     },
     /// Generates the simplicity contracts artifacts
     Build,
-    /// Clean Simplex artifacts in the current directory
+    /// Cleans Simplex artifacts in the current directory
     Clean,
 }
 
@@ -42,7 +42,7 @@ pub struct TestArguments {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
-    /// Show grouped output after the test completion
+    /// Show detailed output about running tests
     #[arg(long = "show-output")]
     pub show_output: bool,
     /// Run ignored tests
