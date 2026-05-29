@@ -17,7 +17,7 @@ impl Regtest {
     /// # Panics
     /// Panics if setting the Ctrl-C handler fails, or if required RPC authentication credentials cannot be unwrapped.
     pub fn run(config: &RegtestConfig) -> Result<(), CommandError> {
-        let (mut client, signer) = RegtestRunner::from_config(config)?;
+        let (client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();
@@ -41,6 +41,6 @@ impl Regtest {
 
         while running.load(Ordering::SeqCst) {}
 
-        Ok(client.kill()?)
+        Ok(())
     }
 }

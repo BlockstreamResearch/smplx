@@ -162,6 +162,14 @@ impl TestContext {
     }
 }
 
+impl Drop for TestContext {
+    fn drop(&mut self) {
+        if let Some(x) = &mut self._client {
+            let _ = x.kill();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
