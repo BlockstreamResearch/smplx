@@ -112,8 +112,11 @@ impl Test {
             cargo_nextest_flags.push("--cargo-quiet".into());
         }
 
-        if flags.verbose != 0 {
+        if flags.show_output {
             cargo_nextest_flags.push("--verbose".into());
+        }
+
+        if flags.verbose != 0 {
             cargo_nextest_flags.push("--no-capture".into());
         }
 

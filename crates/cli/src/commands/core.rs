@@ -54,7 +54,7 @@ pub struct TestFlags {
     /// Verbosity level for test output (-v for debug, -vv for trace)
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
-    /// Display one character per test instead of one line
+    /// Do not print cargo log messages
     #[arg(short = 'q', long)]
     pub quiet: bool,
     /// Run non-simplex tests (may be used for running unit tests)
