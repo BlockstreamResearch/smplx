@@ -23,7 +23,6 @@ HASH_VALUES=()
 main() {
   need_cmd git
   need_cmd curl
-  need_cmd cargo
 
   while [[ -n $1 ]]; do
     case $1 in
@@ -585,6 +584,8 @@ download() {
 }
 
 install_simplex_from_commit() {
+  need_cmd cargo
+
   local commit=$1
   local author=$2
   local repo_url=$3

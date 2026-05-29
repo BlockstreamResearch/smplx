@@ -17,6 +17,7 @@ impl Regtest {
     /// # Panics
     /// Panics if setting the Ctrl-C handler fails, or if required RPC authentication credentials cannot be unwrapped.
     pub fn run(config: &RegtestConfig) -> Result<(), CommandError> {
+        // The client will be killed automatically via the Drop trait implementation
         let (client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));

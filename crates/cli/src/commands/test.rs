@@ -93,18 +93,12 @@ impl Test {
             cargo_nextest_args.push(dsl_marker);
         }
 
-        // `--test-threads` flag is ignored by nextest when `--no-capture` is enabled
-        if flags.verbose == 0 {
-            cargo_nextest_args.push("--test-threads".into());
-            cargo_nextest_args.push(args.test_threads.to_string());
-        }
-
-        cargo_nextest_args.extend(Self::build_cargo_nextest_flags(flags));
+        cargo_nextest_args.extend(Self::build_cargo_nextest_flags(args, flags));
 
         cargo_nextest_args
     }
 
-    fn build_cargo_nextest_flags(flags: &TestFlags) -> Vec<String> {
+    fn build_cargo_nextest_flags(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
         let mut cargo_nextest_flags = Vec::new();
 
         if flags.no_fail_fast {
@@ -119,7 +113,11 @@ impl Test {
             cargo_nextest_flags.push("--verbose".into());
         }
 
-        if flags.verbose != 0 {
+        if flags.verbose == 0 {
+            // `--test-threads` flag is ignored by nextest when `--no-capture` is enabled
+            cargo_nextest_flags.push("--test-threads".into());
+            cargo_nextest_flags.push(args.test_threads.to_string());
+        } else {
             cargo_nextest_flags.push("--no-capture".into());
         }
 
