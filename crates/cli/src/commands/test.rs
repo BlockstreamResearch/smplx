@@ -93,8 +93,11 @@ impl Test {
             cargo_nextest_args.push(dsl_marker);
         }
 
-        cargo_nextest_args.push("--test-threads".into());
-        cargo_nextest_args.push(args.test_threads.to_string());
+        // `--test-threads` flag is ignored by nextest when `--no-capture` is enabled
+        if flags.verbose == 0 {
+            cargo_nextest_args.push("--test-threads".into());
+            cargo_nextest_args.push(args.test_threads.to_string());
+        }
 
         cargo_nextest_args.extend(Self::build_cargo_nextest_flags(flags));
 
