@@ -142,3 +142,9 @@ impl RegtestClient {
         ElectrsD::with_conf(bin_path.as_ref(), elementsd, &conf).unwrap()
     }
 }
+
+impl Drop for RegtestClient {
+    fn drop(&mut self) {
+        let _ = self.kill();
+    }
+}
