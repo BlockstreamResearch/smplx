@@ -35,8 +35,8 @@ pub struct TestArguments {
     #[arg(long = "target")]
     pub target: Option<String>,
     /// Number of tests to run simultaneously
-    #[arg(long = "test-threads", default_value_t = std::num::NonZeroUsize::new(1).unwrap())]
-    pub test_threads: std::num::NonZeroUsize,
+    #[arg(long = "test-threads")]
+    pub test_threads: Option<std::num::NonZeroUsize>,
 }
 
 #[allow(clippy::struct_excessive_bools)]

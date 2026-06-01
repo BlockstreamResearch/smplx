@@ -9,6 +9,7 @@ use super::error::CommandError;
 
 /// Nextest dsl variable to filter and use only simplex tests
 const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
+const DEFAULT_THREADS_NUMBER: usize = 1;
 
 pub struct Test {}
 
@@ -116,8 +117,15 @@ impl Test {
         if flags.verbose == 0 {
             // `--test-threads` flag is ignored by nextest when `--no-capture` is enabled
             cargo_nextest_flags.push("--test-threads".into());
-            cargo_nextest_flags.push(args.test_threads.to_string());
+            cargo_nextest_flags.push(
+                args.test_threads
+                    .unwrap_or(std::num::NonZeroUsize::new(DEFAULT_THREADS_NUMBER).unwrap())
+                    .to_string(),
+            );
         } else {
+            if args.test_threads.is_some() {
+                println!("warning: --test-threads is ignored when -v or -vv is provided");
+            }
             cargo_nextest_flags.push("--no-capture".into());
         }
 
