@@ -126,6 +126,7 @@ impl Test {
             if args.test_threads.is_some() {
                 println!("warning: --test-threads is ignored when -v or -vv is provided");
             }
+
             cargo_nextest_flags.push("--no-capture".into());
         }
 
