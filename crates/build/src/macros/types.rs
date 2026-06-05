@@ -60,6 +60,39 @@ impl RustTypeContext {
 }
 
 impl RustType {
+    pub fn get_default_value(&self) -> proc_macro2::TokenStream {
+        match self {
+            RustType::Bool => quote! { Default::default() },
+            RustType::U1 => quote! { Default::default() },
+            RustType::U2 => quote! { Default::default() },
+            RustType::U4 => quote! { Default::default() },
+            RustType::U8 => quote! { Default::default() },
+            RustType::U16 => quote! { Default::default() },
+            RustType::U32 => quote! { Default::default() },
+            RustType::U64 => quote! { Default::default() },
+            RustType::U128 => quote! { Default::default() },
+            RustType::U256Array => quote! { [Default::default(); 32] },
+            RustType::Array(element, size) => {
+                let element_ty = element.get_default_value();
+                quote! { [#element_ty; #size] }
+            }
+            RustType::Tuple(elements) => {
+                let element_types: Vec<_> = elements.iter().map(RustType::get_default_value).collect();
+                quote! { (#(#element_types),*) }
+            }
+            RustType::Either(left, _) => {
+                let left_ty = left.get_default_value();
+                quote! { simplex::either::Either::Left(#left_ty) }
+            }
+            RustType::Option(_inner) => {
+                quote! { Default::default() }
+            }
+            RustType::List(_element, _size) => {
+                quote! { Default::default() }
+            }
+        }
+    }
+
     pub fn from_resolved_type(ty: &ResolvedType) -> syn::Result<Self> {
         use simplicityhl::types::{TypeInner, UIntType};
 
