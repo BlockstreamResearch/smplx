@@ -1,6 +1,5 @@
 use simplex::simplicityhl::elements::Script;
 
-use simplex::constants::DUMMY_SIGNATURE;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use simplex_fixtures::artifacts::p2pk::P2pkProgram;
@@ -40,9 +39,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<()> {
 
     let mut ft = FinalTransaction::new();
 
-    let witness = P2pkWitness {
-        signature: DUMMY_SIGNATURE,
-    };
+    let witness = P2pkWitness::default();
 
     ft.add_program_input(
         PartialInput::new(p2pk_utxos[0].clone()),
