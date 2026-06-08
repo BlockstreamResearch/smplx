@@ -104,6 +104,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("args");
+        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
@@ -162,6 +163,12 @@ impl WitnessStruct {
                         Self::from_arguments(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
+
+                impl core::default::Default for #struct_name {
+                    fn default() -> Self {
+                        #default_mapping
+                    }
+                }
             },
         })
     }
@@ -178,6 +185,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("witness");
+        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
 
         Ok(GeneratedWitnessTokens {
             imports: quote! {
@@ -235,6 +243,12 @@ impl WitnessStruct {
                         Self::from_witness(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
+
+                impl core::default::Default for #struct_name {
+                    fn default() -> Self {
+                        #default_mapping
+                    }
+                }
             },
         })
     }
@@ -276,6 +290,25 @@ impl WitnessStruct {
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #name {
+                #(#fields),*
+            }
+        }
+    }
+
+    fn generate_default_mapping(&self) -> proc_macro2::TokenStream {
+        let name = format_ident!("{}", self.struct_name);
+        let fields: Vec<proc_macro2::TokenStream> = self
+            .witness_values
+            .iter()
+            .map(|field| {
+                let field_name = format_ident!("{}", field.struct_rust_field);
+                let field_default_value = field.rust_type.get_default_value();
+                quote! { #field_name: #field_default_value }
+            })
+            .collect();
+
+        quote! {
+            #name {
                 #(#fields),*
             }
         }

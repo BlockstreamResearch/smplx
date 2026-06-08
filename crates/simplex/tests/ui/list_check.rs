@@ -19,9 +19,9 @@ fn main() -> Result<(), String> {
 
     let original_arguments = derived_list_check::ListCheckArguments {};
 
-    let witness_values = original_arguments.build_arguments();
-    let recovered_witness = derived_list_check::ListCheckArguments::from_arguments(&witness_values)?;
-    assert_eq!(original_arguments, recovered_witness);
+    let arguments_values = original_arguments.build_arguments();
+    let recovered_arguments = derived_list_check::ListCheckArguments::from_arguments(&arguments_values)?;
+    assert_eq!(original_arguments, recovered_arguments);
 
     // Build Witness, which would panic on building
     let original_witness = derived_list_check::ListCheckWitness {
