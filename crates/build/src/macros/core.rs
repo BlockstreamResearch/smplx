@@ -3,27 +3,22 @@ use std::error::Error;
 use proc_macro2::Span;
 use quote::quote;
 
-use simplicityhl::AbiMeta;
+use simplicityhl::{AbiMeta, TemplateProgram};
 
 use super::codegen::{
     GeneratedArgumentTokens, GeneratedWitnessTokens, SimfContractMeta, convert_contract_name_to_contract_module,
 };
 use super::parse::{SimfContent, SynFilePath};
-use super::program;
 
 pub fn expand(input: &SynFilePath) -> syn::Result<proc_macro2::TokenStream> {
-    let simf_content = SimfContent::eval_path_expr(input)?;
-    let abi_meta = program::compile_simf(&simf_content)?;
-    let generated = expand_helpers(simf_content, abi_meta)?;
+    let simf_content = SimfContent::new(input)?;
+    let abi_meta = compile_simf(&simf_content).map_err(|e| syn::Error::new(Span::call_site(), e))?;
+    let generated = expand_inner(simf_content, abi_meta).map_err(|e| syn::Error::new(Span::call_site(), e))?;
 
     Ok(generated)
 }
 
-fn expand_helpers(simf_content: SimfContent, meta: AbiMeta) -> syn::Result<proc_macro2::TokenStream> {
-    gen_helpers_inner(simf_content, meta).map_err(|e| syn::Error::new(Span::call_site(), e))
-}
-
-fn gen_helpers_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2::TokenStream, Box<dyn Error>> {
+fn expand_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2::TokenStream, Box<dyn Error>> {
     let mod_ident = convert_contract_name_to_contract_module(&simf_content.contract_name);
 
     let derived_meta = SimfContractMeta::try_from(simf_content, meta)?;
@@ -88,4 +83,10 @@ fn construct_argument_helpers(derived_meta: &SimfContractMeta) -> syn::Result<pr
             #struct_impl
         }
     })
+}
+
+fn compile_simf(content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
+    let program = content.content.as_str();
+
+    Ok(TemplateProgram::new(program)?.generate_abi_meta()?)
 }
