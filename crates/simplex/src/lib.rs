@@ -1,4 +1,6 @@
 pub use either;
+pub use rand;
+pub use rand_core;
 pub use serde;
 pub use simplicityhl;
 
