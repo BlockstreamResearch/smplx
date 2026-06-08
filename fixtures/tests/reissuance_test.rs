@@ -115,8 +115,8 @@ fn reissuance_test(context: simplex::TestContext) -> anyhow::Result<()> {
 
     let bob_asset_utxos = bob.get_utxos_asset(issuance_details.asset_id)?;
 
-    assert!(bob_asset_utxos.len() == 1);
-    assert!(bob_asset_utxos[0].explicit_amount() == reissuance_amount);
+    assert_eq!(bob_asset_utxos.len(), 1);
+    assert_eq!(bob_asset_utxos[0].explicit_amount(), reissuance_amount);
 
     Ok(())
 }
