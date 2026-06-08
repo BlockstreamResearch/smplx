@@ -56,8 +56,20 @@ impl ProviderTrait for SimplexProvider {
         self.esplora.fetch_tip_height()
     }
 
+    fn fetch_tip_block_hash(&self) -> Result<String, ProviderError> {
+        self.esplora.fetch_tip_block_hash()
+    }
+
     fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
         self.esplora.fetch_tip_timestamp()
+    }
+
+    fn fetch_block_hash_at_height(&self, block_height: u32) -> Result<String, ProviderError> {
+        self.esplora.fetch_block_hash_at_height(block_height)
+    }
+
+    fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError> {
+        self.esplora.fetch_block_txids(block_hash)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
