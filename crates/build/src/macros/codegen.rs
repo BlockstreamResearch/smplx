@@ -306,6 +306,7 @@ impl WitnessStruct {
                 quote! { #field_name: #field_default_value }
             })
             .collect();
+
         quote! {
             #name {
                 #(#fields),*
