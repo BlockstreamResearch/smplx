@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use quote::quote;
+use quote::{format_ident, quote};
 
 use simplicityhl::ResolvedType;
 
@@ -60,6 +60,61 @@ impl RustTypeContext {
 }
 
 impl RustType {
+    pub fn get_random_value(&self) -> proc_macro2::TokenStream {
+        match self {
+            RustType::Bool => quote! { rng.random() },
+            RustType::U1 => quote! { rng.random::<bool>() as u8 },
+            RustType::U2 => quote! { rng.random::<u8>() & 0x00_03 },
+            RustType::U4 => quote! { rng.random::<u8>() & 0x00_0F },
+            RustType::U8 | RustType::U16 | RustType::U32 | RustType::U64 | RustType::U128 => quote! { rng.random() },
+            RustType::U256Array => quote! { rng.random() },
+            RustType::Array(element, size) => {
+                let elements = vec![element.get_random_value(); *size];
+                quote! { [#(#elements),*] }
+            }
+            RustType::Tuple(elements) => {
+                let element_values: Vec<_> = elements.iter().map(RustType::get_random_value).collect();
+                quote! { (#(#element_values),*) }
+            }
+            RustType::Either(left, right) => {
+                let left_val = left.get_random_value();
+                let right_val = right.get_random_value();
+                quote! { if rng.random() { simplex::either::Either::Left(#left_val) } else { simplex::either::Either::Right(#right_val) } }
+            }
+            RustType::Option(inner) => {
+                let inner_val = inner.get_random_value();
+                quote! { if rng.random() { Some(#inner_val) } else { None } }
+            }
+            RustType::List(element, size) => {
+                let (generated_fn, generated_fn_name) = {
+                    let generated_fn_name = format_ident!("__gen_list_path");
+                    let rust_ret_type = element.to_type_token_stream();
+                    let rand_element_generation = element.get_random_value();
+
+                    let generated_fn = quote! {
+                        fn #generated_fn_name<R: RngCore + ?Sized>(rng: &mut R) -> #rust_ret_type{
+                            #rand_element_generation
+                        }
+                    };
+                    (generated_fn, generated_fn_name)
+                };
+
+                quote! {
+                    {
+                        #generated_fn
+
+                        let random_size: u32 = rng.random_range(0..#size as u32);
+                        let mut res = Vec::with_capacity(random_size as usize);
+                        for s in 0..random_size {
+                            res.push(#generated_fn_name(rng));
+                        }
+                        res
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_default_value(&self) -> proc_macro2::TokenStream {
         match self {
             RustType::Bool => quote! { Default::default() },

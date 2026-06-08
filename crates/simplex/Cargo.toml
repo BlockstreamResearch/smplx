@@ -24,6 +24,8 @@ smplx-sdk = { workspace = true }
 
 serde = { workspace = true }
 simplicityhl = { workspace = true, features = ["serde"] }
+rand_core = { workspace = true }
+rand = { workspace = true }
 
 either = { version = "1.15.0", features = ["serde"] }
 
