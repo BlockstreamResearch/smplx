@@ -249,6 +249,7 @@ impl RustType {
                     let tuple_conversions = elements.iter().enumerate().map(|(i, elem_ty)| {
                         let idx = syn::Index::from(i);
                         let elem_expr = quote! { #value_expr.#idx };
+
                         elem_ty.generate_to_simplicity_conversion_inner(&elem_expr, Some(RustTypeContext::Tuple))
                     });
 
@@ -309,7 +310,9 @@ impl RustType {
                     {
                         let elements = #value_expr.iter().map(|& #iter_tmp_var_name| #element_conversion).collect::<Vec<_>>();
                         let non_zero_pow2_size = NonZeroPow2Usize::new(#size).ok_or_else(|| format!("Failed to create non zero pow2 length, got size: '{}'", #size)).unwrap();
+
                         assert!(elements.len() < non_zero_pow2_size.get(), "There must be fewer list elements than the bound '{}'", non_zero_pow2_size.get());
+
                         Value::list(elements, #elem_ty_generation, non_zero_pow2_size)
                     }
                 }
@@ -481,6 +484,7 @@ impl RustType {
                             if arr_val.len() != #size {
                                 return Err(format!("Wrong array length for {}: expected {}, got {}", #context, #size, arr_val.len()));
                             }
+
                             [#(#elem_extractions),*]
                         }
                         _ => return Err(format!("Wrong type for {}: expected Array", #context)),
@@ -503,6 +507,7 @@ impl RustType {
                             if tuple_val.len() != #tuple_len {
                                 return Err(format!("Wrong tuple length for {}", #context));
                             }
+
                             (#(#elem_extractions),*)
                         }
                         _ => return Err(format!("Wrong type for {}: expected Tuple", #context)),
@@ -557,13 +562,17 @@ impl RustType {
                     match #value_expr.inner() {
                         simplex::simplicityhl::value::ValueInner::List(#list_name, non_zero_pow2_size) => {
                             let list_len = #list_name.len();
+
                             if list_len >= non_zero_pow2_size.get() {
                                 return Err(format!("Wrong list length for {}: expected less than {}, got {}", #context, non_zero_pow2_size.get(), list_len));
                             }
+
                             let mut res = Vec::with_capacity(list_len);
+
                             for #iter_index in 0..list_len {
                                 res.push(#elem_extraction);
                             }
+
                             res
                         }
                         _ => return Err(format!("Wrong type for {}: expected List", #context)),

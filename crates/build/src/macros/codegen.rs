@@ -47,6 +47,7 @@ impl SimfContractMeta {
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
+
         Ok(SimfContractMeta {
             contract_source_const_name,
             args_struct,
@@ -255,6 +256,7 @@ impl WitnessStruct {
 
     fn generate_args_struct(contract_name: &str, meta: &Parameters) -> syn::Result<WitnessStruct> {
         let base_name = convert_contract_name_to_struct_name(contract_name);
+
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Arguments", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -263,6 +265,7 @@ impl WitnessStruct {
 
     fn generate_witness_struct(contract_name: &str, meta: &WitnessTypes) -> syn::Result<WitnessStruct> {
         let base_name = convert_contract_name_to_struct_name(contract_name);
+
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Witness", base_name),
             witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
@@ -284,9 +287,11 @@ impl WitnessStruct {
             .map(|field| {
                 let field_name = format_ident!("{}", field.struct_rust_field);
                 let field_type = field.rust_type.to_type_token_stream();
+
                 quote! { pub #field_name: #field_type }
             })
             .collect();
+
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #name {
@@ -335,6 +340,7 @@ impl WitnessStruct {
                 let extraction = field
                     .rust_type
                     .generate_from_value_extraction(&param_ident, witness_name);
+
                 quote! {
                     let #field_name = #extraction;
                 }
@@ -367,12 +373,14 @@ pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
         .filter(|w| !w.is_empty())
         .map(|word| {
             let mut chars = word.chars();
+
             match chars.next() {
                 None => String::new(),
                 Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
             }
         })
         .collect();
+
     words.join("")
 }
 

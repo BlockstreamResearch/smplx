@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use proc_macro2::Span;
@@ -9,23 +9,23 @@ use syn::spanned::Spanned;
 use syn::{Expr, ExprLit, Lit};
 
 pub struct SynFilePath {
-    _span_file: String,
     path_literal: String,
+}
+
+pub struct SimfContent {
+    pub content: String,
+    pub contract_name: String,
 }
 
 impl Parse for SynFilePath {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let expr = input.parse::<Expr>()?;
-
-        let span_file = expr.span().file();
         let path_literal = match expr {
             Expr::Lit(ExprLit { lit: Lit::Str(s), .. }) => Ok(s.value()),
             _ => Err(syn::Error::new(expr.span(), "Expected string literal")),
         }?;
-        Ok(Self {
-            _span_file: span_file,
-            path_literal,
-        })
+
+        Ok(Self { path_literal })
     }
 }
 
@@ -48,7 +48,7 @@ impl SynFilePath {
             path = path_local;
         }
 
-        if is_not_a_file(&path) {
+        if !path.is_file() {
             return Err(syn::Error::new(
                 proc_macro2::Span::call_site(),
                 format!(
@@ -63,12 +63,42 @@ impl SynFilePath {
     }
 }
 
-pub struct SimfContent {
-    pub content: String,
-    pub contract_name: String,
-}
-
 impl SimfContent {
+    /// Evaluates the path expression and extracts Simf content.
+    ///
+    /// # Errors
+    /// Returns a `syn::Error` if the path is invalid or the file cannot be read.
+    pub fn new(syn_file_path: &SynFilePath) -> syn::Result<Self> {
+        let path = syn_file_path.validate_path()?;
+
+        Self::extract_content_from_path(&path).map_err(|e| syn::Error::new(Span::call_site(), e))
+    }
+
+    /// Extracts the contract content from the path and prepares the contract name.
+    ///
+    /// # Errors
+    /// Returns a `std::io::Error` if the file cannot be opened or the contract name cannot be prepared.
+    pub fn extract_content_from_path(path: &PathBuf) -> std::io::Result<SimfContent> {
+        let contract_name = {
+            let name = path
+                .file_prefix()
+                .ok_or(std::io::Error::other(format!(
+                    "No file prefix in file: '{}'",
+                    path.display()
+                )))?
+                .to_string_lossy();
+
+            Self::prepare_contract_name(name.as_ref())?
+        };
+
+        let mut content = String::new();
+        let mut x = File::open(path)?;
+
+        x.read_to_string(&mut content)?;
+
+        Ok(SimfContent { content, contract_name })
+    }
+
     /// Prepares a contract name for use as a Rust module/identifier.
     ///
     /// Converts the input to a valid lowercase Rust identifier by:
@@ -91,6 +121,7 @@ impl SimfContent {
     /// - `"valid_name"` → `"valid_name"`
     pub fn prepare_contract_name(name: &str) -> std::io::Result<String> {
         let trimmed = name.trim_matches(|c: char| c.is_whitespace());
+
         if trimmed.is_empty() {
             return Err(std::io::Error::other("Contract name cannot be empty"));
         }
@@ -135,6 +166,7 @@ impl SimfContent {
         }
 
         let first = s.chars().next().unwrap();
+
         // First char must be letter or underscore
         if !first.is_alphabetic() && first != '_' {
             return false;
@@ -146,40 +178,9 @@ impl SimfContent {
     /// Checks if a string is a Rust reserved keyword (only checks keywords, not format)
     ///
     /// This function validates against Rust's actual reserved keywords.
-    /// Valid identifiers like "hello" will return false (not a keyword).#[inline]
+    /// Valid identifiers like "hello" will return false (not a keyword).
+    #[inline]
     fn is_reserved_keyword(s: &str) -> bool {
         syn::parse_str::<syn::Ident>(s).is_err()
     }
-
-    pub fn extract_content_from_path(path: &PathBuf) -> std::io::Result<SimfContent> {
-        let contract_name = {
-            let name = path
-                .file_prefix()
-                .ok_or(std::io::Error::other(format!(
-                    "No file prefix in file: '{}'",
-                    path.display()
-                )))?
-                .to_string_lossy();
-            Self::prepare_contract_name(name.as_ref())?
-        };
-
-        let mut content = String::new();
-        let mut x = File::open(path)?;
-        x.read_to_string(&mut content)?;
-        Ok(SimfContent { content, contract_name })
-    }
-
-    /// Evaluates the path expression and extracts Simf content.
-    ///
-    /// # Errors
-    /// Returns a `syn::Error` if the path is invalid or the file cannot be read.
-    pub fn eval_path_expr(syn_file_path: &SynFilePath) -> syn::Result<Self> {
-        let path = syn_file_path.validate_path()?;
-        Self::extract_content_from_path(&path).map_err(|e| syn::Error::new(Span::call_site(), e))
-    }
-}
-
-#[inline]
-fn is_not_a_file(path: &Path) -> bool {
-    !path.is_file()
 }
