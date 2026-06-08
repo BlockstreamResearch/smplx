@@ -197,45 +197,96 @@ impl ProviderTrait for EsploraProvider {
         Ok(height)
     }
 
-    fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
+    fn fetch_tip_block_hash(&self) -> Result<String, ProviderError> {
+        let url = format!("{}/blocks/tip/hash", self.esplora_url);
         let timeout_secs = self.timeout.as_secs();
 
-        let hash_url = format!("{}/blocks/tip/hash", self.esplora_url);
-        let hash_response = minreq::get(&hash_url)
+        let response = minreq::get(&url)
             .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
-        if hash_response.status_code != 200 {
+        if response.status_code != 200 {
             return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
-                hash_response.status_code, hash_response.reason_phrase
+                response.status_code, response.reason_phrase
             )));
         }
 
-        let tip_hash = hash_response
+        let tip_block_hash = response
             .as_str()
             .map_err(|e| ProviderError::Deserialize(e.to_string()))?
             .trim();
 
-        let block_url = format!("{}/block/{}", self.esplora_url, tip_hash);
-        let block_response = minreq::get(&block_url)
+        Ok(tip_block_hash.into())
+    }
+
+    fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
+        let tip_hash = self.fetch_tip_block_hash()?;
+
+        let url = format!("{}/block/{}", self.esplora_url, tip_hash);
+        let timeout_secs = self.timeout.as_secs();
+
+        let response = minreq::get(&url)
             .with_timeout(timeout_secs)
             .send()
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
-        if block_response.status_code != 200 {
+        if response.status_code != 200 {
             return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
-                block_response.status_code, block_response.reason_phrase
+                response.status_code, response.reason_phrase
             )));
         }
 
-        let block: EsploraBlock = block_response
-            .json()
-            .map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+        let block: EsploraBlock = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
         Ok(block.timestamp)
+    }
+
+    fn fetch_block_hash_at_height(&self, block_height: u32) -> Result<String, ProviderError> {
+        let url = format!("{}/block-height/{}", self.esplora_url, block_height);
+        let timeout_secs = self.timeout.as_secs();
+
+        let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
+            .send()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+        if response.status_code != 200 {
+            return Err(ProviderError::Request(format!(
+                "HTTP {}: {}",
+                response.status_code, response.reason_phrase
+            )));
+        }
+
+        let block_hash = response
+            .as_str()
+            .map_err(|e| ProviderError::Deserialize(e.to_string()))?
+            .trim();
+
+        Ok(block_hash.into())
+    }
+
+    fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError> {
+        let url = format!("{}/block/{}/txids", self.esplora_url, block_hash);
+        let timeout_secs = self.timeout.as_secs();
+
+        let response = minreq::get(&url)
+            .with_timeout(timeout_secs)
+            .send()
+            .map_err(|e| ProviderError::Request(e.to_string()))?;
+
+        if response.status_code != 200 {
+            return Err(ProviderError::Request(format!(
+                "HTTP {}: {}",
+                response.status_code, response.reason_phrase
+            )));
+        }
+
+        let block_txids: Vec<Txid> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+        Ok(block_txids)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
