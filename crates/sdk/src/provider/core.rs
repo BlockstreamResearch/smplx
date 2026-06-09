@@ -48,11 +48,29 @@ pub trait ProviderTrait {
     /// Returns a `ProviderError` if the backend request fails or the returned height cannot be parsed.
     fn fetch_tip_height(&self) -> Result<u32, ProviderError>;
 
+    /// Retrieves the current block hash of the network tip.
+    ///
+    /// # Errors
+    /// Returns a `ProviderError` if the backend request fails or the returned block hash cannot be parsed.
+    fn fetch_tip_block_hash(&self) -> Result<String, ProviderError>;
+
     /// Retrieves the block timestamp representing network consensus clock tip.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the hash query, subsequent block query, or block parsing fails.
     fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError>;
+
+    /// Retrieves the block hash at a specific block height.
+    ///
+    /// # Errors
+    /// Returns a `ProviderError` if the passed block height does not exist or the returned hash cannot be parsed.
+    fn fetch_block_hash_at_height(&self, block_height: u32) -> Result<String, ProviderError>;
+
+    /// Retrieves the transaction IDs for a specific block hash.
+    ///
+    /// # Errors
+    /// Returns a `ProviderError` if the passed block hash does not exist or the returned data cannot be parsed.
+    fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError>;
 
     /// Retrieves the serialized transaction payload given its hex transaction ID.
     ///

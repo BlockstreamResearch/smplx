@@ -17,13 +17,17 @@ impl Regtest {
     /// # Panics
     /// Panics if setting the Ctrl-C handler fails, or if required RPC authentication credentials cannot be unwrapped.
     pub fn run(config: &RegtestConfig) -> Result<(), CommandError> {
-        let (mut client, signer) = RegtestRunner::from_config(config)?;
+        // The client will be killed automatically via the Drop trait implementation
+        let (client, signer) = RegtestRunner::from_config(config)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let r = running.clone();
 
+        let main_thread = std::thread::current();
+
         ctrlc::set_handler(move || {
             r.store(false, Ordering::SeqCst);
+            main_thread.unpark();
         })
         .expect("Error setting Ctrl-C handler");
 
@@ -39,8 +43,10 @@ impl Regtest {
         println!("Signer: {:?}", signer.get_address());
         println!("======================================");
 
-        while running.load(Ordering::SeqCst) {}
+        while running.load(Ordering::SeqCst) {
+            std::thread::park();
+        }
 
-        Ok(client.kill()?)
+        Ok(())
     }
 }

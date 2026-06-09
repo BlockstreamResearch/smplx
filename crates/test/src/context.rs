@@ -5,7 +5,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 
-use smplx_sdk::global::set_global_config;
+use smplx_sdk::global::GlobalConfig;
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
@@ -30,13 +30,7 @@ impl TestContext {
         let config = TestConfig::from_file(&config_path)?;
 
         // error is ignored because we assume that all tests use the same verbosity
-        let _ = set_global_config(
-            config
-                .verbosity
-                .expect("This will be set")
-                .try_into()
-                .expect("Validated in CLI"),
-        );
+        let _ = GlobalConfig::set_global_config(config.verbosity);
 
         let (signer, provider_info, client) = Self::setup(&config)?;
 
@@ -165,6 +159,14 @@ impl TestContext {
         }
 
         Ok((signer, provider_info, client))
+    }
+}
+
+impl Drop for TestContext {
+    fn drop(&mut self) {
+        if let Some(x) = &mut self._client {
+            let _ = x.kill();
+        }
     }
 }
 

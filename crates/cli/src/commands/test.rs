@@ -1,11 +1,15 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use smplx_test::config::Verbosity;
-use smplx_test::{SMPLX_TEST_MARKER, TestConfig};
+use smplx_sdk::global::Verbosity;
+use smplx_test::{TestConfig, smplx_test_marker};
 
 use super::core::{TestArguments, TestFlags};
 use super::error::CommandError;
+
+/// Nextest dsl variable to filter and use only simplex tests
+const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
+const DEFAULT_THREADS_NUMBER: usize = 1;
 
 pub struct Test {}
 
@@ -20,15 +24,17 @@ impl Test {
     pub fn run(mut config: TestConfig, args: &TestArguments, flags: &TestFlags) -> Result<(), CommandError> {
         let cache_path = Self::get_test_config_cache_name()?;
 
-        if flags.verbose {
-            config.verbosity = Some(Verbosity(4));
+        if flags.verbose > Verbosity::MAX_VERBOSITY_LEVEL {
+            return Err(CommandError::BadVersbosityMode(flags.verbose));
         }
+
+        config.verbosity = std::cmp::max(config.verbosity, Verbosity::new(flags.verbose));
 
         config.to_file(&cache_path)?;
 
-        let mut cargo_test_command = Self::build_cargo_test_command(&cache_path, args, flags);
+        let mut cargo_nextest_command = Self::build_cargo_nextest_command(&cache_path, args, flags);
 
-        let output = cargo_test_command.output()?;
+        let output = cargo_nextest_command.output()?;
 
         match output.status.code() {
             Some(code) => {
@@ -46,72 +52,96 @@ impl Test {
         Ok(())
     }
 
-    fn build_cargo_test_command(
+    fn build_cargo_nextest_command(
         cache_path: &PathBuf,
         args: &TestArguments,
         flags: &TestFlags,
     ) -> std::process::Command {
-        let mut cargo_test_command = std::process::Command::new("cargo");
-        cargo_test_command.arg("test");
+        let mut cargo_nextest_command = std::process::Command::new("smplx-nextest");
+        cargo_nextest_command.arg("nextest");
+        cargo_nextest_command.arg("run");
 
-        cargo_test_command.args(Self::build_cargo_test_args(args, flags));
-        cargo_test_command.args(Self::build_test_bin_args(args, flags));
+        cargo_nextest_command.args(Self::build_cargo_nextest_args(args, flags));
+        cargo_nextest_command.args(Self::build_test_bin_flags(flags));
 
-        cargo_test_command
+        cargo_nextest_command
             .env(smplx_test::TEST_ENV_NAME, cache_path)
             .stdin(Stdio::inherit())
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit());
 
-        cargo_test_command
+        cargo_nextest_command
     }
 
-    fn build_cargo_test_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
-        let mut cargo_test_args = Vec::new();
+    fn build_cargo_nextest_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
+        let mut cargo_nextest_args = Vec::new();
+
+        if !args.filters.is_empty() {
+            cargo_nextest_args.extend(args.filters.iter().cloned());
+        }
+
+        cargo_nextest_args.push("--filterset".into());
+
+        let dsl_marker = if flags.no_simplex {
+            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER}")
+        } else {
+            SMPLX_NEXTEST_DSL_TEST_MARKER.into()
+        };
 
         if let Some(target) = &args.target {
-            cargo_test_args.push("--test".into());
-            cargo_test_args.push(target.clone());
+            cargo_nextest_args.push(format!("binary({target}) and {dsl_marker}"));
+        } else {
+            cargo_nextest_args.push(dsl_marker);
         }
 
-        if flags.no_fail_fast {
-            cargo_test_args.push("--no-fail-fast".into());
-        }
+        cargo_nextest_args.extend(Self::build_cargo_nextest_flags(args, flags));
 
-        cargo_test_args
+        cargo_nextest_args
     }
 
-    fn build_test_bin_args(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
-        let mut test_bin_args = Vec::new();
+    fn build_cargo_nextest_flags(args: &TestArguments, flags: &TestFlags) -> Vec<String> {
+        let mut cargo_nextest_flags = Vec::new();
 
-        test_bin_args.push("--".into());
-
-        // TODO: custom filters may run non-simplex tests due to cargo limitations. Figure out how to fix this
-        if args.filters.is_empty() {
-            test_bin_args.push(SMPLX_TEST_MARKER.to_string());
-        } else {
-            test_bin_args.extend(args.filters.iter().cloned());
+        if flags.no_fail_fast {
+            cargo_nextest_flags.push("--no-fail-fast".into());
         }
 
-        test_bin_args.extend(Self::build_test_bin_flags(flags));
+        if flags.quiet {
+            cargo_nextest_flags.push("--cargo-quiet".into());
+        }
 
-        test_bin_args
+        if flags.show_output {
+            cargo_nextest_flags.push("--verbose".into());
+        }
+
+        if flags.verbose == 0 {
+            // `--test-threads` flag is ignored by nextest when `--no-capture` is enabled
+            cargo_nextest_flags.push("--test-threads".into());
+            cargo_nextest_flags.push(
+                args.test_threads
+                    .unwrap_or(std::num::NonZeroUsize::new(DEFAULT_THREADS_NUMBER).unwrap())
+                    .to_string(),
+            );
+        } else {
+            if args.test_threads.is_some() {
+                println!("warning: --test-threads is ignored when -v or -vv is provided");
+            }
+
+            cargo_nextest_flags.push("--no-capture".into());
+        }
+
+        cargo_nextest_flags
     }
 
     fn build_test_bin_flags(flags: &TestFlags) -> Vec<String> {
         let mut test_bin_args = Vec::new();
 
-        if flags.nocapture {
-            test_bin_args.push("--nocapture".into());
-        }
-        if flags.show_output {
-            test_bin_args.push("--show-output".into());
-        }
         if flags.ignored {
             test_bin_args.push("--ignored".into());
         }
-        if flags.quiet {
-            test_bin_args.push("--quiet".into());
+
+        if !test_bin_args.is_empty() {
+            test_bin_args.insert(0, "--".into());
         }
 
         test_bin_args

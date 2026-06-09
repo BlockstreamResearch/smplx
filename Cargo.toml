@@ -8,12 +8,12 @@ license = "MIT"
 edition = "2024"
 
 [workspace.dependencies]
-smplx-macros = { path = "./crates/macros", version = "0.0.5" }
-smplx-build = { path = "./crates/build", version = "0.0.5" }
-smplx-test = { path = "./crates/test", version = "0.0.5" }
-smplx-regtest = { path = "./crates/regtest", version = "0.0.5" }
-smplx-sdk = { path = "./crates/sdk", version = "0.0.5" }
-smplx-std = { path = "./crates/simplex", version = "0.0.5" }
+smplx-macros = { path = "./crates/macros", version = "0.0.6" }
+smplx-build = { path = "./crates/build", version = "0.0.6" }
+smplx-test = { path = "./crates/test", version = "0.0.6" }
+smplx-regtest = { path = "./crates/regtest", version = "0.0.6" }
+smplx-sdk = { path = "./crates/sdk", version = "0.0.6" }
+smplx-std = { path = "./crates/simplex", version = "0.0.6" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 hex = { version = "0.4.3" }

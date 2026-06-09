@@ -3,7 +3,7 @@ set -eo pipefail
 
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
-SIMPLEXUP_INSTALLER_VERSION="0.0.4"
+SIMPLEXUP_INSTALLER_VERSION="0.0.5"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -14,8 +14,9 @@ SIMPLEX_BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
 SIMPLEXUP_IGNORE_VERIFICATION=false
 DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
 
-DEP_BINS=(elementsd electrs)
-BINS=(simplex "${DEP_BINS[@]}")
+SMPLX_BIN_NAME="simplex"
+DEP_BINS=(elementsd electrs smplx-nextest)
+BINS=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
 HASH_NAMES=()
 HASH_VALUES=()
 
@@ -82,7 +83,7 @@ main() {
   version_dir="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_VERSION}"
   ensure mkdir -p "$version_dir"
 
-  local BINS_TO_DOWNLOAD=("${BINS[@]}")
+  local BINS_TO_DOWNLOAD=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
 
   if [[ -n "$SIMPLEX_COMMIT" ]]; then
     local author="$(echo "${SIMPLEX_REPO}" | cut -d'/' -f1 -)"
@@ -583,6 +584,8 @@ download() {
 }
 
 install_simplex_from_commit() {
+  need_cmd cargo
+
   local commit=$1
   local author=$2
   local repo_url=$3
@@ -595,7 +598,7 @@ install_simplex_from_commit() {
   say "Installing Simplex version $simplex_version"
 
   ensure cargo build --release --manifest-path "${tmp_dir}/Cargo.toml"
-  ensure mv "${tmp_dir}/target/release/simplex" "${out_dir}/simplex"
+  ensure mv "${tmp_dir}/target/release/${SMPLX_BIN_NAME}" "${out_dir}/${SMPLX_BIN_NAME}"
 
   say "Removing temporary directory..."
   rm -rf "${tmp_dir}"

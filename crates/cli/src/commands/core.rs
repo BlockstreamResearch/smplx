@@ -21,7 +21,7 @@ pub enum Command {
     },
     /// Generates the simplicity contracts artifacts
     Build,
-    /// Clean Simplex artifacts in the current directory
+    /// Cleans Simplex artifacts in the current directory
     Clean,
 }
 
@@ -34,15 +34,15 @@ pub struct TestArguments {
     /// Integration test target to run
     #[arg(long = "target")]
     pub target: Option<String>,
+    /// Number of tests to run simultaneously
+    #[arg(long = "test-threads")]
+    pub test_threads: Option<std::num::NonZeroUsize>,
 }
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
-    /// Show output from successful tests
-    #[arg(long)]
-    pub nocapture: bool,
-    /// Show grouped output after the test completion
+    /// Show detailed output about running tests
     #[arg(long = "show-output")]
     pub show_output: bool,
     /// Run ignored tests
@@ -51,10 +51,13 @@ pub struct TestFlags {
     /// Run tests regardless of failure
     #[arg(long = "no-fail-fast")]
     pub no_fail_fast: bool,
-    /// Log simplicity pruning stack trace
-    #[arg(short = 'v', long)]
-    pub verbose: bool,
-    /// Display one character per test instead of one line
+    /// Verbosity level for test output (-v for debug, -vv for trace)
+    #[arg(short = 'v', long, action = clap::ArgAction::Count)]
+    pub verbose: u8,
+    /// Do not print cargo log messages
     #[arg(short = 'q', long)]
     pub quiet: bool,
+    /// Run non-simplex tests (may be used for running unit tests)
+    #[arg(long = "no-simplex")]
+    pub no_simplex: bool,
 }

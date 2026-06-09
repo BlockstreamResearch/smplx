@@ -13,7 +13,7 @@ Make sure that the CHANGELOG.md is up to date and starts with the following head
 - <Pull request changes description>.
 ```
 
-Also consider ticking the relevant statements below.
+Also consider ticking the relevant statements below and updating README.md.
 -->
 
 - [ ] This PR suggests a **bug fix** and I've added the necessary tests.

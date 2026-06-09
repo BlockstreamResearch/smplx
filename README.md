@@ -67,7 +67,7 @@ rpc_password = "password"
 [test]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 bitcoins = 10_000_000
-verbosity = 3 # 1 - none, 2 - warning, 3 - debug, 4 - trace
+verbosity = 0 # 0 - none, 1 - debug, 2 - trace
 
 [test.esplora]
 url = "<esplora url>"
@@ -137,8 +137,10 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
 - [ ] Browser compatibility.
-- [ ] Simplicity dependencies management once the language adds [support for modules](https://github.com/BlockstreamResearch/SimplicityHL/issues/155).
+- [ ] Simplicity dependencies management.
 - [ ] Comprehensive documentation.
+
+Check out the full roadmap [here](https://github.com/orgs/BlockstreamResearch/projects/3).
 
 ## License
 

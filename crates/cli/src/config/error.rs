@@ -25,7 +25,4 @@ pub enum ConfigError {
 
     #[error("Path doesn't exist: '{0}'")]
     PathNotExists(PathBuf),
-
-    #[error("Verbosity level should be either 1, 2, 3, 4, got: {0}")]
-    BadVersbosityMode(u64),
 }
