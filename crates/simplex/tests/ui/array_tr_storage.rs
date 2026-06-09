@@ -4,6 +4,14 @@ use simplex::program::{ArgumentsTrait, WitnessTrait, RandomArguments, RandomWitn
 include_simf!("../../../../crates/simplex/tests/ui_simfs/array_tr_storage.simf");
 
 fn main() -> Result<(), String> {
+    test_e2e_behaviour()?;
+    test_default()?;
+    test_e2e_random_behaviour()?;
+
+    Ok(())
+}
+
+fn test_e2e_behaviour() -> Result<(), String> {
     let original_witness = derived_array_tr_storage::ArrayTrStorageWitness::default();
 
     let witness_values = original_witness.build_witness();
@@ -16,6 +24,22 @@ fn main() -> Result<(), String> {
     let recovered_arguments = derived_array_tr_storage::ArrayTrStorageArguments::from_arguments(&arguments_values)?;
     assert_eq!(original_arguments, recovered_arguments);
 
+    Ok(())
+}
+
+fn test_default() -> Result<(), String> {
+    assert_eq!(
+        derived_array_tr_storage::ArrayTrStorageWitness::default(),
+        derived_array_tr_storage::ArrayTrStorageWitness::default()
+    );
+    assert_eq!(
+        derived_array_tr_storage::ArrayTrStorageArguments::default(),
+        derived_array_tr_storage::ArrayTrStorageArguments::default()
+    );
+    Ok(())
+}
+
+fn test_e2e_random_behaviour() -> Result<(), String>{
     for seed in 0..32 {
         use simplex::rand::{rngs::StdRng, SeedableRng};
 
