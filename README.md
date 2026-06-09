@@ -7,7 +7,7 @@
 
 # Smplx
 
-**A blazingly-fast, ux-first simplicity development framework.**
+**A blazingly-fast, ux-first Simplicity development framework.**
 
 ## What
 
