@@ -1424,6 +1424,7 @@ dependencies = [
  "proc-macro2",
  "proptest",
  "quote",
+ "rand 0.9.4",
  "serde",
  "simplicityhl",
  "smplx-regtest",
