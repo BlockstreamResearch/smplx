@@ -1,10 +1,13 @@
 use simplex::include_simf;
-use simplex::program::{ArgumentsTrait, RandomArguments, RandomWitness, WitnessTrait};
-
+use simplex::mutantesting::{generate_value_by_ty, generate_value_by_ty_iterative};
 use simplex::program::Program;
+use simplex::program::{ArgumentsTrait, RandomArguments, RandomWitness, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
-use simplex::simplicityhl::elements::Script;
 use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
+use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::{Arguments, WitnessValues};
+use simplex::rand::RngCore;
+
 #[derive(Clone)]
 pub struct ListCheckProgram {
     program: Program,
@@ -68,8 +71,10 @@ include_simf!("../../../../crates/simplex/tests/ui_simfs/list_check.simf");
 fn main() -> Result<(), String> {
     let _ = test_e2e_behaviour()?;
     let _ = test_build_panic()?;
-    let _ = test_default();
-    let _ = test_e2e_random_behaviour();
+    let _ = test_default()?;
+    let _ = test_e2e_random_behaviour()?;
+
+    let _ = test_e2e_random_value_generation_behaviour()?;
 
     Ok(())
 }
@@ -165,4 +170,72 @@ fn test_e2e_random_behaviour() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn test_e2e_random_value_generation_behaviour() -> Result<(), String> {
+    for seed in 0..32 {
+        use simplex::rand::{rngs::StdRng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(seed);
+
+        {
+            let witness_values = derived_list_check::ListCheckWitness::generate_witness(&mut rng);
+
+            let witness_values = regenerate_witness_values(&witness_values, &mut rng);
+            let _ = derived_list_check::ListCheckWitness::from_witness(&witness_values)?;
+
+            let witness_values = regenerate_witness_values_iterative(&witness_values, &mut rng);
+            let _ = derived_list_check::ListCheckWitness::from_witness(&witness_values)?;
+        }
+
+        {
+            let arguments_values = derived_list_check::ListCheckArguments::generate_arguments(&mut rng);
+
+            let arguments_values = regenerate_arguments_values(&arguments_values, &mut rng);
+            let _ = derived_list_check::ListCheckArguments::from_arguments(&arguments_values)?;
+
+            let arguments_values = regenerate_arguments_values_iterative(&arguments_values, &mut rng);
+            let _ = derived_list_check::ListCheckArguments::from_arguments(&arguments_values)?;
+        }
+    }
+    Ok(())
+}
+
+fn regenerate_witness_values(wit: &WitnessValues, rng: &mut dyn RngCore) -> WitnessValues {
+    use std::collections::HashMap;
+    let mut map: HashMap<_,_> = Default::default();
+    for (name, val) in wit.iter() {
+        map.insert(name.clone(), generate_value_by_ty(val.ty(), rng));
+    }
+    WitnessValues::from(map)
+}
+
+fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Arguments {
+    use std::collections::HashMap;
+
+    let mut map: HashMap<_,_> = Default::default();
+    for (name, val) in args.iter() {
+        map.insert(name.clone(), generate_value_by_ty(val.ty(), rng));
+    }
+    Arguments::from(map)
+}
+
+fn regenerate_witness_values_iterative(wit: &WitnessValues, rng: &mut dyn RngCore) -> WitnessValues {
+    use std::collections::HashMap;
+
+    let mut map: HashMap<_,_> = Default::default();
+    for (name, val) in wit.iter() {
+        map.insert(name.clone(), generate_value_by_ty_iterative(val.ty(), rng));
+    }
+    WitnessValues::from(map)
+}
+
+fn regenerate_arguments_values_iterative(args: &Arguments, rng: &mut dyn RngCore) -> Arguments {
+    use std::collections::HashMap;
+
+    let mut map: HashMap<_,_> = Default::default();
+    for (name, val) in args.iter() {
+        map.insert(name.clone(), generate_value_by_ty_iterative(val.ty(), rng));
+    }
+    Arguments::from(map)
 }
