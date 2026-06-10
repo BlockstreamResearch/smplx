@@ -10,7 +10,7 @@ pub mod logger;
 pub mod witness;
 
 pub use arguments::{ArgumentsTrait, RandomArguments};
-pub use core::{Program, ProgramTrait};
+pub use core::{Program, ProgramTrait, SimplexProgram};
 pub use error::ProgramError;
 pub use simplicityhl::tracker::TrackerLogLevel;
 pub use witness::{RandomWitness, WitnessTrait};

@@ -511,13 +511,13 @@ impl Signer {
                     Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
-                        &program_input.witness.build_witness(),
+                        &program_input.witness,
                         witness_name,
                         sig_path,
                         index,
                     )?),
                     // just build the witness
-                    None => Ok(program_input.witness.build_witness()),
+                    None => Ok((*program_input.witness).clone()),
                 };
 
                 let pruned_witness =

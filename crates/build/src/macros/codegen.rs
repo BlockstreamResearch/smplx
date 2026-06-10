@@ -8,6 +8,7 @@ use crate::macros::types::RustType;
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
+    pub program_struct_name: proc_macro2::Ident,
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
     pub simf_content: SimfContent,
@@ -24,6 +25,11 @@ pub struct GeneratedWitnessTokens {
     pub imports: proc_macro2::TokenStream,
     pub struct_token_stream: proc_macro2::TokenStream,
     pub struct_impl: proc_macro2::TokenStream,
+}
+
+pub struct GeneratedMutanTestingTokens {
+    pub imports: proc_macro2::TokenStream,
+    pub helper_impls: proc_macro2::TokenStream,
 }
 
 pub struct WitnessField {
@@ -47,13 +53,61 @@ impl SimfContractMeta {
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
-
+        let program_struct_name = construct_program_name(&simf_content.contract_name);
         Ok(SimfContractMeta {
             contract_source_const_name,
+            program_struct_name,
             args_struct,
             witness_struct,
             simf_content,
             abi_meta,
+        })
+    }
+
+    /// Generates code necessary for creating mutant testing using simplex.
+    pub fn generate_mutantesting_impl(&self) -> syn::Result<GeneratedMutanTestingTokens> {
+        let args_struct_name = &self.args_struct.struct_name;
+        let program_name = &self.program_struct_name;
+
+        let fuzzable_program_impl = quote! {
+            impl FuzzableProgram<#program_name> for #program_name {
+                fn build_program(
+                    args: impl Into<simplex::simplicityhl::Arguments>,
+                    network: &SimplicityNetwork,
+                ) -> (Box<#program_name>, Script) {
+                    let prog = #program_name::new(args);
+                    let script = prog.get_script_pubkey(network);
+                    (Box::new(prog), script)
+                }
+            }
+
+            impl SimplexProgram for #program_name {
+                fn get_program(&self) -> &Program {
+                    &self.program
+                }
+
+                fn get_compiled_program(args: Arguments) -> CompiledProgram {
+                    #program_name::new(args).program.load().unwrap()
+                }
+
+                fn get_mut_program(&mut self) -> &mut Program {
+                    &mut self.program
+                }
+            }
+        };
+
+        Ok(GeneratedMutanTestingTokens {
+            imports: quote! {
+                use super::{super::#program_name, #args_struct_name};
+                use simplex::mutantesting::FuzzableProgram;
+                use simplex::provider::SimplicityNetwork;
+                use simplex::program::{Program, SimplexProgram};
+                use simplex::simplicityhl::{Arguments, CompiledProgram};
+                use simplex::simplicityhl::elements::Script;
+            },
+            helper_impls: quote! {
+                #fuzzable_program_impl
+            },
         })
     }
 }
@@ -126,11 +180,11 @@ impl WitnessStruct {
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity Arguments.
+                    /// Build struct from Simplicity `Arguments`.
                     ///
                     /// # Errors
                     ///
-                    /// Returns error if any required witness is missing, has wrong type, or has invalid value.
+                    /// Returns error if any required witness is missing, has the wrong type, or has an invalid value.
                     pub fn from_arguments(args: &Arguments) -> Result<Self, String> {
                         #arguments_conversion_from_args_map
 
@@ -174,7 +228,7 @@ impl WitnessStruct {
                 }
 
                 impl simplex::program::RandomArguments for #struct_name {
-                    fn generate_arguments(rng: &mut dyn RngCore) -> Arguments
+                    fn generate_arguments(rng: &mut dyn RngCore) -> simplex::simplicityhl::Arguments
                     {
                         Self::generate_arguments_raw(rng).build_arguments()
                     }
@@ -183,6 +237,12 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for simplex::simplicityhl::Arguments {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::Arguments {
+                        val.build_arguments()
                     }
                 }
             },
@@ -222,7 +282,7 @@ impl WitnessStruct {
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity WitnessValues.
+                    /// Build struct from Simplicity `WitnessValues`.
                     ///
                     /// # Errors
                     ///
@@ -279,6 +339,12 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for simplex::simplicityhl::WitnessValues {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::WitnessValues {
+                        val.build_witness()
                     }
                 }
             },
@@ -414,6 +480,11 @@ impl WitnessStruct {
 
         (extractions, struct_init)
     }
+}
+
+pub fn construct_program_name(contract_name: &str) -> proc_macro2::Ident {
+    let base_name = convert_contract_name_to_struct_name(contract_name);
+    format_ident!("{base_name}Program")
 }
 
 pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
