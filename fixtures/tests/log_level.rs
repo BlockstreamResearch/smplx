@@ -30,7 +30,7 @@ fn dummy_log_level(context: simplex::TestContext) -> anyhow::Result<()> {
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(dummy.as_ref().clone()), Box::new(DummyPanicWitness::default())),
+        ProgramInput::new(Box::new(dummy.as_ref().clone()), DummyPanicWitness::default()),
         RequiredSignature::None,
     );
 
