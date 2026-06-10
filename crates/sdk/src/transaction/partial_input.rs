@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
+use simplicityhl::WitnessValues;
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
 
 use crate::program::ProgramTrait;
-use crate::program::WitnessTrait;
 
 use super::UTXO;
 
@@ -63,7 +65,7 @@ pub struct ProgramInput {
     /// The compiled program interface associated with the input.
     pub program: Box<dyn ProgramTrait>,
     /// The witness values required to satisfy the program.
-    pub witness: Box<dyn WitnessTrait>,
+    pub witness: Arc<WitnessValues>,
 }
 
 /// Represents an input designated for asset issuance or reissuance.
@@ -168,8 +170,11 @@ impl PartialInput {
 impl ProgramInput {
     /// Creates a new `ProgramInput` from a `ProgramTrait` and its associated `WitnessTrait`.
     #[must_use]
-    pub fn new(program: Box<dyn ProgramTrait>, witness: Box<dyn WitnessTrait>) -> Self {
-        Self { program, witness }
+    pub fn new(program: Box<dyn ProgramTrait>, witness: impl Into<WitnessValues>) -> Self {
+        Self {
+            program,
+            witness: Arc::new(witness.into()),
+        }
     }
 }
 
