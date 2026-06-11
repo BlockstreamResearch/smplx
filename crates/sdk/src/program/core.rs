@@ -4,10 +4,10 @@ use std::sync::Arc;
 use dyn_clone::DynClone;
 
 use simplicityhl::CompiledProgram;
+use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
-use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
@@ -62,7 +62,7 @@ pub trait ProgramTrait: DynClone {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError>;
+    ) -> Result<(Arc<RedeemNode>, Value), ProgramError>;
 
     /// Finalizes and returns `pruned_witness` as output after executing the program on certain parameters.
     ///
@@ -150,7 +150,7 @@ impl ProgramTrait for Program {
         witness: &WitnessValues,
         input_index: usize,
         network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError> {
+    ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
         let satisfied = self
             .load()?
             .satisfy(witness.clone())
@@ -312,6 +312,7 @@ impl Program {
             self.source,
             self.arguments.build_arguments(),
             GlobalConfig::get_include_debug_symbols(),
+            Box::new(ElementsJetHinter),
         )
         .map_err(ProgramError::Compilation)?;
 

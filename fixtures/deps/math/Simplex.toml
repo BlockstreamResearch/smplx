@@ -5,10 +5,6 @@
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 
-[dependencies]
-merkle = { path = "deps/merkle" }
-base_math = { path = "deps/math" }
-
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 # bitcoins = 10_000_000

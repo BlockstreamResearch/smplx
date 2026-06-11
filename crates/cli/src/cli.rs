@@ -70,7 +70,7 @@ impl Cli {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Build::run(&loaded_config.build)?)
+                Ok(Build::run(&loaded_config.build, &loaded_config.dependencies)?)
             }
             Command::Clean => {
                 let config_path = Config::get_default_path()?;

@@ -2,10 +2,7 @@ use std::{cell::RefCell, fmt::Write};
 
 use simplicityhl::{
     debug::DebugSymbols,
-    simplicity::{
-        jet::Jet,
-        node::{Node, Redeem},
-    },
+    simplicity::node::{Node, Redeem},
     tracker::{DefaultTracker, TrackerLogLevel},
 };
 
@@ -102,7 +99,7 @@ impl ProgramLogger {
     /// # Safety
     /// Uses `transmute` to extract the inner `u32` from [`Cost`] since no public
     /// accessor exists. Remove once `as_milliweight()` is upstreamed to rust-simplicity.
-    pub fn buffer_cost_log<J: Jet>(node: &Node<Redeem<J>>) {
+    pub fn buffer_cost_log(node: &Node<Redeem>) {
         let bounds = node.bounds();
         // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed
         let mw: u32 = unsafe { std::mem::transmute(bounds.cost) };

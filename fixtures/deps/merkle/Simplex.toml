@@ -1,13 +1,12 @@
 # DEFAULT CONFIG 
 
-# [build]
+#[build]
 # src_dir = "./simf"
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 
 [dependencies]
-merkle = { path = "deps/merkle" }
-base_math = { path = "deps/math" }
+math = { path = "../math" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::path::Path;
@@ -37,4 +38,52 @@ impl Default for BuildConfig {
             out_dir: DEFAULT_OUT_DIR_NAME.into(),
         }
     }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct DependencyConfig {
+    #[serde(flatten)]
+    pub inner: HashMap<String, Dependency>,
+}
+
+impl DependencyConfig {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, BuildError> {
+        let mut content = String::new();
+        let mut file = OpenOptions::new().read(true).open(path)?;
+        file.read_to_string(&mut content)?;
+
+        let table: toml::Table = toml::from_str(&content)?;
+        let res = if let Some(deps_section) = table.get("dependencies") {
+            deps_section.clone().try_into()?
+        } else {
+            DependencyConfig::default()
+        };
+
+        if let Err(err) = res.validate() {
+            Err(BuildError::InvalidDependency(err))
+        } else {
+            Ok(res)
+        }
+    }
+
+    /// When error occured, returned, return drp_name of the invalid dependency
+    pub fn validate(&self) -> Result<(), String> {
+        for (drp_name, dep) in &self.inner {
+            if dep.path.is_none() && dep.git.is_none() {
+                return Err(drp_name.clone());
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct Dependency {
+    /// Exact path to dir, where `Simplex.toml` file was located
+    pub path: Option<String>,
+
+    /// Link to git repo
+    pub git: Option<String>,
 }

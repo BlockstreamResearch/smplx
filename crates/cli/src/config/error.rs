@@ -8,6 +8,9 @@ pub enum ConfigError {
     #[error("TOML parse error: {0}")]
     TomlParse(#[from] toml::de::Error),
 
+    #[error("Invalid dependency '{0}': you must specify either a 'path' or a 'git' repository")]
+    InvalidDependency(String),
+
     #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
     BadNetworkName(String),
 

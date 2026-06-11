@@ -30,4 +30,19 @@ pub enum BuildError {
 
     #[error("Failed to find prefix for a file: {0}")]
     NoBasePathForGeneration(#[from] std::path::StripPrefixError),
+
+    #[error("Invalid dependency '{0}': you must specify either a 'path' or a 'git' repository")]
+    InvalidDependency(String),
+
+    #[error("Dependency '{dep_name}' is missing its configuration manifest at: {expected_path}")]
+    MissingDependencyConfig { dep_name: String, expected_path: PathBuf },
+
+    #[error("{0}")]
+    PathCanonicalization(String),
+
+    #[error("Failed to build dependency map: {0}")]
+    DependencyMap(String),
+
+    #[error("Failed to flatten program: {0}")]
+    Flattening(String),
 }
