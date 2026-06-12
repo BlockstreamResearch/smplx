@@ -63,7 +63,7 @@ main() {
 
   # Install by downloading binaries
   LATEST_TAG=$(latest_tag)
-  SIMPLEX_VERSION=${SIMPLEX_VERSION:-$LATEST_TAG}
+  SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION:-$LATEST_TAG}")
 
   # Resolve dependency binaries based on the version (populates DEP_BINS and BINS)
   local trimmed_version=${SIMPLEX_VERSION#v}
@@ -370,6 +370,8 @@ list() {
 use() {
   [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
 
+  SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION}")
+
   SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
 
   if [ -d "$SIMPLEX_VERSION_DIR" ]; then
@@ -644,8 +646,6 @@ form_str_list() {
 resolve_dep_bins() {
   local version="${1}"
 
-  echo "version for resolve ${version}"
-
   if [ -z "$version" ]; then
     warn "No version specified for resolving the current binary list."
     return 0
@@ -657,6 +657,14 @@ resolve_dep_bins() {
       DEP_BINS=(elementsd electrs smplx-nextest)
   fi
   BINS=("${BINS[@]}" "${DEP_BINS[@]}")
+}
+
+add_v_prefix() {
+  local version="${1}"
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      version="v${version}"
+  fi
+  echo $version
 }
 
 # Banner prompt for Simplex
