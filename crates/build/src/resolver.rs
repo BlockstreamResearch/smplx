@@ -1,8 +1,10 @@
 use std::collections::HashSet;
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use globwalk::FileType;
+use regex::Regex;
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
@@ -13,7 +15,6 @@ use super::error::BuildError;
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    // Here need to load all files, include the remappings
     pub fn resolve_files_to_build(src_dir: &String, simfs: &[String]) -> Result<Vec<PathBuf>, BuildError> {
         let cwd = env::current_dir()?;
         let base = cwd.join(src_dir);
@@ -27,11 +28,13 @@ impl ArtifactsResolver {
             .filter_map(Result::ok);
 
         for img in walker {
-            paths.push(img.path().to_path_buf().canonicalize()?);
-        }
+            let path = img.path().to_path_buf().canonicalize()?;
+            let content = std::fs::read_to_string(&path)?;
 
-        // Resolve here
-        // Note! Filter out files without main function
+            if Self::contains_main(&content) {
+                paths.push(path);
+            }
+        }
 
         Ok(paths)
     }
@@ -96,6 +99,15 @@ impl ArtifactsResolver {
             .builder
             .validate_deps()
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
+    }
+
+    /// Checks whether the source contains a `fn main(...)` declaration,
+    /// regardless of visibility (`pub fn main` or `fn main`) or nesting
+    /// inside `mod { ... }` blocks; The regex matches anywhere in the text.
+    fn contains_main(source: &str) -> bool {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        let re = RE.get_or_init(|| Regex::new(r"(?m)^\s*(pub\s+)?fn\s+main\s*\(").unwrap());
+        re.is_match(source)
     }
 }
 

@@ -6,8 +6,8 @@
 # out_dir = "./src/artifacts"
 
 [dependencies]
-merkle = { path = "deps/merkle" }
-base_math = { path = "deps/math" }
+merkle = { path = "simf/deps/merkle" }
+base_math = { path = "simf/deps/math" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
