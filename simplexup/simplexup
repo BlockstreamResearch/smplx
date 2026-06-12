@@ -14,9 +14,12 @@ SIMPLEX_BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
 SIMPLEXUP_IGNORE_VERIFICATION=false
 DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
 
+# The first version with `smplx-nextest` binary
+SIMPLEX_TURNING_POINT="0.0.6"
+
 SMPLX_BIN_NAME="simplex"
-DEP_BINS=(elementsd electrs smplx-nextest)
-BINS=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
+DEP_BINS=()
+BINS=("${SMPLX_BIN_NAME}")
 HASH_NAMES=()
 HASH_VALUES=()
 
@@ -55,14 +58,18 @@ main() {
   # Check if the simplexup installer is up to date, warn the user if not
   check_installer_up_to_date
 
-  check_bins_in_use
-
   # Default to Simplex repo
   SIMPLEX_REPO=${SIMPLEX_REPO:-$DEFAULT_SIMPLEX_REPO}
 
   # Install by downloading binaries
   LATEST_TAG=$(latest_tag)
   SIMPLEX_VERSION=${SIMPLEX_VERSION:-$LATEST_TAG}
+
+  # Resolve dependency binaries based on the version (populates DEP_BINS and BINS)
+  local trimmed_version=${SIMPLEX_VERSION#v}
+  resolve_dep_bins "$trimmed_version"
+
+  check_bins_in_use
 
   # Check if the requested version exists
   if [[ "${SIMPLEX_VERSION}" != "${LATEST_TAG}" ]]; then
@@ -305,7 +312,7 @@ update() {
   ensure download "$SIMPLEX_BIN_URL" "$tmp_file"
 
   # Extract new version from downloaded file.
-  new_version=$(grep -Eo 'SIMPLEXUP_INSTALLER_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' "$tmp_file" | cut -d'"' -f2)
+  new_version=$(cat "$tmp_file" | extract_installer_version)
 
   # If the new version could not be determined, exit gracefully.
   # This prevents from upgrading to an empty or invalid version.
@@ -487,10 +494,15 @@ detect_platform_arch() {
   fi
 }
 
+# Extracts the simplexup installer version from standard input.
+extract_installer_version() {
+  grep -Eo 'SIMPLEXUP_INSTALLER_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' | cut -d'"' -f2
+}
+
 check_installer_up_to_date() {
   say "checking if simplexup is up to date..."
 
-  remote_version=$(curl -fsSL "$SIMPLEX_BIN_URL" | grep -Eo 'SIMPLEXUP_INSTALLER_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' | cut -d'"' -f2)
+  remote_version=$(curl -fsSL "$SIMPLEX_BIN_URL" | extract_installer_version)
 
   if [ -z "$remote_version" ]; then
     warn "Could not determine remote simplexup version. Skipping version check."
@@ -626,6 +638,25 @@ form_str_list() {
   fi
 
   echo "$EL_STRING"
+}
+
+# Resolves and sets variables (DEP_BINS, BINS) with an appropriate values
+resolve_dep_bins() {
+  local version="${1}"
+
+  echo "version for resolve ${version}"
+
+  if [ -z "$version" ]; then
+    warn "No version specified for resolving the current binary list."
+    return 0
+  fi
+
+  if version_gt "${SIMPLEX_TURNING_POINT}" "$version"; then
+      DEP_BINS=(elementsd electrs)
+    else
+      DEP_BINS=(elementsd electrs smplx-nextest)
+  fi
+  BINS=("${BINS[@]}" "${DEP_BINS[@]}")
 }
 
 # Banner prompt for Simplex
