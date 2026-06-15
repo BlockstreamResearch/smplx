@@ -19,6 +19,23 @@ pub struct BuildConfig {
     pub out_dir: String,
 }
 
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct DependencyConfig {
+    #[serde(flatten)]
+    pub inner: HashMap<String, Dependency>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+pub struct Dependency {
+    /// Exact path to dir, where `Simplex.toml` file was located
+    pub path: Option<String>,
+
+    /// Link to git repo
+    pub git: Option<String>,
+}
+
 impl BuildConfig {
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, BuildError> {
         let mut content = String::new();
@@ -38,13 +55,6 @@ impl Default for BuildConfig {
             out_dir: DEFAULT_OUT_DIR_NAME.into(),
         }
     }
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-#[serde(default)]
-pub struct DependencyConfig {
-    #[serde(flatten)]
-    pub inner: HashMap<String, Dependency>,
 }
 
 impl DependencyConfig {
@@ -76,14 +86,4 @@ impl DependencyConfig {
         }
         Ok(())
     }
-}
-
-#[derive(Debug, Default, Clone, Deserialize)]
-#[serde(default)]
-pub struct Dependency {
-    /// Exact path to dir, where `Simplex.toml` file was located
-    pub path: Option<String>,
-
-    /// Link to git repo
-    pub git: Option<String>,
 }

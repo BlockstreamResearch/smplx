@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 
 use globwalk::FileType;
 use regex::Regex;
+
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
@@ -107,6 +108,7 @@ impl ArtifactsResolver {
     fn contains_main(source: &str) -> bool {
         static RE: OnceLock<Regex> = OnceLock::new();
         let re = RE.get_or_init(|| Regex::new(r"(?m)^\s*(pub\s+)?fn\s+main\s*\(").unwrap());
+
         re.is_match(source)
     }
 }
@@ -176,6 +178,7 @@ impl DepCollector {
             let nested_deps = DependencyConfig::from_file(&config_path)?;
             self.rec_collect(&nested_deps, &loaded_simf_dir, &loaded_context)?;
         }
+
         Ok(())
     }
 }

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+
 use simplicityhl::TemplateProgram;
 use simplicityhl::resolution::DependencyMap;
 use simplicityhl::resolution::ValidatedDeps;
@@ -68,6 +69,7 @@ impl ArtifactsGenerator {
             .collect::<Result<Vec<_>, _>>()?;
 
         let tree = Self::build_tree(artifacts)?;
+
         Self::generate_bindings(out_dir, tree)?;
 
         Ok(())
@@ -158,6 +160,7 @@ impl ArtifactsGenerator {
             for dir in &components[..components.len().saturating_sub(1)] {
                 current = current.dirs.entry(dir.clone()).or_default();
             }
+
             current.files.push(artifact);
         }
 
@@ -203,6 +206,7 @@ impl ArtifactsGenerator {
             })?;
 
         let code = Self::generate_simf_binding_code(&artifact.contract_name, &pathdiff)?;
+
         Self::expand_file(code, &mut file)?;
 
         Ok(artifact.contract_name)
@@ -217,6 +221,7 @@ impl ArtifactsGenerator {
             .open(&output_file)?;
 
         let code = Self::generate_mod_binding_code(mod_names)?;
+
         Self::expand_file(code, &mut file)?;
 
         Ok(())
