@@ -20,6 +20,7 @@ serde = { workspace = true }
 hex = { workspace = true }
 
 serde_json = { version = "1.0" }
+sealed = { version = "0.6.0" }
 elements-miniscript = { version = "0.4", features = ["base64", "serde"] }
 bip39 = { version = "2.0.0", features = ["rand"] }
 dyn-clone = { version = "1.0.20" }

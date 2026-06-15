@@ -2,9 +2,7 @@ use simplex::simplicityhl::elements::AssetId;
 
 use simplex::signer::Signer;
 use simplex::transaction::partial_input::IssuanceInput;
-use simplex::transaction::{
-    FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature, TxReceipt,
-};
+use simplex::transaction::{FinalTransaction, IssuanceDetails, NativeEcdsaSig, PartialInput, PartialOutput, TxReceipt};
 
 fn make_confidential_to_bob<'a>(alice: &'a Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<TxReceipt<'a>> {
     let mut ft = FinalTransaction::new();
@@ -31,7 +29,7 @@ fn issue_explicit_to_alice_with_reissuance<'a>(
     let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
         IssuanceInput::new_issuance(1000, 100, [1u8; 32]),
-        RequiredSignature::NativeEcdsa,
+        NativeEcdsaSig,
     );
 
     ft.add_output(PartialOutput::new(
@@ -75,7 +73,7 @@ fn reissue_tokens_to_bob<'a>(
     ft.add_issuance_input(
         PartialInput::new(reissuance_token_utxo),
         IssuanceInput::new_reissuance(reissuance_amount, issuance_details.asset_entropy.0),
-        RequiredSignature::NativeEcdsa,
+        NativeEcdsaSig,
     );
 
     ft.add_output(PartialOutput::new(

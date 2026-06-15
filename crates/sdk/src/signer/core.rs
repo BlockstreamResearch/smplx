@@ -34,7 +34,9 @@ use crate::program::logger::ProgramLogger;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;
-use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, TxReceipt, UTXO};
+use crate::transaction::{
+    FinalTransaction, NativeEcdsaSig, PartialInput, PartialOutput, RequiredSignature, TxReceipt, UTXO,
+};
 
 use super::error::SignerError;
 
@@ -209,7 +211,7 @@ impl Signer {
                 }
             }
 
-            fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
+            fee_tx.add_input(PartialInput::new(utxo), NativeEcdsaSig);
         }
 
         // need to try one more time after the loop

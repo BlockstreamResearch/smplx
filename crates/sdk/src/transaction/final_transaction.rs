@@ -9,6 +9,7 @@ use simplicityhl::elements::{
 };
 
 use crate::provider::SimplicityNetwork;
+use crate::transaction::{IssuanceSig, ProgramIssuanceSig, ProgramSig, RegularSig};
 use crate::utils;
 
 use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
@@ -157,79 +158,47 @@ impl FinalTransaction {
     }
 
     /// Adds a new input to the transaction.
-    ///
-    /// # Panics
-    /// Panics if the requested signature is not `NativeEcdsa` or `None`.
-    /// (i.e. if `required_sig` is `RequiredSignature::Witness` or `RequiredSignature::WitnessWithPath`)
-    pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
-        match required_sig {
-            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
-                panic!("Requested signature is not NativeEcdsa or None")
-            }
-            _ => {}
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig));
+    pub fn add_input<S: RegularSig>(&mut self, partial_input: PartialInput, required_sig: S) {
+        self.push_new_input(FinalInput::new(partial_input, required_sig.into()));
     }
 
     /// Adds a new program input to the transaction.
-    ///
-    /// # Panics
-    /// The function will panic if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`,
-    /// as this type of signature is not applicable for program inputs.
-    pub fn add_program_input(
+    pub fn add_program_input<S: ProgramSig>(
         &mut self,
         partial_input: PartialInput,
         program_input: ProgramInput,
-        required_sig: RequiredSignature,
+        required_sig: S,
     ) {
-        if let RequiredSignature::NativeEcdsa = required_sig {
-            panic!("Requested signature is not Witness or None");
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig).with_program(program_input));
+        self.push_new_input(FinalInput::new(partial_input, required_sig.into()).with_program(program_input));
     }
 
     /// Adds an issuance (or reissuance) input to the transaction.
     ///
     /// # Panics
-    /// This function panics if the `required_sig` is of type `Witness` or
-    /// `WitnessWithPath`, as these signature types are not allowed in the current context.
-    pub fn add_issuance_input(
+    /// Panics if the populated input fails to return valid issuance details.
+    pub fn add_issuance_input<S: IssuanceSig>(
         &mut self,
         partial_input: PartialInput,
         issuance_input: IssuanceInput,
-        required_sig: RequiredSignature,
+        required_sig: S,
     ) -> IssuanceDetails {
-        match required_sig {
-            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
-                panic!("Requested signature is not NativeEcdsa or None")
-            }
-            _ => {}
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input))
+        self.push_new_input(FinalInput::new(partial_input, required_sig.into()).with_issuance(issuance_input))
             .unwrap()
     }
 
     /// Adds an issuance program input to the transaction with the specified parameters.
     ///
     /// # Panics
-    /// Panics if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`.
-    /// Also panics if the populated input fails to return valid issuance details.
-    pub fn add_program_issuance_input(
+    /// Panics if the populated input fails to return valid issuance details.
+    pub fn add_program_issuance_input<S: ProgramIssuanceSig>(
         &mut self,
         partial_input: PartialInput,
         program_input: ProgramInput,
         issuance_input: IssuanceInput,
-        required_sig: RequiredSignature,
+        required_sig: S,
     ) -> IssuanceDetails {
-        if let RequiredSignature::NativeEcdsa = required_sig {
-            panic!("Requested signature is not Witness or None");
-        }
-
         self.push_new_input(
-            FinalInput::new(partial_input, required_sig)
+            FinalInput::new(partial_input, required_sig.into())
                 .with_program(program_input)
                 .with_issuance(issuance_input),
         )
@@ -417,7 +386,7 @@ mod tests {
 
     use simplicityhl::elements::{OutPoint, Script, TxOut, Txid};
 
-    use crate::transaction::UTXO;
+    use crate::transaction::{NoneSig, UTXO};
 
     use super::*;
 
@@ -460,7 +429,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(partial_input.clone(), RequiredSignature::None);
+        ft.add_input(partial_input.clone(), NoneSig);
         ft.add_output(partial_output.clone());
 
         let mut expected_pst = PartiallySignedTransaction::new_v2();
@@ -487,7 +456,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 2000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(partial_input.clone(), RequiredSignature::None);
+        ft.add_input(partial_input.clone(), NoneSig);
         ft.add_output(partial_output.clone());
 
         let mut expected_pst = PartiallySignedTransaction::new_v2();
@@ -520,8 +489,8 @@ mod tests {
         let output_b = PartialOutput::new(Script::new(), 800, other);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(explicit_partial.clone(), RequiredSignature::None);
-        ft.add_input(conf_partial.clone(), RequiredSignature::None);
+        ft.add_input(explicit_partial.clone(), NoneSig);
+        ft.add_input(conf_partial.clone(), NoneSig);
         ft.add_output(output_a.clone());
         ft.add_output(output_b.clone());
 
@@ -560,7 +529,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_issuance_input(partial_input.clone(), issuance.clone(), RequiredSignature::None);
+        ft.add_issuance_input(partial_input.clone(), issuance.clone(), NoneSig);
         ft.add_output(partial_output.clone());
 
         // build expected pst, merge partial_input and issuance manually
@@ -598,7 +567,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 1000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_issuance_input(partial_input.clone(), reissuance_input.clone(), RequiredSignature::None);
+        ft.add_issuance_input(partial_input.clone(), reissuance_input.clone(), NoneSig);
         ft.add_output(partial_output.clone());
 
         // build expected pst, merge partial_input and issuance manually

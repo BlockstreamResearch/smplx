@@ -1,4 +1,4 @@
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, NoneSig, PartialInput, ProgramInput};
 
 use simplex_fixtures::artifacts::dummy_panic::DummyPanicProgram;
 use simplex_fixtures::artifacts::dummy_panic::derived_dummy_panic::{DummyPanicArguments, DummyPanicWitness};
@@ -31,7 +31,7 @@ fn dummy_log_level(context: simplex::TestContext) -> anyhow::Result<()> {
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(dummy.as_ref().clone()), Box::new(DummyPanicWitness::default())),
-        RequiredSignature::None,
+        NoneSig,
     );
 
     let result = signer.broadcast(&ft);

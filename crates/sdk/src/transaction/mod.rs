@@ -10,7 +10,13 @@ pub mod tx_receipt;
 pub mod utxo;
 
 pub use final_transaction::{FinalInput, FinalTransaction, IssuanceDetails};
-pub use partial_input::{PartialInput, ProgramInput, RequiredSignature};
+pub use partial_input::{
+    PartialInput, ProgramInput, RequiredSignature,
+    {
+        IssuanceSig, NativeEcdsaSig, NoneSig, ProgramIssuanceSig, ProgramSig, RegularSig, Signature, WitnessSig,
+        WitnessWithPathSig,
+    },
+};
 pub use partial_output::PartialOutput;
 pub use tx_receipt::TxReceipt;
 pub use utxo::UTXO;

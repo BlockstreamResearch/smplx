@@ -2,7 +2,7 @@ use simplex::simplicityhl::elements::AssetId;
 
 use simplex::signer::Signer;
 use simplex::transaction::partial_input::IssuanceInput;
-use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, NativeEcdsaSig, PartialInput, PartialOutput};
 
 fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<()> {
     let mut ft = FinalTransaction::new();
@@ -26,7 +26,7 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
     let issuance_details = ft.add_issuance_input(
         PartialInput::new(utxos[0].clone()),
         IssuanceInput::new_issuance(1000, 100, [1u8; 32]),
-        RequiredSignature::NativeEcdsa,
+        NativeEcdsaSig,
     );
 
     ft.add_output(

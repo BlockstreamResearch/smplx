@@ -221,3 +221,108 @@ impl IssuanceInput {
         }
     }
 }
+
+pub use sealed::*;
+mod sealed {
+    use crate::transaction::RequiredSignature;
+
+    /// A trait for signature types, sealed to prevent external implementations.
+    #[sealed::sealed]
+    pub trait Signature: Into<RequiredSignature> {}
+
+    /// A marker trait representing signatures allowed for non-program inputs (ECDSA or None).
+    pub trait RegularSig: Signature {}
+
+    /// A marker trait representing signatures allowed for program inputs (Witness or None).
+    pub trait ProgramSig: Signature {}
+
+    /// A marker trait representing signatures allowed for non-program inputs (ECDSA or None).
+    pub trait IssuanceSig: Signature {}
+
+    /// A marker trait representing signatures allowed for program inputs (Witness or None).
+    pub trait ProgramIssuanceSig: Signature {}
+
+    /// Represents no signature requirement.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct NoneSig;
+
+    #[sealed::sealed]
+    impl Signature for NoneSig {}
+
+    impl From<NoneSig> for RequiredSignature {
+        fn from(_: NoneSig) -> Self {
+            RequiredSignature::None
+        }
+    }
+
+    impl RegularSig for NoneSig {}
+    impl ProgramIssuanceSig for NoneSig {}
+    impl IssuanceSig for NoneSig {}
+    impl ProgramSig for NoneSig {}
+
+    /// Represents a standard Native ECDSA (WPKH) signature requirement.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct NativeEcdsaSig;
+
+    #[sealed::sealed]
+    impl Signature for NativeEcdsaSig {}
+
+    impl From<NativeEcdsaSig> for RequiredSignature {
+        fn from(_: NativeEcdsaSig) -> Self {
+            RequiredSignature::NativeEcdsa
+        }
+    }
+
+    impl RegularSig for NativeEcdsaSig {}
+    impl IssuanceSig for NativeEcdsaSig {}
+
+    /// Represents a generic witness payload associated with an external name.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct WitnessSig(pub String);
+
+    impl WitnessSig {
+        /// Creates a `WitnessSig` requirement using an iterator of path segments.
+        #[must_use]
+        pub fn new(name: impl Into<String>) -> Self {
+            WitnessSig(name.into())
+        }
+    }
+    #[sealed::sealed]
+    impl Signature for WitnessSig {}
+
+    impl From<WitnessSig> for RequiredSignature {
+        fn from(value: WitnessSig) -> Self {
+            RequiredSignature::Witness(value.0)
+        }
+    }
+
+    impl ProgramIssuanceSig for WitnessSig {}
+    impl ProgramSig for WitnessSig {}
+
+    /// Represents a witness payload requiring traversal through a specified path hierarchy.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct WitnessWithPathSig(pub String, pub Vec<String>);
+
+    impl WitnessWithPathSig {
+        /// Creates a `WitnessWithPathSig` requirement using an iterator of path segments.
+        pub fn new<I>(name: impl Into<String>, path: I) -> Self
+        where
+            I: IntoIterator,
+            I::Item: AsRef<str>,
+        {
+            Self(name.into(), path.into_iter().map(|s| s.as_ref().to_string()).collect())
+        }
+    }
+
+    #[sealed::sealed]
+    impl Signature for WitnessWithPathSig {}
+
+    impl From<WitnessWithPathSig> for RequiredSignature {
+        fn from(value: WitnessWithPathSig) -> Self {
+            RequiredSignature::WitnessWithPath(value.0, value.1)
+        }
+    }
+
+    impl ProgramIssuanceSig for WitnessWithPathSig {}
+    impl ProgramSig for WitnessWithPathSig {}
+}
