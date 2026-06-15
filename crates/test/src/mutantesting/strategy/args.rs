@@ -30,7 +30,7 @@ impl<T, E> Debug for Random<T, E> {
     }
 }
 
-pub struct RandomValueTree<T>(T);
+pub struct RandomValueTree<T>(pub T);
 
 impl<T: Clone + std::fmt::Debug> ValueTree for RandomValueTree<T> {
     type Value = T;

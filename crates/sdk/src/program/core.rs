@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use dyn_clone::DynClone;
 
+use crate::global::GlobalConfig;
+use crate::program::logger::ProgramLogger;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::Elements;
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
+use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 use simplicityhl::{Arguments, CompiledProgram};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
-
-use crate::global::GlobalConfig;
-use crate::program::logger::ProgramLogger;
 
 use super::error::ProgramError;
 
@@ -180,8 +180,8 @@ impl ProgramTrait for Program {
 
         // execute() is called multiple times during fee estimation; output is buffered
         // so only the final successful execution's logs are emitted to stderr.
-        let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), GlobalConfig::get_log_level());
-
+        // let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), TrackerLogLevel::Trace);
+        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_default_debug_sink();
         let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
@@ -191,9 +191,8 @@ impl ProgramTrait for Program {
         }
 
         let mut mac = BitMachine::for_program(&pruned)?;
-
         let result = mac.exec(&pruned, &env)?;
-
+        ProgramLogger::flush_logs();
         Ok((pruned, result))
     }
 
@@ -215,6 +214,45 @@ impl ProgramTrait for Program {
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
         ])
+    }
+}
+
+impl<T: ProgramTrait + Sized> ProgramTrait for &T {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        (*self).get_argument_types()
+    }
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        (*self).get_witness_types()
+    }
+
+    fn get_env(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
+        (*self).get_env(pst, input_index, network)
+    }
+
+    fn execute(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError> {
+        (*self).execute(pst, witness, input_index, network)
+    }
+
+    fn finalize(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        (*self).finalize(pst, witness, input_index, network)
     }
 }
 
@@ -343,7 +381,8 @@ impl Program {
         let compiled = CompiledProgram::new(
             self.source,
             (*self.arguments).clone(),
-            GlobalConfig::get_include_debug_symbols(),
+            true,
+            // GlobalConfig::get_include_debug_symbols(),
         )
         .map_err(ProgramError::Compilation)?;
 

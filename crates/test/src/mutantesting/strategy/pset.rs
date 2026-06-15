@@ -1,4 +1,6 @@
+use crate::mutantesting::FuzzContext;
 use crate::mutantesting::core::{FuzzableBaseContextGen, FuzzableContextGen, FuzzableProgram};
+use proptest::test_runner::TestRng;
 use simplicityhl::elements::hashes::Hash;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{OutPoint, TxOut, Txid};
@@ -41,6 +43,16 @@ impl<FuzzProgram: FuzzableProgram<FuzzProgram>> FuzzableBaseContextGen<FuzzProgr
         );
 
         ft
+    }
+
+    fn build_base_transaction_2(
+        &self,
+        context: &FuzzContext,
+        args: Arguments,
+        wit: WitnessValues,
+        rng: &mut TestRng,
+    ) -> (FinalTransaction, PartiallySignedTransaction, Arguments, WitnessValues) {
+        todo!("FuzzableBaseContextGen::build_base_transaction_2")
     }
 }
 

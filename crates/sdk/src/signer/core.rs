@@ -490,6 +490,12 @@ impl Signer {
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
+        let pst = self.sign_tx_raw(tx)?;
+        Ok(pst.extract_tx()?)
+    }
+
+    /// Some docs
+    pub fn sign_tx_raw(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
@@ -529,6 +535,7 @@ impl Signer {
             } else {
                 // we need to sign the UTXO as is
                 // TODO: do we always sign?
+                println!("Running sighashall ");
                 let signed_witness = self.sign_input(&pst, index)?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
 
@@ -536,10 +543,11 @@ impl Signer {
             }
         }
 
-        Ok(pst.extract_tx()?)
+        Ok(pst)
     }
 
-    fn get_signed_program_witness(
+    /// Some doc
+    pub fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
         program: &dyn ProgramTrait,

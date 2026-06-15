@@ -1,5 +1,6 @@
 use crate::mutantesting::provider::MockProvider;
 use proptest::prelude::BoxedStrategy;
+use proptest::test_runner::TestRng;
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::simplicity::jet::Elements;
@@ -32,6 +33,14 @@ pub trait FuzzableBaseContextGen<Program> {
         args: Arguments,
         wit: WitnessValues,
     ) -> FinalTransaction;
+
+    fn build_base_transaction_2(
+        &self,
+        context: &FuzzContext,
+        args: Arguments,
+        wit: WitnessValues,
+        rng: &mut TestRng,
+    ) -> (FinalTransaction, PartiallySignedTransaction, Arguments, WitnessValues);
 }
 
 pub trait FuzzableContextGen<Program> {

@@ -13,7 +13,7 @@ use std::marker::PhantomData;
 
 pub struct SimplexFuzzEngineInner<Program, Args, Wit> {
     pub(crate) fuzz_context: FuzzContext,
-    pub(crate) strategy_storage: Vec<Box<dyn ArgGenFuzzStrategy<Args, Wit>>>,
+    pub(crate) strategy_storage: Option<Box<dyn ArgGenFuzzStrategy<Args, Wit>>>,
     pub(crate) base_gen: Option<Box<dyn FuzzableBaseContextGen<Program>>>,
     pub(crate) mod_gen: Option<Box<dyn FuzzableContextGen<Program>>>,
 }
@@ -55,7 +55,7 @@ where
             runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
             inner: RefCell::new(SimplexFuzzEngineInner {
                 fuzz_context: FuzzContext::default(),
-                strategy_storage: vec![],
+                strategy_storage: None,
                 base_gen: None,
                 mod_gen: None,
             }),
@@ -95,7 +95,7 @@ where
     where
         S: ArgGenFuzzStrategy<Args, Wit> + Default + 'static,
     {
-        self.inner.borrow_mut().strategy_storage.push(Box::new(S::default()));
+        self.inner.borrow_mut().strategy_storage = Some(Box::new(S::default()));
     }
 
     pub fn run_with_check(&self, program_check_fn: impl ProgramCheck) {
@@ -104,34 +104,63 @@ where
 
         let base_gen = inner.base_gen.as_ref().expect("Base gen strategy must be configured");
         let modifier = inner.mod_gen.as_ref().expect("Mod gen strategy must be configured");
+        let strategy_gen = inner.strategy_storage.as_ref().expect("Strategy must be configured");
 
         // TODO: remove strategies Vec, by now impossible to combine them, we can only use 1
-        for strategy_gen in inner.strategy_storage.iter() {
-            let strategy = strategy_gen.get_strategy(&inner.fuzz_context);
-            match runner.run(&strategy, |(args, wit)| {
-                let context = &inner.fuzz_context;
-                let ft = base_gen.build_base_transaction(&context.network, args.clone(), wit.clone());
-                // TODO: maybe make a couple of modification for one ft if non-default used?
-                let pst = modifier
-                    .modify_transaction(&inner.fuzz_context.signer, ft, &args, &wit)
-                    .unwrap();
+        let strategy = strategy_gen.get_strategy(&inner.fuzz_context);
+        match runner.run(&strategy, |(args, wit)| {
+            let context = &inner.fuzz_context;
+            let ft = base_gen.build_base_transaction(&context.network, args.clone(), wit.clone());
+            // TODO: maybe make a couple of modification for one ft if non-default used?
+            let pst = modifier
+                .modify_transaction(&inner.fuzz_context.signer, ft, &args, &wit)
+                .unwrap();
 
-                let (failure_program, _script) = FuzzProgram::build_program(args.clone(), &context.network);
+            let (failure_program, _script) = FuzzProgram::build_program(args.clone(), &context.network);
 
-                // TODO: think how to provide a pset for a program execution environment
-                // let pst = PartiallySignedTransaction::from_tx(tx.clone());
+            // TODO: think how to provide a pset for a program execution environment
+            // let pst = PartiallySignedTransaction::from_tx(tx.clone());
 
-                let exec_result: ProgramExecResult =
-                    failure_program.get_program().execute(&pst, &wit, 0, &context.network);
+            let exec_result: ProgramExecResult = failure_program.get_program().execute(&pst, &wit, 0, &context.network);
 
-                match program_check_fn.call(context, &pst, &args, &wit, exec_result) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(TestCaseError::fail(e)),
-                }
-            }) {
-                Ok(()) => (),
-                Err(e) => ::core::panic!("{}\n{}", e, runner),
-            };
-        }
+            match program_check_fn.call(context, &pst, &args, &wit, exec_result) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(TestCaseError::fail(e)),
+            }
+        }) {
+            Ok(()) => (),
+            Err(e) => ::core::panic!("{}\n{}", e, runner),
+        };
+    }
+
+    pub fn run_with_check_2(&self, program_check_fn: impl ProgramCheck) {
+        let mut runner = self.runner.borrow_mut();
+        let inner = self.inner.borrow();
+
+        let base_gen = inner.base_gen.as_ref().expect("Base gen strategy must be configured");
+        let modifier = inner.mod_gen.as_ref().expect("Mod gen strategy must be configured");
+        let strategy_gen = inner.strategy_storage.as_ref().expect("Strategy must be configured");
+
+        // TODO: remove strategies Vec, by now impossible to combine them, we can only use 1
+        let strategy = strategy_gen.get_strategy(&inner.fuzz_context);
+        let mut runnner_rng = runner.new_rng();
+        match runner.run(&strategy, |(args, wit)| {
+            let mut runnner_rng_local = runnner_rng.clone();
+            let context = &inner.fuzz_context;
+            let (ft, pst, args, wit) =
+                base_gen.build_base_transaction_2(&context, args.clone(), wit.clone(), &mut runnner_rng_local);
+            println!("args: {args}, wit: {wit}");
+            let (failure_program, _script) = FuzzProgram::build_program(args.clone(), &context.network);
+
+            let exec_result: ProgramExecResult = failure_program.get_program().execute(&pst, &wit, 0, &context.network);
+
+            match program_check_fn.call(context, &pst, &args, &wit, exec_result) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(TestCaseError::fail(e)),
+            }
+        }) {
+            Ok(()) => (),
+            Err(e) => ::core::panic!("{}\n{}", e, runner),
+        };
     }
 }
