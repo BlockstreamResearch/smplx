@@ -1,1 +1,1 @@
-pub use hl_compiler::multiple_deps::math::simple_op::hash;
+pub use hl_compiler::simple_op::hash;

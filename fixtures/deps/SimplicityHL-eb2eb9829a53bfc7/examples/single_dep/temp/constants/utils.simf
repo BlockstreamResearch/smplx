@@ -1,5 +1,0 @@
-pub use crate::funcs::Smth;
-
-pub fn two() -> Smth {
-    2
-}

@@ -1,5 +1,0 @@
-pub type Smth = u32;
-
-pub fn get_five() -> u32 {
-    5
-}
