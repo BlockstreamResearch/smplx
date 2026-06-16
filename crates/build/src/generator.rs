@@ -347,7 +347,7 @@ impl ArtifactsGenerator {
 
     /// Converts "https://github.com/smplx/core.git"
     /// into a Cargo-style path: "core-a1b2c3d4e5f67890"
-    /// 
+    ///
     /// # Returns
     ///
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
