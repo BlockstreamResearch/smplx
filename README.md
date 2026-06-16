@@ -56,6 +56,9 @@ src_dir = "./simf"
 simf_files = ["*.simf"]
 out_dir = "./src/artifacts"
 
+[dependencies]
+some_dep = { git = "<git url>", path = "<or a relative path>" } 
+
 [regtest]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
 bitcoins = 10_000_000
@@ -85,6 +88,8 @@ Where:
   - `src_dir` - The simplicity contracts source directory.
   - `simf_files` - A glob pattern indicating which contracts are in scope.
   - `out_dir` - The output directory where contracts artifacts are generated.
+- `dependencies` (`simplex install` config)
+  - The list of SimplicityHL dependencies to install.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
@@ -110,6 +115,7 @@ Simplex CLI provides the following commands:
 
 - `simplex init` - Initializes a new Simplex project.
 - `simplex config` - Prints the current config.
+- `simplex install` - Installs specified SimplicityHL dependencies.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
@@ -133,11 +139,11 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 - [x] Complete `simplex init` and `simplex clean` tasks.
 - [x] Simplicity storage compatibility.
+- [x] Simplicity dependencies management.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
 - [ ] Browser compatibility.
-- [ ] Simplicity dependencies management.
 - [ ] Comprehensive documentation.
 
 Check out the full roadmap [here](https://github.com/orgs/BlockstreamResearch/projects/3).
