@@ -53,10 +53,10 @@ impl Install {
                 continue;
             };
 
-            let hashed_folder = ArtifactsGenerator::generate_hashed_repo_path(git_repo_url)
+            let hashed_dir = ArtifactsGenerator::generate_hashed_repo_path(git_repo_url)
                 .ok_or_else(|| InstallError::InvalidUrl(git_repo_url.clone()))?;
 
-            let target_dir = deps_dir.join(hashed_folder);
+            let target_dir = deps_dir.join(hashed_dir);
 
             if !target_dir.exists() {
                 fs::create_dir_all(&target_dir).map_err(|e| InstallError::CreateDir(e, target_dir.clone()))?;
@@ -69,7 +69,7 @@ impl Install {
 
             // Consider it installed and skip cloning.
             if is_empty {
-                // Assumes the folder is perfectly empty
+                // Assumes the directory is perfectly empty
                 let status = Command::new("git")
                     .arg("clone")
                     .arg("--depth")
@@ -100,15 +100,18 @@ impl Install {
 impl Display for InstalledRepos {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "[")?;
+
         for (index, path) in self.0.iter().enumerate() {
             if index > 0 {
                 write!(f, ",")?;
             }
             write!(f, "\n    {}", path.display())?;
         }
+
         if !self.0.is_empty() {
             writeln!(f)?;
         }
+
         write!(f, "]")
     }
 }

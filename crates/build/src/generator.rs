@@ -362,8 +362,8 @@ impl ArtifactsGenerator {
         let hash_value = hasher.finish();
 
         // Do it the Rust way: EXACTLY 16 hex characters
-        let folder_name = format!("{}-{:016x}", repo_name, hash_value);
+        let dir_name = format!("{}-{:016x}", repo_name, hash_value);
 
-        Some(PathBuf::from(folder_name))
+        Some(PathBuf::from(dir_name))
     }
 }

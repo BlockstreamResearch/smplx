@@ -116,6 +116,7 @@ impl ArtifactsResolver {
         let Ok(parsed_program) = parse::Program::parse_from_str(source) else {
             return false;
         };
+
         Self::rec_main_checker(parsed_program.items(), &FunctionName::main())
     }
 

@@ -42,6 +42,7 @@ impl BuildConfig {
     /// top-level keys. If the section is absent, returns [`BuildConfig::default`].
     pub fn from_source(content: &str) -> Result<Self, BuildError> {
         let table: toml::Table = toml::from_str(content)?;
+
         match table.get("build") {
             Some(section) => Ok(section.clone().try_into()?),
             None => Ok(Self::default()),
@@ -78,10 +79,10 @@ impl DependencyConfig {
     }
 
     pub fn validate(&self) -> Result<(), DependencyValidationError> {
-        for (drp_name, dep) in &self.inner {
+        for (dep_name, dep) in &self.inner {
             match (&dep.path, &dep.git) {
-                (None, None) => return Err(DependencyValidationError::Missing(drp_name.clone())),
-                (Some(_), Some(_)) => return Err(DependencyValidationError::Conflicting(drp_name.clone())),
+                (None, None) => return Err(DependencyValidationError::Missing(dep_name.clone())),
+                (Some(_), Some(_)) => return Err(DependencyValidationError::Conflicting(dep_name.clone())),
                 _ => {}
             }
         }
