@@ -8,4 +8,4 @@ pub use proptest::test_runner::Config;
 
 pub use core::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
 pub use engine::SimplexFuzzEngine;
-pub use utils::{generate_value_by_ty, generate_value_by_ty_iterative};
+pub use utils::generate_value_by_ty;
