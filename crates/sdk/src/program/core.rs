@@ -218,6 +218,45 @@ impl ProgramTrait for Program {
     }
 }
 
+impl<T: ProgramTrait + Sized> ProgramTrait for &T {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        (*self).get_argument_types()
+    }
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        (*self).get_witness_types()
+    }
+
+    fn get_env(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
+        (*self).get_env(pst, input_index, network)
+    }
+
+    fn execute(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<(Arc<RedeemNode<Elements>>, Value), ProgramError> {
+        (*self).execute(pst, witness, input_index, network)
+    }
+
+    fn finalize(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        (*self).finalize(pst, witness, input_index, network)
+    }
+}
+
 impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]

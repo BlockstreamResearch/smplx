@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use simplicityhl::WitnessValues;
@@ -66,6 +67,12 @@ pub struct ProgramInput {
     pub program: Box<dyn ProgramTrait>,
     /// The witness values required to satisfy the program.
     pub witness: Arc<WitnessValues>,
+}
+
+impl Debug for ProgramInput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.witness)
+    }
 }
 
 /// Represents an input designated for asset issuance or reissuance.

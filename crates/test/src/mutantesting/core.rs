@@ -6,14 +6,14 @@ use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::ProgramError;
 use smplx_sdk::program::core::SimplexProgram;
 use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::{Signer, SignerError};
-use smplx_sdk::transaction::FinalTransaction;
+use smplx_sdk::signer::Signer;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct FuzzContext {
-    pub signer: Option<Signer>,
-    pub mock_provider: MockProvider,
+    pub signer: Arc<Option<Signer>>,
+    pub mock_provider: Arc<MockProvider>,
     pub network: SimplicityNetwork,
 }
 
@@ -24,27 +24,11 @@ pub trait FuzzableProgram<P: SimplexProgram>: SimplexProgram {
     fn build_program(args: impl Into<Arguments>, network: &SimplicityNetwork) -> (Box<P>, Script);
 }
 
-pub trait FuzzableBaseContextGen<Program> {
-    fn build_base_transaction(
+pub trait FuzzStrategy<Program, Args, Wit>: Debug {
+    fn get_strategy(
         &self,
-        network: &SimplicityNetwork,
-        args: Arguments,
-        wit: WitnessValues,
-    ) -> FinalTransaction;
-}
-
-pub trait FuzzableContextGen<Program> {
-    fn modify_transaction(
-        &self,
-        signer: &Option<Signer>,
-        ft: FinalTransaction,
-        args: &Arguments,
-        wit: &WitnessValues,
-    ) -> Result<PartiallySignedTransaction, SignerError>;
-}
-
-pub trait ArgGenFuzzStrategy<Args, Wit>: Debug {
-    fn get_strategy(&self, test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)>;
+        test_context: FuzzContext,
+    ) -> BoxedStrategy<(Arguments, WitnessValues, PartiallySignedTransaction)>;
 }
 
 pub trait ProgramCheck {
