@@ -11,6 +11,7 @@ use globwalk::GlobError;
 pub enum DependencyValidationError {
     #[error("Invalid dependency '{0}': you must specify either a 'path' or a 'git' repository")]
     Missing(String),
+
     #[error("Invalid dependency '{0}': cannot specify both 'path' and 'git', choose one")]
     Conflicting(String),
 }

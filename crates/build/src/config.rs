@@ -71,7 +71,9 @@ impl DependencyConfig {
             Some(section) => section.clone().try_into()?,
             None => Self::default(),
         };
+
         res.validate()?;
+
         Ok(res)
     }
 
@@ -83,6 +85,7 @@ impl DependencyConfig {
                 _ => {}
             }
         }
+
         Ok(())
     }
 }
