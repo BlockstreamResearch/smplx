@@ -490,6 +490,13 @@ impl Signer {
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
+        let pst = self.sign_tx_raw(tx)?;
+
+        Ok(pst.extract_tx()?)
+    }
+
+    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    pub fn sign_tx_raw(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
@@ -535,11 +542,11 @@ impl Signer {
                 pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
             }
         }
-
-        Ok(pst.extract_tx()?)
+        Ok(pst)
     }
 
-    fn get_signed_program_witness(
+    /// Signs and inserts a signature into appropriate witness value
+    pub fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
         program: &dyn ProgramTrait,

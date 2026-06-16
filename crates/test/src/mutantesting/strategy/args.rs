@@ -1,10 +1,8 @@
-use proptest::prelude::{BoxedStrategy, Strategy};
+use proptest::prelude::Strategy;
 use proptest::strategy::{NewTree, ValueTree};
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
-use crate::mutantesting::FuzzContext;
-use crate::mutantesting::core::ArgGenFuzzStrategy;
 use proptest::prelude::Rng;
 use proptest::test_runner::{TestRng, TestRunner};
 use simplicityhl::str::WitnessName;
@@ -57,14 +55,6 @@ impl<Args: RandomArguments + std::fmt::Debug, Wit: RandomWitness + std::fmt::Deb
     }
 }
 
-impl<Args: RandomArguments + std::fmt::Debug + Clone + 'static, Wit: RandomWitness + std::fmt::Debug + Clone + 'static>
-    ArgGenFuzzStrategy<Args, Wit> for Random<Args, Wit>
-{
-    fn get_strategy(&self, _test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)> {
-        Random::<Args, Wit>::default().boxed()
-    }
-}
-
 pub struct RandomValuePool<Args, Wit> {
     phantom_data: PhantomData<(Args, Wit)>,
     _value_pool: ValuePool,
@@ -76,18 +66,6 @@ impl<Args, Wit> Default for RandomValuePool<Args, Wit> {
             phantom_data: PhantomData,
             _value_pool: ValuePool::default(),
         }
-    }
-}
-
-impl<Args: RandomArguments + std::fmt::Debug + Clone + 'static, Wit: RandomWitness + std::fmt::Debug + Clone + 'static>
-    ArgGenFuzzStrategy<Args, Wit> for RandomValuePool<Args, Wit>
-{
-    fn get_strategy(&self, _test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)> {
-        RandomValuePool::<Args, Wit> {
-            phantom_data: Default::default(),
-            _value_pool: ValuePool::default(),
-        }
-        .boxed()
     }
 }
 
