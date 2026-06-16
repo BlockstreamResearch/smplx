@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::{env, fs};
 
 use globwalk::FileType;
-use regex::Regex;
 
+use simplicityhl::parse::{self, ParseFromStr};
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
+use simplicityhl::str::FunctionName;
 
 use crate::config::{DEFAULT_DEPENDENCY_DIR, Dependency};
 use crate::{ArtifactsGenerator, BuildConfig, DependencyConfig};
@@ -110,14 +110,23 @@ impl ArtifactsResolver {
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
     }
 
-    /// Checks whether the source contains a `fn main(...)` declaration,
-    /// regardless of visibility (`pub fn main` or `fn main`) or nesting
-    /// inside `mod { ... }` blocks; The regex matches anywhere in the text.
+    /// Checks whether the source declares a `fn main(...)`,
+    /// finding it even when nested inside `mod { ... }` blocks.
     fn contains_main(source: &str) -> bool {
-        static RE: OnceLock<Regex> = OnceLock::new();
-        let re = RE.get_or_init(|| Regex::new(r"(?m)^\s*(pub\s+)?fn\s+main\s*\(").unwrap());
+        let Ok(parsed_program) = parse::Program::parse_from_str(source) else {
+            return false;
+        };
+        Self::rec_main_checker(parsed_program.items(), &FunctionName::main())
+    }
 
-        re.is_match(source)
+    /// Recursively searches `items` (descending into nested modules) for a
+    /// function named `main`.
+    fn rec_main_checker(items: &[parse::Item], main_name: &FunctionName) -> bool {
+        items.iter().any(|item| match item {
+            parse::Item::Function(func) => func.name() == main_name,
+            parse::Item::Module(module) => Self::rec_main_checker(module.items(), main_name),
+            _ => false,
+        })
     }
 }
 
