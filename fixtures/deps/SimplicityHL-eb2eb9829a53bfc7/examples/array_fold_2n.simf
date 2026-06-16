@@ -1,0 +1,12 @@
+// From https://github.com/BlockstreamResearch/SimplicityHL/issues/153
+
+fn sum(elt: u32, acc: u32) -> u32 {
+    let (_, acc): (bool, u32) = jet::add_32(elt, acc);
+    acc
+}
+
+fn main() {
+    let arr: [u32; 8] = [1, 1, 1, 1, 1, 1, 1, 1];
+    let sum: u32 = array_fold::<sum, 8>(arr, 0);
+    assert!(jet::eq_32(sum, 8));
+}

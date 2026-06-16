@@ -1,0 +1,22 @@
+/*
+ * This program is an emulation of CTV using simplicity
+ *
+ * Instead of specifying the template hash as in BIP CTV,
+ * we require the user to specify all the components of the sighash
+ * that they want to commit.
+ */
+fn main() {
+    let ctx: Ctx8 = jet::sha_256_ctx_8_init();
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_4(ctx, jet::version());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_4(ctx, jet::lock_time());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::input_script_sigs_hash());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_4(ctx, jet::num_inputs());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::input_sequences_hash());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_4(ctx, jet::num_outputs());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::outputs_hash());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_4(ctx, jet::current_index());
+    let ctv_hash: u256 = jet::sha_256_ctx_8_finalize(ctx);
+
+    let expected_hash: u256 = 0xae3d019b30529c6044d2b3d7ee2e0ee5db51a7f05ed5db8f089cd5d455f1fc5d;
+    assert!(jet::eq_256(ctv_hash, expected_hash));
+}

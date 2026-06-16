@@ -1,10 +1,9 @@
 use std::{cell::RefCell, fmt::Write};
 
-use simplicityhl::{
-    debug::DebugSymbols,
-    simplicity::node::{Node, Redeem},
-    tracker::{DefaultTracker, TrackerLogLevel},
-};
+use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::debug::DebugSymbols;
+use simplicityhl::simplicity::node::{Node, Redeem};
+use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 thread_local! {
     pub(super) static PROGRAM_LOGGER: RefCell<ProgramLogger> = const { RefCell::new(ProgramLogger { cost_info: None, trace_buffer: Vec::new() }) };
@@ -40,7 +39,7 @@ impl ProgramLogger {
     pub fn make_tracker(debug_symbols: &DebugSymbols, log_level: TrackerLogLevel) -> DefaultTracker<'_> {
         Self::clear_logs();
 
-        let tracker = DefaultTracker::new(debug_symbols);
+        let tracker = DefaultTracker::build(debug_symbols, Box::new(ElementsJetHinter));
 
         let tracker = if log_level >= TrackerLogLevel::Debug {
             tracker.with_debug_sink(|label, value| {

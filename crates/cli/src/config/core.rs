@@ -77,7 +77,8 @@ impl Config {
             }
         }
 
-        config.dependencies.validate().map_err(ConfigError::InvalidDependency)
+        config.dependencies.validate()?;
+        Ok(())
     }
 
     fn validate_network(network: &String) -> Result<(), ConfigError> {

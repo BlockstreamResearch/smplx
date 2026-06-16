@@ -1,15 +1,14 @@
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::path::Path;
 
 use serde::Deserialize;
 
 use super::error::BuildError;
+use super::error::DependencyValidationError;
 
 pub const DEFAULT_OUT_DIR_NAME: &str = "src/artifacts";
 pub const DEFAULT_INCLUDE_PATH: &str = "**/*.simf";
 pub const DEFAULT_SRC_DIR_NAME: &str = "simf";
+pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -37,13 +36,16 @@ pub struct Dependency {
 }
 
 impl BuildConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, BuildError> {
-        let mut content = String::new();
-        let mut file = OpenOptions::new().read(true).open(path)?;
-
-        file.read_to_string(&mut content)?;
-
-        Ok(toml::from_str(&content)?)
+    /// Parses the `[build]` section from TOML source text.
+    ///
+    /// The `[build]` table is nested, so this descends into it rather than reading
+    /// top-level keys. If the section is absent, returns [`BuildConfig::default`].
+    pub fn from_source(content: &str) -> Result<Self, BuildError> {
+        let table: toml::Table = toml::from_str(content)?;
+        match table.get("build") {
+            Some(section) => Ok(section.clone().try_into()?),
+            None => Ok(Self::default()),
+        }
     }
 }
 
@@ -58,30 +60,27 @@ impl Default for BuildConfig {
 }
 
 impl DependencyConfig {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, BuildError> {
-        let mut content = String::new();
-        let mut file = OpenOptions::new().read(true).open(path)?;
-        file.read_to_string(&mut content)?;
-
-        let table: toml::Table = toml::from_str(&content)?;
-        let res = if let Some(deps_section) = table.get("dependencies") {
-            deps_section.clone().try_into()?
-        } else {
-            DependencyConfig::default()
+    /// Parses and validates the `[dependencies]` section from TOML source text.
+    ///
+    /// The `[dependencies]` table is nested, so this descends into it rather than
+    /// reading top-level keys. If the section is absent, returns the default
+    /// (empty) config. Each dependency is validated to declare exactly one source.
+    pub fn from_source(content: &str) -> Result<Self, BuildError> {
+        let table: toml::Table = toml::from_str(content)?;
+        let res: Self = match table.get("dependencies") {
+            Some(section) => section.clone().try_into()?,
+            None => Self::default(),
         };
-
-        if let Err(err) = res.validate() {
-            Err(BuildError::InvalidDependency(err))
-        } else {
-            Ok(res)
-        }
+        res.validate()?;
+        Ok(res)
     }
 
-    /// When error occured, returned, return drp_name of the invalid dependency
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), DependencyValidationError> {
         for (drp_name, dep) in &self.inner {
-            if dep.path.is_none() && dep.git.is_none() {
-                return Err(drp_name.clone());
+            match (&dep.path, &dep.git) {
+                (None, None) => return Err(DependencyValidationError::Missing(drp_name.clone())),
+                (Some(_), Some(_)) => return Err(DependencyValidationError::Conflicting(drp_name.clone())),
+                _ => {}
             }
         }
         Ok(())

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -342,5 +343,21 @@ impl ArtifactsGenerator {
         };
 
         Ok(code)
+    }
+
+    /// Converts "https://github.com/smplx/core.git"
+    /// into a Cargo-style path: "core-a1b2c3d4e5f67890"
+    pub fn generate_hashed_repo_path(url: &str) -> Option<PathBuf> {
+        let clean_url = url.strip_suffix(".git").unwrap_or(url);
+        let repo_name = clean_url.split('/').next_back()?;
+
+        let mut hasher = DefaultHasher::new();
+        url.hash(&mut hasher);
+        let hash_value = hasher.finish();
+
+        // Do it the Rust way: EXACTLY 16 hex characters
+        let folder_name = format!("{}-{:016x}", repo_name, hash_value);
+
+        Some(PathBuf::from(folder_name))
     }
 }

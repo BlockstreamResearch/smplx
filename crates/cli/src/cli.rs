@@ -6,6 +6,7 @@ use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
 use crate::commands::init::Init;
+use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
 use crate::config::Config;
@@ -65,6 +66,12 @@ impl Cli {
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Regtest::run(&loaded_config.regtest)?)
+            }
+            Command::Install => {
+                let config_path = Config::get_default_path()?;
+                let loaded_config = Config::load(config_path)?;
+
+                Ok(Install::run(&loaded_config.dependencies)?)
             }
             Command::Build => {
                 let config_path = Config::get_default_path()?;

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::{env, fs};
 
 use globwalk::FileType;
 use regex::Regex;
@@ -9,7 +9,8 @@ use regex::Regex;
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
-use crate::{BuildConfig, DependencyConfig};
+use crate::config::{DEFAULT_DEPENDENCY_DIR, Dependency};
+use crate::{ArtifactsGenerator, BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
 
@@ -83,14 +84,21 @@ impl ArtifactsResolver {
         let root_dir = env::current_dir()?;
         let canon_root = CanonPath::canonicalize(&root_dir).map_err(BuildError::PathCanonicalization)?;
 
-        let root_build_cfg = BuildConfig::from_file(canon_root.as_path().join(config_filename))?;
-        let root_simf_dir = CanonPath::canonicalize(&canon_root.as_path().join(&root_build_cfg.src_dir))
+        let config_source = fs::read_to_string(canon_root.as_path().join(config_filename))?;
+        let root_src_dir = BuildConfig::from_source(&config_source)?.src_dir;
+        let root_simf_dir = CanonPath::canonicalize(&canon_root.as_path().join(&root_src_dir))
             .map_err(BuildError::PathCanonicalization)?;
+
+        // Flat install dir shared by every git dependency at any nesting depth,
+        // mirroring `install`. Left un-canonicalized so pure-path projects
+        // (which never create `deps/`) don't fail here.
+        let deps_dir = PathBuf::from(DEFAULT_DEPENDENCY_DIR);
 
         let mut collector = DepCollector {
             builder: DependencyMapBuilder::new(),
             visited: HashSet::new(),
             config_filename: config_filename.to_string(),
+            deps_dir,
         };
         collector.visited.insert(canon_root.clone());
 
@@ -120,6 +128,7 @@ struct DepCollector {
     builder: DependencyMapBuilder,
     visited: HashSet<CanonPath>,
     config_filename: String,
+    deps_dir: PathBuf,
 }
 
 impl DepCollector {
@@ -153,18 +162,12 @@ impl DepCollector {
         context: &CanonPath,
     ) -> Result<(), BuildError> {
         for (dep_name, dep) in &deps_config.inner {
-            let Some(dep_path_str) = dep.path.as_ref() else {
-                // TODO: git support
-                continue;
-            };
+            let loaded_context = self.resolve_dep_context(dep, context)?;
 
-            let loaded_context = CanonPath::canonicalize(&context.as_path().join(dep_path_str))
-                .map_err(BuildError::PathCanonicalization)?;
-
-            // TODO: This code could be further optimized by using a `from_str` method inside `BuildConfig` and `DependencyConfig`
             let config_path = loaded_context.as_path().join(&self.config_filename);
+            let config_source = fs::read_to_string(config_path)?;
 
-            let loaded_src_dir = BuildConfig::from_file(&config_path)?.src_dir;
+            let loaded_src_dir = BuildConfig::from_source(&config_source)?.src_dir;
             let loaded_simf_dir = CanonPath::canonicalize(&loaded_context.as_path().join(loaded_src_dir))
                 .map_err(BuildError::PathCanonicalization)?;
 
@@ -175,10 +178,32 @@ impl DepCollector {
                 continue;
             }
 
-            let nested_deps = DependencyConfig::from_file(&config_path)?;
+            let nested_deps = DependencyConfig::from_source(&config_source)?;
             self.rec_collect(&nested_deps, &loaded_simf_dir, &loaded_context)?;
         }
 
         Ok(())
+    }
+
+    /// Resolves the on-disk package root for a single dependency.
+    ///
+    /// - `path` deps resolve relative to the *parent* package (`context`).
+    /// - `git` deps resolve into the flat root install dir (`self.deps_dir`).
+    ///   reusing the exact hashed directory name produced by `install`.
+    fn resolve_dep_context(&self, dep: &Dependency, context: &CanonPath) -> Result<CanonPath, BuildError> {
+        let raw_path = match (&dep.path, &dep.git) {
+            (Some(path), None) => context.as_path().join(path),
+            (None, Some(git_url)) => {
+                let hashed = ArtifactsGenerator::generate_hashed_repo_path(git_url)
+                    .ok_or_else(|| BuildError::InvalidGitUrl(git_url.clone()))?;
+                self.deps_dir.join(hashed)
+            }
+            // `DependencyConfig::validate` guarantees exactly one of path/git is set.
+            (Some(_), Some(_)) | (None, None) => {
+                unreachable!("dependency source validated in 'DependencyConfig::validate'")
+            }
+        };
+
+        CanonPath::canonicalize(&raw_path).map_err(BuildError::PathCanonicalization)
     }
 }
