@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use smplx_build::error::DependencyValidationError;
+
 #[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
     #[error("IO error: {0}")]
@@ -7,6 +9,9 @@ pub enum ConfigError {
 
     #[error("TOML parse error: {0}")]
     TomlParse(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    Dependency(#[from] DependencyValidationError),
 
     #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
     BadNetworkName(String),

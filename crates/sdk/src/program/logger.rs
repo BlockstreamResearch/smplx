@@ -1,13 +1,9 @@
 use std::{cell::RefCell, fmt::Write};
 
-use simplicityhl::{
-    debug::DebugSymbols,
-    simplicity::{
-        jet::Jet,
-        node::{Node, Redeem},
-    },
-    tracker::{DefaultTracker, TrackerLogLevel},
-};
+use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::debug::DebugSymbols;
+use simplicityhl::simplicity::node::{Node, Redeem};
+use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
 thread_local! {
     pub(super) static PROGRAM_LOGGER: RefCell<ProgramLogger> = const { RefCell::new(ProgramLogger { cost_info: None, trace_buffer: Vec::new() }) };
@@ -43,7 +39,7 @@ impl ProgramLogger {
     pub fn make_tracker(debug_symbols: &DebugSymbols, log_level: TrackerLogLevel) -> DefaultTracker<'_> {
         Self::clear_logs();
 
-        let tracker = DefaultTracker::new(debug_symbols);
+        let tracker = DefaultTracker::build(debug_symbols, Box::new(ElementsJetHinter));
 
         let tracker = if log_level >= TrackerLogLevel::Debug {
             tracker.with_debug_sink(|label, value| {
@@ -102,7 +98,7 @@ impl ProgramLogger {
     /// # Safety
     /// Uses `transmute` to extract the inner `u32` from [`Cost`] since no public
     /// accessor exists. Remove once `as_milliweight()` is upstreamed to rust-simplicity.
-    pub fn buffer_cost_log<J: Jet>(node: &Node<Redeem<J>>) {
+    pub fn buffer_cost_log(node: &Node<Redeem>) {
         let bounds = node.bounds();
         // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed
         let mw: u32 = unsafe { std::mem::transmute(bounds.cost) };
