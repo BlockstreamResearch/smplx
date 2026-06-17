@@ -27,7 +27,7 @@ pub struct GeneratedWitnessTokens {
     pub struct_impl: proc_macro2::TokenStream,
 }
 
-pub struct GeneratedMutanTestingTokens {
+pub struct GeneratedProgramTraitHelperTokens {
     pub imports: proc_macro2::TokenStream,
     pub helper_impls: proc_macro2::TokenStream,
 }
@@ -65,48 +65,26 @@ impl SimfContractMeta {
     }
 
     /// Generates code necessary for creating mutant testing using simplex.
-    pub fn generate_mutantesting_impl(&self) -> syn::Result<GeneratedMutanTestingTokens> {
+    pub fn generate_program_trait_helpers_impl(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
         let args_struct_name = &self.args_struct.struct_name;
         let program_name = &self.program_struct_name;
 
-        let fuzzable_program_impl = quote! {
-            impl FuzzableProgram<#program_name> for #program_name {
-                fn build_program(
-                    args: impl Into<simplex::simplicityhl::Arguments>,
-                    network: &SimplicityNetwork,
-                ) -> (Box<#program_name>, Script) {
-                    let prog = #program_name::new(args);
-                    let script = prog.get_script_pubkey(network);
-                    (Box::new(prog), script)
-                }
-            }
-
-            impl SimplexProgram for #program_name {
-                fn get_program(&self) -> &Program {
-                    &self.program
-                }
-
-                fn get_compiled_program(args: Arguments) -> CompiledProgram {
-                    #program_name::new(args).program.load().unwrap()
-                }
-
-                fn get_mut_program(&mut self) -> &mut Program {
-                    &mut self.program
+        let program_helpers_impl = quote! {
+            impl ProgramFactory<#program_name> for #program_name {
+                fn instantiate_program(args: impl Into<Arguments>) -> Box<#program_name> {
+                    Box::new(#program_name::new(args))
                 }
             }
         };
 
-        Ok(GeneratedMutanTestingTokens {
+        Ok(GeneratedProgramTraitHelperTokens {
             imports: quote! {
                 use super::{super::#program_name, #args_struct_name};
-                use simplex::mutantesting::FuzzableProgram;
-                use simplex::provider::SimplicityNetwork;
-                use simplex::program::{Program, SimplexProgram};
-                use simplex::simplicityhl::{Arguments, CompiledProgram};
-                use simplex::simplicityhl::elements::Script;
+                use simplex::program::{Program, ProgramFactory};
+                use simplex::simplicityhl::{Arguments};
             },
             helper_impls: quote! {
-                #fuzzable_program_impl
+                #program_helpers_impl
             },
         })
     }

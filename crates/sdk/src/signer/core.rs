@@ -496,6 +496,12 @@ impl Signer {
     }
 
     /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
+    ///
+    /// # Panics
+    /// Throws a panic if we failed to sign a program witness.
     pub fn sign_tx_raw(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
@@ -545,7 +551,12 @@ impl Signer {
         Ok(pst)
     }
 
-    /// Signs and inserts a signature into appropriate witness value
+    /// Signs and inserts a signature into appropriate witness value.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
+    /// retrieved from the program, if `witness_name` is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
     pub fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
@@ -566,6 +577,7 @@ impl Signer {
                 .get(&WitnessName::from_str_unchecked(witness_name))
                 .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
 
+            #[allow(clippy::missing_panics_doc)]
             let local_wtns = Arc::new(
                 witness
                     .get(&WitnessName::from_str_unchecked(witness_name))
