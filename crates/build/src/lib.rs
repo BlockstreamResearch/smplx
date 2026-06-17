@@ -1,3 +1,4 @@
+mod collector;
 pub mod config;
 pub mod error;
 pub mod generator;

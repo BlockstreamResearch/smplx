@@ -78,6 +78,7 @@ impl Config {
         }
 
         config.dependencies.validate()?;
+
         Ok(())
     }
 

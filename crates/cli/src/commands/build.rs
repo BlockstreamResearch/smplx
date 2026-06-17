@@ -15,10 +15,9 @@ impl Build {
         let output_dir = ArtifactsResolver::resolve_local_dir(&config.out_dir)?;
         let src_dir = ArtifactsResolver::resolve_local_dir(&config.src_dir)?;
 
-        // NOTE: Assume that remappings already install
+        // NOTE: Assumes that remappings are already installed
         let dependency_builder = ArtifactsResolver::resolve_remappings(deps, CONFIG_FILENAME)?;
 
-        // TODO: For all remappings need to check `files_to_build` and concatenate it to `Vec<Path>`
         let files_to_build = ArtifactsResolver::resolve_files_to_build(&config.src_dir, &config.simf_files)?;
 
         Ok(ArtifactsGenerator::generate_artifacts(

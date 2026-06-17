@@ -19,7 +19,7 @@ pub enum Command {
         #[command(flatten)]
         flags: TestFlags,
     },
-    /// Install the simplicity dependency
+    /// Install a `SimplicityHL` dependency (requires the dep to be a simplex project)
     Install,
     /// Generates the simplicity contracts artifacts
     Build,

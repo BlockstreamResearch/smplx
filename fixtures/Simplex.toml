@@ -1,7 +1,7 @@
 # DEFAULT CONFIG
 
-[build]
-# src_dir = "./src"
+# [build]
+# src_dir = "./simf"
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 

@@ -4,7 +4,7 @@ use std::process::Command;
 use std::{fs, path::PathBuf};
 
 use smplx_build::config::DEFAULT_DEPENDENCY_DIR;
-use smplx_build::{ArtifactsGenerator, DependencyConfig};
+use smplx_build::{ArtifactsResolver, DependencyConfig};
 
 use crate::commands::error::CommandError;
 use crate::commands::error::InstallError;
@@ -53,7 +53,7 @@ impl Install {
                 continue;
             };
 
-            let hashed_dir = ArtifactsGenerator::generate_hashed_repo_path(git_repo_url)
+            let hashed_dir = ArtifactsResolver::generate_hashed_repo_path(git_repo_url)
                 .ok_or_else(|| InstallError::InvalidUrl(git_repo_url.clone()))?;
 
             let target_dir = deps_dir.join(hashed_dir);
@@ -84,6 +84,7 @@ impl Install {
                     let _ = std::fs::remove_dir_all(&target_dir);
                     return Err(InstallError::GitCloneFailed(git_repo_url.clone()));
                 }
+
                 installed_repos.push(target_dir.clone());
             }
 

@@ -6,8 +6,7 @@ src_dir = "./examples"
 # out_dir = "./src/artifacts"
 
 # [dependencies]
-# merkle = { path = "simf/deps/merkle" }
-# base_math = { path = "simf/deps/math" }
+# some_dep = { git = "<git url>", path = "<or a relative path>" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
