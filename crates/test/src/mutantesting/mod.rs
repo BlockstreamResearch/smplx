@@ -1,6 +1,5 @@
 pub mod core;
 pub mod engine;
-pub mod provider;
 pub mod strategy;
 pub mod utils;
 

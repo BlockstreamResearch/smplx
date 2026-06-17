@@ -1,9 +1,8 @@
 use crate::mutantesting::core::{FuzzContext, FuzzStrategy, FuzzableProgram, ProgramCheck, ProgramExecResult};
-use crate::mutantesting::provider::MockProvider;
 use proptest::prelude::TestCaseError;
 use simplicityhl::Arguments;
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, WitnessTrait};
-use smplx_sdk::provider::SimplicityNetwork;
+use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -27,9 +26,7 @@ impl Default for FuzzContext {
         Self {
             signer: Arc::new(None),
             network: default_network,
-            mock_provider: Arc::new(MockProvider {
-                network: default_network,
-            }),
+            mock_provider: Arc::new(get_default_provider(default_network)),
         }
     }
 }
@@ -39,6 +36,9 @@ impl FuzzContext {
     fn with_signer(&mut self, signer: Signer) {
         self.signer = Arc::new(Some(signer));
     }
+}
+fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
+    EsploraProvider::new("default_web_page.com".into(), default_network)
 }
 
 impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
@@ -67,10 +67,10 @@ where
         const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
 
         let network = self.inner.borrow().fuzz_context.network;
-        self.inner
-            .borrow_mut()
-            .fuzz_context
-            .with_signer(Signer::new(DEFAULT_TEST_MNEMONIC, Box::new(MockProvider { network })));
+        self.inner.borrow_mut().fuzz_context.with_signer(Signer::new(
+            DEFAULT_TEST_MNEMONIC,
+            Box::new(get_default_provider(network)),
+        ));
     }
 
     pub fn with_arg_gen_strategy<S>(&self)

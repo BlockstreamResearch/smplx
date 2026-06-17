@@ -1,10 +1,9 @@
-use crate::mutantesting::provider::MockProvider;
 use proptest::prelude::BoxedStrategy;
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
-use smplx_sdk::provider::SimplicityNetwork;
+use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -12,7 +11,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct FuzzContext {
     pub signer: Arc<Option<Signer>>,
-    pub mock_provider: Arc<MockProvider>,
+    pub mock_provider: Arc<dyn ProviderTrait>,
     pub network: SimplicityNetwork,
 }
 
