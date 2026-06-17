@@ -20,6 +20,7 @@ pub struct SimplexFuzzEngine<Program, Args, Wit> {
     _phantom: PhantomData<Program>,
 }
 
+#[allow(clippy::arc_with_non_send_sync)]
 impl Default for FuzzContext {
     fn default() -> Self {
         let default_network = SimplicityNetwork::default_regtest();
@@ -34,6 +35,7 @@ impl Default for FuzzContext {
 }
 
 impl FuzzContext {
+    #[allow(clippy::arc_with_non_send_sync)]
     fn with_signer(&mut self, signer: Signer) {
         self.signer = Arc::new(Some(signer));
     }
@@ -89,7 +91,11 @@ where
         match runner.run(&strategy, |(args, wit, pst)| {
             let (failure_program, _script) = Program::build_program(args.clone(), &context.network);
 
-            let exec_result: ProgramExecResult = failure_program.get_program().execute(&pst, &wit, 0, &context.network);
+            let exec_result: ProgramExecResult =
+                failure_program
+                    .as_ref()
+                    .as_ref()
+                    .execute(&pst, &wit, 0, &context.network);
 
             match program_check_fn.call(&context, &pst, &args, &wit, exec_result) {
                 Ok(_) => Ok(()),

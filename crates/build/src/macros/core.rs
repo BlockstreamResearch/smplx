@@ -7,7 +7,7 @@ use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::{AbiMeta, TemplateProgram, UnstableFeatures};
 
 use super::codegen::{
-    GeneratedArgumentTokens, GeneratedMutanTestingTokens, GeneratedWitnessTokens, SimfContractMeta,
+    GeneratedArgumentTokens, GeneratedProgramTraitHelperTokens, GeneratedWitnessTokens, SimfContractMeta,
     convert_contract_name_to_contract_module,
 };
 use super::parse::{SimfContent, SynFilePath};
@@ -28,7 +28,7 @@ fn expand_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2:
     let program_helpers = construct_program_helpers(&derived_meta);
     let witness_helpers = construct_witness_helpers(&derived_meta)?;
     let arguments_helpers = construct_argument_helpers(&derived_meta)?;
-    let mutantesting_helpers = construct_mutantesting_helpers(&derived_meta)?;
+    let program_trait_helpers = construct_program_trait_helpers(&derived_meta)?;
 
     Ok(quote! {
         pub mod #mod_ident{
@@ -38,7 +38,7 @@ fn expand_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2:
 
             #arguments_helpers
 
-            #mutantesting_helpers
+            #program_trait_helpers
         }
     })
 }
@@ -99,12 +99,12 @@ fn compile_simf(content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
     )
 }
 
-fn construct_mutantesting_helpers(derived_meta: &SimfContractMeta) -> syn::Result<proc_macro2::TokenStream> {
-    let GeneratedMutanTestingTokens { imports, helper_impls } = derived_meta.generate_mutantesting_impl()?;
+fn construct_program_trait_helpers(derived_meta: &SimfContractMeta) -> syn::Result<proc_macro2::TokenStream> {
+    let GeneratedProgramTraitHelperTokens { imports, helper_impls } =
+        derived_meta.generate_program_trait_helpers_impl()?;
 
-    // TODO: move this feature under flag if is needed
     Ok(quote! {
-        mod mutantesting {
+        mod program_helpers {
             #imports
 
             #helper_impls

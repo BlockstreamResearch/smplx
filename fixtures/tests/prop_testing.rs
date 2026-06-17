@@ -5,7 +5,6 @@ mod failure_test_prop {
     use simplex::mutantesting::{
         FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine, sign_or_extract,
     };
-    use simplex::program::SimplexProgram;
     use simplex::simplicityhl::elements::hashes::Hash;
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
@@ -82,7 +81,7 @@ mod failure_test_prop {
                         txout,
                         secrets: None,
                     }),
-                    ProgramInput::new(Box::new(failure_program.get_program().clone()), wit),
+                    ProgramInput::new(Box::new(failure_program.as_ref().as_ref().clone()), wit),
                     RequiredSignature::None,
                 );
 
@@ -139,7 +138,7 @@ mod failure_test_prop {
                         txout,
                         secrets: None,
                     }),
-                    ProgramInput::new(Box::new(failure_program.get_program().clone()), wit),
+                    ProgramInput::new(Box::new(failure_program.as_ref().as_ref().clone()), wit),
                     RequiredSignature::None,
                 );
 
@@ -195,7 +194,6 @@ mod simple_storage_test_prop {
     use simplex::mutantesting::{
         FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine, sign_or_extract,
     };
-    use simplex::program::SimplexProgram;
     use simplex::program::{ArgumentsTrait, WitnessTrait};
     use simplex::simplicityhl::elements::AssetId;
     use simplex::simplicityhl::elements::hashes::Hash;
@@ -320,7 +318,7 @@ mod simple_storage_test_prop {
                     .unwrap()
                     .get_signed_program_witness(
                         &pst,
-                        SimpleStorageProgram::new(modified_args.clone()).get_program(),
+                        SimpleStorageProgram::new(modified_args.clone()).as_ref(),
                         &wit_typed.build_witness(),
                         "USER_SIGNATURE",
                         &[],

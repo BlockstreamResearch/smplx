@@ -53,6 +53,6 @@ pub fn sign_or_extract(
 ) -> Result<PartiallySignedTransaction, SignerError> {
     match signer.as_ref() {
         None => Ok(ft.extract_pst().0),
-        Some(signer) => signer.sign_tx_raw(&ft),
+        Some(signer) => signer.sign_tx_raw(ft),
     }
 }

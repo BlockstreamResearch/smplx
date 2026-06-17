@@ -3,8 +3,7 @@ use proptest::prelude::BoxedStrategy;
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::{Arguments, WitnessValues};
-use smplx_sdk::program::ProgramError;
-use smplx_sdk::program::core::SimplexProgram;
+use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 use std::fmt::Debug;
@@ -20,8 +19,16 @@ pub struct FuzzContext {
 use simplicityhl::simplicity::{RedeemNode, Value};
 
 pub type ProgramExecResult = Result<(Arc<RedeemNode>, Value), ProgramError>;
-pub trait FuzzableProgram<P: SimplexProgram>: SimplexProgram {
+pub trait FuzzableProgram<P: AsRef<Program>>: AsRef<Program> {
     fn build_program(args: impl Into<Arguments>, network: &SimplicityNetwork) -> (Box<P>, Script);
+}
+
+impl<P: AsRef<Program> + ProgramFactory<P>> FuzzableProgram<P> for P {
+    fn build_program(args: impl Into<Arguments>, network: &SimplicityNetwork) -> (Box<P>, Script) {
+        let prog = P::instantiate_program(args);
+        let script = prog.as_ref().as_ref().get_script_pubkey(network);
+        (prog, script)
+    }
 }
 
 pub trait FuzzStrategy<Program, Args, Wit>: Debug {
