@@ -142,8 +142,7 @@ mod failure_test_prop {
                     RequiredSignature::None,
                 );
 
-                let signer = test_context.signer.as_ref();
-                let pst = sign_or_extract(signer, &ft).unwrap();
+                let pst = ft.extract_pst().0;
 
                 (mutated_args, mutated_wit, pst)
             });
@@ -155,13 +154,20 @@ mod failure_test_prop {
     #[ignore]
     #[test]
     fn possible_interface_failure_program() -> anyhow::Result<()> {
-        let mut config = mutantesting::proptest::test_runner::Config::with_source_file(file!());
-        config.test_name = ::core::option::Option::Some(::core::concat!(
-            ::core::module_path!(),
-            "::",
-            ::core::stringify!(possible_interface_failure_program)
-        ));
-        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+        let config = mutantesting::proptest::test_runner::Config {
+            test_name: ::core::option::Option::Some(::core::concat!(
+                ::core::module_path!(),
+                "::",
+                ::core::stringify!(possible_interface_failure_program)
+            )),
+            source_file: Some(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/",
+                stringify!(possible_interface_failure_program),
+                ".txt"
+            )),
+            ..Default::default()
+        };
 
         let fuzz_engine =
             SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
@@ -180,13 +186,20 @@ mod failure_test_prop {
     #[ignore]
     #[test]
     fn possible_interface_failure_program_with_pool() -> anyhow::Result<()> {
-        let mut config = mutantesting::proptest::test_runner::Config::with_source_file(file!());
-        config.test_name = ::core::option::Option::Some(::core::concat!(
-            ::core::module_path!(),
-            "::",
-            ::core::stringify!(possible_interface_failure_program_with_pool)
-        ));
-        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+        let config = mutantesting::proptest::test_runner::Config {
+            test_name: ::core::option::Option::Some(::core::concat!(
+                ::core::module_path!(),
+                "::",
+                ::core::stringify!(possible_interface_failure_program_with_pool)
+            )),
+            source_file: Some(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/",
+                stringify!(possible_interface_failure_program_with_pool),
+                ".txt"
+            )),
+            ..Default::default()
+        };
 
         let fuzz_engine =
             SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
@@ -349,15 +362,23 @@ mod simple_storage_test_prop {
         }
     }
 
+    #[ignore]
     #[test]
     fn possible_interface_simple_program() -> anyhow::Result<()> {
-        let mut config = mutantesting::proptest::test_runner::Config::default();
-        config.test_name = ::core::option::Option::Some(::core::concat!(
-            ::core::module_path!(),
-            "::",
-            ::core::stringify!(possible_interface_simple_program)
-        ));
-        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+        let config = mutantesting::proptest::test_runner::Config {
+            test_name: ::core::option::Option::Some(::core::concat!(
+                ::core::module_path!(),
+                "::",
+                ::core::stringify!(possible_interface_simple_program)
+            )),
+            source_file: Some(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/",
+                stringify!(possible_interface_simple_program),
+                ".txt"
+            )),
+            ..Default::default()
+        };
 
         let fuzz_engine =
             SimplexFuzzEngine::<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>::from_config(
