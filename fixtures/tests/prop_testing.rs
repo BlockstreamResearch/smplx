@@ -155,9 +155,17 @@ mod failure_test_prop {
     #[ignore]
     #[test]
     fn possible_interface_failure_program() -> anyhow::Result<()> {
+        let mut config = mutantesting::proptest::test_runner::Config::with_source_file(file!());
+        config.test_name = ::core::option::Option::Some(::core::concat!(
+            ::core::module_path!(),
+            "::",
+            ::core::stringify!(possible_interface_failure_program)
+        ));
+        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+
         let fuzz_engine =
             SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
-                mutantesting::proptest::test_runner::Config::default(),
+                config,
                 PhantomData,
             );
 
@@ -172,9 +180,17 @@ mod failure_test_prop {
     #[ignore]
     #[test]
     fn possible_interface_failure_program_with_pool() -> anyhow::Result<()> {
+        let mut config = mutantesting::proptest::test_runner::Config::with_source_file(file!());
+        config.test_name = ::core::option::Option::Some(::core::concat!(
+            ::core::module_path!(),
+            "::",
+            ::core::stringify!(possible_interface_failure_program_with_pool)
+        ));
+        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+
         let fuzz_engine =
             SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
-                mutantesting::proptest::test_runner::Config::default(),
+                config,
                 PhantomData,
             );
 
@@ -333,12 +349,19 @@ mod simple_storage_test_prop {
         }
     }
 
-    #[ignore]
     #[test]
     fn possible_interface_simple_program() -> anyhow::Result<()> {
+        let mut config = mutantesting::proptest::test_runner::Config::default();
+        config.test_name = ::core::option::Option::Some(::core::concat!(
+            ::core::module_path!(),
+            "::",
+            ::core::stringify!(possible_interface_simple_program)
+        ));
+        config.source_file = Some(dbg!(concat!(stringify!(CARGO_MANIFEST_DIR), "/src/somefile.txt")));
+
         let fuzz_engine =
             SimplexFuzzEngine::<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>::from_config(
-                mutantesting::proptest::test_runner::Config::default(),
+                config,
                 PhantomData,
             );
 
