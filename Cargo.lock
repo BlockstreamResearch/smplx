@@ -1422,13 +1422,11 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 name = "smplx-build"
 version = "0.0.6"
 dependencies = [
- "glob",
  "globwalk",
  "pathdiff",
  "prettyplease",
  "proc-macro2",
  "quote",
- "rand_core 0.9.5",
  "serde",
  "simplicityhl",
  "syn",
