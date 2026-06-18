@@ -64,8 +64,8 @@ impl RustType {
         match self {
             RustType::Bool => quote! { rng.random() },
             RustType::U1 => quote! { rng.random::<bool>() as u8 },
-            RustType::U2 => quote! { rng.random::<u8>() & 0x00_03 },
-            RustType::U4 => quote! { rng.random::<u8>() & 0x00_0F },
+            RustType::U2 => quote! { rng.random::<u8>() & 0x03 },
+            RustType::U4 => quote! { rng.random::<u8>() & 0x0F },
             RustType::U8 | RustType::U16 | RustType::U32 | RustType::U64 | RustType::U128 => quote! { rng.random() },
             RustType::U256Array => quote! { rng.random() },
             RustType::Array(element, size) => {
