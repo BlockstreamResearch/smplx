@@ -1,14 +1,16 @@
-use proptest::prelude::Strategy;
-use proptest::strategy::{NewTree, ValueTree};
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 
 use proptest::prelude::Rng;
+use proptest::prelude::Strategy;
+use proptest::strategy::{NewTree, ValueTree};
 use proptest::test_runner::{TestRng, TestRunner};
+
 use simplicityhl::str::WitnessName;
 use simplicityhl::{Arguments, ResolvedType, Value, WitnessValues};
+
 use smplx_sdk::program::{RandomArguments, RandomWitness};
-use std::collections::HashMap;
 
 pub struct Random<Args, Wit> {
     phantom_data: PhantomData<(Args, Wit)>,

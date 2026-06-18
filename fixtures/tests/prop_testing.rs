@@ -1,15 +1,15 @@
 mod failure_test_prop {
     use simplex::mutantesting;
+    use simplex::mutantesting::args_strategy::{Random, RandomValuePool};
     use simplex::mutantesting::core::ContractFuzzStrategy;
-    use simplex::mutantesting::strategy::args::{Random, RandomValuePool};
     use simplex::mutantesting::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine};
     use simplex::simplicityhl::elements::hashes::Hash;
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
-    use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
     use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
+    use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
 
     struct FailureTestCheck;
 
@@ -139,23 +139,24 @@ mod failure_test_prop {
 
 mod simple_storage_test_prop {
     use simplex::mutantesting;
+    use simplex::mutantesting::args_strategy::Random;
     use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::{
-        FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine, sign_or_extract,
+        sign_or_extract, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
     };
     use simplex::program::{ArgumentsTrait, WitnessTrait};
-    use simplex::simplicityhl::elements::AssetId;
     use simplex::simplicityhl::elements::hashes::Hash;
-    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::pset::serialize::Serialize;
+    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
+    use simplex::simplicityhl::elements::AssetId;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::PartialOutput;
     use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
-    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
     use simplex_fixtures::artifacts::simple_storage::derived_simple_storage::{
         SimpleStorageArguments, SimpleStorageWitness,
     };
+    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
 
     pub struct SimpleStorageCheck;
 
@@ -291,8 +292,7 @@ mod simple_storage_test_prop {
         fuzz_engine.with_default_signer();
         fuzz_engine.with_final_arg_gen_strategy_ext(
             (
-                simplex::mutantesting::strategy::args::Random::<SimpleStorageArguments, SimpleStorageWitness>::default(
-                ),
+                Random::<SimpleStorageArguments, SimpleStorageWitness>::default(),
                 (
                     0_u64..((u32::MAX / 2) as u64),
                     ((u32::MAX / 2) as u64)..(u32::MAX as u64),

@@ -1,9 +1,11 @@
 use rand::Rng;
+
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::num::U256;
 use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{ResolvedType, Value};
+
 use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
 
