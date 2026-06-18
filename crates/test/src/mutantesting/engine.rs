@@ -1,21 +1,27 @@
-use crate::mutantesting::core::{FuzzContext, FuzzStrategy, FuzzableProgram, ProgramCheck, ProgramExecResult};
+use crate::mutantesting::core::{
+    FuzzContext, FuzzStrategy, FuzzableProgram, GenStrategy, GenStrategyExt, ProgramCheck, ProgramExecResult,
+    UserFuzzStrategy, UserFuzzStrategyExt,
+};
+use crate::mutantesting::sign_or_extract;
 use proptest::prelude::TestCaseError;
-use simplicityhl::Arguments;
-use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, WitnessTrait};
+use proptest::strategy::Strategy;
+use simplicityhl::{Arguments, WitnessValues};
+use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct SimplexFuzzEngineInner<Program, Args, Wit> {
+pub struct SimplexFuzzEngineInner<Program, Args, Wit, T = ()> {
     pub(crate) fuzz_context: FuzzContext,
-    pub(crate) strategy_storage: Option<Box<dyn FuzzStrategy<Program, Args, Wit>>>,
+    pub(crate) strategy_storage: Option<GenStrategy<Program, Args, Wit>>,
+    pub(crate) strategy_storage_ext: Option<GenStrategyExt<Program, Args, Wit, T>>,
 }
 
-pub struct SimplexFuzzEngine<Program, Args, Wit> {
+pub struct SimplexFuzzEngine<Program, Args, Wit, T = ()> {
     runner: RefCell<proptest::test_runner::TestRunner>,
-    inner: RefCell<SimplexFuzzEngineInner<Program, Args, Wit>>,
+    inner: RefCell<SimplexFuzzEngineInner<Program, Args, Wit, T>>,
     _phantom: PhantomData<Program>,
 }
 
@@ -41,11 +47,12 @@ fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
     EsploraProvider::new("default_web_page.com".into(), default_network)
 }
 
-impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
+impl<Program, Args, Wit, T> SimplexFuzzEngine<Program, Args, Wit, T>
 where
-    Args: ArgumentsTrait + Into<Arguments> + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + std::fmt::Debug + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + Into<Arguments> + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
     Program: FuzzableProgram<Program> + Clone + 'static,
+    T: std::fmt::Debug + 'static,
 {
     pub fn from_config(mut config: proptest::test_runner::Config, _phantom: PhantomData<Program>) -> Self {
         config.cases = 500;
@@ -54,6 +61,7 @@ where
             inner: RefCell::new(SimplexFuzzEngineInner {
                 fuzz_context: FuzzContext::default(),
                 strategy_storage: None,
+                strategy_storage_ext: None,
             }),
             _phantom,
         }
@@ -73,34 +81,60 @@ where
         ));
     }
 
-    pub fn with_arg_gen_strategy<S>(&self)
-    where
-        S: FuzzStrategy<Program, Args, Wit> + Default + 'static,
-    {
-        self.inner.borrow_mut().strategy_storage = Some(Box::new(S::default()));
+    pub fn with_final_arg_gen_strategy(
+        &self,
+        arg_gen: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
+        ft_gen: impl UserFuzzStrategy<Program, Args, Wit> + 'static,
+    ) {
+        self.inner.borrow_mut().strategy_storage = Some((arg_gen.boxed(), Box::new(ft_gen)));
+    }
+
+    pub fn with_final_arg_gen_strategy_ext(
+        &self,
+        arg_gen: impl Strategy<Value = ((Arguments, WitnessValues), T)> + 'static,
+        ft_gen: impl UserFuzzStrategyExt<Program, Args, Wit, T> + 'static,
+    ) {
+        self.inner.borrow_mut().strategy_storage_ext = Some((arg_gen.boxed(), Box::new(ft_gen)));
     }
 
     pub fn run_with_check(self, program_check_fn: impl ProgramCheck) {
-        let mut runner = self.runner.borrow_mut();
-        let inner = self.inner.borrow();
+        let mut runner = self.runner.into_inner();
+        let inner = self.inner.into_inner();
 
-        let strategy_gen = inner.strategy_storage.as_ref().expect("Strategy must be configured");
-        let context = inner.fuzz_context.clone();
-        let strategy = strategy_gen.get_strategy(context.clone());
+        let context = inner.fuzz_context;
 
-        match runner.run(&strategy, |(args, wit, pst)| {
+        let strategy = if let Some(_) = inner.strategy_storage
+            && let Some(_) = inner.strategy_storage_ext
+        {
+            panic!("Strategy must be only one");
+        } else if let Some(strategy_gen) = inner.strategy_storage {
+            strategy_gen.get_strategy(context.clone())
+        } else if let Some(strategy_gen_ext) = inner.strategy_storage_ext {
+            strategy_gen_ext.get_strategy(context.clone())
+        } else {
+            panic!("Strategy must be configured");
+        };
+
+        match runner.run(&strategy, |(args, wit, ft)| {
+            let signer = context.signer.as_ref();
+            let pst = sign_or_extract(signer, &ft).unwrap();
+
             let (failure_program, _script) = Program::build_program(args.clone(), &context.network);
 
-            let exec_result: ProgramExecResult =
-                failure_program
-                    .as_ref()
-                    .as_ref()
-                    .execute(&pst, &wit, 0, &context.network);
-
-            match program_check_fn.call(&context, &pst, &args, &wit, exec_result) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(TestCaseError::fail(e)),
+            // Iterate over program inputs to sign only appropriate items
+            for (i, input) in ft.inputs().iter().enumerate() {
+                if input.program_input.as_ref().is_some() {
+                    let exec_result: ProgramExecResult =
+                        failure_program
+                            .as_ref()
+                            .as_ref()
+                            .execute(&pst, &wit, i, &context.network);
+                    if let Err(e) = program_check_fn.call(&context, &pst, &args, &wit, i, exec_result) {
+                        return Err(TestCaseError::fail(e));
+                    }
+                }
             }
+            Ok(())
         }) {
             Ok(()) => (),
             Err(e) => ::core::panic!("{}\n{}", e, runner),
