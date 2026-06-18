@@ -1,18 +1,15 @@
 mod failure_test_prop {
     use simplex::mutantesting;
-    use simplex::mutantesting::core::UserFuzzStrategy;
+    use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::strategy::args::{Random, RandomValuePool};
-    use simplex::mutantesting::{
-        FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
-    };
+    use simplex::mutantesting::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine};
     use simplex::simplicityhl::elements::hashes::Hash;
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
-    use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
     use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
-    use std::marker::PhantomData;
+    use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
 
     struct FailureTestCheck;
 
@@ -42,12 +39,15 @@ mod failure_test_prop {
     #[derive(Debug, Default)]
     struct FailureGenStrategy;
 
-    impl UserFuzzStrategy<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureGenStrategy {
+    impl ContractFuzzStrategy<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureGenStrategy {
+        type AdditionalInput = ();
+
         fn gen_final_transaction(
             &self,
             test_context: FuzzContext,
             arguments: Arguments,
             witness: WitnessValues,
+            _additional: Self::AdditionalInput,
         ) -> (Arguments, WitnessValues, FinalTransaction) {
             const DEFAULT_FAUCET: u64 = 1 << 32;
 
@@ -94,11 +94,7 @@ mod failure_test_prop {
             ..Default::default()
         };
 
-        let fuzz_engine =
-            SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
-                config,
-                PhantomData,
-            );
+        let fuzz_engine = SimplexFuzzEngine::<FailureTestProgram>::from_config(config);
 
         fuzz_engine.with_final_arg_gen_strategy(
             Random::<FailureTestArguments, FailureTestWitness>::default(),
@@ -128,11 +124,7 @@ mod failure_test_prop {
             ..Default::default()
         };
 
-        let fuzz_engine =
-            SimplexFuzzEngine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::from_config(
-                config,
-                PhantomData,
-            );
+        let fuzz_engine = SimplexFuzzEngine::<FailureTestProgram>::from_config(config);
 
         fuzz_engine.with_final_arg_gen_strategy(
             RandomValuePool::<FailureTestArguments, FailureTestWitness>::default(),
@@ -147,24 +139,23 @@ mod failure_test_prop {
 
 mod simple_storage_test_prop {
     use simplex::mutantesting;
-    use simplex::mutantesting::core::UserFuzzStrategyExt;
+    use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::{
-        sign_or_extract, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
+        FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine, sign_or_extract,
     };
     use simplex::program::{ArgumentsTrait, WitnessTrait};
-    use simplex::simplicityhl::elements::hashes::Hash;
-    use simplex::simplicityhl::elements::pset::serialize::Serialize;
-    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::AssetId;
+    use simplex::simplicityhl::elements::hashes::Hash;
+    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
+    use simplex::simplicityhl::elements::pset::serialize::Serialize;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
-    use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
     use simplex::transaction::PartialOutput;
+    use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
+    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
     use simplex_fixtures::artifacts::simple_storage::derived_simple_storage::{
         SimpleStorageArguments, SimpleStorageWitness,
     };
-    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
-    use std::marker::PhantomData;
 
     pub struct SimpleStorageCheck;
 
@@ -189,21 +180,23 @@ mod simple_storage_test_prop {
     #[derive(Debug, Default)]
     struct SimpleStorageStrategy;
 
-    impl UserFuzzStrategyExt<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness, (u64, u64)>
+    impl ContractFuzzStrategy<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>
         for SimpleStorageStrategy
     {
+        type AdditionalInput = (u64, u64);
+
         fn gen_final_transaction(
             &self,
             test_context: FuzzContext,
             arguments: Arguments,
             witness: WitnessValues,
-            additional_value: (u64, u64),
+            additional: Self::AdditionalInput,
         ) -> (Arguments, WitnessValues, FinalTransaction) {
             let mut ft = FinalTransaction::new();
             let mut args_typed = SimpleStorageArguments::from_arguments(&arguments).unwrap();
             let mut wit_typed = SimpleStorageWitness::from_witness(&witness).unwrap();
             let signer = test_context.signer.as_ref();
-            let (new_value, old_value) = additional_value;
+            let (new_value, old_value) = additional;
 
             wit_typed.new_value = new_value;
 
@@ -293,17 +286,13 @@ mod simple_storage_test_prop {
             ..Default::default()
         };
 
-        let fuzz_engine = SimplexFuzzEngine::<
-            SimpleStorageProgram,
-            SimpleStorageArguments,
-            SimpleStorageWitness,
-            (u64, u64),
-        >::from_config(config, PhantomData);
+        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_config(config);
 
         fuzz_engine.with_default_signer();
         fuzz_engine.with_final_arg_gen_strategy_ext(
             (
-                simplex::mutantesting::strategy::args::Random::<SimpleStorageArguments, SimpleStorageWitness>::default(),
+                simplex::mutantesting::strategy::args::Random::<SimpleStorageArguments, SimpleStorageWitness>::default(
+                ),
                 (
                     0_u64..((u32::MAX / 2) as u64),
                     ((u32::MAX / 2) as u64)..(u32::MAX as u64),
