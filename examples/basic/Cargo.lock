@@ -626,12 +626,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8449d342b1c67f49169e92e71deb7b9b27f30062301a16dbc27a4cc8d2351b7"
 
 [[package]]
-name = "glob"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
-
-[[package]]
 name = "globset"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1416,13 +1410,11 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 name = "smplx-build"
 version = "0.0.7"
 dependencies = [
- "glob",
  "globwalk",
  "pathdiff",
  "prettyplease",
  "proc-macro2",
  "quote",
- "rand_core 0.9.5",
  "serde",
  "simplicityhl",
  "syn",
