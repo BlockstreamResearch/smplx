@@ -7,13 +7,13 @@ use proptest::strategy::Strategy;
 
 use simplicityhl::{Arguments, WitnessValues};
 
+use crate::context::TestContext;
+use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
+use crate::mutantesting::sign_or_extract;
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
-
-use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
-use crate::mutantesting::sign_or_extract;
 
 pub struct SimplexFuzzEngineInner<Program> {
     pub(crate) fuzz_context: FuzzContext,
@@ -64,18 +64,33 @@ where
         }
     }
 
-    pub fn with_signer(&self, signer: Signer) {
-        self.inner.borrow_mut().fuzz_context.with_signer(signer);
+    pub fn from_context(
+        mut config: proptest::test_runner::Config,
+        test_context: TestContext,
+        with_signer: bool,
+    ) -> Self {
+        let default_network = SimplicityNetwork::default_regtest();
+        config.cases = 500;
+        Self {
+            runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
+            inner: RefCell::new(SimplexFuzzEngineInner {
+                fuzz_context: FuzzContext {
+                    signer: if with_signer {
+                        Arc::new(Some((test_context.get_default_signer()).clone()))
+                    } else {
+                        Arc::new(None)
+                    },
+                    mock_provider: Arc::new(get_default_provider(default_network)),
+                    network: SimplicityNetwork::Liquid,
+                },
+                strategy_storage: None,
+                _phantom: PhantomData,
+            }),
+        }
     }
 
-    pub fn with_default_signer(&self) {
-        const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
-
-        let network = self.inner.borrow().fuzz_context.network;
-        self.inner.borrow_mut().fuzz_context.with_signer(Signer::new(
-            DEFAULT_TEST_MNEMONIC,
-            Box::new(get_default_provider(network)),
-        ));
+    pub fn with_signer(&self, signer: Signer) {
+        self.inner.borrow_mut().fuzz_context.with_signer(signer);
     }
 
     pub fn with_final_arg_gen_strategy<Args, Wit, S>(

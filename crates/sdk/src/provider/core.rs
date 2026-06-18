@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-
+use dyn_clone::DynClone;
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
+use std::collections::HashMap;
 
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
 

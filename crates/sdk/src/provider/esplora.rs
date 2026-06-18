@@ -17,7 +17,7 @@ use super::core::{DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
 
 /// A provider implementation that interacts with the Esplora REST API backend.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EsploraProvider {
     /// The base URL of the Esplora REST API.
     pub esplora_url: String,

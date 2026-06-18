@@ -138,9 +138,9 @@ mod failure_test_prop {
 }
 
 mod simple_storage_test_prop {
-    use simplex::mutantesting;
     use simplex::mutantesting::args_strategy::Random;
     use simplex::mutantesting::core::ContractFuzzStrategy;
+    use simplex::mutantesting::proptest::prelude::Strategy;
     use simplex::mutantesting::{
         sign_or_extract, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
     };
@@ -153,10 +153,13 @@ mod simple_storage_test_prop {
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::PartialOutput;
     use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
+    use simplex::{mutantesting, TestContext};
     use simplex_fixtures::artifacts::simple_storage::derived_simple_storage::{
         SimpleStorageArguments, SimpleStorageWitness,
     };
     use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
+    use std::ops::Range;
+    use std::path::PathBuf;
 
     pub struct SimpleStorageCheck;
 
@@ -269,9 +272,31 @@ mod simple_storage_test_prop {
         }
     }
 
+    // with_signer by default - false, inclusing value - true (bridging signer from config)
+    // #[simplex::proptest(program = "simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram", with_signer)]
+
     #[ignore]
     #[test]
-    fn possible_interface_simple_program() -> anyhow::Result<()> {
+    fn possible_interface_simple_program__smplx_test() -> anyhow::Result<()> {
+        fn possible_interface_simple_program__smplx_test(
+            fuzz_engine: SimplexFuzzEngine<SimpleStorageProgram>,
+        ) -> anyhow::Result<()> {
+            // user can provide his own signer
+            // fuzz_engine.with_signer(<signer>);
+            fuzz_engine.with_final_arg_gen_strategy_ext(generate_additional_args(), SimpleStorageStrategy::default());
+
+            fuzz_engine.run_with_check(SimpleStorageCheck);
+
+            Ok(())
+        }
+
+        let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
+            Err(_) => {
+                panic!("Failed to run this test, required to use `simplex test`");
+            }
+            Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
+        };
+
         let config = mutantesting::proptest::test_runner::Config {
             test_name: ::core::option::Option::Some(::core::concat!(
                 ::core::module_path!(),
@@ -286,23 +311,60 @@ mod simple_storage_test_prop {
             )),
             ..Default::default()
         };
+        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context, true);
 
-        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_config(config);
+        possible_interface_simple_program__smplx_test(fuzz_engine)
+    }
 
-        fuzz_engine.with_default_signer();
-        fuzz_engine.with_final_arg_gen_strategy_ext(
+    // #[::core::prelude::v1::test]
+    // fn possible_interface_simple_program__smplx_test() -> anyhow::Result<()> {
+    //     use simplex::TestContext;
+    //     use std::path::PathBuf;
+    //     fn dummy_log_level__smplx_test(context: simplex::TestContext) -> anyhow::Result<()> {
+    //         {
+    //             let provider = context.get_default_provider();
+    //             let signer = context.get_default_signer();
+    //
+    //             let (dummy, script) = setup_dummy(&context);
+    //
+    //             let tx_receipt = signer.send(script.clone(), 50)?;
+    //             println!("Funded dummy script: {}", tx_receipt);
+    //
+    //             let utxos = provider.fetch_scripthash_utxos(&script)?;
+    //
+    //             let mut ft = FinalTransaction::new();
+    //
+    //             ft.add_program_input(
+    //                 PartialInput::new(utxos[0].clone()),
+    //                 ProgramInput::new(Box::new(dummy.as_ref().clone()), DummyPanicWitness::default()),
+    //                 RequiredSignature::None,
+    //             );
+    //
+    //             let result = signer.broadcast(&ft);
+    //
+    //             assert!(result.is_err(), "expected assert!(false) program to fail execution");
+    //             println!("{}", result.err().unwrap());
+    //
+    //             Ok(())
+    //         }
+    //     }
+    //     let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
+    //         Err(_) => {
+    //             panic!("Failed to run this test, required to use `simplex test`");
+    //         }
+    //         Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
+    //     };
+    //
+    //     dummy_log_level__smplx_test(test_context)
+    // }
+
+    fn generate_additional_args() -> impl Strategy<Value = ((Arguments, WitnessValues), (u64, u64))> {
+        (
+            Random::<SimpleStorageArguments, SimpleStorageWitness>::default(),
             (
-                Random::<SimpleStorageArguments, SimpleStorageWitness>::default(),
-                (
-                    0_u64..((u32::MAX / 2) as u64),
-                    ((u32::MAX / 2) as u64)..(u32::MAX as u64),
-                ),
+                0_u64..((u32::MAX / 2) as u64),
+                ((u32::MAX / 2) as u64)..(u32::MAX as u64),
             ),
-            SimpleStorageStrategy::default(),
-        );
-
-        fuzz_engine.run_with_check(SimpleStorageCheck);
-
-        Ok(())
+        )
     }
 }
