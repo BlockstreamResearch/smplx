@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::simplicity::{RedeemNode, Value};
@@ -7,8 +9,6 @@ use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
-
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct FuzzContext {

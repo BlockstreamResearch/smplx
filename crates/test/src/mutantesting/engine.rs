@@ -1,15 +1,19 @@
-use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
-use crate::mutantesting::sign_or_extract;
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::sync::Arc;
+
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
+
 use simplicityhl::{Arguments, WitnessValues};
+
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::sync::Arc;
+
+use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
+use crate::mutantesting::sign_or_extract;
 
 pub struct SimplexFuzzEngineInner<Program> {
     pub(crate) fuzz_context: FuzzContext,
