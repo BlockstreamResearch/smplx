@@ -1,28 +1,25 @@
-use crate::mutantesting::core::{
-    FuzzContext, FuzzStrategy, FuzzableProgram, GenStrategy, GenStrategyExt, ProgramCheck, ProgramExecResult,
-    UserFuzzStrategy, UserFuzzStrategyExt,
-};
+use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
 use crate::mutantesting::sign_or_extract;
-use proptest::prelude::TestCaseError;
+use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
 use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
+use smplx_sdk::transaction::FinalTransaction;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct SimplexFuzzEngineInner<Program, Args, Wit, T = ()> {
+pub struct SimplexFuzzEngineInner<Program> {
     pub(crate) fuzz_context: FuzzContext,
-    pub(crate) strategy_storage: Option<GenStrategy<Program, Args, Wit>>,
-    pub(crate) strategy_storage_ext: Option<GenStrategyExt<Program, Args, Wit, T>>,
+    pub(crate) strategy_storage: Option<BoxedStrategy<(Arguments, WitnessValues, FinalTransaction)>>,
+    _phantom: PhantomData<Program>,
 }
 
-pub struct SimplexFuzzEngine<Program, Args, Wit, T = ()> {
+pub struct SimplexFuzzEngine<Program> {
     runner: RefCell<proptest::test_runner::TestRunner>,
-    inner: RefCell<SimplexFuzzEngineInner<Program, Args, Wit, T>>,
-    _phantom: PhantomData<Program>,
+    inner: RefCell<SimplexFuzzEngineInner<Program>>,
 }
 
 #[allow(clippy::arc_with_non_send_sync)]
@@ -47,23 +44,19 @@ fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
     EsploraProvider::new("default_web_page.com".into(), default_network)
 }
 
-impl<Program, Args, Wit, T> SimplexFuzzEngine<Program, Args, Wit, T>
+impl<Program> SimplexFuzzEngine<Program>
 where
-    Args: ArgumentsTrait + RandomArguments + Into<Arguments> + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
     Program: FuzzableProgram<Program> + Clone + 'static,
-    T: std::fmt::Debug + 'static,
 {
-    pub fn from_config(mut config: proptest::test_runner::Config, _phantom: PhantomData<Program>) -> Self {
+    pub fn from_config(mut config: proptest::test_runner::Config) -> Self {
         config.cases = 500;
         Self {
             runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
             inner: RefCell::new(SimplexFuzzEngineInner {
                 fuzz_context: FuzzContext::default(),
                 strategy_storage: None,
-                strategy_storage_ext: None,
+                _phantom: PhantomData,
             }),
-            _phantom,
         }
     }
 
@@ -81,20 +74,34 @@ where
         ));
     }
 
-    pub fn with_final_arg_gen_strategy(
+    pub fn with_final_arg_gen_strategy<Args, Wit, S>(
         &self,
         arg_gen: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-        ft_gen: impl UserFuzzStrategy<Program, Args, Wit> + 'static,
-    ) {
-        self.inner.borrow_mut().strategy_storage = Some((arg_gen.boxed(), Box::new(ft_gen)));
+        ft_gen: S,
+    ) where
+        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = ()> + 'static,
+    {
+        let context = self.inner.borrow().fuzz_context.clone();
+        let mapped = arg_gen.prop_map(move |(args, wit)| ft_gen.gen_final_transaction(context.clone(), args, wit, ()));
+        self.inner.borrow_mut().strategy_storage = Some(mapped.boxed());
     }
 
-    pub fn with_final_arg_gen_strategy_ext(
+    pub fn with_final_arg_gen_strategy_ext<Args, Wit, S>(
         &self,
-        arg_gen: impl Strategy<Value = ((Arguments, WitnessValues), T)> + 'static,
-        ft_gen: impl UserFuzzStrategyExt<Program, Args, Wit, T> + 'static,
-    ) {
-        self.inner.borrow_mut().strategy_storage_ext = Some((arg_gen.boxed(), Box::new(ft_gen)));
+        arg_gen: impl Strategy<Value = ((Arguments, WitnessValues), S::AdditionalInput)> + 'static,
+        ft_gen: S,
+    ) where
+        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+        S: ContractFuzzStrategy<Program, Args, Wit> + 'static,
+    {
+        let context = self.inner.borrow().fuzz_context.clone();
+        let mapped = arg_gen.prop_map(move |((args, wit), additional)| {
+            ft_gen.gen_final_transaction(context.clone(), args, wit, additional)
+        });
+        self.inner.borrow_mut().strategy_storage = Some(mapped.boxed());
     }
 
     pub fn run_with_check(self, program_check_fn: impl ProgramCheck) {
@@ -102,18 +109,7 @@ where
         let inner = self.inner.into_inner();
 
         let context = inner.fuzz_context;
-
-        let strategy = if let Some(_) = inner.strategy_storage
-            && let Some(_) = inner.strategy_storage_ext
-        {
-            panic!("Strategy must be only one");
-        } else if let Some(strategy_gen) = inner.strategy_storage {
-            strategy_gen.get_strategy(context.clone())
-        } else if let Some(strategy_gen_ext) = inner.strategy_storage_ext {
-            strategy_gen_ext.get_strategy(context.clone())
-        } else {
-            panic!("Strategy must be configured");
-        };
+        let strategy = inner.strategy_storage.expect("Strategy must be configured");
 
         match runner.run(&strategy, |(args, wit, ft)| {
             let signer = context.signer.as_ref();
