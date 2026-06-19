@@ -5,15 +5,16 @@ use std::sync::Arc;
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
 
+use crate::context::TestContext;
+use crate::mutantesting::core::{
+    ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SignerOption,
+};
+use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::{Arguments, WitnessValues};
-
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
-
-use crate::mutantesting::core::{ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
-use crate::mutantesting::sign_or_extract;
 
 pub struct SimplexFuzzEngineInner<Program> {
     pub(crate) fuzz_context: FuzzContext,
@@ -34,14 +35,33 @@ impl Default for FuzzContext {
             signer: Arc::new(None),
             network: default_network,
             mock_provider: Arc::new(get_default_provider(default_network)),
+            test_context: Arc::new(None),
+            signer_option: SignerOption::NoSigning,
         }
     }
 }
 
 impl FuzzContext {
     #[allow(clippy::arc_with_non_send_sync)]
-    fn with_signer(&mut self, signer: Signer) {
+    pub fn with_signer(&mut self, signer: Signer) {
+        self.signer_option = SignerOption::CustomSigner;
         self.signer = Arc::new(Some(signer));
+    }
+
+    #[allow(clippy::arc_with_non_send_sync)]
+    pub fn with_default_signer(&mut self) {
+        self.signer_option = SignerOption::DefaultTestConfigSigner;
+    }
+
+    #[inline]
+    pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
+        match self.signer_option {
+            SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
+                let signer = self.get_signer();
+                Ok(signer.unwrap().sign_tx_raw(ft)?)
+            }
+            SignerOption::NoSigning => Ok(ft.extract_pst().0),
+        }
     }
 }
 fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
@@ -64,18 +84,54 @@ where
         }
     }
 
+    pub fn from_context(mut config: proptest::test_runner::Config, test_context: TestContext) -> Self {
+        let default_network = SimplicityNetwork::default_regtest();
+        let smplx_test_context = dbg!(test_context.get_config());
+        if let Some(proptest_conf) = smplx_test_context.proptest.as_ref() {
+            if let Some(cases) = proptest_conf.cases {
+                config.cases = cases;
+            }
+
+            if let Some(max_global_rejects) = proptest_conf.max_global_rejects {
+                config.max_global_rejects = max_global_rejects;
+            }
+
+            if let Some(max_shrink_iters) = proptest_conf.max_shrink_iters {
+                config.max_shrink_iters = max_shrink_iters;
+            }
+
+            if let Some(max_local_rejects) = proptest_conf.max_local_rejects {
+                config.max_local_rejects = max_local_rejects;
+            }
+
+            config.verbose = smplx_test_context.verbosity as u32;
+        }
+
+        Self {
+            runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
+            inner: RefCell::new(SimplexFuzzEngineInner {
+                fuzz_context: FuzzContext {
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    signer: Arc::new(None),
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    mock_provider: Arc::new(get_default_provider(default_network)),
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    test_context: Arc::new(Some(test_context)),
+                    signer_option: SignerOption::NoSigning,
+                    network: SimplicityNetwork::Liquid,
+                },
+                strategy_storage: None,
+                _phantom: PhantomData,
+            }),
+        }
+    }
+
     pub fn with_signer(&self, signer: Signer) {
         self.inner.borrow_mut().fuzz_context.with_signer(signer);
     }
 
     pub fn with_default_signer(&self) {
-        const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
-
-        let network = self.inner.borrow().fuzz_context.network;
-        self.inner.borrow_mut().fuzz_context.with_signer(Signer::new(
-            DEFAULT_TEST_MNEMONIC,
-            Box::new(get_default_provider(network)),
-        ));
+        self.inner.borrow_mut().fuzz_context.with_default_signer();
     }
 
     pub fn with_final_arg_gen_strategy<Args, Wit, S>(
@@ -116,8 +172,7 @@ where
         let strategy = inner.strategy_storage.expect("Strategy must be configured");
 
         match runner.run(&strategy, |(args, wit, ft)| {
-            let signer = context.signer.as_ref();
-            let pst = sign_or_extract(signer, &ft).unwrap();
+            let pst = context.sign_or_extract(&ft).unwrap();
 
             let (failure_program, _script) = Program::build_program(args.clone(), &context.network);
 

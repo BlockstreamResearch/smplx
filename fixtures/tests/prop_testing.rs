@@ -142,7 +142,7 @@ mod simple_storage_test_prop {
     use simplex::mutantesting::args_strategy::Random;
     use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::{
-        sign_or_extract, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
+        FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
     };
     use simplex::program::{ArgumentsTrait, WitnessTrait};
     use simplex::simplicityhl::elements::hashes::Hash;
@@ -196,7 +196,7 @@ mod simple_storage_test_prop {
             let mut ft = FinalTransaction::new();
             let mut args_typed = SimpleStorageArguments::from_arguments(&arguments).unwrap();
             let mut wit_typed = SimpleStorageWitness::from_witness(&witness).unwrap();
-            let signer = test_context.signer.as_ref();
+            let signer = test_context.get_signer();
             let (new_value, old_value) = additional;
 
             wit_typed.new_value = new_value;
@@ -251,7 +251,7 @@ mod simple_storage_test_prop {
             });
 
             // TODO: how to make correctly here?
-            let pst = sign_or_extract(signer, &ft).unwrap();
+            let pst = test_context.sign_or_extract( &ft).unwrap();
             let wit_signed = signer
                 .as_ref()
                 .unwrap()

@@ -10,10 +10,21 @@ use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
 
+use crate::context::TestContext;
+
+#[derive(Clone, Debug)]
+pub(crate) enum SignerOption {
+    DefaultTestConfigSigner,
+    CustomSigner,
+    NoSigning,
+}
+
 #[derive(Clone)]
 pub struct FuzzContext {
-    pub signer: Arc<Option<Signer>>,
+    pub(crate) signer: Arc<Option<Signer>>,
     pub mock_provider: Arc<dyn ProviderTrait>,
+    pub(crate) test_context: Arc<Option<TestContext>>,
+    pub(crate) signer_option: SignerOption,
     pub network: SimplicityNetwork,
 }
 
@@ -28,6 +39,22 @@ impl<P: AsRef<Program> + ProgramFactory<P>> FuzzableProgram<P> for P {
         let prog = P::instantiate_program(args);
         let script = prog.as_ref().as_ref().get_script_pubkey(network);
         (prog, script)
+    }
+}
+
+impl FuzzContext {
+    pub fn get_signer(&self) -> Option<&Signer> {
+        match self.signer_option {
+            SignerOption::DefaultTestConfigSigner => Some(
+                self.test_context
+                    .as_ref()
+                    .as_ref()
+                    .expect("TestContext has to be unempty")
+                    .get_default_signer(),
+            ),
+            SignerOption::CustomSigner => self.signer.as_ref().as_ref(),
+            SignerOption::NoSigning => None,
+        }
     }
 }
 

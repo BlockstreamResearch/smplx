@@ -21,6 +21,12 @@
 # bitcoins = 10_000_000
 # verbosity = 0
 
+# [test.proptest]
+# cases = 10000
+# max_shrink_iters = 100
+# max_global_rejects = 100
+# max_local_rejects = 100
+
 # [test.esplora]
 # url = "<esplora url>"
 # network = "<Liquid, LiquidTestnet, ElementsRegtest>"
