@@ -11,4 +11,4 @@ pub use smplx_test::context::TestContext;
 pub use smplx_test::mutantesting;
 
 pub use smplx_macros;
-pub use smplx_macros::{include_simf, test};
+pub use smplx_macros::{include_simf, proptest, test};

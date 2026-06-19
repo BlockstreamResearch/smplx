@@ -8,8 +8,8 @@ mod failure_test_prop {
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
-    use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
     use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
+    use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
 
     struct FailureTestCheck;
 
@@ -141,24 +141,21 @@ mod simple_storage_test_prop {
     use simplex::mutantesting::args_strategy::Random;
     use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::proptest::prelude::Strategy;
-    use simplex::mutantesting::{
-        sign_or_extract, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine,
-    };
+    use simplex::mutantesting::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine};
     use simplex::program::{ArgumentsTrait, WitnessTrait};
-    use simplex::simplicityhl::elements::hashes::Hash;
-    use simplex::simplicityhl::elements::pset::serialize::Serialize;
-    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::elements::AssetId;
+    use simplex::simplicityhl::elements::hashes::Hash;
+    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
+    use simplex::simplicityhl::elements::pset::serialize::Serialize;
     use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::PartialOutput;
     use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
-    use simplex::{mutantesting, TestContext};
+    use simplex::{TestContext, mutantesting};
+    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
     use simplex_fixtures::artifacts::simple_storage::derived_simple_storage::{
         SimpleStorageArguments, SimpleStorageWitness,
     };
-    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
-    use std::ops::Range;
     use std::path::PathBuf;
 
     pub struct SimpleStorageCheck;
@@ -199,7 +196,7 @@ mod simple_storage_test_prop {
             let mut ft = FinalTransaction::new();
             let mut args_typed = SimpleStorageArguments::from_arguments(&arguments).unwrap();
             let mut wit_typed = SimpleStorageWitness::from_witness(&witness).unwrap();
-            let signer = test_context.signer.as_ref();
+            let signer = test_context.get_signer();
             let (new_value, old_value) = additional;
 
             wit_typed.new_value = new_value;
@@ -254,7 +251,7 @@ mod simple_storage_test_prop {
             });
 
             // TODO: how to make correctly here?
-            let pst = sign_or_extract(signer, &ft).unwrap();
+            let pst = test_context.sign_or_extract(&ft).unwrap();
             let wit_signed = signer
                 .as_ref()
                 .unwrap()
@@ -291,31 +288,49 @@ mod simple_storage_test_prop {
             Ok(())
         }
 
-        let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
-            Err(_) => {
-                panic!("Failed to run this test, required to use `simplex test`");
-            }
-            Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
-        };
+        const SIMPLEX_PROP_TEST_ENV: &str = "SIMPLEX_RUN_PROP_TESTS";
 
+        if std::env::var(SIMPLEX_PROP_TEST_ENV).is_ok() {
+            let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
+                Err(_) => {
+                    panic!("Failed to run this test, required to use `simplex test`");
+                }
+                Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
+            };
 
-        let config = mutantesting::proptest::test_runner::Config {
-            test_name: ::core::option::Option::Some(::core::concat!(
-                ::core::module_path!(),
-                "::",
-                ::core::stringify!(possible_interface_simple_program)
-            )),
-            source_file: Some(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/",
-                stringify!(possible_interface_simple_program),
-                ".txt"
-            )),
-            ..Default::default()
-        };
-        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context);
+            let config = mutantesting::proptest::test_runner::Config {
+                test_name: ::core::option::Option::Some(::core::concat!(
+                    ::core::module_path!(),
+                    "::",
+                    ::core::stringify!(possible_interface_simple_program)
+                )),
+                source_file: Some(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/src/",
+                    stringify!(possible_interface_simple_program),
+                    ".txt"
+                )),
+                ..Default::default()
+            };
+            let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context);
 
-        possible_interface_simple_program__smplx_test(fuzz_engine)
+            possible_interface_simple_program__smplx_test(fuzz_engine)
+        } else {
+            eprintln!(
+                "Set '--proptest' flag in simplex to run a {} proptest",
+                stringify!(possible_interface_simple_program)
+            );
+            todo!()
+        }
+    }
+
+    #[simplex::proptest]
+    fn possible_interface_simple_program_2(fuzz_engine: SimplexFuzzEngine<SimpleStorageProgram>) -> anyhow::Result<()> {
+        fuzz_engine.with_default_signer();
+        fuzz_engine.with_final_arg_gen_strategy_ext(generate_additional_args(), SimpleStorageStrategy::default());
+
+        fuzz_engine.run_with_check(SimpleStorageCheck);
+        Ok(())
     }
 
     // #[::core::prelude::v1::test]
