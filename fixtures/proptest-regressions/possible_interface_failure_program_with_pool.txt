@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1e33a7b396f9d1a77549bc014493fbd59c0a2e3b64b30361c2ae396f5cfa4b52 # shrinks to (Arguments({FAILURE_VALUE: 0x30d4f5d5628bee4d6cacc66560a149f5e02229473fa8cf64cf2cacaaa4021a87: u256}), WitnessValues({CMP_VALUE: 0x30d4f5d5628bee4d6cacc66560a149f5e02229473fa8cf64cf2cacaaa4021a87: u256}), FinalTransaction { inputs: [FinalInput { partial_input: PartialInput { witness_txid: 0000000000000000000000000000000000000000000000000000000000000000, witness_output_index: 0, witness_utxo: TxOut { asset: Explicit(5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225), value: Explicit(4294967296), nonce: Null, script_pubkey: Script(OP_PUSHNUM_1 OP_PUSHBYTES_32 de29b92bb9ec6ee35cec7b5fbc5d4859a3cfccfc1809998d4ce6d411a1320b48), witness: TxOutWitness { surjection_proof: None, rangeproof: None } }, sequence: Sequence(4294967295), locktime: Blocks(Height(0)), amount: Some(4294967296), asset: Some(5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225), secrets: None }, program_input: Some(mod witness {     const CMP_VALUE: u256 = 0x30d4f5d5628bee4d6cacc66560a149f5e02229473fa8cf64cf2cacaaa4021a87; } ), issuance_input: None, required_sig: None }], outputs: [] })

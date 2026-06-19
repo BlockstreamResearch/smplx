@@ -1,4 +1,3 @@
-use dyn_clone::DynClone;
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use std::collections::HashMap;
 

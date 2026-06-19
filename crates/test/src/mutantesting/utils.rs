@@ -1,13 +1,9 @@
 use rand::Rng;
 
-use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::num::U256;
 use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{ResolvedType, Value};
-
-use smplx_sdk::signer::{Signer, SignerError};
-use smplx_sdk::transaction::FinalTransaction;
 
 pub fn generate_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut R) -> Value {
     match ty.as_inner() {
@@ -45,16 +41,5 @@ pub fn generate_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut R) -> 
             )
         }
         _ => Value::unit(),
-    }
-}
-
-#[inline]
-pub fn sign_or_extract(
-    signer: &Option<Signer>,
-    ft: &FinalTransaction,
-) -> Result<PartiallySignedTransaction, SignerError> {
-    match signer.as_ref() {
-        None => Ok(ft.extract_pst().0),
-        Some(signer) => signer.sign_tx_raw(ft),
     }
 }

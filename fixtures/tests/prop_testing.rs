@@ -283,6 +283,7 @@ mod simple_storage_test_prop {
         ) -> anyhow::Result<()> {
             // user can provide his own signer
             // fuzz_engine.with_signer(<signer>);
+
             fuzz_engine.with_final_arg_gen_strategy_ext(generate_additional_args(), SimpleStorageStrategy::default());
 
             fuzz_engine.run_with_check(SimpleStorageCheck);
@@ -296,6 +297,7 @@ mod simple_storage_test_prop {
             }
             Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
         };
+
 
         let config = mutantesting::proptest::test_runner::Config {
             test_name: ::core::option::Option::Some(::core::concat!(
@@ -311,7 +313,7 @@ mod simple_storage_test_prop {
             )),
             ..Default::default()
         };
-        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context, true);
+        let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context);
 
         possible_interface_simple_program__smplx_test(fuzz_engine)
     }

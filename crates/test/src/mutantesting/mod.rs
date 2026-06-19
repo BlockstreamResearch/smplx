@@ -7,4 +7,4 @@ pub use proptest;
 
 pub use core::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult};
 pub use engine::SimplexFuzzEngine;
-pub use utils::{generate_value_by_ty, sign_or_extract};
+pub use utils::generate_value_by_ty;
