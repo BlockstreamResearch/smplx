@@ -33,4 +33,8 @@ pub enum ProviderError {
     /// Error indicating an incorrectly formatted transaction ID string was encountered.
     #[error("Invalid txid format: {0}")]
     InvalidTxid(String),
+
+    /// Error indicating that the rpc returned a malformed response.
+    #[error("Couldn't parse the response")]
+    BadResponse(),
 }
