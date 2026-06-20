@@ -152,9 +152,9 @@ fn main() {
 
     #[allow(clippy::unnecessary_wraps)]
     fn execute_cargo_fmt(file: impl AsRef<Path>) -> Result<(), InitError> {
-        let mut cargo_test_command = std::process::Command::new("sh");
+        let mut cargo_test_command = std::process::Command::new("rustfmt");
 
-        cargo_test_command.args(["-c".to_string(), format!("rustfmt {}", file.as_ref().display())]);
+        cargo_test_command.args(file.as_ref());
 
         let _output = cargo_test_command.output().map_err(InitError::FmtError);
 

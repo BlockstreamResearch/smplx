@@ -91,15 +91,24 @@ impl EsploraProvider {
             map.insert(point.txid, tx);
         }
 
-        // populate TxOuts
-        Ok(outpoints
-            .iter()
-            .map(|point| UTXO {
+        let mut utxos = Vec::with_capacity(outpoints.len());
+
+        for point in outpoints {
+            let txout = map
+                .get(&point.txid)
+                .unwrap()
+                .output
+                .get(point.vout as usize)
+                .ok_or_else(ProviderError::BadResponse)?;
+
+            utxos.push(UTXO {
                 outpoint: *point,
-                txout: map.get(&point.txid).unwrap().output[point.vout as usize].clone(),
+                txout: txout.clone(),
                 secrets: None,
-            })
-            .collect())
+            });
+        }
+
+        Ok(utxos)
     }
 }
 
