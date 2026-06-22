@@ -1,6 +1,5 @@
 mod failure_test_prop {
     use simplex::mutantesting;
-    use simplex::mutantesting::args_strategy::{Random, RandomValuePool};
     use simplex::mutantesting::core::ContractFuzzStrategy;
     use simplex::mutantesting::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine};
     use simplex::simplicityhl::elements::hashes::Hash;
@@ -96,10 +95,10 @@ mod failure_test_prop {
 
         let fuzz_engine = SimplexFuzzEngine::<FailureTestProgram>::from_config(config);
 
-        fuzz_engine.with_final_arg_gen_strategy(
-            Random::<FailureTestArguments, FailureTestWitness>::default(),
-            FailureGenStrategy::default(),
-        );
+        fuzz_engine
+            .strategy_builder::<FailureTestArguments, FailureTestWitness>()
+            .random()
+            .build(FailureGenStrategy);
 
         fuzz_engine.run_with_check(FailureTestCheck);
 
@@ -126,10 +125,10 @@ mod failure_test_prop {
 
         let fuzz_engine = SimplexFuzzEngine::<FailureTestProgram>::from_config(config);
 
-        fuzz_engine.with_final_arg_gen_strategy(
-            RandomValuePool::<FailureTestArguments, FailureTestWitness>::default(),
-            FailureGenStrategy::default(),
-        );
+        fuzz_engine
+            .strategy_builder::<FailureTestArguments, FailureTestWitness>()
+            .random_pool()
+            .build(FailureGenStrategy);
 
         fuzz_engine.run_with_check(FailureTestCheck);
 
@@ -138,9 +137,7 @@ mod failure_test_prop {
 }
 
 mod simple_storage_test_prop {
-    use simplex::mutantesting::args_strategy::Random;
     use simplex::mutantesting::core::ContractFuzzStrategy;
-    use simplex::mutantesting::proptest::prelude::Strategy;
     use simplex::mutantesting::{FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SimplexFuzzEngine};
     use simplex::program::{ArgumentsTrait, WitnessTrait};
     use simplex::simplicityhl::elements::AssetId;
@@ -184,7 +181,7 @@ mod simple_storage_test_prop {
     impl ContractFuzzStrategy<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>
         for SimpleStorageStrategy
     {
-        type AdditionalInput = (u64, u64);
+        type AdditionalInput = u64;
 
         fn gen_final_transaction(
             &self,
@@ -197,7 +194,14 @@ mod simple_storage_test_prop {
             let mut args_typed = SimpleStorageArguments::from_arguments(&arguments).unwrap();
             let mut wit_typed = SimpleStorageWitness::from_witness(&witness).unwrap();
             let signer = test_context.get_signer();
-            let (new_value, old_value) = additional;
+            let mut old_value = additional;
+            let new_value = if old_value == u64::MAX {
+                let res = old_value;
+                old_value -= 1;
+                res
+            } else {
+                old_value + 1
+            };
 
             wit_typed.new_value = new_value;
 
@@ -281,7 +285,11 @@ mod simple_storage_test_prop {
             // user can provide his own signer
             // fuzz_engine.with_signer(<signer>);
 
-            fuzz_engine.with_final_arg_gen_strategy_ext(generate_additional_args(), SimpleStorageStrategy::default());
+            fuzz_engine
+                .strategy_builder::<SimpleStorageArguments, SimpleStorageWitness>()
+                .random_pool()
+                .with_asset_value()
+                .build(SimpleStorageStrategy);
 
             fuzz_engine.run_with_check(SimpleStorageCheck);
 
@@ -327,7 +335,11 @@ mod simple_storage_test_prop {
     #[simplex::proptest]
     fn possible_interface_simple_program_2(fuzz_engine: SimplexFuzzEngine<SimpleStorageProgram>) -> anyhow::Result<()> {
         fuzz_engine.with_default_signer();
-        fuzz_engine.with_final_arg_gen_strategy_ext(generate_additional_args(), SimpleStorageStrategy::default());
+        fuzz_engine
+            .strategy_builder::<SimpleStorageArguments, SimpleStorageWitness>()
+            .random_pool()
+            .with_asset_value()
+            .build(SimpleStorageStrategy);
 
         fuzz_engine.run_with_check(SimpleStorageCheck);
         Ok(())
@@ -374,14 +386,4 @@ mod simple_storage_test_prop {
     //
     //     dummy_log_level__smplx_test(test_context)
     // }
-
-    fn generate_additional_args() -> impl Strategy<Value = ((Arguments, WitnessValues), (u64, u64))> {
-        (
-            Random::<SimpleStorageArguments, SimpleStorageWitness>::default(),
-            (
-                0_u64..((u32::MAX / 2) as u64),
-                ((u32::MAX / 2) as u64)..(u32::MAX as u64),
-            ),
-        )
-    }
 }
