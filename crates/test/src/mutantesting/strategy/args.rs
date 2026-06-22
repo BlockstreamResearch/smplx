@@ -2,11 +2,13 @@ use proptest::prelude::{BoxedStrategy, Strategy};
 use proptest::strategy::{NewTree, ValueTree};
 use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
+use std::sync::Arc;
 
-use crate::mutantesting::FuzzContext;
 use crate::mutantesting::core::ArgGenFuzzStrategy;
+use crate::mutantesting::FuzzContext;
 use proptest::prelude::Rng;
 use proptest::test_runner::{TestRng, TestRunner};
+use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::str::WitnessName;
 use simplicityhl::{Arguments, ResolvedType, Value, WitnessValues};
 use smplx_sdk::program::{RandomArguments, RandomWitness};
@@ -60,8 +62,83 @@ impl<Args: RandomArguments + std::fmt::Debug, Wit: RandomWitness + std::fmt::Deb
 impl<Args: RandomArguments + std::fmt::Debug + Clone + 'static, Wit: RandomWitness + std::fmt::Debug + Clone + 'static>
     ArgGenFuzzStrategy<Args, Wit> for Random<Args, Wit>
 {
-    fn get_strategy(&self, _test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)> {
+    fn get_strategy(&self, _test_context: Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues)> {
         Random::<Args, Wit>::default().boxed()
+    }
+}
+
+pub trait PstBuilder<Args, Wit> {
+    fn build_pst(&self, ctx: &FuzzContext, args: &Args, wit: &Wit) -> (PartiallySignedTransaction, Args, Wit);
+}
+
+pub struct PstGeneratorTree<Args, Wit, B> {
+    inner_tree: RandomValueTree<(Args, Wit)>,
+    context: Arc<FuzzContext>,
+    builder: Arc<B>,
+}
+
+impl<Args: Clone + std::fmt::Debug, Wit: Clone + std::fmt::Debug, B: PstBuilder<Args, Wit>> ValueTree
+    for PstGeneratorTree<Args, Wit, B>
+{
+    type Value = (Args, Wit, PartiallySignedTransaction);
+
+    fn current(&self) -> Self::Value {
+        let (args, wit) = self.inner_tree.current();
+
+        // Because current() must be deterministic for the given args/wit,
+        // you construct the PST deterministically here:
+        let (pst, modified_args, modified_wit) = self.builder.build_pst(&self.context, &args, &wit);
+
+        (modified_args, modified_wit, pst)
+    }
+    fn simplify(&mut self) -> bool {
+        self.inner_tree.simplify()
+    }
+    fn complicate(&mut self) -> bool {
+        self.inner_tree.complicate()
+    }
+}
+
+pub struct PstGeneratorStrategy<Args, Wit, B> {
+    pub builder: Arc<B>,
+    pub context: Arc<FuzzContext>,
+    phantom_data: PhantomData<(Args, Wit)>,
+}
+
+impl<Args, Wit, B> PstGeneratorStrategy<Args, Wit, B> {
+    pub fn new(builder: Arc<B>, context: Arc<FuzzContext>) -> Self {
+        Self {
+            builder,
+            context,
+            phantom_data: PhantomData,
+        }
+    }
+}
+
+impl<Args, Wit, B> Debug for PstGeneratorStrategy<Args, Wit, B> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "PstGeneratorStrategy...")
+    }
+}
+
+impl<
+    Args: RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: RandomWitness + std::fmt::Debug + Clone + 'static,
+    B: PstBuilder<Arguments, WitnessValues> + std::fmt::Debug + Clone + 'static,
+> Strategy for PstGeneratorStrategy<Args, Wit, B>
+{
+    type Tree = PstGeneratorTree<Arguments, WitnessValues, B>;
+    type Value = (Arguments, WitnessValues, PartiallySignedTransaction);
+
+    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
+        Ok(PstGeneratorTree {
+            inner_tree: RandomValueTree((
+                Args::generate_arguments(runner.rng()),
+                Wit::generate_witness(runner.rng()),
+            )),
+            context: self.context.clone(),
+            builder: self.builder.clone(),
+        })
     }
 }
 
@@ -82,7 +159,7 @@ impl<Args, Wit> Default for RandomValuePool<Args, Wit> {
 impl<Args: RandomArguments + std::fmt::Debug + Clone + 'static, Wit: RandomWitness + std::fmt::Debug + Clone + 'static>
     ArgGenFuzzStrategy<Args, Wit> for RandomValuePool<Args, Wit>
 {
-    fn get_strategy(&self, _test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)> {
+    fn get_strategy(&self, _test_context: Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues)> {
         RandomValuePool::<Args, Wit> {
             phantom_data: Default::default(),
             _value_pool: ValuePool::default(),

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::mutantesting::FuzzContext;
 use crate::mutantesting::core::{FuzzableBaseContextGen, FuzzableContextGen, FuzzableProgram};
 use proptest::test_runner::TestRng;
@@ -63,7 +64,7 @@ impl<FuzzProgram: FuzzableProgram<FuzzProgram>> FuzzableContextGen<FuzzProgram> 
     // todo: move into one strategy
     fn modify_transaction(
         &self,
-        _signer: &Option<Signer>,
+        _signer: &Option<Arc<Signer>>,
         ft: FinalTransaction,
         _args: &Arguments,
         _wit: &WitnessValues,

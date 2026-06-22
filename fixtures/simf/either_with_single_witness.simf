@@ -1,0 +1,12 @@
+fn main () {
+    let owner_sig: Signature = witness::SIGNATURE;
+
+    match witness::PATH {
+        Left(x: (Either<u16, u64>, Either<Option<bool>, Option<u256>>)) => {
+            let (either1, either2): (Either<u16, u64>, Either<Option<bool>, Option<u256>>) = x;
+        },
+        Right(x: Either<u32, Either<u128, u8>>) => {
+            let either1: Either<u32, Either<u128, u8>> = x;
+        },
+    }
+}

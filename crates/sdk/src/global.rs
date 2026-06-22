@@ -72,23 +72,23 @@ impl Verbosity {
     /// Creates a `Verbosity` instance from the number of verbosity flags provided (e.g., -v, -vv).
     #[must_use]
     pub fn new(flags: u8) -> Self {
-        Verbosity::Trace
-        // match flags {
-        // 0 => Verbosity::None,
-        // 1 => Verbosity::Debug,
-        // _ => Verbosity::Trace,
-        // }
+        // Verbosity::Trace
+        match flags {
+        0 => Verbosity::None,
+        1 => Verbosity::Debug,
+        _ => Verbosity::Trace,
+        }
     }
 
     /// Converts the `Verbosity` level to a corresponding `TrackerLogLevel`.
     #[must_use]
     pub fn tracker_log_level(&self) -> TrackerLogLevel {
-        TrackerLogLevel::Trace
-        // match self {
-        //     Verbosity::None => TrackerLogLevel::None,
-        //     Verbosity::Debug => TrackerLogLevel::Debug,
-        //     Verbosity::Trace => TrackerLogLevel::Trace,
-        // }
+        // TrackerLogLevel::Trace
+        match self {
+            Verbosity::None => TrackerLogLevel::None,
+            Verbosity::Debug => TrackerLogLevel::Debug,
+            Verbosity::Trace => TrackerLogLevel::Trace,
+        }
     }
 
     /// Determines if the current verbosity level includes debug symbols.

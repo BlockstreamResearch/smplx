@@ -180,8 +180,8 @@ impl ProgramTrait for Program {
 
         // execute() is called multiple times during fee estimation; output is buffered
         // so only the final successful execution's logs are emitted to stderr.
-        // let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), TrackerLogLevel::Trace);
-        let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_default_debug_sink();
+        let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), TrackerLogLevel::Trace);
+        // let mut tracker = DefaultTracker::new(satisfied.debug_symbols()).with_default_debug_sink();
         let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
@@ -192,7 +192,7 @@ impl ProgramTrait for Program {
 
         let mut mac = BitMachine::for_program(&pruned)?;
         let result = mac.exec(&pruned, &env)?;
-        ProgramLogger::flush_logs();
+        // ProgramLogger::flush_logs();
         Ok((pruned, result))
     }
 

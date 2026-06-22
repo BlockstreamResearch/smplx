@@ -13,9 +13,10 @@ use smplx_sdk::transaction::FinalTransaction;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct FuzzContext {
-    pub signer: Option<Signer>,
-    pub mock_provider: MockProvider,
+    pub signer: Option<Arc<Signer>>,
+    pub mock_provider: Arc<MockProvider>,
     pub network: SimplicityNetwork,
 }
 
@@ -46,7 +47,7 @@ pub trait FuzzableBaseContextGen<Program> {
 pub trait FuzzableContextGen<Program> {
     fn modify_transaction(
         &self,
-        signer: &Option<Signer>,
+        signer: &Option<Arc<Signer>>,
         ft: FinalTransaction,
         args: &Arguments,
         wit: &WitnessValues,
@@ -54,7 +55,11 @@ pub trait FuzzableContextGen<Program> {
 }
 
 pub trait ArgGenFuzzStrategy<Args, Wit>: Debug {
-    fn get_strategy(&self, test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)>;
+    fn get_strategy(&self, test_context: Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues)>;
+}
+
+pub trait ArgGenFuzzStrategy2<Args, Wit>: Debug {
+    fn get_strategy(&self, test_context: Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues, PartiallySignedTransaction)>;
 }
 
 pub trait ProgramCheck {

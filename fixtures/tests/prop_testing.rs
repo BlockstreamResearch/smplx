@@ -24,7 +24,8 @@ mod simple_storage_test {
 
     mod init {
         use super::*;
-        use simplex::mutantesting::core::FuzzableBaseContextGen;
+        use simplex::mutantesting::core::{ArgGenFuzzStrategy2, FuzzableBaseContextGen};
+        use simplex::mutantesting::strategy::args::PstBuilder;
         use simplex::mutantesting::prop::test_runner::TestRng;
         use simplex::mutantesting::{BoxedStrategy, FuzzableProgram, NewTree, RandomValueTree, Strategy, TestRunner};
         use simplex::program::{ArgumentsTrait, WitnessTrait};
@@ -41,6 +42,7 @@ mod simple_storage_test {
         };
         use std::fmt::Formatter;
 
+        #[derive(Clone)]
         pub struct SimpleStorageInit<Args, Wit> {
             phantom_data: PhantomData<(Args, Wit)>,
         }
@@ -78,8 +80,116 @@ mod simple_storage_test {
             Wit: RandomWitness + std::fmt::Debug + Clone + 'static,
         > ArgGenFuzzStrategy<Args, Wit> for SimpleStorageInit<Args, Wit>
         {
-            fn get_strategy(&self, _test_context: &FuzzContext) -> BoxedStrategy<(Arguments, WitnessValues)> {
+            fn get_strategy(&self, _test_context: std::sync::Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues)> {
                 simplex::mutantesting::strategy::args::Random::<Args, Wit>::default().boxed()
+            }
+        }
+
+        impl<Args, Wit> PstBuilder<Arguments, WitnessValues> for SimpleStorageInit<Args, Wit> {
+            fn build_pst(&self, context: &FuzzContext, args: &Arguments, wit: &WitnessValues) -> (PartiallySignedTransaction, Arguments, WitnessValues) {
+                let base_gen = SimpleStorageInitBaseContext::default();
+                let mut rng = simplex::rand::prelude::StdRng::seed_from_u64(0);
+                let (_, pst, modified_args, modified_wit) = base_gen.build_base_transaction_3(context, args.clone(), wit.clone(), &mut rng);
+                (pst, modified_args, modified_wit)
+            }
+        }
+
+         impl<
+            Args: RandomArguments + std::fmt::Debug + Clone + 'static,
+            Wit: RandomWitness + std::fmt::Debug + Clone + 'static,
+        > ArgGenFuzzStrategy2<Args, Wit> for SimpleStorageInit<Args, Wit>
+        {
+            fn get_strategy(&self, test_context: std::sync::Arc<FuzzContext>) -> BoxedStrategy<(Arguments, WitnessValues, PartiallySignedTransaction)> {
+                use simplex::mutantesting::prop::strategy::Strategy;
+
+
+                let init_strategy = (
+                    simplex::mutantesting::strategy::args::Random::<Args, Wit>::default(),
+                    0..(u32::MAX as u64),
+                );
+
+                let flat_strategy = init_strategy.prop_flat_map(move |((args, wit), old_value)| {
+                    (
+                        simplex::mutantesting::prop::strategy::Just(args),
+                        simplex::mutantesting::prop::strategy::Just(wit),
+                        simplex::mutantesting::prop::strategy::Just(old_value),
+                        old_value..(u32::MAX as u64),
+                    )
+                });
+
+                let result_strategy = flat_strategy.prop_map(move |(args, wit, old_value, new_value)| {
+                    let mut ft = FinalTransaction::new();
+                    let mut args_typed = SimpleStorageArguments::from_arguments(&args).unwrap();
+                    let mut wit_typed = SimpleStorageWitness::from_witness(&wit).unwrap();
+
+                    wit_typed.new_value = new_value as u64;
+
+                    {
+                        let mut slot: [u8; 32] = Default::default();
+                        slot.copy_from_slice(&test_context.network.policy_asset().serialize());
+                        args_typed.slot_id = slot;
+                        args_typed.user = test_context.signer.as_ref().unwrap().get_schnorr_public_key().serialize();
+                    }
+                    let modified_args = args_typed.build_arguments();
+                    let (_fuzz_program, old_storage_args_script) =
+                        SimpleStorageProgram::build_program(modified_args.clone(), &test_context.network);
+
+                    ft.add_input(
+                        PartialInput::new(UTXO {
+                            outpoint: OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0),
+                            txout: {
+                                let mut r = TxOut::new_fee(old_value, test_context.network.policy_asset());
+                                r.script_pubkey = old_storage_args_script.clone();
+                                r
+                            },
+                            secrets: None,
+                        }),
+                        RequiredSignature::None,
+                    );
+
+                    ft.add_input(
+                        PartialInput::new(UTXO {
+                            outpoint: OutPoint::new(Txid::from_slice(&[2; 32]).unwrap(), 1),
+                            txout: {
+                                let mut r = TxOut::new_fee(1, AssetId::default());
+                                r.script_pubkey = old_storage_args_script.clone();
+                                r
+                            },
+                            secrets: None,
+                        }),
+                        RequiredSignature::None,
+                    );
+
+                    ft.add_output(PartialOutput {
+                        script_pubkey: old_storage_args_script.clone(),
+                        amount: new_value,
+                        asset: test_context.network.policy_asset(),
+                        blinding_key: None,
+                    });
+                    ft.add_output(PartialOutput {
+                        script_pubkey: old_storage_args_script,
+                        amount: 0,
+                        asset: Default::default(),
+                        blinding_key: None,
+                    });
+
+                    let signer = test_context.signer.as_ref().unwrap();
+                    let pst = signer.sign_tx_raw(&ft).unwrap();
+                    let wit_signed = signer
+                        .get_signed_program_witness(
+                            &pst,
+                            SimpleStorageProgram::new(modified_args.clone()).get_program(),
+                            &wit_typed.build_witness(),
+                            "USER_SIGNATURE",
+                            &[],
+                            0,
+                        )
+                        .unwrap();
+
+                    (modified_args, wit_signed, pst)
+                });
+
+                result_strategy.boxed()
             }
         }
 
@@ -113,6 +223,7 @@ mod simple_storage_test {
                 wit: WitnessValues,
                 rng: &mut StdRng,
             ) -> (FinalTransaction, PartiallySignedTransaction, Arguments, WitnessValues) {
+                dbg!("Execution of build_base_transaction_3");
                 let mut ft = FinalTransaction::new();
                 let mut args_typed = SimpleStorageArguments::from_arguments(&args).unwrap();
                 let mut wit_typed = SimpleStorageWitness::from_witness(&wit).unwrap();
@@ -332,7 +443,7 @@ mod simple_storage_test {
                 }
                 let modified_args = args_typed.build_arguments();
                 let (_fuzz_program, old_storage_args_script) =
-                    FuzzProgram::build_program(modified_args.clone(), &context.network);
+                    SimpleStorageProgram::build_program(modified_args.clone(), &context.network);
 
                 ft.add_input(
                     PartialInput::new(UTXO {
@@ -373,9 +484,20 @@ mod simple_storage_test {
                     blinding_key: None,
                 });
 
-                let pst = context.signer.as_ref().unwrap().sign_tx_raw(&ft).unwrap();
+                let signer = context.signer.as_ref().unwrap();
+                let pst = signer.sign_tx_raw(&ft).unwrap();
+                let wit_signed = signer
+                    .get_signed_program_witness(
+                        &pst,
+                        SimpleStorageProgram::new(modified_args.clone()).get_program(),
+                        &wit_typed.build_witness(),
+                        "USER_SIGNATURE",
+                        &[],
+                        0,
+                    )
+                    .unwrap();
 
-                (ft, pst, modified_args, wit_typed.build_witness())
+                (ft, pst, modified_args, wit_signed)
             }
         }
     }
@@ -383,6 +505,7 @@ mod simple_storage_test {
     use init::*;
     use simplex::mutantesting::provider::MockProvider;
     use simplex::mutantesting::FuzzableProgram;
+    use simplex::mutantesting::strategy::args::PstBuilder;
     use simplex::program::logger::ProgramLogger;
     use simplex::provider::SimplicityNetwork;
     use simplex::rand::prelude::StdRng;
@@ -402,19 +525,61 @@ mod simple_storage_test {
             );
 
         fuzz_engine.with_default_signer();
-        // TODO: move 2 lines into 1 strategy
         fuzz_engine.with_pset_base_gen_strategy::<SimpleStorageInitBaseContext>();
-        fuzz_engine.with_pset_strategy::<DefaultContextGen>();
-
         fuzz_engine.with_arg_gen_strategy::<SimpleStorageInit<SimpleStorageArguments, SimpleStorageWitness>>();
-
         fuzz_engine.run_with_check_2(SimpleStorageInitCheck);
         Ok(())
     }
 
     #[test]
-    fn minimal_debug() {
-        let mut rng = StdRng::seed_from_u64(0);
+    fn test_simple_storage_mint_path_with_pset() -> Result<()> {
+        let fuzz_engine =
+            SimplexFuzzEngine::<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>::from_config(
+                mutantesting::Config::default(),
+                PhantomData,
+            );
+
+        fuzz_engine.with_default_signer();
+        fuzz_engine.with_pset_base_gen_strategy::<SimpleStorageInitBaseContext>();
+        fuzz_engine.with_arg_gen_strategy_plus_pst::<SimpleStorageInit<SimpleStorageArguments, SimpleStorageWitness>>();
+        fuzz_engine.run_with_check_3(SimpleStorageInitCheck);
+        Ok(())
+    }
+
+    // #[test]
+    // fn minimal_debug() {
+    //     let mut rng = StdRng::seed_from_u64(0);
+    //
+    //     const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+    //
+    //     let network = SimplicityNetwork::default_regtest();
+    //     let signer = Signer::new(DEFAULT_TEST_MNEMONIC, Box::new(MockProvider { network }));
+    //
+    // let context = FuzzContext {
+    //     signer: Some(std::sync::Arc::new(signer)),
+    //     mock_provider: std::sync::Arc::new(MockProvider { network }),
+    //     network,
+    // };
+    //     let base_gen = SimpleStorageInitBaseContext::default();
+    //     let args = SimpleStorageArguments::default();
+    //     let wit = SimpleStorageWitness::default();
+    //     let (ft, pst, args, wit) = base_gen.build_base_transaction_3(
+    //         &context,
+    //         args.clone().build_arguments(),
+    //         wit.clone().build_witness(),
+    //         &mut rng,
+    //     );
+    //     println!("args: {args}, wit: {wit}");
+    //     let (failure_program, _script) = SimpleStorageProgram::build_program(args.clone(), &context.network);
+    //
+    //     ProgramLogger::flush_logs();
+    //     let exec_result: ProgramExecResult = failure_program.get_program().execute(&pst, &wit, 0, &context.network);
+    //     assert!(dbg!(exec_result).is_ok());
+    // }
+
+    #[test]
+    fn minimal_debug_2() {
+        use std::sync::Arc;
 
         const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
 
@@ -422,28 +587,25 @@ mod simple_storage_test {
         let signer = Signer::new(DEFAULT_TEST_MNEMONIC, Box::new(MockProvider { network }));
 
         let context = FuzzContext {
-            signer: Some(signer),
-            mock_provider: MockProvider { network },
+            signer: Some(Arc::new(signer)),
+            mock_provider: Arc::new(MockProvider { network }),
             network,
         };
-        let base_gen = SimpleStorageInitBaseContext::default();
-        let args = SimpleStorageArguments::default();
-        let wit = SimpleStorageWitness::default();
-        let (ft, pst, args, wit) = base_gen.build_base_transaction_3(
-            &context,
-            args.clone().build_arguments(),
-            wit.clone().build_witness(),
-            &mut rng,
-        );
+        let builder = SimpleStorageInit::<SimpleStorageArguments, SimpleStorageWitness>::default();
+        let args = SimpleStorageArguments::default().build_arguments();
+        let wit = SimpleStorageWitness::default().build_witness();
+        let (pst, args, wit) = builder.build_pst(&context, &args, &wit);
+
         println!("args: {args}, wit: {wit}");
         let (failure_program, _script) = SimpleStorageProgram::build_program(args.clone(), &context.network);
 
-        ProgramLogger::flush_logs();
+        // ProgramLogger::flush_logs();
         let exec_result: ProgramExecResult = failure_program.get_program().execute(&pst, &wit, 0, &context.network);
         assert!(dbg!(exec_result).is_ok());
     }
-    //get_signed_program_witness
 
+
+    //get_signed_program_witness
     //utils - remove
     // mock provider - remove, use esplora
     // provider rs remove
