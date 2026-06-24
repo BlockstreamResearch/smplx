@@ -7,7 +7,7 @@ use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
 
 use crate::context::TestContext;
@@ -49,13 +49,36 @@ impl FuzzContext {
                 self.test_context
                     .as_ref()
                     .as_ref()
-                    .expect("TestContext has to be unempty")
+                    .expect("TestContext has to be unempty in order to get a default signer")
                     .get_default_signer(),
             ),
             SignerOption::CustomSigner => self.signer.as_ref().as_ref(),
             SignerOption::NoSigning => None,
         }
     }
+
+    #[inline]
+    pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
+        match self.signer_option {
+            SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
+                let signer = self.get_signer();
+                Ok(signer.unwrap().sign_tx_raw(ft)?)
+            }
+            SignerOption::NoSigning => Ok(ft.extract_pst().0),
+        }
+    }
+}
+
+pub trait ContractFuzzStrategyBlueprint<Program, Args, Wit> {
+    type AdditionalInput: std::fmt::Debug + 'static;
+
+    fn get_final_tx(
+        &self,
+        context: &FuzzContext,
+        args: &Arguments,
+        wit: &WitnessValues,
+        additional: &Self::AdditionalInput,
+    ) -> FinalTransaction;
 }
 
 pub trait ContractFuzzStrategy<Program, Args, Wit>: std::fmt::Debug {

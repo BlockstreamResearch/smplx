@@ -9,6 +9,7 @@ use super::error::CommandError;
 
 /// Nextest dsl variable to filter and use only simplex tests
 const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
+const SMPLX_NEXTEST_PROPTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(prop), "$/)");
 const DEFAULT_THREADS_NUMBER: usize = 1;
 
 pub struct Test {}
@@ -84,6 +85,8 @@ impl Test {
 
         let dsl_marker = if flags.no_simplex {
             format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER}")
+        } else if flags.proptest {
+            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER} and {SMPLX_NEXTEST_PROPTEST_DSL_TEST_MARKER}")
         } else {
             SMPLX_NEXTEST_DSL_TEST_MARKER.into()
         };

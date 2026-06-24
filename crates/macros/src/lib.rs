@@ -16,7 +16,17 @@ pub fn include_simf(tokenstream: TokenStream) -> TokenStream {
 pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::ItemFn);
 
-    match smplx_test::macros::expand(args.into(), input) {
+    match smplx_test::macros::expand_test(args.into(), input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn proptest(args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::ItemFn);
+
+    match smplx_test::macros::expand_proptest(args.into(), input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
