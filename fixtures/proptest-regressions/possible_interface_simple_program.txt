@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 14843289ea6740df119af7ff860a4ddc581eebb789af23d886a2ad36a7d53582 # shrinks to ((Arguments({FAILURE_VALUE: 0x41b84db5a34af9c6a8045c0534467e63102100758fe523899d7b22813f01092b: u256}), WitnessValues({CMP_VALUE: 0xd29c66b7ffa7bf3e1ed11c3a4f2641e6c5faff39f6110572884e27bc0da325de: u256})), 0)

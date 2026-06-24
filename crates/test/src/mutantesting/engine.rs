@@ -1,87 +1,66 @@
-use std::cell::RefCell;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use proptest::prelude::{BoxedStrategy, TestCaseError};
+use proptest::prelude::{BoxedStrategy, Just, TestCaseError};
 use proptest::strategy::Strategy;
 
 use crate::context::TestContext;
 use crate::mutantesting::args_strategy::{Random, RandomValuePool};
 use crate::mutantesting::core::{
-    ContractFuzzStrategy, FuzzContext, FuzzableProgram, ProgramCheck, ProgramExecResult, SignerOption,
+    ContractFuzzStrategy, ContractFuzzStrategyBlueprint, FuzzContext, FuzzableProgram, SignerOption,
 };
-use simplicityhl::elements::pset::PartiallySignedTransaction;
+use crate::mutantesting::{ProgramCheck, ProgramExecResult};
+use simplicityhl::elements::hashes::Hash;
 use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
-use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
-use smplx_sdk::signer::{Signer, SignerError};
-use smplx_sdk::transaction::FinalTransaction;
+use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
+use smplx_sdk::signer::Signer;
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
-pub struct SimplexFuzzEngineInner<Program> {
-    pub(crate) fuzz_context: FuzzContext,
-    pub(crate) strategy_storage: Option<BoxedStrategy<(Arguments, WitnessValues, FinalTransaction)>>,
-    _phantom: PhantomData<Program>,
+pub struct SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
+    runner: proptest::test_runner::TestRunner,
+    fuzz_context: FuzzContext,
+    strategy_storage: BoxedStrategy<((Arguments, WitnessValues), AdditionalValue)>,
+    blueprint: Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue>>,
 }
 
-pub struct SimplexFuzzEngine<Program> {
-    runner: RefCell<proptest::test_runner::TestRunner>,
-    inner: RefCell<SimplexFuzzEngineInner<Program>>,
-}
-
-#[allow(clippy::arc_with_non_send_sync)]
-impl Default for FuzzContext {
-    fn default() -> Self {
-        let default_network = SimplicityNetwork::default_regtest();
-        Self {
-            signer: Arc::new(None),
-            network: default_network,
-            mock_provider: Arc::new(get_default_provider(default_network)),
-            test_context: Arc::new(None),
-            signer_option: SignerOption::NoSigning,
-        }
-    }
-}
-
-impl FuzzContext {
-    #[allow(clippy::arc_with_non_send_sync)]
-    pub fn with_signer(&mut self, signer: Signer) {
-        self.signer_option = SignerOption::CustomSigner;
-        self.signer = Arc::new(Some(signer));
-    }
-
-    #[allow(clippy::arc_with_non_send_sync)]
-    pub fn with_default_signer(&mut self) {
-        self.signer_option = SignerOption::DefaultTestConfigSigner;
-    }
-
-    #[inline]
-    pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
-        match self.signer_option {
-            SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
-                let signer = self.get_signer();
-                Ok(signer.unwrap().sign_tx_raw(ft)?)
-            }
-            SignerOption::NoSigning => Ok(ft.extract_pst().0),
-        }
-    }
-}
-fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
+pub fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
     EsploraProvider::new("default_web_page.com".into(), default_network)
 }
 
-impl<Program> SimplexFuzzEngine<Program>
+pub struct FuzzStrategyBuilder<Program, Args, Wit, Add = ()> {
+    proptest_config: proptest::test_runner::Config,
+    pub(crate) strategy_storage: Option<BoxedStrategy<(Arguments, WitnessValues, Add)>>,
+    pub(crate) blueprint: Option<Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = Add>>>,
+    pub(crate) signer_option: SignerOption,
+    pub(crate) signer: Option<Signer>,
+    test_context: Option<TestContext>,
+    mock_provider: Arc<dyn ProviderTrait>,
+    network: SimplicityNetwork,
+    _phantom: PhantomData<(Program, Args, Wit)>,
+}
+
+impl<Program, Args, Wit, Add> FuzzStrategyBuilder<Program, Args, Wit, Add>
 where
     Program: FuzzableProgram<Program> + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+    Add: std::fmt::Debug + Clone + 'static,
 {
-    pub fn from_config(mut config: proptest::test_runner::Config) -> Self {
-        config.cases = 500;
+    pub fn new(config: proptest::test_runner::Config) -> Self {
+        let default_network = SimplicityNetwork::default_regtest();
+
         Self {
-            runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
-            inner: RefCell::new(SimplexFuzzEngineInner {
-                fuzz_context: FuzzContext::default(),
-                strategy_storage: None,
-                _phantom: PhantomData,
-            }),
+            proptest_config: config,
+            strategy_storage: None,
+            blueprint: None,
+            test_context: None,
+            signer_option: SignerOption::NoSigning,
+            signer: None,
+            mock_provider: Arc::new(get_default_provider(default_network)),
+            network: default_network,
+            _phantom: PhantomData,
         }
     }
 
@@ -109,114 +88,315 @@ where
         }
 
         Self {
-            runner: RefCell::new(proptest::test_runner::TestRunner::new(config)),
-            inner: RefCell::new(SimplexFuzzEngineInner {
-                fuzz_context: FuzzContext {
-                    #[allow(clippy::arc_with_non_send_sync)]
-                    signer: Arc::new(None),
-                    #[allow(clippy::arc_with_non_send_sync)]
-                    mock_provider: Arc::new(get_default_provider(default_network)),
-                    #[allow(clippy::arc_with_non_send_sync)]
-                    test_context: Arc::new(Some(test_context)),
-                    signer_option: SignerOption::NoSigning,
-                    network: SimplicityNetwork::Liquid,
-                },
-                strategy_storage: None,
-                _phantom: PhantomData,
-            }),
+            proptest_config: config,
+            strategy_storage: None,
+            blueprint: None,
+            test_context: None,
+            signer_option: SignerOption::DefaultTestConfigSigner,
+            signer: None,
+            mock_provider: Arc::new(get_default_provider(default_network)),
+            network: default_network,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+    AdditionalValue: Debug + Clone,
+{
+    pub fn with_signer(mut self, signer: Signer) -> Self {
+        self.signer_option = SignerOption::CustomSigner;
+        self.signer = Some(signer);
+        self
+    }
+
+    pub fn with_default_signer(mut self) -> Self {
+        self.signer_option = SignerOption::DefaultTestConfigSigner;
+        self
+    }
+
+    pub fn with_no_signer(mut self) -> Self {
+        self.signer_option = SignerOption::NoSigning;
+        self
+    }
+}
+
+impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+    AdditionalValue: Debug + Clone,
+{
+    pub fn build(
+        self,
+        strategy_storage: impl Strategy<Value = ((Arguments, WitnessValues), AdditionalValue)> + 'static,
+        blueprint: impl ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue> + 'static,
+    ) -> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
+        SimplexFuzzEngine {
+            runner: proptest::test_runner::TestRunner::new(self.proptest_config),
+            fuzz_context: FuzzContext {
+                #[allow(clippy::arc_with_non_send_sync)]
+                signer: Arc::new(self.signer),
+                mock_provider: self.mock_provider,
+                #[allow(clippy::arc_with_non_send_sync)]
+                test_context: Arc::new(self.test_context),
+                signer_option: self.signer_option,
+                network: self.network,
+            },
+            strategy_storage: strategy_storage.boxed(),
+            blueprint: Box::new(blueprint),
+        }
+    }
+}
+
+pub struct FuzzTxBlueprint<Program, Args, Wit, Add = ()> {
+    pub(crate) steps:
+        Vec<Arc<dyn Fn(&mut FinalTransaction, &FuzzContext, &Arguments, &WitnessValues, &Add) + Send + Sync + 'static>>,
+    _phantom: PhantomData<(Program, Args, Wit)>,
+}
+
+impl<Program, Args, Wit, S> ContractFuzzStrategyBlueprint<Program, Args, Wit> for S
+where
+    S: ContractFuzzStrategy<Program, Args, Wit> + 'static,
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+    S::AdditionalInput: std::fmt::Debug + Clone + 'static,
+{
+    type AdditionalInput = S::AdditionalInput;
+
+    fn get_final_tx(
+        &self,
+        context: &FuzzContext,
+        args: &Arguments,
+        wit: &WitnessValues,
+        additional: &Self::AdditionalInput,
+    ) -> FinalTransaction {
+        let (_, _, ft) = self.gen_final_transaction(context.clone(), args.clone(), wit.clone(), additional.clone());
+        ft
+    }
+}
+
+pub struct FnBlueprintWrapper<F, Args, Wit, Add> {
+    f: F,
+    _phantom: PhantomData<(Args, Wit, Add)>,
+}
+
+impl<Program, Args, Wit, F, AdditionalInput> ContractFuzzStrategyBlueprint<Program, Args, Wit>
+    for FnBlueprintWrapper<F, Args, Wit, AdditionalInput>
+where
+    F: Fn(&FuzzContext, &Arguments, &WitnessValues, &AdditionalInput) -> FinalTransaction + 'static,
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
+    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+    AdditionalInput: std::fmt::Debug + Clone + 'static,
+{
+    type AdditionalInput = AdditionalInput;
+
+    fn get_final_tx(
+        &self,
+        context: &FuzzContext,
+        args: &Arguments,
+        wit: &WitnessValues,
+        additional: &Self::AdditionalInput,
+    ) -> FinalTransaction {
+        let ft = (self.f)(context, args, wit, additional);
+        ft
+    }
+}
+
+impl<Program, Args, Wit, Add> ContractFuzzStrategyBlueprint<Program, Args, Wit>
+    for FuzzTxBlueprint<Program, Args, Wit, Add>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Add: std::fmt::Debug + Clone + 'static,
+{
+    type AdditionalInput = Add;
+
+    fn get_final_tx(
+        &self,
+        context: &FuzzContext,
+        args: &Arguments,
+        wit: &WitnessValues,
+        additional: &Self::AdditionalInput,
+    ) -> FinalTransaction {
+        let mut ft = FinalTransaction::new();
+        for step in &self.steps {
+            step(&mut ft, context, args, wit, additional);
+        }
+        ft
+    }
+}
+
+impl<Program, Args, Wit, Add> FuzzTxBlueprint<Program, Args, Wit, Add>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Add: std::fmt::Debug + Clone + 'static,
+{
+    pub fn new() -> Self {
+        Self {
+            steps: Vec::new(),
+            _phantom: PhantomData,
         }
     }
 
-    pub fn with_signer(&self, signer: Signer) {
-        self.inner.borrow_mut().fuzz_context.with_signer(signer);
+    pub fn add_program_input(mut self, amount: u64) -> Self {
+        self.steps
+            .push(Arc::new(move |ft, context, arguments, witness, _additional| {
+                let (prog, script) = Program::build_program(arguments.clone(), &context.network);
+                let mut txout = simplicityhl::elements::TxOut::new_fee(amount, context.network.policy_asset());
+                txout.script_pubkey = script;
+
+                let partial_input = PartialInput::new(UTXO {
+                    outpoint: simplicityhl::elements::OutPoint::new(simplicityhl::elements::Txid::all_zeros(), 0),
+                    txout,
+                    secrets: None,
+                });
+                let program_input = ProgramInput::new(Box::new(prog.as_ref().as_ref().clone()), witness.clone());
+
+                ft.add_program_input(partial_input, program_input, RequiredSignature::None);
+            }));
+        self
     }
 
-    /// Inserts signer from `TestContext`
-    pub fn with_default_signer(&self) {
-        self.inner.borrow_mut().fuzz_context.with_default_signer();
+    pub fn add_static_input(mut self, partial_input: PartialInput, required_sig: RequiredSignature) -> Self {
+        self.steps
+            .push(Arc::new(move |ft, _context, _arguments, _witness, _additional| {
+                ft.add_input(partial_input.clone(), required_sig.clone());
+            }));
+        self
     }
 
-    pub fn strategy_builder<Args, Wit>(&self) -> FuzzStrategyBuilder<'_, Program, Args, Wit, Random<Args, Wit>, ()>
+    pub fn add_static_output(mut self, partial_output: PartialOutput) -> Self {
+        self.steps
+            .push(Arc::new(move |ft, _context, _arguments, _witness, _additional| {
+                ft.add_output(partial_output.clone());
+            }));
+        self
+    }
+
+    pub fn add_custom_step<F>(mut self, step: F) -> Self
     where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
+        F: Fn(&mut FinalTransaction, &FuzzContext, &Arguments, &WitnessValues, &Add) + Send + Sync + 'static,
     {
-        FuzzStrategyBuilder::new(self)
+        self.steps.push(Arc::new(step));
+        self
     }
+}
 
-    pub fn with_random<Args, Wit, S>(&self, ft_gen: S)
-    where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = ()> + 'static,
-    {
-        self.with_final_arg_gen_strategy(Random::<Args, Wit>::default(), ft_gen)
-    }
+pub struct StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat> {
+    base_strat: Option<BaseStrat>,
+    add_strat: Option<AddStrat>,
+    _placeholder: PhantomData<(Args, Wit)>,
+}
 
-    pub fn with_random_pool<Args, Wit, S>(&self, ft_gen: S)
-    where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = ()> + 'static,
-    {
-        self.with_final_arg_gen_strategy(RandomValuePool::<Args, Wit>::default(), ft_gen)
-    }
-
-    pub fn with_random_pool_and_asset_value<Args, Wit, S>(&self, ft_gen: S)
-    where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = u64> + 'static,
-    {
-        fn generate_additional_args<Args, Wit>() -> impl Strategy<Value = ((Arguments, WitnessValues), u64)>
-        where
-            Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-            Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        {
-            (Random::<Args, Wit>::default(), 0_u64..u64::MAX)
+impl<Args, Wit> StrategyStorageBuilder<Args, Wit, (), Just<()>> {
+    pub fn new() -> Self {
+        Self {
+            base_strat: None,
+            add_strat: Some(Just(())),
+            _placeholder: Default::default(),
         }
+    }
+}
 
-        self.with_final_arg_gen_strategy_ext(generate_additional_args::<Args, Wit>(), ft_gen)
+impl<Program, Args, Wit, Add> Default for FuzzTxBlueprint<Program, Args, Wit, Add>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    Add: std::fmt::Debug + Clone + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<Args, Wit, BaseStrat, AddStrat> StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat> {
+    pub fn with_random(self) -> StrategyStorageBuilder<Args, Wit, Random<Args, Wit>, AddStrat> {
+        StrategyStorageBuilder {
+            base_strat: Some(Random::<Args, Wit>::default()),
+            add_strat: self.add_strat,
+            _placeholder: Default::default(),
+        }
     }
 
-    fn with_final_arg_gen_strategy<Args, Wit, S>(
-        &self,
-        arg_gen: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-        ft_gen: S,
-    ) where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = ()> + 'static,
+    pub fn with_random_pool(self) -> StrategyStorageBuilder<Args, Wit, RandomValuePool<Args, Wit>, AddStrat> {
+        StrategyStorageBuilder {
+            base_strat: Some(RandomValuePool::<Args, Wit>::default()),
+            add_strat: self.add_strat,
+            _placeholder: Default::default(),
+        }
+    }
+
+    pub fn with_custom_strategy<NewStrat>(
+        self,
+        custom_strat: NewStrat,
+    ) -> StrategyStorageBuilder<Args, Wit, NewStrat, AddStrat>
+    where
+        NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
     {
-        let context = self.inner.borrow().fuzz_context.clone();
-        let mapped = arg_gen.prop_map(move |(args, wit)| ft_gen.gen_final_transaction(context.clone(), args, wit, ()));
-        self.inner.borrow_mut().strategy_storage = Some(mapped.boxed());
+        StrategyStorageBuilder {
+            base_strat: Some(custom_strat),
+            add_strat: self.add_strat,
+            _placeholder: Default::default(),
+        }
     }
 
-    fn with_final_arg_gen_strategy_ext<Args, Wit, S>(
-        &self,
-        arg_gen: impl Strategy<Value = ((Arguments, WitnessValues), S::AdditionalInput)> + 'static,
-        ft_gen: S,
-    ) where
-        Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-        S: ContractFuzzStrategy<Program, Args, Wit> + 'static,
+    pub fn with_additional_strategy<NewAddStrat>(
+        self,
+        strategy: NewAddStrat,
+    ) -> StrategyStorageBuilder<Args, Wit, BaseStrat, NewAddStrat>
+    where
+        NewAddStrat: Strategy + 'static,
     {
-        let context = self.inner.borrow().fuzz_context.clone();
-        let mapped = arg_gen.prop_map(move |((args, wit), additional)| {
-            ft_gen.gen_final_transaction(context.clone(), args, wit, additional)
-        });
-        self.inner.borrow_mut().strategy_storage = Some(mapped.boxed());
+        StrategyStorageBuilder {
+            base_strat: self.base_strat,
+            add_strat: Some(strategy),
+            _placeholder: Default::default(),
+        }
     }
 
+    pub fn with_random_asset_value(self) -> StrategyStorageBuilder<Args, Wit, BaseStrat, std::ops::Range<u64>> {
+        StrategyStorageBuilder {
+            base_strat: self.base_strat,
+            add_strat: Some(0..u64::MAX),
+            _placeholder: Default::default(),
+        }
+    }
+}
+
+impl<Args, Wit, BaseStrat, AddStrat> StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat>
+where
+    BaseStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
+    AddStrat: Strategy + 'static,
+{
+    pub fn build(self) -> BoxedStrategy<((Arguments, WitnessValues), AddStrat::Value)> {
+        let base = self
+            .base_strat
+            .expect("Base strategy is mandatory. Call with_random() or similar.");
+        let add = self.add_strat.expect("Additional strategy is missing.");
+
+        (base, add).boxed()
+    }
+}
+
+impl<Program, Args, Wit, AdditionalValue> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue>
+where
+    Program: FuzzableProgram<Program> + Clone + 'static,
+    AdditionalValue: Clone + Debug + 'static,
+{
     pub fn run_with_check(self, program_post_hook: impl ProgramCheck) {
-        let mut runner = self.runner.into_inner();
-        let inner = self.inner.into_inner();
+        let mut runner = self.runner;
+        let context = self.fuzz_context;
+        let strategy = self.strategy_storage;
+        let blueprint = self.blueprint;
 
-        let context = inner.fuzz_context;
-        let strategy = inner.strategy_storage.expect("Strategy must be configured");
-
-        match runner.run(&strategy, |(args, wit, ft)| {
+        match runner.run(&strategy, |((args, wit), add)| {
+            let ft = blueprint.get_final_tx(&context, &args, &wit, &add);
             let pst = context.sign_or_extract(&ft).unwrap();
 
             let (failure_program, _script) = Program::build_program(args.clone(), &context.network);
@@ -239,122 +419,5 @@ where
             Ok(()) => (),
             Err(e) => ::core::panic!("{}\n{}", e, runner),
         };
-    }
-}
-
-pub struct FuzzStrategyBuilder<'a, Program, Args, Wit, Strat, Add = ()> {
-    engine: &'a SimplexFuzzEngine<Program>,
-    base_strategy: Strat,
-    additional_strategy: Option<BoxedStrategy<Add>>,
-    _phantom: PhantomData<(Args, Wit)>,
-}
-
-impl<'a, Program, Args, Wit> FuzzStrategyBuilder<'a, Program, Args, Wit, Random<Args, Wit>, ()>
-where
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-{
-    pub fn new(engine: &'a SimplexFuzzEngine<Program>) -> Self {
-        Self {
-            engine,
-            base_strategy: Random::default(),
-            additional_strategy: Some(proptest::strategy::Just(()).boxed()),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, Program, Args, Wit, Strat, Add> FuzzStrategyBuilder<'a, Program, Args, Wit, Strat, Add>
-where
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    Strat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
-    Add: std::fmt::Debug + Clone + 'static,
-{
-    pub fn random(self) -> FuzzStrategyBuilder<'a, Program, Args, Wit, Random<Args, Wit>, Add> {
-        FuzzStrategyBuilder {
-            engine: self.engine,
-            base_strategy: Random::default(),
-            additional_strategy: self.additional_strategy,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn random_pool(self) -> FuzzStrategyBuilder<'a, Program, Args, Wit, RandomValuePool<Args, Wit>, Add> {
-        FuzzStrategyBuilder {
-            engine: self.engine,
-            base_strategy: RandomValuePool::default(),
-            additional_strategy: self.additional_strategy,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn with_custom_strategy<NewStrat>(
-        self,
-        custom_strat: NewStrat,
-    ) -> FuzzStrategyBuilder<'a, Program, Args, Wit, NewStrat, Add>
-    where
-        NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
-    {
-        FuzzStrategyBuilder {
-            engine: self.engine,
-            base_strategy: custom_strat,
-            additional_strategy: self.additional_strategy,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn with_additional_strategy<NewAdd, NewStrat>(
-        self,
-        strategy: NewStrat,
-    ) -> FuzzStrategyBuilder<'a, Program, Args, Wit, Strat, NewAdd>
-    where
-        NewAdd: std::fmt::Debug + Clone + 'static,
-        NewStrat: Strategy<Value = NewAdd> + 'static,
-    {
-        FuzzStrategyBuilder {
-            engine: self.engine,
-            base_strategy: self.base_strategy,
-            additional_strategy: Some(strategy.boxed()),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn with_asset_value(self) -> FuzzStrategyBuilder<'a, Program, Args, Wit, Strat, u64> {
-        self.with_additional_strategy(0_u64..u64::MAX)
-    }
-
-    pub fn build<S>(self, ft_gen: S)
-    where
-        S: ContractFuzzStrategy<Program, Args, Wit, AdditionalInput = Add> + 'static,
-    {
-        let context = self.engine.inner.borrow().fuzz_context.clone();
-        let base_strat = self.base_strategy;
-        let additional_strat = self.additional_strategy.expect("additional_strategy is always set");
-
-        let mapped = (base_strat, additional_strat)
-            .prop_map(move |((args, wit), additional)| {
-                ft_gen.gen_final_transaction(context.clone(), args, wit, additional)
-            })
-            .boxed();
-
-        self.engine.inner.borrow_mut().strategy_storage = Some(mapped);
-    }
-
-    pub fn build_with_fn<F>(self, f: F)
-    where
-        F: Fn(FuzzContext, Arguments, WitnessValues, Add) -> (Arguments, WitnessValues, FinalTransaction) + 'static,
-    {
-        let context = self.engine.inner.borrow().fuzz_context.clone();
-        let base_strat = self.base_strategy;
-        let additional_strat = self.additional_strategy.expect("additional_strategy is always set");
-
-        let mapped = (base_strat, additional_strat)
-            .prop_map(move |((args, wit), additional)| f(context.clone(), args, wit, additional))
-            .boxed();
-
-        self.engine.inner.borrow_mut().strategy_storage = Some(mapped);
     }
 }

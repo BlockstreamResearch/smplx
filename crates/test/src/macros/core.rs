@@ -112,9 +112,8 @@ fn expand_proptest_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Resu
                     TestContext::new(PathBuf::from(path)).unwrap()
                 }
             };
-            let fuzz_engine = SimplexFuzzEngine::<SimpleStorageProgram>::from_context(config, test_context);
-
-            #name(fuzz_engine)
+            let fuzz_context_builder = FuzzStrategyBuilder::from_context(config, test_context);
+            #name(fuzz_context_builder)
         }
     };
 
