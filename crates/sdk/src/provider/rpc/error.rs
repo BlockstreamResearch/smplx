@@ -3,7 +3,7 @@
 pub enum RpcError {
     /// Transparent wrapper mapping underlying errors generated directly from the Core/Elements RPC node client.
     #[error(transparent)]
-    ElementsRpcError(#[from] electrsd::bitcoind::bitcoincore_rpc::Error),
+    ElementsRpcError(#[from] bitcoincore_rpc::Error),
 
     /// Error indicating the requested Elements RPC call succeeded but the resulting JSON data payload did not map to the expected type or structure.
     #[error("Elements RPC returned an unexpected value for call {0}")]
