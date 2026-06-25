@@ -15,7 +15,7 @@ thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true }
 simplicityhl = { workspace = true }
-electrsd = { workspace = true }
+bitcoincore-rpc = { workspace = true }
 serde = { workspace = true }
 hex = { workspace = true }
 
