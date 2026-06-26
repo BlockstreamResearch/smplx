@@ -1286,7 +1286,7 @@ dependencies = [
 [[package]]
 name = "simplicityhl"
 version = "0.6.0-rc.0"
-source = "git+https://github.com/BlockstreamResearch/SimplicityHL.git#2cf1f8e5c6af9c34f81e13e2633156657dea9d0e"
+source = "git+https://github.com/BlockstreamResearch/SimplicityHL.git#a413cf69d3738c144155bbc2e88b389feeca9f20"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
