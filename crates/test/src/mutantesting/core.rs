@@ -5,6 +5,7 @@ use simplicityhl::{Arguments, WitnessValues};
 use std::sync::Arc;
 
 use crate::context::TestContext;
+use crate::mutantesting::blueprint_constructor::BlueprintDraftConstructor;
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::{Signer, SignerError};
@@ -71,25 +72,7 @@ impl FuzzContext {
 pub trait ContractFuzzStrategyBlueprint<Program, Args, Wit> {
     type AdditionalInput: std::fmt::Debug + 'static;
 
-    fn get_final_tx(
-        &self,
-        context: &FuzzContext,
-        args: &Arguments,
-        wit: &WitnessValues,
-        additional: &Self::AdditionalInput,
-    ) -> FinalTransaction;
-}
-
-pub trait ContractFuzzStrategy<Program, Args, Wit>: std::fmt::Debug {
-    type AdditionalInput: std::fmt::Debug + 'static;
-
-    fn gen_final_transaction(
-        &self,
-        test_context: FuzzContext,
-        arguments: Arguments,
-        witness: WitnessValues,
-        additional: Self::AdditionalInput,
-    ) -> (Arguments, WitnessValues, FinalTransaction);
+    fn get_initial_ft(&self) -> BlueprintDraftConstructor;
 }
 
 pub trait ProgramCheck {

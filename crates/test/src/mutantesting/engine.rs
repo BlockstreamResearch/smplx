@@ -1,28 +1,31 @@
+use crate::context::TestContext;
+use crate::mutantesting::args_strategy::{Random, RandomValuePool};
+use crate::mutantesting::blueprint_constructor::BlueprintDraftConstructor;
+use crate::mutantesting::core::{ContractFuzzStrategyBlueprint, FuzzContext, FuzzableProgram, SignerOption};
+use crate::mutantesting::{ProgramCheck, ProgramExecResult};
+use proptest::prelude::{BoxedStrategy, Just, TestCaseError};
+use proptest::strategy::Strategy;
+use proptest::test_runner::TestRunner;
+use simplicityhl::elements::hashes::Hash;
+use simplicityhl::{Arguments, WitnessValues};
+use smplx_sdk::program::{ArgumentsTrait, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
+use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
+use smplx_sdk::signer::Signer;
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use proptest::prelude::{BoxedStrategy, Just, TestCaseError};
-use proptest::strategy::Strategy;
-
-use crate::context::TestContext;
-use crate::mutantesting::args_strategy::{Random, RandomValuePool};
-use crate::mutantesting::core::{
-    ContractFuzzStrategy, ContractFuzzStrategyBlueprint, FuzzContext, FuzzableProgram, SignerOption,
-};
-use crate::mutantesting::{ProgramCheck, ProgramExecResult};
-use simplicityhl::elements::hashes::Hash;
-use simplicityhl::{Arguments, WitnessValues};
-use smplx_sdk::program::{ArgumentsTrait, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
-use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
-use smplx_sdk::signer::Signer;
-use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
-
 pub struct SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
     runner: proptest::test_runner::TestRunner,
     fuzz_context: FuzzContext,
+    local_fuzz_config: LocalFuzzConfig,
     strategy_storage: BoxedStrategy<((Arguments, WitnessValues), AdditionalValue)>,
     blueprint: Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue>>,
+}
+
+pub struct LocalFuzzConfig {
+    runs: usize,
 }
 
 pub fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
@@ -43,7 +46,7 @@ pub struct FuzzStrategyBuilder<Program, Args, Wit, Add = ()> {
 
 impl<Program, Args, Wit, Add> FuzzStrategyBuilder<Program, Args, Wit, Add>
 where
-    Program: FuzzableProgram<Program> + Clone + 'static,
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
     Add: std::fmt::Debug + Clone + 'static,
@@ -103,7 +106,7 @@ where
 
 impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
 where
-    Program: FuzzableProgram<Program> + Clone + 'static,
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
     AdditionalValue: Debug + Clone,
@@ -127,7 +130,7 @@ where
 
 impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
 where
-    Program: FuzzableProgram<Program> + Clone + 'static,
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
     AdditionalValue: Debug + Clone,
@@ -137,6 +140,27 @@ where
         strategy_storage: impl Strategy<Value = ((Arguments, WitnessValues), AdditionalValue)> + 'static,
         blueprint: impl ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue> + 'static,
     ) -> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
+        // TODO: add fetching of failure values in order to feed correct seed into testrunnner
+        //  let mut runner_config = self.runner.config().clone();
+        //         runner_config.cases = worker_runs;
+        //         let mut runner = if let Some(seed) = self.config.seed {
+        //             // For deterministic parallel fuzzing, derive a unique seed for each worker
+        //             let worker_seed = if worker_id == 0 {
+        //                 // Master worker uses the provided seed as is.
+        //                 seed
+        //             } else {
+        //                 // Derive a worker-specific seed using keccak256(seed || worker_id)
+        //                 let seed_data =
+        //                     [&seed.to_be_bytes::<32>()[..], &worker_id.to_be_bytes()[..]].concat();
+        //                 U256::from_be_bytes(keccak256(seed_data).0)
+        //             };
+        //             trace!(target: "forge::test", ?worker_seed, "deterministic seed for worker {worker_id}");
+        //             let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &worker_seed.to_be_bytes::<32>());
+        //             TestRunner::new_with_rng(runner_config, rng)
+        //         } else {
+        //             TestRunner::new(runner_config)
+        //         };
+
         SimplexFuzzEngine {
             runner: proptest::test_runner::TestRunner::new(self.proptest_config),
             fuzz_context: FuzzContext {
@@ -148,144 +172,10 @@ where
                 signer_option: self.signer_option,
                 network: self.network,
             },
+            local_fuzz_config: LocalFuzzConfig { runs: 500 },
             strategy_storage: strategy_storage.boxed(),
             blueprint: Box::new(blueprint),
         }
-    }
-}
-
-pub struct FuzzTxBlueprint<Program, Args, Wit, Add = ()> {
-    pub(crate) steps:
-        Vec<Arc<dyn Fn(&mut FinalTransaction, &FuzzContext, &Arguments, &WitnessValues, &Add) + Send + Sync + 'static>>,
-    _phantom: PhantomData<(Program, Args, Wit)>,
-}
-
-impl<Program, Args, Wit, S> ContractFuzzStrategyBlueprint<Program, Args, Wit> for S
-where
-    S: ContractFuzzStrategy<Program, Args, Wit> + 'static,
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    S::AdditionalInput: std::fmt::Debug + Clone + 'static,
-{
-    type AdditionalInput = S::AdditionalInput;
-
-    fn get_final_tx(
-        &self,
-        context: &FuzzContext,
-        args: &Arguments,
-        wit: &WitnessValues,
-        additional: &Self::AdditionalInput,
-    ) -> FinalTransaction {
-        let (_, _, ft) = self.gen_final_transaction(context.clone(), args.clone(), wit.clone(), additional.clone());
-        ft
-    }
-}
-
-pub struct FnBlueprintWrapper<F, Args, Wit, Add> {
-    f: F,
-    _phantom: PhantomData<(Args, Wit, Add)>,
-}
-
-impl<Program, Args, Wit, F, AdditionalInput> ContractFuzzStrategyBlueprint<Program, Args, Wit>
-    for FnBlueprintWrapper<F, Args, Wit, AdditionalInput>
-where
-    F: Fn(&FuzzContext, &Arguments, &WitnessValues, &AdditionalInput) -> FinalTransaction + 'static,
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    AdditionalInput: std::fmt::Debug + Clone + 'static,
-{
-    type AdditionalInput = AdditionalInput;
-
-    fn get_final_tx(
-        &self,
-        context: &FuzzContext,
-        args: &Arguments,
-        wit: &WitnessValues,
-        additional: &Self::AdditionalInput,
-    ) -> FinalTransaction {
-        let ft = (self.f)(context, args, wit, additional);
-        ft
-    }
-}
-
-impl<Program, Args, Wit, Add> ContractFuzzStrategyBlueprint<Program, Args, Wit>
-    for FuzzTxBlueprint<Program, Args, Wit, Add>
-where
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Add: std::fmt::Debug + Clone + 'static,
-{
-    type AdditionalInput = Add;
-
-    fn get_final_tx(
-        &self,
-        context: &FuzzContext,
-        args: &Arguments,
-        wit: &WitnessValues,
-        additional: &Self::AdditionalInput,
-    ) -> FinalTransaction {
-        let mut ft = FinalTransaction::new();
-        for step in &self.steps {
-            step(&mut ft, context, args, wit, additional);
-        }
-        ft
-    }
-}
-
-impl<Program, Args, Wit, Add> FuzzTxBlueprint<Program, Args, Wit, Add>
-where
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Add: std::fmt::Debug + Clone + 'static,
-{
-    pub fn new() -> Self {
-        Self {
-            steps: Vec::new(),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn add_program_input(mut self, amount: u64) -> Self {
-        self.steps
-            .push(Arc::new(move |ft, context, arguments, witness, _additional| {
-                let (prog, script) = Program::build_program(arguments.clone(), &context.network);
-                let mut txout = simplicityhl::elements::TxOut::new_fee(amount, context.network.policy_asset());
-                txout.script_pubkey = script;
-
-                let partial_input = PartialInput::new(UTXO {
-                    outpoint: simplicityhl::elements::OutPoint::new(simplicityhl::elements::Txid::all_zeros(), 0),
-                    txout,
-                    secrets: None,
-                });
-                let program_input = ProgramInput::new(Box::new(prog.as_ref().as_ref().clone()), witness.clone());
-
-                ft.add_program_input(partial_input, program_input, RequiredSignature::None);
-            }));
-        self
-    }
-
-    pub fn add_static_input(mut self, partial_input: PartialInput, required_sig: RequiredSignature) -> Self {
-        self.steps
-            .push(Arc::new(move |ft, _context, _arguments, _witness, _additional| {
-                ft.add_input(partial_input.clone(), required_sig.clone());
-            }));
-        self
-    }
-
-    pub fn add_static_output(mut self, partial_output: PartialOutput) -> Self {
-        self.steps
-            .push(Arc::new(move |ft, _context, _arguments, _witness, _additional| {
-                ft.add_output(partial_output.clone());
-            }));
-        self
-    }
-
-    pub fn add_custom_step<F>(mut self, step: F) -> Self
-    where
-        F: Fn(&mut FinalTransaction, &FuzzContext, &Arguments, &WitnessValues, &Add) + Send + Sync + 'static,
-    {
-        self.steps.push(Arc::new(step));
-        self
     }
 }
 
@@ -302,16 +192,6 @@ impl<Args, Wit> StrategyStorageBuilder<Args, Wit, (), Just<()>> {
             add_strat: Some(Just(())),
             _placeholder: Default::default(),
         }
-    }
-}
-
-impl<Program, Args, Wit, Add> Default for FuzzTxBlueprint<Program, Args, Wit, Add>
-where
-    Program: FuzzableProgram<Program> + Clone + 'static,
-    Add: std::fmt::Debug + Clone + 'static,
-{
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -384,40 +264,108 @@ where
     }
 }
 
+// TODO: create a shared state with Atomic counter
+
+#[derive(Debug)]
+pub struct CaseOutcome {}
+
+/// Returned by a single fuzz when a counterexample has been discovered
+#[derive(Debug)]
+pub struct CounterExampleOutcome {
+    pub args: Arguments,
+    pub wit: WitnessValues,
+}
+
+/// Outcome of a single fuzz
+#[derive(Debug)]
+#[expect(clippy::large_enum_variant)]
+pub enum FuzzOutcome {
+    Case(CaseOutcome),
+    CounterExample(CounterExampleOutcome),
+}
+
 impl<Program, Args, Wit, AdditionalValue> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue>
 where
-    Program: FuzzableProgram<Program> + Clone + 'static,
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     AdditionalValue: Clone + Debug + 'static,
 {
     pub fn run_with_check(self, program_post_hook: impl ProgramCheck) {
         let mut runner = self.runner;
         let context = self.fuzz_context;
-        let strategy = self.strategy_storage;
+        let strategy = self.strategy_storage.prop_map(|((x, y), z)| (x, y)).boxed();
         let blueprint = self.blueprint;
 
-        match runner.run(&strategy, |((args, wit), add)| {
-            let ft = blueprint.get_final_tx(&context, &args, &wit, &add);
-            let pst = context.sign_or_extract(&ft).unwrap();
+        let fuzz_tx_blueprint = blueprint.get_initial_ft();
+        let program_check = Box::new(program_post_hook);
 
-            let (failure_program, _script) = Program::build_program(args.clone(), &context.network);
+        let mut runner_cnt = 0;
+        'stop: while self.local_fuzz_config.runs < runner_cnt {
+            // TODO: If counterexample recorded, replay it first, without incrementing runs.
+            //  single_failed_test_case()
+            // TODO: evaluate incremental runs
+            let mut inc_runs = || {
+                debug_assert!(
+                    runner_cnt <= self.local_fuzz_config.runs,
+                    "worker runs were not distributed correctly"
+                );
+                runner_cnt += 1;
+            };
 
-            // Iterate over program inputs to sign only appropriate items
-            for (i, input) in ft.inputs().iter().enumerate() {
-                if input.program_input.as_ref().is_some() {
-                    let exec_result: ProgramExecResult =
-                        failure_program
-                            .as_ref()
-                            .as_ref()
-                            .execute(&pst, &wit, i, &context.network);
-                    if let Err(e) = program_post_hook.call(&context, &pst, &args, &wit, i, exec_result) {
-                        return Err(TestCaseError::fail(e));
+            match Self::single_fuzz(
+                &mut runner,
+                &context,
+                fuzz_tx_blueprint.clone(),
+                &program_check,
+                &strategy,
+            ) {
+                Ok(fuzz_outcome) => match fuzz_outcome {
+                    FuzzOutcome::Case(case) => {
+                        let total_runs = inc_runs();
                     }
+                    FuzzOutcome::CounterExample(CounterExampleOutcome { args, wit }) => {
+                        panic!("program failed tith these arguments: {args} and witness: {wit}");
+                        break 'stop;
+                    }
+                },
+                Err(err) => match err {
+                    TestCaseError::Fail(e) => {
+                        panic!("{e}");
+                    }
+                    TestCaseError::Reject(e) => {
+                        panic!("{e}");
+                    }
+                },
+            }
+        }
+    }
+
+    fn single_fuzz(
+        test_runner: &mut TestRunner,
+        fuzz_context: &FuzzContext,
+        initial_tx: BlueprintDraftConstructor,
+        program_post_hook: &Box<impl ProgramCheck>,
+        strategy: &BoxedStrategy<(Arguments, WitnessValues)>,
+    ) -> Result<FuzzOutcome, TestCaseError> {
+        // TODO: extract seed in order to save it in failure case
+        let (arguments, witness, final_transaction) =
+            initial_tx.insert_real_program_values::<Program>(test_runner, strategy);
+        let pst = fuzz_context.sign_or_extract(&final_transaction)?;
+
+        let (failure_program, _script) = Program::build_program(arguments.clone(), &fuzz_context.network);
+
+        // Iterate over program inputs to sign only appropriate items
+        for (i, input) in final_transaction.inputs().iter().enumerate() {
+            if input.program_input.as_ref().is_some() {
+                let exec_result: ProgramExecResult =
+                    failure_program
+                        .as_ref()
+                        .as_ref()
+                        .execute(&pst, &witness, i, &fuzz_context.network);
+                if let Err(e) = program_post_hook.call(fuzz_context, &pst, &arguments, &witness, i, exec_result) {
+                    return Err(TestCaseError::fail(format!("{e}, args: {arguments}, wit: {witness}")));
                 }
             }
-            Ok(())
-        }) {
-            Ok(()) => (),
-            Err(e) => ::core::panic!("{}\n{}", e, runner),
-        };
+        }
+        Ok(FuzzOutcome::Case(CaseOutcome {}))
     }
 }

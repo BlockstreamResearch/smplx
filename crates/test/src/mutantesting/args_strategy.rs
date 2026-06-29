@@ -12,6 +12,52 @@ use simplicityhl::{Arguments, ResolvedType, Value, WitnessValues};
 
 use smplx_sdk::program::{RandomArguments, RandomWitness};
 
+// Interesting 8-bit values to inject.
+static INTERESTING_8: &[i8] = &[-128, -1, 0, 1, 16, 32, 64, 100, 127];
+
+/// Interesting 16-bit values to inject.
+static INTERESTING_16: &[i16] = &[
+    -128, -1, 0, 1, 16, 32, 64, 100, 127, -32768, -129, 128, 255, 256, 512, 1000, 1024, 4096, 32767,
+];
+
+/// Interesting 32-bit values to inject.
+static INTERESTING_32: &[i32] = &[
+    -128,
+    -1,
+    0,
+    1,
+    16,
+    32,
+    64,
+    100,
+    127,
+    -32768,
+    -129,
+    128,
+    255,
+    256,
+    512,
+    1000,
+    1024,
+    4096,
+    32767,
+    -2147483648,
+    -100663046,
+    -32769,
+    32768,
+    65535,
+    65536,
+    100663045,
+    2147483647,
+];
+
+// TODO: add way to insert interesting values for
+//  implement InterestingRandom strategy - to inject interesting values alongside classic randomly generated values
+
+// let index = test_runner.rng().random_range(0..=bytes.len() - 4);
+// let val = *INTERESTING_32.choose(&mut test_runner.rng())? as u32;
+// bytes[index..index + 4].copy_from_slice(&val.to_be_bytes());
+
 pub struct Random<Args, Wit> {
     phantom_data: PhantomData<(Args, Wit)>,
 }
