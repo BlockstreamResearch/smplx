@@ -1,13 +1,13 @@
 use crate::mutantesting::FuzzableProgram;
-use crate::mutantesting::blueprint_constructor::dymmy_program::derived_dummy_program::{
+use crate::mutantesting::blueprint_constructor::dummy_program::derived_dummy_program::{
     DummyProgramArguments, DummyProgramWitness,
 };
 use proptest::prelude::{BoxedStrategy, Strategy};
-use proptest::strategy::ValueTree;
+use proptest::strategy::{NewTree, ValueTree};
 use proptest::test_runner::TestRunner;
 use simplicityhl::elements::hashes::Hash;
 use simplicityhl::{Arguments, WitnessValues};
-use smplx_sdk::program::{ProgramFactory, ProgramTrait, WitnessTrait};
+use smplx_sdk::program::{ProgramFactory, WitnessTrait};
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
@@ -52,7 +52,7 @@ impl BlueprintDraftConstructor {
         }
 
         let (prog, script) =
-            dymmy_program::DummyProgram::build_program(DummyProgramArguments {}, &SimplicityNetwork::default_regtest());
+            dummy_program::DummyProgram::build_program(DummyProgramArguments {}, &SimplicityNetwork::default_regtest());
         let mut txout =
             simplicityhl::elements::TxOut::new_fee(amount.unwrap_or_default(), self.meta.network.policy_asset());
         txout.script_pubkey = script;
@@ -98,6 +98,14 @@ impl BlueprintDraftConstructor {
         self
     }
 
+    pub fn get_inputs_to_check(&self) -> &[usize] {
+        &self.meta.program_input_idxs
+    }
+
+    pub fn get_strategies_to_make_initial_ft_valid(&self) -> Vec<BoxedStrategy<FinalTransaction>> {
+        vec![]
+    }
+
     pub fn insert_real_program_values<Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static>(
         &self,
         context: &mut TestRunner,
@@ -105,22 +113,129 @@ impl BlueprintDraftConstructor {
     ) -> (Arguments, WitnessValues, FinalTransaction) {
         let mut ft = self.ft.clone();
         let (args, wit) = args_wit_strategy.new_tree(context).unwrap().current();
+        let (prog_instance, script) = Program::build_program(args.clone(), &self.meta.network);
 
         for idx in self.meta.program_input_idxs.iter() {
-            let prog_instance = Program::instantiate_program(args.clone());
             let sdk_program = prog_instance.as_ref().as_ref().clone();
-            ft.inputs_mut()[*idx].program_input = Some(ProgramInput::new(Box::new(sdk_program), wit.clone()));
+            let edit_input = &mut ft.inputs_mut()[*idx];
+            edit_input.program_input = Some(ProgramInput::new(Box::new(sdk_program), wit.clone()));
+            edit_input.partial_input.witness_utxo.script_pubkey = script.clone();
         }
         for idx in self.meta.program_output_idxs.iter() {
-            let (_, script) = Program::build_program(args.clone(), &self.meta.network);
-            ft.outputs_mut()[*idx].script_pubkey = script;
+            ft.outputs_mut()[*idx].script_pubkey = script.clone();
         }
 
         (args, wit, ft)
     }
 }
 
-pub mod dymmy_program {
+pub struct BlueprintFuzzStrategy<Program> {
+    base_strategy: BoxedStrategy<(Arguments, WitnessValues)>,
+    blueprint: BlueprintDraftConstructor,
+    _phantom: std::marker::PhantomData<Program>,
+}
+
+impl<Program> BlueprintFuzzStrategy<Program> {
+    pub fn new(base_strategy: BoxedStrategy<(Arguments, WitnessValues)>, blueprint: BlueprintDraftConstructor) -> Self {
+        Self {
+            base_strategy,
+            blueprint,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Program> Clone for BlueprintFuzzStrategy<Program> {
+    fn clone(&self) -> Self {
+        Self {
+            base_strategy: self.base_strategy.clone(),
+            blueprint: self.blueprint.clone(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Program> std::fmt::Debug for BlueprintFuzzStrategy<Program> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlueprintFuzzStrategy")
+            .field("base_strategy", &self.base_strategy)
+            .field("blueprint", &self.blueprint)
+            .finish()
+    }
+}
+
+pub struct BlueprintValueTree<Program> {
+    base_tree: Box<dyn ValueTree<Value = (Arguments, WitnessValues)>>,
+    blueprint: BlueprintDraftConstructor,
+    current_val: (Arguments, WitnessValues, FinalTransaction),
+    _phantom: std::marker::PhantomData<Program>,
+}
+
+impl<Program> BlueprintValueTree<Program>
+where
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+{
+    pub fn new(
+        base_tree: Box<dyn ValueTree<Value = (Arguments, WitnessValues)>>,
+        blueprint: BlueprintDraftConstructor,
+    ) -> Self {
+        let (args, wit) = base_tree.current();
+        let mut ft = blueprint.ft.clone();
+
+        let (prog_instance, script) = Program::build_program(args.clone(), &blueprint.meta.network);
+
+        for idx in blueprint.meta.program_input_idxs.iter() {
+            let sdk_program = prog_instance.as_ref().as_ref().clone();
+            let edit_input = &mut ft.inputs_mut()[*idx];
+            edit_input.program_input = Some(ProgramInput::new(Box::new(sdk_program), wit.clone()));
+            edit_input.partial_input.witness_utxo.script_pubkey = script.clone();
+        }
+        for idx in blueprint.meta.program_output_idxs.iter() {
+            ft.outputs_mut()[*idx].script_pubkey = script.clone();
+        }
+
+        Self {
+            base_tree,
+            blueprint,
+            current_val: (args, wit, ft),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<Program> ValueTree for BlueprintValueTree<Program>
+where
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+{
+    type Value = (Arguments, WitnessValues, FinalTransaction);
+
+    fn current(&self) -> Self::Value {
+        self.current_val.clone()
+    }
+
+    fn simplify(&mut self) -> bool {
+        false
+    }
+
+    fn complicate(&mut self) -> bool {
+        false
+    }
+}
+
+impl<Program> Strategy for BlueprintFuzzStrategy<Program>
+where
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+{
+    type Tree = BlueprintValueTree<Program>;
+    type Value = (Arguments, WitnessValues, FinalTransaction);
+
+    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
+        let base_tree = self.base_strategy.new_tree(runner)?;
+        Ok(BlueprintValueTree::new(base_tree, self.blueprint.clone()))
+    }
+}
+
+pub mod dummy_program {
     use simplicityhl::Arguments;
     use simplicityhl::elements::Script;
     use simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;

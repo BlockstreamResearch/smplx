@@ -1,15 +1,14 @@
+use crate::context::TestContext;
+use crate::mutantesting::blueprint_constructor::BlueprintDraftConstructor;
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::simplicity::{RedeemNode, Value};
 use simplicityhl::{Arguments, WitnessValues};
-use std::sync::Arc;
-
-use crate::context::TestContext;
-use crate::mutantesting::blueprint_constructor::BlueprintDraftConstructor;
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SignerOption {
@@ -59,7 +58,7 @@ impl FuzzContext {
 
     #[inline]
     pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
-        match self.signer_option {
+        match &self.signer_option {
             SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
                 let signer = self.get_signer();
                 Ok(signer.unwrap().sign_tx_raw(ft)?)
@@ -70,8 +69,6 @@ impl FuzzContext {
 }
 
 pub trait ContractFuzzStrategyBlueprint<Program, Args, Wit> {
-    type AdditionalInput: std::fmt::Debug + 'static;
-
     fn get_initial_ft(&self) -> BlueprintDraftConstructor;
 }
 

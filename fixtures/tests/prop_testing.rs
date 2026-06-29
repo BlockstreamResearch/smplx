@@ -27,11 +27,13 @@ mod failure_test_prop {
             let args = FailureTestArguments::from_arguments(_arguments)?;
             let witness = FailureTestWitness::from_witness(_witness)?;
             if args.failure_value == witness.cmp_value {
-                return Err(format!("Failed contract, {program_exec_result:?}"));
+                return Err(format!(
+                    "Failed contract, failure_value == cmp_value , {program_exec_result:?}"
+                ));
             }
             if program_exec_result.is_err() {
                 println!("error: {program_exec_result:?}");
-                return Err(format!("Failed contract, {program_exec_result:?}"));
+                return Err(format!("Failed contract, error: {program_exec_result:?}"));
             }
             Ok(())
         }
@@ -43,8 +45,6 @@ mod failure_test_prop {
     impl ContractFuzzStrategyBlueprint<FailureTestProgram, FailureTestArguments, FailureTestWitness>
         for FailureGenStrategy
     {
-        type AdditionalInput = ();
-
         fn get_initial_ft(&self) -> BlueprintDraftConstructor {
             BlueprintDraftConstructor::new().add_program_input(None)
         }
@@ -71,7 +71,7 @@ mod failure_test_prop {
         let fuzz_engine =
             FuzzStrategyBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
 
-        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _, _>::new()
+        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
             .with_random()
             .build();
         let runner = fuzz_engine.with_no_signer().build(strategy_storage, FailureGenStrategy);
@@ -101,7 +101,7 @@ mod failure_test_prop {
         let fuzz_engine =
             FuzzStrategyBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
 
-        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _, _>::new()
+        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
             .with_random_pool()
             .build();
         let runner = fuzz_engine.with_no_signer().build(strategy_storage, FailureGenStrategy);

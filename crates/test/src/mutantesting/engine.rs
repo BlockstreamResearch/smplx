@@ -1,27 +1,26 @@
 use crate::context::TestContext;
 use crate::mutantesting::args_strategy::{Random, RandomValuePool};
-use crate::mutantesting::blueprint_constructor::BlueprintDraftConstructor;
+use crate::mutantesting::blueprint_constructor::{BlueprintDraftConstructor, BlueprintFuzzStrategy};
 use crate::mutantesting::core::{ContractFuzzStrategyBlueprint, FuzzContext, FuzzableProgram, SignerOption};
 use crate::mutantesting::{ProgramCheck, ProgramExecResult};
-use proptest::prelude::{BoxedStrategy, Just, TestCaseError};
+use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
-use simplicityhl::elements::hashes::Hash;
 use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::{ArgumentsTrait, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
-use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
+use smplx_sdk::transaction::FinalTransaction;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub struct SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
+pub struct SimplexFuzzEngine<Program, Args, Wit> {
     runner: proptest::test_runner::TestRunner,
     fuzz_context: FuzzContext,
     local_fuzz_config: LocalFuzzConfig,
-    strategy_storage: BoxedStrategy<((Arguments, WitnessValues), AdditionalValue)>,
-    blueprint: Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue>>,
+    strategy_storage: BoxedStrategy<(Arguments, WitnessValues)>,
+    blueprint: Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit>>,
 }
 
 pub struct LocalFuzzConfig {
@@ -32,10 +31,10 @@ pub fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvid
     EsploraProvider::new("default_web_page.com".into(), default_network)
 }
 
-pub struct FuzzStrategyBuilder<Program, Args, Wit, Add = ()> {
+pub struct FuzzStrategyBuilder<Program, Args, Wit> {
     proptest_config: proptest::test_runner::Config,
-    pub(crate) strategy_storage: Option<BoxedStrategy<(Arguments, WitnessValues, Add)>>,
-    pub(crate) blueprint: Option<Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = Add>>>,
+    pub(crate) strategy_storage: Option<BoxedStrategy<(Arguments, WitnessValues)>>,
+    pub(crate) blueprint: Option<Box<dyn ContractFuzzStrategyBlueprint<Program, Args, Wit>>>,
     pub(crate) signer_option: SignerOption,
     pub(crate) signer: Option<Signer>,
     test_context: Option<TestContext>,
@@ -44,12 +43,11 @@ pub struct FuzzStrategyBuilder<Program, Args, Wit, Add = ()> {
     _phantom: PhantomData<(Program, Args, Wit)>,
 }
 
-impl<Program, Args, Wit, Add> FuzzStrategyBuilder<Program, Args, Wit, Add>
+impl<Program, Args, Wit> FuzzStrategyBuilder<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    Add: std::fmt::Debug + Clone + 'static,
 {
     pub fn new(config: proptest::test_runner::Config) -> Self {
         let default_network = SimplicityNetwork::default_regtest();
@@ -104,12 +102,11 @@ where
     }
 }
 
-impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
+impl<Program, Args, Wit> FuzzStrategyBuilder<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    AdditionalValue: Debug + Clone,
 {
     pub fn with_signer(mut self, signer: Signer) -> Self {
         self.signer_option = SignerOption::CustomSigner;
@@ -128,18 +125,17 @@ where
     }
 }
 
-impl<Program, Args, Wit, AdditionalValue> FuzzStrategyBuilder<Program, Args, Wit, AdditionalValue>
+impl<Program, Args, Wit> FuzzStrategyBuilder<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
     Args: ArgumentsTrait + RandomArguments + std::fmt::Debug + Clone + 'static,
     Wit: WitnessTrait + RandomWitness + std::fmt::Debug + Clone + 'static,
-    AdditionalValue: Debug + Clone,
 {
     pub fn build(
         self,
-        strategy_storage: impl Strategy<Value = ((Arguments, WitnessValues), AdditionalValue)> + 'static,
-        blueprint: impl ContractFuzzStrategyBlueprint<Program, Args, Wit, AdditionalInput = AdditionalValue> + 'static,
-    ) -> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue> {
+        strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
+        blueprint: impl ContractFuzzStrategyBlueprint<Program, Args, Wit> + 'static,
+    ) -> SimplexFuzzEngine<Program, Args, Wit> {
         // TODO: add fetching of failure values in order to feed correct seed into testrunnner
         //  let mut runner_config = self.runner.config().clone();
         //         runner_config.cases = worker_runs;
@@ -179,88 +175,62 @@ where
     }
 }
 
-pub struct StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat> {
+pub struct StrategyStorageBuilder<Args, Wit, BaseStrat> {
     base_strat: Option<BaseStrat>,
-    add_strat: Option<AddStrat>,
     _placeholder: PhantomData<(Args, Wit)>,
 }
 
-impl<Args, Wit> StrategyStorageBuilder<Args, Wit, (), Just<()>> {
+impl<Args, Wit> StrategyStorageBuilder<Args, Wit, ()> {
     pub fn new() -> Self {
         Self {
             base_strat: None,
-            add_strat: Some(Just(())),
             _placeholder: Default::default(),
         }
     }
 }
 
-impl<Args, Wit, BaseStrat, AddStrat> StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat> {
-    pub fn with_random(self) -> StrategyStorageBuilder<Args, Wit, Random<Args, Wit>, AddStrat> {
+impl<Args, Wit, BaseStrat> StrategyStorageBuilder<Args, Wit, BaseStrat> {
+    pub fn with_random(self) -> StrategyStorageBuilder<Args, Wit, Random<Args, Wit>> {
         StrategyStorageBuilder {
             base_strat: Some(Random::<Args, Wit>::default()),
-            add_strat: self.add_strat,
             _placeholder: Default::default(),
         }
     }
 
-    pub fn with_random_pool(self) -> StrategyStorageBuilder<Args, Wit, RandomValuePool<Args, Wit>, AddStrat> {
+    pub fn with_random_pool(self) -> StrategyStorageBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
         StrategyStorageBuilder {
             base_strat: Some(RandomValuePool::<Args, Wit>::default()),
-            add_strat: self.add_strat,
             _placeholder: Default::default(),
         }
     }
 
-    pub fn with_custom_strategy<NewStrat>(
-        self,
-        custom_strat: NewStrat,
-    ) -> StrategyStorageBuilder<Args, Wit, NewStrat, AddStrat>
+    pub fn with_custom_strategy<NewStrat>(self, custom_strat: NewStrat) -> StrategyStorageBuilder<Args, Wit, NewStrat>
     where
         NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
     {
         StrategyStorageBuilder {
             base_strat: Some(custom_strat),
-            add_strat: self.add_strat,
             _placeholder: Default::default(),
         }
     }
 
-    pub fn with_additional_strategy<NewAddStrat>(
-        self,
-        strategy: NewAddStrat,
-    ) -> StrategyStorageBuilder<Args, Wit, BaseStrat, NewAddStrat>
-    where
-        NewAddStrat: Strategy + 'static,
-    {
+    pub fn with_random_asset_value(self) -> StrategyStorageBuilder<Args, Wit, BaseStrat> {
         StrategyStorageBuilder {
             base_strat: self.base_strat,
-            add_strat: Some(strategy),
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_random_asset_value(self) -> StrategyStorageBuilder<Args, Wit, BaseStrat, std::ops::Range<u64>> {
-        StrategyStorageBuilder {
-            base_strat: self.base_strat,
-            add_strat: Some(0..u64::MAX),
             _placeholder: Default::default(),
         }
     }
 }
 
-impl<Args, Wit, BaseStrat, AddStrat> StrategyStorageBuilder<Args, Wit, BaseStrat, AddStrat>
+impl<Args, Wit, BaseStrat> StrategyStorageBuilder<Args, Wit, BaseStrat>
 where
     BaseStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
-    AddStrat: Strategy + 'static,
 {
-    pub fn build(self) -> BoxedStrategy<((Arguments, WitnessValues), AddStrat::Value)> {
+    pub fn build(self) -> BoxedStrategy<((Arguments, WitnessValues))> {
         let base = self
             .base_strat
             .expect("Base strategy is mandatory. Call with_random() or similar.");
-        let add = self.add_strat.expect("Additional strategy is missing.");
-
-        (base, add).boxed()
+        base.boxed()
     }
 }
 
@@ -284,22 +254,21 @@ pub enum FuzzOutcome {
     CounterExample(CounterExampleOutcome),
 }
 
-impl<Program, Args, Wit, AdditionalValue> SimplexFuzzEngine<Program, Args, Wit, AdditionalValue>
+impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-    AdditionalValue: Clone + Debug + 'static,
 {
     pub fn run_with_check(self, program_post_hook: impl ProgramCheck) {
         let mut runner = self.runner;
         let context = self.fuzz_context;
-        let strategy = self.strategy_storage.prop_map(|((x, y), z)| (x, y)).boxed();
         let blueprint = self.blueprint;
+        let strategy_storage = self.strategy_storage;
 
         let fuzz_tx_blueprint = blueprint.get_initial_ft();
         let program_check = Box::new(program_post_hook);
 
         let mut runner_cnt = 0;
-        'stop: while self.local_fuzz_config.runs < runner_cnt {
+        'stop: while runner_cnt < self.local_fuzz_config.runs {
             // TODO: If counterexample recorded, replay it first, without incrementing runs.
             //  single_failed_test_case()
             // TODO: evaluate incremental runs
@@ -311,16 +280,21 @@ where
                 runner_cnt += 1;
             };
 
-            match Self::single_fuzz(
-                &mut runner,
-                &context,
-                fuzz_tx_blueprint.clone(),
-                &program_check,
-                &strategy,
-            ) {
+            // v1
+            let init_strategy =
+                BlueprintFuzzStrategy::<Program>::new(strategy_storage.clone(), fuzz_tx_blueprint.clone()).boxed();
+            match Self::single_fuzz(&mut runner, &context, &program_check, &init_strategy) {
+                // v2
+                // match Self::single_fuzz_2(
+                //     &mut runner,
+                //     &context,
+                //     fuzz_tx_blueprint.clone(),
+                //     &program_check,
+                //     &strategy_storage,
+                // ) {
                 Ok(fuzz_outcome) => match fuzz_outcome {
                     FuzzOutcome::Case(case) => {
-                        let total_runs = inc_runs();
+                        inc_runs();
                     }
                     FuzzOutcome::CounterExample(CounterExampleOutcome { args, wit }) => {
                         panic!("program failed tith these arguments: {args} and witness: {wit}");
@@ -340,6 +314,39 @@ where
     }
 
     fn single_fuzz(
+        test_runner: &mut TestRunner,
+        fuzz_context: &FuzzContext,
+        program_post_hook: &Box<impl ProgramCheck>,
+        init_ft_strategy: &BoxedStrategy<(Arguments, WitnessValues, FinalTransaction)>,
+    ) -> Result<FuzzOutcome, TestCaseError> {
+        // TODO: extract seed in order to save it in failure case
+
+        // TODO: extract insertion of witness into strategies
+        let (arguments, witness, final_transaction) = init_ft_strategy
+            .new_tree(test_runner)
+            .map_err(|e| TestCaseError::fail(format!("Failed to generate new tree: {:?}", e)))?
+            .current();
+        let pst = fuzz_context.sign_or_extract(&final_transaction)?;
+
+        // Check program
+        let (failure_program, _script) = Program::build_program(arguments.clone(), &fuzz_context.network);
+        // Iterate over program inputs to check only appropriate items
+        for (i, input) in final_transaction.inputs().iter().enumerate() {
+            if input.program_input.as_ref().is_some() {
+                let exec_result: ProgramExecResult =
+                    failure_program
+                        .as_ref()
+                        .as_ref()
+                        .execute(&pst, &witness, i, &fuzz_context.network);
+                if let Err(e) = program_post_hook.call(fuzz_context, &pst, &arguments, &witness, i, exec_result) {
+                    return Err(TestCaseError::fail(format!("{e}, args: {arguments}, wit: {witness}")));
+                }
+            }
+        }
+        Ok(FuzzOutcome::Case(CaseOutcome {}))
+    }
+
+    fn single_fuzz_2(
         test_runner: &mut TestRunner,
         fuzz_context: &FuzzContext,
         initial_tx: BlueprintDraftConstructor,
