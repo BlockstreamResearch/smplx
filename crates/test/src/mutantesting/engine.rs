@@ -267,6 +267,8 @@ where
         let fuzz_tx_blueprint = blueprint.get_initial_ft();
         let program_check = Box::new(program_post_hook);
 
+        // TODO: add collecting stratedies to modify FinalTransaction or inputs into proptest::prop_oneof[ strategy list ... ]
+
         let mut runner_cnt = 0;
         'stop: while runner_cnt < self.local_fuzz_config.runs {
             // TODO: If counterexample recorded, replay it first, without incrementing runs.
