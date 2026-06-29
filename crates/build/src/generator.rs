@@ -9,6 +9,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use simplicityhl::TemplateProgram;
+use simplicityhl::UnstableFeatures;
 use simplicityhl::resolution::DependencyMap;
 use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
@@ -135,7 +136,8 @@ impl ArtifactsGenerator {
         let canon_source_file = CanonSourceFile::new(canon_source, Arc::from(content));
         let dependency_map = Self::build_dependency_map(validated_deps, parent_dir)?;
 
-        TemplateProgram::flatten(canon_source_file, &dependency_map).map_err(BuildError::Flattening)
+        TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
+            .map_err(BuildError::Flattening)
     }
 
     /// Arranges a flat list of artifacts into a tree mirroring the source directory layout.

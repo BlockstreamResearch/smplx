@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use dyn_clone::DynClone;
 
-use simplicityhl::CompiledProgram;
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
+use simplicityhl::{CompiledProgram, UnstableFeatures};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
 use crate::global::GlobalConfig;
@@ -308,8 +308,9 @@ impl Program {
     }
 
     fn load(&self) -> Result<CompiledProgram, ProgramError> {
-        let compiled = CompiledProgram::new(
+        let compiled = CompiledProgram::new_with_unstable(
             self.source,
+            &UnstableFeatures::all(),
             self.arguments.build_arguments(),
             GlobalConfig::get_include_debug_symbols(),
             Box::new(ElementsJetHinter),
