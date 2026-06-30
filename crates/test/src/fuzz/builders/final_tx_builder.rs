@@ -106,7 +106,7 @@ impl FinalTransactionBuilder {
         self
     }
 
-    pub fn get_inputs_to_check(&self) -> &[usize] {
+    pub fn get_input_idxs_to_check(&self) -> &[usize] {
         &self.meta.program_input_idxs
     }
 

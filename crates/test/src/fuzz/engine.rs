@@ -311,14 +311,16 @@ where
         let (failure_program, _script) = Program::build_program(arguments.clone(), &fuzz_context.network);
 
         // Iterate over program inputs to check contract execution
-        for (i, input) in final_transaction.inputs().iter().enumerate() {
+        for i in initial_tx.get_input_idxs_to_check() {
+            let input = &final_transaction.inputs()[*i];
+
             if input.program_input.as_ref().is_some() {
                 let exec_result: ProgramExecResult =
                     failure_program
                         .as_ref()
                         .as_ref()
-                        .execute(&pst, &witness, i, &fuzz_context.network);
-                if let Err(e) = program_post_hook.call(fuzz_context, &pst, &arguments, &witness, i, exec_result) {
+                        .execute(&pst, &witness, *i, &fuzz_context.network);
+                if let Err(e) = program_post_hook.call(fuzz_context, &pst, &arguments, &witness, *i, exec_result) {
                     return Err(TestCaseError::fail(format!("{e}, args: {arguments}, wit: {witness}")));
                 }
             }
