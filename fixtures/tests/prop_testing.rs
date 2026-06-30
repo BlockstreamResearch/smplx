@@ -1,14 +1,11 @@
 mod failure_test_prop {
-    use crate::simple_storage_test_prop::SimpleStorageCheck;
-    use simplex::mutantesting;
-    use simplex::mutantesting::core::ContractFuzzStrategy;
-    use simplex::mutantesting::engine::StrategyStorageBuilder;
-    use simplex::mutantesting::{FuzzContext, FuzzStrategyBuilder, FuzzableProgram, ProgramCheck, ProgramExecResult};
-    use simplex::simplicityhl::elements::hashes::Hash;
+    use simplex::fuzz;
+    use simplex::fuzz::builders::FinalTransactionBuilder;
+    use simplex::fuzz::core::{FuzzContext, FuzzFinalTransactionBuilder};
+    use simplex::fuzz::engine::FuzzStrategyBuilder;
+    use simplex::fuzz::{FuzzEngineBuilder, ProgramCheck, ProgramExecResult};
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
-    use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
-    use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
     use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
     use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
 
@@ -27,11 +24,13 @@ mod failure_test_prop {
             let args = FailureTestArguments::from_arguments(_arguments)?;
             let witness = FailureTestWitness::from_witness(_witness)?;
             if args.failure_value == witness.cmp_value {
-                return Err(format!("Failed contract, {program_exec_result:?}"));
+                return Err(format!(
+                    "Failed contract, failure_value == cmp_value , {program_exec_result:?}"
+                ));
             }
             if program_exec_result.is_err() {
                 println!("error: {program_exec_result:?}");
-                return Err(format!("Failed contract, {program_exec_result:?}"));
+                return Err(format!("Failed contract, error: {program_exec_result:?}"));
             }
             Ok(())
         }
@@ -40,47 +39,16 @@ mod failure_test_prop {
     #[derive(Debug, Default)]
     struct FailureGenStrategy;
 
-    impl ContractFuzzStrategy<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureGenStrategy {
-        type AdditionalInput = ();
-
-        fn gen_final_transaction(
-            &self,
-            test_context: FuzzContext,
-            arguments: Arguments,
-            witness: WitnessValues,
-            _additional: Self::AdditionalInput,
-        ) -> (Arguments, WitnessValues, FinalTransaction) {
-            const DEFAULT_FAUCET: u64 = 1 << 32;
-
-            let mut ft = FinalTransaction::new();
-            let (mutated_args, mutated_wit) = (arguments.clone(), witness.clone());
-
-            let (failure_program, failure_script) = FailureTestProgram::build_program(arguments, &test_context.network);
-
-            let txout = {
-                let mut r = TxOut::new_fee(DEFAULT_FAUCET, test_context.network.policy_asset());
-                r.script_pubkey = failure_script;
-                r
-            };
-
-            ft.add_program_input(
-                PartialInput::new(UTXO {
-                    outpoint: OutPoint::new(Txid::all_zeros(), 0),
-                    txout,
-                    secrets: None,
-                }),
-                ProgramInput::new(Box::new(failure_program.as_ref().as_ref().clone()), witness),
-                RequiredSignature::None,
-            );
-
-            (mutated_args, mutated_wit, ft)
+    impl FuzzFinalTransactionBuilder<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureGenStrategy {
+        fn get_initial_ft(&self) -> FinalTransactionBuilder {
+            FinalTransactionBuilder::new().add_program_input(None)
         }
     }
 
     #[ignore]
     #[test]
     fn possible_interface_failure_program() -> anyhow::Result<()> {
-        let config = mutantesting::proptest::test_runner::Config {
+        let config = fuzz::proptest::test_runner::Config {
             test_name: ::core::option::Option::Some(::core::concat!(
                 ::core::module_path!(),
                 "::",
@@ -96,13 +64,13 @@ mod failure_test_prop {
         };
 
         let fuzz_engine =
-            FuzzStrategyBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
+            FuzzEngineBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
 
-        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _, _>::new()
+        let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
             .with_random()
             .build();
         let runner = fuzz_engine.with_no_signer().build(strategy_storage, FailureGenStrategy);
-        runner.run_with_check(SimpleStorageCheck);
+        runner.run_with_check(FailureTestCheck);
 
         Ok(())
     }
@@ -110,7 +78,7 @@ mod failure_test_prop {
     #[ignore]
     #[test]
     fn possible_interface_failure_program_with_pool() -> anyhow::Result<()> {
-        let config = mutantesting::proptest::test_runner::Config {
+        let config = fuzz::proptest::test_runner::Config {
             test_name: ::core::option::Option::Some(::core::concat!(
                 ::core::module_path!(),
                 "::",
@@ -125,298 +93,34 @@ mod failure_test_prop {
             ..Default::default()
         };
 
-        let fuzz_engine =
-            FuzzStrategyBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
+        let fuzz_engine_builder =
+            FuzzEngineBuilder::<FailureTestProgram, FailureTestArguments, FailureTestWitness>::new(config);
 
-        let strategy_storage = StrategyStorageBuilder::<FailureTestArguments, FailureTestWitness, _, _>::new()
+        // TODO: Add additional strategies to builder to make proper proptest
+        let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
             .with_random_pool()
             .build();
-        let runner = fuzz_engine.with_no_signer().build(strategy_storage, FailureGenStrategy);
-        runner.run_with_check(SimpleStorageCheck);
-
-        Ok(())
-    }
-}
-
-mod simple_storage_test_prop {
-    use simplex::mutantesting::core::ContractFuzzStrategy;
-    use simplex::mutantesting::engine::{StrategyStorageBuilder, get_default_provider};
-    use simplex::mutantesting::{FuzzContext, FuzzStrategyBuilder, FuzzableProgram, ProgramCheck, ProgramExecResult};
-    use simplex::program::{ArgumentsTrait, WitnessTrait};
-    use simplex::provider::SimplicityNetwork;
-    use simplex::signer::Signer;
-    use simplex::simplicityhl::elements::AssetId;
-    use simplex::simplicityhl::elements::hashes::Hash;
-    use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
-    use simplex::simplicityhl::elements::pset::serialize::Serialize;
-    use simplex::simplicityhl::elements::{OutPoint, TxOut, Txid};
-    use simplex::simplicityhl::{Arguments, WitnessValues};
-    use simplex::transaction::PartialOutput;
-    use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
-    use simplex::{TestContext, mutantesting};
-    use simplex_fixtures::artifacts::simple_storage::SimpleStorageProgram;
-    use simplex_fixtures::artifacts::simple_storage::derived_simple_storage::{
-        SimpleStorageArguments, SimpleStorageWitness,
-    };
-    use std::path::PathBuf;
-
-    pub struct SimpleStorageCheck;
-
-    impl ProgramCheck for SimpleStorageCheck {
-        fn call(
-            &self,
-            _ctx: &FuzzContext,
-            _tx: &PartiallySignedTransaction,
-            _arguments: &Arguments,
-            _witness: &WitnessValues,
-            _input_index: usize,
-            program_exec_result: ProgramExecResult,
-        ) -> Result<(), String> {
-            if let Err(x) = program_exec_result {
-                Err(format!("some error: {x:?}"))
-            } else {
-                Ok(())
-            }
-        }
-    }
-
-    #[derive(Debug, Default)]
-    struct SimpleStorageStrategy;
-
-    impl ContractFuzzStrategy<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness>
-        for SimpleStorageStrategy
-    {
-        type AdditionalInput = u64;
-
-        fn gen_final_transaction(
-            &self,
-            test_context: FuzzContext,
-            arguments: Arguments,
-            witness: WitnessValues,
-            additional: Self::AdditionalInput,
-        ) -> (Arguments, WitnessValues, FinalTransaction) {
-            let mut ft = FinalTransaction::new();
-            let mut args_typed = SimpleStorageArguments::from_arguments(&arguments).unwrap();
-            let mut wit_typed = SimpleStorageWitness::from_witness(&witness).unwrap();
-            let signer = test_context.get_signer();
-            let mut old_value = additional;
-            let new_value = if old_value == u64::MAX {
-                let res = old_value;
-                old_value -= 1;
-                res
-            } else {
-                old_value + 1
-            };
-
-            wit_typed.new_value = new_value;
-
-            {
-                let mut slot: [u8; 32] = Default::default();
-                slot.copy_from_slice(&test_context.network.policy_asset().serialize());
-                args_typed.slot_id = slot;
-                args_typed.user = signer.as_ref().unwrap().get_schnorr_public_key().serialize();
-            }
-            let modified_args = args_typed.build_arguments();
-            let (_fuzz_program, old_storage_args_script) =
-                SimpleStorageProgram::build_program(modified_args.clone(), &test_context.network);
-
-            ft.add_input(
-                PartialInput::new(UTXO {
-                    outpoint: OutPoint::new(Txid::from_slice(&[1; 32]).unwrap(), 0),
-                    txout: {
-                        let mut r = TxOut::new_fee(old_value, test_context.network.policy_asset());
-                        r.script_pubkey = old_storage_args_script.clone();
-                        r
-                    },
-                    secrets: None,
-                }),
-                RequiredSignature::None,
-            );
-
-            ft.add_input(
-                PartialInput::new(UTXO {
-                    outpoint: OutPoint::new(Txid::from_slice(&[2; 32]).unwrap(), 1),
-                    txout: {
-                        let mut r = TxOut::new_fee(1, AssetId::default());
-                        r.script_pubkey = old_storage_args_script.clone();
-                        r
-                    },
-                    secrets: None,
-                }),
-                RequiredSignature::None,
-            );
-
-            ft.add_output(PartialOutput {
-                script_pubkey: old_storage_args_script.clone(),
-                amount: new_value,
-                asset: test_context.network.policy_asset(),
-                blinding_key: None,
-            });
-            ft.add_output(PartialOutput {
-                script_pubkey: old_storage_args_script,
-                amount: 0,
-                asset: Default::default(),
-                blinding_key: None,
-            });
-
-            // TODO: how to make correctly here?
-            let pst = test_context.sign_or_extract(&ft).unwrap();
-            let wit_signed = signer
-                .as_ref()
-                .unwrap()
-                .get_signed_program_witness(
-                    &pst,
-                    SimpleStorageProgram::new(modified_args.clone()).as_ref(),
-                    &wit_typed.build_witness(),
-                    "USER_SIGNATURE",
-                    &[],
-                    0,
-                )
-                .unwrap();
-
-            (modified_args, wit_signed, ft)
-        }
-    }
-
-    #[ignore]
-    #[test]
-    fn possible_interface_simple_program() -> anyhow::Result<()> {
-        let config = mutantesting::proptest::test_runner::Config {
-            test_name: ::core::option::Option::Some(::core::concat!(
-                ::core::module_path!(),
-                "::",
-                ::core::stringify!(possible_interface_simple_program)
-            )),
-            source_file: Some(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/",
-                stringify!(possible_interface_simple_program),
-                ".txt"
-            )),
-            ..Default::default()
-        };
-
-        let fuzz_context_builder = FuzzStrategyBuilder::new(config);
-
-        let strategy_storage = StrategyStorageBuilder::<SimpleStorageArguments, SimpleStorageWitness, _, _>::new()
-            .with_random()
-            .with_random_asset_value()
-            .build();
-        let runner = fuzz_context_builder
-            .with_signer({
-                const DEFAULT_REGTEST_MNEMONIC: &str =
-                    "exist carry drive collect lend cereal occur much tiger just involve mean";
-                Signer::new(
-                    DEFAULT_REGTEST_MNEMONIC,
-                    Box::new(get_default_provider(SimplicityNetwork::default_regtest())),
-                )
-            })
-            .build(strategy_storage, SimpleStorageStrategy);
-        runner.run_with_check(SimpleStorageCheck);
+        let runner = fuzz_engine_builder
+            .with_no_signer()
+            .build(strategy_storage, FailureGenStrategy);
+        runner.run_with_check(FailureTestCheck);
 
         Ok(())
     }
 
-    #[ignore]
-    #[test]
-    fn possible_interface_simple_program__smplx_test() -> anyhow::Result<()> {
-        fn possible_interface_simple_program__smplx_test(
-            builder: FuzzStrategyBuilder<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness, u64>,
-        ) -> anyhow::Result<()> {
-            let strategy_storage = StrategyStorageBuilder::<SimpleStorageArguments, SimpleStorageWitness, _, _>::new()
-                .with_random()
-                .with_random_asset_value()
-                .build();
-            let runner = builder
-                .with_signer({
-                    const DEFAULT_REGTEST_MNEMONIC: &str =
-                        "exist carry drive collect lend cereal occur much tiger just involve mean";
-                    Signer::new(
-                        DEFAULT_REGTEST_MNEMONIC,
-                        Box::new(get_default_provider(SimplicityNetwork::default_regtest())),
-                    )
-                })
-                .build(strategy_storage, SimpleStorageStrategy);
-            runner.run_with_check(SimpleStorageCheck);
-
-            Ok(())
-        }
-
-        const SIMPLEX_PROP_TEST_ENV: &str = "SIMPLEX_RUN_PROP_TESTS";
-
-        if std::env::var(SIMPLEX_PROP_TEST_ENV).is_ok() {
-            let test_context = match std::env::var("SIMPLEX_TEST_ENV") {
-                Err(_) => {
-                    panic!("Failed to run this test, required to use `simplex test`");
-                }
-                Ok(path) => TestContext::new(PathBuf::from(path)).unwrap(),
-            };
-
-            let config = mutantesting::proptest::test_runner::Config {
-                test_name: ::core::option::Option::Some(::core::concat!(
-                    ::core::module_path!(),
-                    "::",
-                    ::core::stringify!(possible_interface_simple_program__smplx_test)
-                )),
-                source_file: Some(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/src/",
-                    stringify!(possible_interface_simple_program__smplx_test),
-                    ".txt"
-                )),
-                ..Default::default()
-            };
-            let fuzz_context_builder = FuzzStrategyBuilder::from_context(config, test_context);
-
-            possible_interface_simple_program__smplx_test(fuzz_context_builder)
-        } else {
-            eprintln!(
-                "Set '--proptest' flag in simplex to run a {} proptest",
-                stringify!(possible_interface_simple_program__smplx_test)
-            );
-
-            let config = mutantesting::proptest::test_runner::Config {
-                test_name: ::core::option::Option::Some(::core::concat!(
-                    ::core::module_path!(),
-                    "::",
-                    ::core::stringify!(possible_interface_simple_program__smplx_test)
-                )),
-                source_file: Some(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/src/",
-                    stringify!(possible_interface_simple_program__smplx_test),
-                    ".txt"
-                )),
-                ..Default::default()
-            };
-            let fuzz_context_builder = FuzzStrategyBuilder::new(config);
-
-            possible_interface_simple_program__smplx_test(fuzz_context_builder)
-
-            // todo!()
-        }
-    }
-
-    #[simplex::proptest]
-    fn possible_interface_simple_program_2(
-        fuzz_engine: FuzzStrategyBuilder<SimpleStorageProgram, SimpleStorageArguments, SimpleStorageWitness, u64>,
+    #[simplex::fuzz]
+    fn possible_interface_failure_program_with_interesting_values(
+        fuzz_engine_builder: FuzzEngineBuilder<FailureTestProgram, FailureTestArguments, FailureTestWitness>,
     ) -> anyhow::Result<()> {
-        let strategy_storage = StrategyStorageBuilder::<SimpleStorageArguments, SimpleStorageWitness, _, _>::new()
-            .with_random_pool()
-            .with_random_asset_value()
+        // TODO: Add additional strategies to builder to make proper proptest
+        let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
+            .with_random_interesting_values()
             .build();
-        // let blueprint = FuzzTxBlueprint::new().add_program_input().add_custom_step();
-        let runner = fuzz_engine
-            .with_signer({
-                const DEFAULT_REGTEST_MNEMONIC: &str =
-                    "exist carry drive collect lend cereal occur much tiger just involve mean";
-                Signer::new(
-                    DEFAULT_REGTEST_MNEMONIC,
-                    Box::new(get_default_provider(SimplicityNetwork::default_regtest())),
-                )
-            })
-            .build(strategy_storage, SimpleStorageStrategy);
-        runner.run_with_check(SimpleStorageCheck);
+        let runner = fuzz_engine_builder
+            .with_no_signer()
+            .build(strategy_storage, FailureGenStrategy);
+        runner.run_with_check(FailureTestCheck);
+
         Ok(())
     }
 }

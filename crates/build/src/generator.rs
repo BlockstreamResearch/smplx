@@ -279,7 +279,6 @@ impl ArtifactsGenerator {
                     self
                 }
 
-                #[must_use]
                 pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
                     self.program.set_storage_at(index, new_value);
                 }

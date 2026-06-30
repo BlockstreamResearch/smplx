@@ -1,9 +1,9 @@
-use rand::Rng;
-
 use simplicityhl::num::U256;
 use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{ResolvedType, Value};
+
+use rand::Rng;
 
 pub fn generate_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut R) -> Value {
     match ty.as_inner() {

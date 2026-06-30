@@ -23,10 +23,10 @@ pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn proptest(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn fuzz(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::ItemFn);
 
-    match smplx_test::macros::expand_proptest(args.into(), input) {
+    match smplx_test::macros::expand_fuzz(args.into(), input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }

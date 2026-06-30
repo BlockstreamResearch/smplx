@@ -11,6 +11,7 @@ use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
 
 use crate::context::TestContext;
+use crate::fuzz::builders::FinalTransactionBuilder;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SignerOption {
@@ -23,6 +24,7 @@ pub(crate) enum SignerOption {
 pub struct FuzzContext {
     pub(crate) signer: Arc<Option<Signer>>,
     pub mock_provider: Arc<dyn ProviderTrait>,
+    /// Used for inserting signer
     pub(crate) test_context: Arc<Option<TestContext>>,
     pub(crate) signer_option: SignerOption,
     pub network: SimplicityNetwork,
@@ -59,7 +61,7 @@ impl FuzzContext {
 
     #[inline]
     pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
-        match self.signer_option {
+        match &self.signer_option {
             SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
                 let signer = self.get_signer();
                 Ok(signer.unwrap().sign_tx_raw(ft)?)
@@ -69,28 +71,8 @@ impl FuzzContext {
     }
 }
 
-pub trait ContractFuzzStrategyBlueprint<Program, Args, Wit> {
-    type AdditionalInput: std::fmt::Debug + 'static;
-
-    fn get_final_tx(
-        &self,
-        context: &FuzzContext,
-        args: &Arguments,
-        wit: &WitnessValues,
-        additional: &Self::AdditionalInput,
-    ) -> FinalTransaction;
-}
-
-pub trait ContractFuzzStrategy<Program, Args, Wit>: std::fmt::Debug {
-    type AdditionalInput: std::fmt::Debug + 'static;
-
-    fn gen_final_transaction(
-        &self,
-        test_context: FuzzContext,
-        arguments: Arguments,
-        witness: WitnessValues,
-        additional: Self::AdditionalInput,
-    ) -> (Arguments, WitnessValues, FinalTransaction);
+pub trait FuzzFinalTransactionBuilder<Program, Args, Wit> {
+    fn get_initial_ft(&self) -> FinalTransactionBuilder;
 }
 
 pub trait ProgramCheck {

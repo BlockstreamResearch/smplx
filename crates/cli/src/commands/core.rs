@@ -62,7 +62,7 @@ pub struct TestFlags {
     /// Run non-simplex tests (may be used for running unit tests)
     #[arg(long = "no-simplex")]
     pub no_simplex: bool,
-    /// Run proptests via simplex
-    #[arg(long = "proptest")]
-    pub proptest: bool,
+    /// Perform fuzzing via simplex
+    #[arg(long = "fuzz")]
+    pub fuzz: bool,
 }

@@ -8,13 +8,13 @@ macro_rules! smplx_test_marker {
     () => {
         "_smplx_test"
     };
-    (prop) => {
-        "_smplx_proptest"
+    (fuzz) => {
+        "_smplx_fuzz"
     };
 }
 
 pub const SMPLX_TEST_MARKER: &str = smplx_test_marker!();
-pub const SMPLX_PROPTEST_MARKER: &str = smplx_test_marker!(prop);
+pub const SMPLX_FUZZ_MARKER: &str = smplx_test_marker!(fuzz);
 
 type AttributeArgs = syn::punctuated::Punctuated<syn::Meta, syn::Token![,]>;
 
@@ -25,11 +25,11 @@ pub fn expand_test(args: TokenStream, input: syn::ItemFn) -> syn::Result<TokenSt
     expand_inner(&input, args)
 }
 
-pub fn expand_proptest(args: TokenStream, input: syn::ItemFn) -> syn::Result<TokenStream> {
+pub fn expand_fuzz(args: TokenStream, input: syn::ItemFn) -> syn::Result<TokenStream> {
     let parser = AttributeArgs::parse_terminated;
     let args = parser.parse2(args)?;
 
-    expand_proptest_inner(&input, args)
+    expand_fuzz_inner(&input, args)
 }
 
 // TODO: args?
@@ -70,9 +70,9 @@ fn expand_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<proc_m
 }
 
 // TODO: args?
-fn expand_proptest_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<proc_macro2::TokenStream> {
+fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<proc_macro2::TokenStream> {
     let ret = &input.sig.output;
-    let name = quote::format_ident!("{}_{}", &input.sig.ident.to_string(), SMPLX_PROPTEST_MARKER);
+    let name = quote::format_ident!("{}_{}", &input.sig.ident.to_string(), SMPLX_FUZZ_MARKER);
     let inputs = &input.sig.inputs;
     let body = &input.block;
     let attrs = &input.attrs;
@@ -90,7 +90,7 @@ fn expand_proptest_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Resu
                 #body
             }
 
-            let config = mutantesting::proptest::test_runner::Config {
+            let config = fuzz::proptest::test_runner::Config {
                 test_name: ::core::option::Option::Some(::core::concat!(
                     ::core::module_path!(),
                     "::",
@@ -112,7 +112,7 @@ fn expand_proptest_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Resu
                     TestContext::new(PathBuf::from(path)).unwrap()
                 }
             };
-            let fuzz_context_builder = FuzzStrategyBuilder::from_context(config, test_context);
+            let fuzz_context_builder = FuzzEngineBuilder::from_context(config, test_context);
             #name(fuzz_context_builder)
         }
     };

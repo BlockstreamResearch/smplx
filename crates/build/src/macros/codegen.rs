@@ -178,7 +178,6 @@ impl WitnessStruct {
 
                 impl simplex::program::ArgumentsTrait for #struct_name {
                     /// Build Simplicity arguments for contract instantiation.
-                    #[must_use]
                     fn build_arguments(&self) -> simplex::simplicityhl::Arguments {
                         simplex::simplicityhl::Arguments::from(HashMap::from([
                             #(#tuples),*
@@ -280,7 +279,6 @@ impl WitnessStruct {
 
                 impl simplex::program::WitnessTrait for #struct_name {
                      /// Build Simplicity witness values for contract execution.
-                    #[must_use]
                     fn build_witness(&self) -> simplex::simplicityhl::WitnessValues {
                         simplex::simplicityhl::WitnessValues::from(HashMap::from([
                             #(#tuples),*
