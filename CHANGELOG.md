@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.7]
+
+- Added support for SimplicityHL modules and multifile programs.
+- Added `simplex install` command to install external SimplicityHL dependencies.
+  - Either via `git clone` or directly as a local dependency.
+  - Extended the config to specify the required dependencies.
+- Fixed `simplexup` backward compatibility issues.
+
 ## [0.0.6]
 
 ### Simplex
