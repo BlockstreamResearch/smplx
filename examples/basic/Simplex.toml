@@ -21,7 +21,7 @@
 # bitcoins = 10_000_000
 # verbosity = 0
 
-# [test.proptest]
+# [test.fuzz]
 # cases = 10000
 # max_shrink_iters = 100
 # max_global_rejects = 100

@@ -22,7 +22,7 @@
 # url = "<esplora url>"
 # network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
-# [test.proptest]
+# [test.fuzz]
 # cases = 10000
 # max_shrink_iters = 100
 # max_global_rejects = 100
