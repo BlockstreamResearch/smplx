@@ -1,5 +1,5 @@
 use simplex::include_simf;
-use simplex::mutantesting::{generate_value_by_ty};
+use simplex::fuzz::{generate_value_by_ty};
 use simplex::program::Program;
 use simplex::program::{ArgumentsTrait, RandomArguments, RandomWitness, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
