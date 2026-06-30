@@ -1,6 +1,6 @@
 [package]
 name = "smplx-regtest"
-version = "0.0.6"
+version = "0.0.7"
 description = "Simplex regtest command internal implementation"
 license.workspace = true
 edition.workspace = true

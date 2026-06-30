@@ -20,6 +20,9 @@ pub enum CommandError {
     #[error(transparent)]
     Clean(#[from] CleanError),
 
+    #[error(transparent)]
+    Install(#[from] InstallError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -64,4 +67,25 @@ pub enum CleanError {
 
     #[error("Failed to remove file '{1}': {0}")]
     RemoveFile(std::io::Error, PathBuf),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum InstallError {
+    #[error(transparent)]
+    Config(#[from] crate::config::error::ConfigError),
+
+    #[error("Invalid Git repository URL (cannot extract name): '{0}'")]
+    InvalidUrl(String),
+
+    #[error("Failed to create directory at '{1}': {0}")]
+    CreateDir(std::io::Error, PathBuf),
+
+    #[error("Failed to read directory at '{1}': {0}")]
+    ReadDir(std::io::Error, PathBuf),
+
+    #[error("Failed to execute git process for '{1}': {0}")]
+    GitExecution(std::io::Error, String),
+
+    #[error("Git clone command failed for repository: '{0}'")]
+    GitCloneFailed(String),
 }

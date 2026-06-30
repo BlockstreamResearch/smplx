@@ -1,15 +1,12 @@
-# DEFAULT CONFIG
+# DEFAULT CONFIG 
 
-# [build]
-# src_dir = "./simf"
+[build]
+src_dir = "./examples"
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 
-[dependencies]
-merkle = { path = "deps/merkle" }
-base_math = { path = "deps/math" }
-
-test_crate = { git = "https://github.com/LesterEvSe/test-simplex-crate" }
+# [dependencies]
+# some_dep = { git = "<git url>", path = "<or a relative path>" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"

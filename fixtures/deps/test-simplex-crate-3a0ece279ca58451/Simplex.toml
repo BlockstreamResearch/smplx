@@ -1,28 +1,24 @@
-# DEFAULT CONFIG
+# DEFAULT CONFIG 
 
-# [build]
+[build]
+src_dir = "test"
 # src_dir = "./simf"
 # simf_files = ["*.simf"]
 # out_dir = "./src/artifacts"
 
 [dependencies]
-merkle = { path = "deps/merkle" }
-base_math = { path = "deps/math" }
+# std = { git = "BlockstreamResearch/simf-std@v0.0.1", path = "lib/simf-std/contracts" } 
+hl_compiler = { git = "https://github.com/LesterEvSe/SimplicityHL" }
 
-test_crate = { git = "https://github.com/LesterEvSe/test-simplex-crate" }
+# ARGS
+# std=lib/simf-std/contracts
+# std:math=node_modules/simf-math/contracts
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
-# bitcoins = 10_000_000
-# rpc_port = 18443
-# esplora_port = 3000
-# rpc_user = "user"
-# rpc_password = "password"
 
 # [test]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
-# bitcoins = 10_000_000
-# verbosity = 0
 
 # [test.esplora]
 # url = "<esplora url>"
