@@ -3,7 +3,8 @@ use std::time::Duration;
 use smplx_sdk::provider::ElementsRpc;
 use smplx_sdk::provider::SimplexProvider;
 use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::core::HDKeyOrigin;
+use smplx_sdk::signer::{KeyProvider, Signer};
 use smplx_sdk::utils::btc2sat;
 
 use super::RegtestConfig;
@@ -23,7 +24,7 @@ impl Regtest {
     ///
     /// # Panics
     /// Panics if the background indexer (`electrs`) fails to index the unspent outputs within the timeout window (10 seconds).
-    pub fn from_config(config: &RegtestConfig) -> Result<(RegtestClient, Signer), RegtestError> {
+    pub fn from_config(config: &RegtestConfig) -> Result<(RegtestClient, Signer<HDKeyOrigin>), RegtestError> {
         let client = RegtestClient::new(config);
 
         let provider = Box::new(SimplexProvider::new(
@@ -33,14 +34,19 @@ impl Regtest {
             SimplicityNetwork::default_regtest(),
         ));
 
-        let signer = Signer::new(config.mnemonic.as_str(), provider);
+        let hd_key_origin = HDKeyOrigin::new(config.mnemonic.as_str())?;
+        let signer = Signer::new(hd_key_origin, provider);
 
         Self::prepare_signer(&client, &signer, config.bitcoins)?;
 
         Ok((client, signer))
     }
 
-    fn prepare_signer(client: &RegtestClient, signer: &Signer, bitcoins: u64) -> Result<(), RegtestError> {
+    fn prepare_signer<K: KeyProvider>(
+        client: &RegtestClient,
+        signer: &Signer<K>,
+        bitcoins: u64,
+    ) -> Result<(), RegtestError> {
         let rpc_provider = ElementsRpc::new(client.rpc_url(), client.auth())?;
 
         rpc_provider.generate_blocks(1)?;
