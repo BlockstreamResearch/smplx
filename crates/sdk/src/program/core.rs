@@ -9,13 +9,12 @@ use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
-use simplicityhl::{CompiledProgram, UnstableFeatures};
+use simplicityhl::{Arguments, CompiledProgram, UnstableFeatures};
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
 use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
 
-use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
@@ -84,7 +83,7 @@ pub trait ProgramTrait: DynClone {
 pub struct Program {
     source: &'static str,
     pub_key: XOnlyPublicKey,
-    arguments: Box<dyn ArgumentsTrait>,
+    arguments: Arc<Arguments>,
     storage: Vec<[u8; 32]>,
 }
 
@@ -196,14 +195,59 @@ impl ProgramTrait for Program {
     }
 }
 
+impl<T: ProgramTrait + Sized> ProgramTrait for &T {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        (*self).get_argument_types()
+    }
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        (*self).get_witness_types()
+    }
+
+    fn get_env(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
+        (*self).get_env(pst, input_index, network)
+    }
+
+    fn execute(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
+        (*self).execute(pst, witness, input_index, network)
+    }
+
+    fn finalize(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        (*self).finalize(pst, witness, input_index, network)
+    }
+}
+
 impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
-    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
+    pub fn new(source: &'static str, arguments: impl Into<Arguments>) -> Self {
+        Self::new_from_arguments(source, arguments.into())
+    }
+
+    /// Createst a new instance of `Program` by providing raw `Arguments`.
+    #[must_use]
+    fn new_from_arguments(source: &'static str, arguments: Arguments) -> Self {
         Self {
             source,
             pub_key: tr_unspendable_key(),
-            arguments,
+            arguments: Arc::new(arguments),
             storage: Vec::new(),
         }
     }
@@ -307,11 +351,15 @@ impl Program {
         Ok(abi_meta.witness_types)
     }
 
-    fn load(&self) -> Result<CompiledProgram, ProgramError> {
+    /// Compiles program by providing saved `Arguments`.
+    ///
+    /// # Errors
+    /// Retruns an error we have problems in a program compilation.
+    pub fn load(&self) -> Result<CompiledProgram, ProgramError> {
         let compiled = CompiledProgram::new_with_unstable(
             self.source,
             &UnstableFeatures::all(),
-            self.arguments.build_arguments(),
+            (*self.arguments).clone(),
             GlobalConfig::get_include_debug_symbols(),
             Box::new(ElementsJetHinter),
         )
@@ -374,6 +422,14 @@ impl Program {
     }
 }
 
+/// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
+/// for constructing and returning a program instance of a type that implements `AsRef<Program>`.
+/// Even only by generic struct name we have a possibility to create an instance of a program.
+pub trait ProgramFactory<P: AsRef<Program> + Sized> {
+    /// Instantiates a program instance with the given arguments.
+    fn instantiate_program(args: impl Into<Arguments>) -> Box<P>;
+}
+
 #[cfg(test)]
 mod tests {
     use simplicityhl::{
@@ -382,6 +438,8 @@ mod tests {
     };
 
     use super::*;
+
+    use crate::program::ArgumentsTrait;
 
     // simplicityhl/examples/cat.simf
     const DUMMY_PROGRAM: &str = r"
@@ -404,12 +462,18 @@ mod tests {
         }
     }
 
+    impl From<EmptyArguments> for Arguments {
+        fn from(val: EmptyArguments) -> Self {
+            val.build_arguments()
+        }
+    }
+
     fn dummy_asset_id(byte: u8) -> AssetId {
         AssetId::from_slice(&[byte; 32]).unwrap()
     }
 
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
+        Program::new(DUMMY_PROGRAM, EmptyArguments {})
     }
 
     fn dummy_network() -> SimplicityNetwork {

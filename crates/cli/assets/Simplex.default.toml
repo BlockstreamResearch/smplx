@@ -22,6 +22,12 @@
 # url = "<esplora url>"
 # network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
+# [test.fuzz]
+# cases = 10000
+# max_shrink_iters = 100
+# max_global_rejects = 100
+# max_local_rejects = 100
+
 # [test.rpc]
 # url = "<rpc url>"
 # username = "<rpc username>"

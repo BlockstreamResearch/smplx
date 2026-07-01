@@ -490,6 +490,19 @@ impl Signer {
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
+        let pst = self.sign_tx_raw(tx)?;
+
+        Ok(pst.extract_tx()?)
+    }
+
+    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
+    ///
+    /// # Panics
+    /// Throws a panic if we failed to sign a program witness.
+    pub fn sign_tx_raw(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
@@ -511,13 +524,13 @@ impl Signer {
                     Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
-                        &program_input.witness.build_witness(),
+                        &program_input.witness,
                         witness_name,
                         sig_path,
                         index,
                     )?),
                     // just build the witness
-                    None => Ok(program_input.witness.build_witness()),
+                    None => Ok((*program_input.witness).clone()),
                 };
 
                 let pruned_witness =
@@ -535,11 +548,16 @@ impl Signer {
                 pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
             }
         }
-
-        Ok(pst.extract_tx()?)
+        Ok(pst)
     }
 
-    fn get_signed_program_witness(
+    /// Signs and inserts a signature into appropriate witness value.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
+    /// retrieved from the program, if `witness_name` is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
+    pub fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
         program: &dyn ProgramTrait,
@@ -559,6 +577,7 @@ impl Signer {
                 .get(&WitnessName::from_str_unchecked(witness_name))
                 .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
 
+            #[allow(clippy::missing_panics_doc)]
             let local_wtns = Arc::new(
                 witness
                     .get(&WitnessName::from_str_unchecked(witness_name))

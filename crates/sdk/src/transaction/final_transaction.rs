@@ -29,7 +29,7 @@ pub struct IssuanceDetails {
 }
 
 /// Represents the final input structure put into a `FinalTransaction` for processing.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FinalInput {
     /// Holds the base input data required for the operation.
     pub partial_input: PartialInput,
@@ -139,7 +139,7 @@ impl FinalInput {
 }
 
 /// A struct representing a final (but not yet signed) transaction.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,

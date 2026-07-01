@@ -16,8 +16,7 @@ use simplicityhl::source::CanonPath;
 use simplicityhl::source::CanonSourceFile;
 
 use crate::macros::codegen::{
-    convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
-    convert_contract_name_to_struct_name,
+    construct_program_name, convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
 };
 use crate::macros::parse::SimfContent;
 
@@ -241,22 +240,19 @@ impl ArtifactsGenerator {
     }
 
     fn generate_simf_binding_code(contract_name: &str, target_simf: &Path) -> Result<TokenStream, BuildError> {
-        let program_name = {
-            let base_name = convert_contract_name_to_struct_name(contract_name);
-            format_ident!("{base_name}Program")
-        };
-
+        let program_name = construct_program_name(contract_name);
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
         let target_simf_str = target_simf.to_string_lossy().into_owned();
 
         let code = quote! {
             use simplex::include_simf;
-            use simplex::program::{ArgumentsTrait, Program};
+            use simplex::program::{Program};
             use simplex::provider::SimplicityNetwork;
             use simplex::simplicityhl::elements::Script;
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
+            #[derive(Clone)]
             pub struct #program_name {
                 program: Program,
             }
@@ -265,9 +261,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
+                pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, Box::new(arguments)),
+                        program: Program::new(Self::SOURCE, arguments.into()),
                     }
                 }
 
@@ -283,7 +279,6 @@ impl ArtifactsGenerator {
                     self
                 }
 
-                #[must_use]
                 pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
                     self.program.set_storage_at(index, new_value);
                 }

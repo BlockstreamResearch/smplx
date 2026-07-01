@@ -1,6 +1,7 @@
 pub mod config;
 pub mod context;
 pub mod error;
+pub mod fuzz;
 pub mod macros;
 pub mod network_utils;
 
