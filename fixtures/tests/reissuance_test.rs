@@ -1,12 +1,12 @@
 use simplex::simplicityhl::elements::AssetId;
 
-use simplex::signer::{KeyProvider, Signer};
+use simplex::signer::{KeyOrigin, Signer};
 use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{
     FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature, TxReceipt,
 };
 
-fn make_confidential_to_bob<'a, K1: KeyProvider, K2: KeyProvider>(
+fn make_confidential_to_bob<'a, K1: KeyOrigin, K2: KeyOrigin>(
     alice: &'a Signer<K1>,
     bob: &Signer<K2>,
     asset: AssetId,
@@ -24,7 +24,7 @@ fn make_confidential_to_bob<'a, K1: KeyProvider, K2: KeyProvider>(
     Ok(tx_receipt)
 }
 
-fn issue_explicit_to_alice_with_reissuance<'a, K1: KeyProvider, K2: KeyProvider>(
+fn issue_explicit_to_alice_with_reissuance<'a, K1: KeyOrigin, K2: KeyOrigin>(
     alice: &Signer<K1>,
     bob: &'a Signer<K2>,
 ) -> anyhow::Result<(TxReceipt<'a>, IssuanceDetails)> {
@@ -58,7 +58,7 @@ fn issue_explicit_to_alice_with_reissuance<'a, K1: KeyProvider, K2: KeyProvider>
     Ok((tx_receipt, issuance_details))
 }
 
-fn reissue_tokens_to_bob<'a, K: KeyProvider>(
+fn reissue_tokens_to_bob<'a, K: KeyOrigin>(
     bob: &'a Signer<K>,
     issuance_details: &IssuanceDetails,
     reissuance_amount: u64,

@@ -71,7 +71,7 @@ pub trait SignerTrait {
 /// This trait abstracts the origin of the wallet's keys, allowing the `Signer` to remain
 /// agnostic to whether the keys are derived from a BIP39 mnemonic, a hardware wallet,
 /// or a single injected secret key.
-pub trait KeyProvider {
+pub trait KeyOrigin {
     /// Derives the X-Only public key specifically used for Schnorr and Taproot structures.
     #[must_use]
     fn get_schnorr_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> XOnlyPublicKey;
@@ -127,17 +127,17 @@ pub struct Signer<K> {
 
 /// A Hierarchical Deterministic (HD) key provider based on BIP39 and SLIP77.
 ///
-/// `HDKeyOrigin` derives its key material from a standard mnemonic seed phrase.
+/// `HDKey` derives its key material from a standard mnemonic seed phrase.
 /// It handles BIP32 derivation paths for standard transaction signing and uses
 /// SLIP77 to generate deterministic blinding keys for confidential transactions
 /// on the Elements/Liquid network.
-pub struct HDKeyOrigin {
+pub struct HDKey {
     xprv: Xpriv,
     master_blinding: MasterBlindingKey,
 }
 
-impl HDKeyOrigin {
-    /// Constructs a new `HDKeyOrigin` from a BIP39 mnemonic phrase.
+impl HDKey {
+    /// Constructs a new `HDKey` from a BIP39 mnemonic phrase.
     ///
     /// # Errors
     /// Returns a `SignerError::Mnemonic` if the provided phrase is invalid.
@@ -202,8 +202,7 @@ impl HDKeyOrigin {
     }
 }
 
-impl KeyProvider for HDKeyOrigin {
-    /// Derives the X-Only public key specifically used for Schnorr and Taproot structures.
+impl KeyOrigin for HDKey {
     fn get_schnorr_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> XOnlyPublicKey {
         let private_key = self.get_private_key(secp, network);
         let keypair = Keypair::from_secret_key(secp, &private_key.inner);
@@ -211,20 +210,14 @@ impl KeyProvider for HDKeyOrigin {
         keypair.x_only_public_key().0
     }
 
-    /// Resolves the standard format ECDSA public key.
     fn get_ecdsa_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PublicKey {
         self.get_private_key(secp, network).public_key(secp)
     }
 
-    /// Resolves the corresponding blinding public key.
     fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PublicKey {
         self.get_blinding_private_key(secp, network).public_key(secp)
     }
 
-    /// Internally derives and exposes the wallet's signing active private key.
-    ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
     fn get_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
         let master_xprv = self.master_xpriv(secp).unwrap();
         let full_path = self.get_derivation_path(network).unwrap();
@@ -240,13 +233,6 @@ impl KeyProvider for HDKeyOrigin {
         PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
     }
 
-    /// Generates the private key linked to confidential payload blinding.
-    ///
-    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin-mainnet) network kind.
-    /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
-    ///
-    /// # Panics
-    /// Panics if the master SLIP77 key cannot be derived.
     fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
         let blinding_key = self
             .master_blinding
@@ -255,10 +241,6 @@ impl KeyProvider for HDKeyOrigin {
         PrivateKey::new(blinding_key, NetworkKind::Test)
     }
 
-    /// Returns the confidential elements address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
     fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
         let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(
             &self.get_slip77_descriptor(secp, network).unwrap(),
@@ -276,10 +258,6 @@ impl KeyProvider for HDKeyOrigin {
             .unwrap()
     }
 
-    /// Returns the standard unblinded address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
     fn get_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
         let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor(secp, network).unwrap())
             .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
@@ -295,16 +273,16 @@ impl KeyProvider for HDKeyOrigin {
 
 /// A simplified key provider powered by a single static secret key.
 ///
-/// Unlike `HDKeyOrigin` which derives paths hierarchically, `SingleKeyOrigin` uses
+/// Unlike `HDKey` which derives paths hierarchically, `SingleKey` uses
 /// exactly one `SecretKey` for all signing operations. It can optionally accept a
 /// `MasterBlindingKey` to support confidential transactions and blinded addresses.
-pub struct SingleKeyOrigin {
+pub struct SingleKey {
     secret_key: SecretKey,
     blinding_key: Option<MasterBlindingKey>,
 }
 
-impl SingleKeyOrigin {
-    /// Creates a new `SingleKeyOrigin`.
+impl SingleKey {
+    /// Creates a new `SingleKey`.
     ///
     /// # Arguments
     /// * `secret_key` - The base static secret key used for ECDSA and Schnorr signatures.
@@ -318,7 +296,7 @@ impl SingleKeyOrigin {
     }
 }
 
-impl KeyProvider for SingleKeyOrigin {
+impl KeyOrigin for SingleKey {
     fn get_schnorr_public_key(&self, secp: &Secp256k1<All>, _network: &SimplicityNetwork) -> XOnlyPublicKey {
         let keypair = Keypair::from_secret_key(secp, &self.secret_key);
         keypair.x_only_public_key().0
@@ -332,8 +310,8 @@ impl KeyProvider for SingleKeyOrigin {
         self.get_blinding_private_key(secp, network).public_key(secp)
     }
 
-    fn get_private_key(&self, _secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
-        PrivateKey::new(self.secret_key, network)
+    fn get_private_key(&self, _secp: &Secp256k1<All>, _network: &SimplicityNetwork) -> PrivateKey {
+        PrivateKey::new(self.secret_key, NetworkKind::Test)
     }
 
     fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
@@ -344,7 +322,7 @@ impl KeyProvider for SingleKeyOrigin {
         let script_pubkey = self.get_address(secp, network).script_pubkey();
         let blinding_key = master_blinding.blinding_private_key(&script_pubkey);
 
-        PrivateKey::new(blinding_key, network)
+        PrivateKey::new(blinding_key, NetworkKind::Test)
     }
 
     fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
@@ -374,7 +352,7 @@ impl<K> Signer<K> {
     }
 }
 
-impl<K: KeyProvider> Signer<K> {
+impl<K: KeyOrigin> Signer<K> {
     /// Creates a new `Signer` instance seeded from the provided key origin and paired with the specified provider.
     #[must_use]
     pub fn new(key_origin: K, provider: Box<dyn ProviderTrait>) -> Self {
@@ -810,11 +788,11 @@ mod tests {
 
     use super::*;
 
-    fn create_signer() -> Signer<HDKeyOrigin> {
+    fn create_signer() -> Signer<HDKey> {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        let hd_origin = HDKeyOrigin::new(random_mnemonic().as_str()).unwrap();
+        let hd_origin = HDKey::new(random_mnemonic().as_str()).unwrap();
 
         Signer::new(hd_origin, Box::new(EsploraProvider::new(url, network)))
     }

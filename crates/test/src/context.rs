@@ -9,7 +9,7 @@ use smplx_sdk::global::GlobalConfig;
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
-use smplx_sdk::signer::{HDKeyOrigin, Signer};
+use smplx_sdk::signer::{HDKey, Signer};
 use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
@@ -22,7 +22,7 @@ pub struct TestContext {
     // since providers can't be cloned, we need this variable to create new signers
     _provider_info: ProviderInfo,
     config: TestConfig,
-    signer: Signer<HDKeyOrigin>,
+    signer: Signer<HDKey>,
 }
 
 impl TestContext {
@@ -42,7 +42,7 @@ impl TestContext {
         })
     }
 
-    pub fn create_signer(&self, mnemonic: &str) -> Signer<HDKeyOrigin> {
+    pub fn create_signer(&self, mnemonic: &str) -> Signer<HDKey> {
         let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
             // local regtest or external regtest
             Box::new(SimplexProvider::new(
@@ -59,15 +59,15 @@ impl TestContext {
             ))
         };
 
-        let hd_key_origin = HDKeyOrigin::new(mnemonic).unwrap();
+        let hd_key_origin = HDKey::new(mnemonic).unwrap();
         Signer::new(hd_key_origin, provider)
     }
 
-    pub fn random_signer(&self) -> Signer<HDKeyOrigin> {
+    pub fn random_signer(&self) -> Signer<HDKey> {
         self.create_signer(random_mnemonic().as_str())
     }
 
-    pub fn get_default_signer(&self) -> &Signer<HDKeyOrigin> {
+    pub fn get_default_signer(&self) -> &Signer<HDKey> {
         &self.signer
     }
 
@@ -101,10 +101,10 @@ impl TestContext {
         NetworkUtils::new(regtest_rpc, esplora)
     }
 
-    fn setup(config: &TestConfig) -> Result<(Signer<HDKeyOrigin>, ProviderInfo, Option<RegtestClient>), TestError> {
+    fn setup(config: &TestConfig) -> Result<(Signer<HDKey>, ProviderInfo, Option<RegtestClient>), TestError> {
         let client: Option<RegtestClient>;
         let provider_info: ProviderInfo;
-        let signer: Signer<HDKeyOrigin>;
+        let signer: Signer<HDKey>;
 
         match config.esplora.clone() {
             Some(esplora) => match config.rpc.clone() {
@@ -123,7 +123,7 @@ impl TestContext {
                         elements_url: Some(rpc.url),
                         auth: Some(auth),
                     };
-                    let hd_key_origin = HDKeyOrigin::new(config.mnemonic.as_str()).unwrap();
+                    let hd_key_origin = HDKey::new(config.mnemonic.as_str()).unwrap();
                     signer = Signer::new(hd_key_origin, provider);
                     client = None;
                 }
@@ -142,7 +142,7 @@ impl TestContext {
                         elements_url: None,
                         auth: None,
                     };
-                    let hd_key_origin = HDKeyOrigin::new(config.mnemonic.as_str()).unwrap();
+                    let hd_key_origin = HDKey::new(config.mnemonic.as_str()).unwrap();
                     signer = Signer::new(hd_key_origin, provider);
                     client = None;
                 }

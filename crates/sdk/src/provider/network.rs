@@ -3,8 +3,6 @@ use std::str::FromStr;
 use simplicityhl::simplicity::elements;
 use simplicityhl::simplicity::hashes::{Hash, sha256};
 
-use elements_miniscript::bitcoin::NetworkKind;
-
 use crate::constants::{LIQUID_DEFAULT_REGTEST_ASSET_STR, LIQUID_POLICY_ASSET_STR, LIQUID_TESTNET_POLICY_ASSET_STR};
 
 /// The default Bitcoin `AssetId` used on Liquid testnet.
@@ -100,22 +98,6 @@ impl SimplicityNetwork {
             Self::Liquid => &elements::AddressParams::LIQUID,
             Self::LiquidTestnet => &elements::AddressParams::LIQUID_TESTNET,
             Self::ElementsRegtest { .. } => &elements::AddressParams::ELEMENTS,
-        }
-    }
-}
-
-impl From<SimplicityNetwork> for NetworkKind {
-    fn from(value: SimplicityNetwork) -> Self {
-        (&value).into()
-    }
-}
-
-impl From<&SimplicityNetwork> for NetworkKind {
-    fn from(value: &SimplicityNetwork) -> Self {
-        if value.is_mainnet() {
-            NetworkKind::Main
-        } else {
-            NetworkKind::Test
         }
     }
 }

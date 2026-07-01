@@ -1,10 +1,10 @@
 use simplex::simplicityhl::elements::AssetId;
 
-use simplex::signer::{KeyProvider, Signer};
+use simplex::signer::{KeyOrigin, Signer};
 use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, TxReceipt};
 
-fn make_confidential_to_bob<'a, K1: KeyProvider, K2: KeyProvider>(
+fn make_confidential_to_bob<'a, K1: KeyOrigin, K2: KeyOrigin>(
     alice: &'a Signer<K1>,
     bob: &Signer<K2>,
     asset: AssetId,
@@ -22,7 +22,7 @@ fn make_confidential_to_bob<'a, K1: KeyProvider, K2: KeyProvider>(
     Ok(tx_receipt)
 }
 
-fn issue_confidential_to_alice<'a, K1: KeyProvider, K2: KeyProvider>(
+fn issue_confidential_to_alice<'a, K1: KeyOrigin, K2: KeyOrigin>(
     alice: &Signer<K1>,
     bob: &'a Signer<K2>,
 ) -> anyhow::Result<TxReceipt<'a>> {
