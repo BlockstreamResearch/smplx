@@ -59,8 +59,7 @@ impl TestContext {
             ))
         };
 
-        let hd_key_origin = HDKey::new(mnemonic).unwrap();
-        Signer::new(hd_key_origin, provider)
+        Signer::new(HDKey::new(mnemonic).unwrap(), provider)
     }
 
     pub fn random_signer(&self) -> Signer<HDKey> {
@@ -123,8 +122,7 @@ impl TestContext {
                         elements_url: Some(rpc.url),
                         auth: Some(auth),
                     };
-                    let hd_key_origin = HDKey::new(config.mnemonic.as_str()).unwrap();
-                    signer = Signer::new(hd_key_origin, provider);
+                    signer = Signer::new(HDKey::new(config.mnemonic.as_str()).unwrap(), provider);
                     client = None;
                 }
                 None => {
@@ -142,8 +140,7 @@ impl TestContext {
                         elements_url: None,
                         auth: None,
                     };
-                    let hd_key_origin = HDKey::new(config.mnemonic.as_str()).unwrap();
-                    signer = Signer::new(hd_key_origin, provider);
+                    signer = Signer::new(HDKey::new(config.mnemonic.as_str()).unwrap(), provider);
                     client = None;
                 }
             },

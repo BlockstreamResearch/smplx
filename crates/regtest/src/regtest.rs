@@ -3,8 +3,7 @@ use std::time::Duration;
 use smplx_sdk::provider::ElementsRpc;
 use smplx_sdk::provider::SimplexProvider;
 use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::core::HDKey;
-use smplx_sdk::signer::{KeyOrigin, Signer};
+use smplx_sdk::signer::{HDKey, KeyOrigin, Signer};
 use smplx_sdk::utils::btc2sat;
 
 use super::RegtestConfig;
@@ -34,8 +33,7 @@ impl Regtest {
             SimplicityNetwork::default_regtest(),
         ));
 
-        let hd_key_origin = HDKey::new(config.mnemonic.as_str())?;
-        let signer = Signer::new(hd_key_origin, provider);
+        let signer = Signer::new(HDKey::new(config.mnemonic.as_str())?, provider);
 
         Self::prepare_signer(&client, &signer, config.bitcoins)?;
 
