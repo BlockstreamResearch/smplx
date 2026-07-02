@@ -1,10 +1,14 @@
 use simplex::simplicityhl::elements::AssetId;
 
-use simplex::signer::Signer;
+use simplex::signer::{KeyOrigin, Signer};
 use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature};
 
-fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<()> {
+fn make_confidential_to_bob<K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &Signer<K1>,
+    bob: &Signer<K2>,
+    asset: AssetId,
+) -> anyhow::Result<()> {
     let mut ft = FinalTransaction::new();
 
     ft.add_output(
@@ -18,7 +22,10 @@ fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> any
     Ok(())
 }
 
-fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<()> {
+fn issue_confidential_to_alice<K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &Signer<K1>,
+    bob: &Signer<K2>,
+) -> anyhow::Result<()> {
     let utxos = bob.get_utxos()?;
 
     let mut ft = FinalTransaction::new();

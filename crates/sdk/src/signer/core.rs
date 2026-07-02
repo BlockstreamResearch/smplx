@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use std::sync::Arc;
 
 use simplicityhl::Value;
@@ -12,20 +11,13 @@ use simplicityhl::simplicity::hashes::Hash;
 use simplicityhl::str::WitnessName;
 use simplicityhl::value::ValueConstructible;
 
-use bip39::Mnemonic;
 use bip39::rand::thread_rng;
 
 use elements_miniscript::{
-    ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
-    bitcoin::{NetworkKind, PrivateKey, PublicKey, bip32::DerivationPath},
-    elements::{
-        EcdsaSighashType,
-        bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
-        sighash::SighashCache,
-    },
+    bitcoin::{PrivateKey, PublicKey},
+    elements::{EcdsaSighashType, sighash::SighashCache},
     elementssig_to_rawsig,
     psbt::PsbtExt,
-    slip77::MasterBlindingKey,
 };
 
 use crate::constants::MIN_FEE;
@@ -33,6 +25,7 @@ use crate::program::ProgramTrait;
 use crate::program::logger::ProgramLogger;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
+use crate::signer::KeyOrigin;
 use crate::signer::wtns_injector::WtnsInjector;
 use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, TxReceipt, UTXO};
 
@@ -68,52 +61,11 @@ pub trait SignerTrait {
 
 /// Core interface responsible for managing keys, interfacing with the blockchain provider,
 /// assembling descriptors, estimating fees, and finalizing/signing transactions.
-pub struct Signer {
-    mnemonic: Mnemonic,
-    xprv: Xpriv,
+pub struct Signer<K> {
+    key_origin: K,
     provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
-}
-
-impl SignerTrait for Signer {
-    fn sign_program(
-        &self,
-        pst: &PartiallySignedTransaction,
-        program: &dyn ProgramTrait,
-        input_index: usize,
-        network: &SimplicityNetwork,
-    ) -> Result<schnorr::Signature, SignerError> {
-        let env = program.get_env(pst, input_index, network)?;
-        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
-
-        let private_key = self.get_private_key();
-        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
-
-        Ok(self.secp.sign_schnorr(&msg, &keypair))
-    }
-
-    fn sign_input(
-        &self,
-        pst: &PartiallySignedTransaction,
-        input_index: usize,
-    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
-        let tx = pst.extract_tx()?;
-
-        let mut sighash_cache = SighashCache::new(&tx);
-        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
-
-        let message = pst
-            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
-            .to_secp_msg();
-
-        let private_key = self.get_private_key();
-        let public_key = private_key.public_key(&self.secp);
-
-        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
-
-        Ok((public_key, signature))
-    }
 }
 
 enum Estimate {
@@ -121,30 +73,37 @@ enum Estimate {
     Failure(u64),
 }
 
-impl Signer {
-    /// Creates a new `Signer` instance seeded from the provided mnemonic and paired with the specified provider.
-    ///
-    /// # Panics
-    /// Panics if the mnemonic fails to parse, or if deriving the master private key fails.
+impl<K> Signer<K> {
+    /// Returns a reference to the active configured network provider.
     #[must_use]
-    pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Self {
-        let secp = Secp256k1::new();
-        let mnemonic: Mnemonic = mnemonic
-            .parse()
-            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))
-            .unwrap();
-        let seed = mnemonic.to_seed("");
-        let xprv = Xpriv::new_master(NetworkKind::Test, &seed).unwrap();
+    pub fn get_provider(&self) -> &dyn ProviderTrait {
+        self.provider.as_ref()
+    }
+}
 
+impl<K: KeyOrigin> Signer<K> {
+    /// Creates a new `Signer` instance seeded from the provided key origin and paired with the specified provider.
+    #[must_use]
+    pub fn new(key_origin: K, provider: Box<dyn ProviderTrait>) -> Self {
+        let secp = Secp256k1::new();
         let network = *provider.get_network();
 
         Self {
-            mnemonic,
-            xprv,
+            key_origin,
             provider,
             network,
             secp,
         }
+    }
+
+    /// Evaluates, funds, and broadcasts an already assembled `FinalTransaction`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if finalizing the payload fails or if the network rejects the broadcast.
+    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
+        let (tx, _fee) = self.finalize(tx)?;
+
+        Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
     /// Composes, funds, and broadcasts a standard network transaction sending the specified value of the primary policy asset.
@@ -162,14 +121,41 @@ impl Signer {
         Ok(self.provider.broadcast_transaction(&tx)?)
     }
 
-    /// Evaluates, funds, and broadcasts an already assembled `FinalTransaction`.
-    ///
-    /// # Errors
-    /// Returns a `SignerError` if finalizing the payload fails or if the network rejects the broadcast.
-    pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
-        let (tx, _fee) = self.finalize(tx)?;
+    /// Proxies to the underlying key provider to get the Schnorr public key.
+    pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
+        self.key_origin.get_schnorr_public_key(&self.secp, &self.network)
+    }
 
-        Ok(self.provider.broadcast_transaction(&tx)?)
+    /// Proxies to the underlying key provider to get the ECDSA public key.
+    pub fn get_ecdsa_public_key(&self) -> PublicKey {
+        self.key_origin.get_ecdsa_public_key(&self.secp, &self.network)
+    }
+
+    /// Proxies to the underlying key provider to get the blinding public key.
+    pub fn get_blinding_public_key(&self) -> PublicKey {
+        self.key_origin.get_blinding_public_key(&self.secp, &self.network)
+    }
+
+    /// Proxies to the underlying key provider to get the active private key.
+    pub fn get_private_key(&self) -> PrivateKey {
+        self.key_origin.get_private_key(&self.secp, &self.network)
+    }
+
+    /// Proxies to the underlying key provider to get the blinding private key.
+    pub fn get_blinding_private_key(&self) -> PrivateKey {
+        self.key_origin.get_blinding_private_key(&self.secp, &self.network)
+    }
+
+    /// Proxies to the underlying key provider to get the confidential address.
+    #[must_use]
+    pub fn get_confidential_address(&self) -> Address {
+        self.key_origin.get_confidential_address(&self.secp, &self.network)
+    }
+
+    /// Proxies to the underlying key provider to get the standard unblinded address.
+    #[must_use]
+    pub fn get_address(&self) -> Address {
+        self.key_origin.get_address(&self.secp, &self.network)
     }
 
     /// Evaluates the input components of a `FinalTransaction`, iteratively selecting available wallet UTXOs to cover outputs and estimated fees.
@@ -257,50 +243,6 @@ impl Signer {
         }
     }
 
-    /// Returns a reference to the active configured network provider.
-    #[must_use]
-    pub fn get_provider(&self) -> &dyn ProviderTrait {
-        self.provider.as_ref()
-    }
-
-    /// Returns the confidential elements address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
-    #[must_use]
-    pub fn get_confidential_address(&self) -> Address {
-        let mut descriptor =
-            ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor().unwrap())
-                .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
-                .unwrap();
-
-        // confidential descriptor doesn't support multipath
-        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
-
-        descriptor
-            .at_derivation_index(1)
-            .unwrap()
-            .address(&self.secp, self.network.address_params())
-            .unwrap()
-    }
-
-    /// Returns the standard unblinded address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
-    #[must_use]
-    pub fn get_address(&self) -> Address {
-        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
-            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
-            .unwrap();
-
-        descriptor.into_single_descriptors().unwrap()[0]
-            .at_derivation_index(1)
-            .unwrap()
-            .address(self.network.address_params())
-            .unwrap()
-    }
-
     /// Iterates against the network provider to select and unblind all known UTXOs.
     ///
     /// # Errors
@@ -337,7 +279,9 @@ impl Signer {
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
         // fetch explicit and confidential utxos
-        let mut all_utxos = self.provider.fetch_address_utxos(&self.get_confidential_address())?;
+        let mut all_utxos = self
+            .provider
+            .fetch_address_utxos(&self.key_origin.get_confidential_address(&self.secp, &self.network))?;
 
         // filter out only confidential utxos and unblind them
         let mut confidential_utxos = self.unblind(
@@ -357,64 +301,6 @@ impl Signer {
         all_utxos.extend(confidential_utxos);
 
         Ok(all_utxos)
-    }
-
-    /// Derives the X-Only public key specifically used for Schnorr and Taproot structures.
-    #[must_use]
-    pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
-        let private_key = self.get_private_key();
-        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
-
-        keypair.x_only_public_key().0
-    }
-
-    /// Resolves the standard format ECDSA public key.
-    #[must_use]
-    pub fn get_ecdsa_public_key(&self) -> PublicKey {
-        self.get_private_key().public_key(&self.secp)
-    }
-
-    /// Resolves the corresponding blinding public key.
-    #[must_use]
-    pub fn get_blinding_public_key(&self) -> PublicKey {
-        self.get_blinding_private_key().public_key(&self.secp)
-    }
-
-    /// Internally derives and exposes the wallet's signing active private key.
-    ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
-    #[must_use]
-    pub fn get_private_key(&self) -> PrivateKey {
-        let master_xprv = self.master_xpriv().unwrap();
-        let full_path = self.get_derivation_path().unwrap();
-
-        let derived = full_path.extend(
-            DerivationPath::from_str("0/1")
-                .map_err(|e| SignerError::DerivationPath(e.to_string()))
-                .unwrap(),
-        );
-
-        let ext_derived = master_xprv.derive_priv(&self.secp, &derived).unwrap();
-
-        PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
-    }
-
-    /// Generates the private key linked to confidential payload blinding.
-    ///
-    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin-mainnet) network kind.
-    /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
-    ///
-    /// # Panics
-    /// Panics if the master SLIP77 key cannot be derived.
-    #[must_use]
-    pub fn get_blinding_private_key(&self) -> PrivateKey {
-        let blinding_key = self
-            .master_slip77()
-            .unwrap()
-            .blinding_private_key(&self.get_address().script_pubkey());
-
-        PrivateKey::new(blinding_key, NetworkKind::Test)
     }
 
     fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
@@ -539,6 +425,44 @@ impl Signer {
         Ok(pst.extract_tx()?)
     }
 
+    fn sign_program(
+        &self,
+        pst: &PartiallySignedTransaction,
+        program: &dyn ProgramTrait,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<schnorr::Signature, SignerError> {
+        let env = program.get_env(pst, input_index, network)?;
+        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
+
+        let private_key = self.get_private_key();
+        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
+
+        Ok(self.secp.sign_schnorr(&msg, &keypair))
+    }
+
+    fn sign_input(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
+        let tx = pst.extract_tx()?;
+
+        let mut sighash_cache = SighashCache::new(&tx);
+        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
+
+        let message = pst
+            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
+            .to_secp_msg();
+
+        let private_key = self.get_private_key();
+        let public_key = private_key.public_key(&self.secp);
+
+        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+
+        Ok((public_key, signature))
+    }
+
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
@@ -584,71 +508,24 @@ impl Signer {
 
         Ok(WitnessValues::from(hm))
     }
-
-    #[allow(clippy::unnecessary_wraps)]
-    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
-        let seed = self.mnemonic.to_seed("");
-
-        Ok(MasterBlindingKey::from_seed(&seed[..]))
-    }
-
-    fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
-        Ok(self.xprv.derive_priv(&self.secp, &path)?)
-    }
-
-    fn master_xpriv(&self) -> Result<Xpriv, SignerError> {
-        self.derive_xpriv(&DerivationPath::master())
-    }
-
-    fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, SignerError> {
-        let derived = self.derive_xpriv(path)?;
-
-        Ok(Xpub::from_priv(&self.secp, &derived))
-    }
-
-    fn master_xpub(&self) -> Result<Xpub, SignerError> {
-        self.derive_xpub(&DerivationPath::master())
-    }
-
-    fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
-        Ok(self.master_xpub()?.fingerprint())
-    }
-
-    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
-        let wpkh_descriptor = self.get_wpkh_descriptor()?;
-        let blinding_key = self.master_slip77()?;
-
-        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
-    }
-
-    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let xpub = self.derive_xpub(&path)?;
-
-        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
-    }
-
-    fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
-        let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
-        let path = format!("84h/{coin_type}h/0h");
-
-        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::provider::EsploraProvider;
+    use crate::signer::HDKey;
     use crate::utils::random_mnemonic;
 
     use super::*;
 
-    fn create_signer() -> Signer {
+    fn create_signer() -> Signer<HDKey> {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::LiquidTestnet;
 
-        Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
+        Signer::new(
+            HDKey::new(random_mnemonic().as_str()).unwrap(),
+            Box::new(EsploraProvider::new(url, network)),
+        )
     }
 
     #[test]

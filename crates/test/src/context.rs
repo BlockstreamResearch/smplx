@@ -9,7 +9,7 @@ use smplx_sdk::global::GlobalConfig;
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::{HDKey, Signer};
 use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
@@ -22,7 +22,7 @@ pub struct TestContext {
     // since providers can't be cloned, we need this variable to create new signers
     _provider_info: ProviderInfo,
     config: TestConfig,
-    signer: Signer,
+    signer: Signer<HDKey>,
 }
 
 impl TestContext {
@@ -42,7 +42,7 @@ impl TestContext {
         })
     }
 
-    pub fn create_signer(&self, mnemonic: &str) -> Signer {
+    pub fn create_signer(&self, mnemonic: &str) -> Signer<HDKey> {
         let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
             // local regtest or external regtest
             Box::new(SimplexProvider::new(
@@ -59,14 +59,14 @@ impl TestContext {
             ))
         };
 
-        Signer::new(mnemonic, provider)
+        Signer::new(HDKey::new(mnemonic).unwrap(), provider)
     }
 
-    pub fn random_signer(&self) -> Signer {
+    pub fn random_signer(&self) -> Signer<HDKey> {
         self.create_signer(random_mnemonic().as_str())
     }
 
-    pub fn get_default_signer(&self) -> &Signer {
+    pub fn get_default_signer(&self) -> &Signer<HDKey> {
         &self.signer
     }
 
@@ -100,10 +100,10 @@ impl TestContext {
         NetworkUtils::new(regtest_rpc, esplora)
     }
 
-    fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {
+    fn setup(config: &TestConfig) -> Result<(Signer<HDKey>, ProviderInfo, Option<RegtestClient>), TestError> {
         let client: Option<RegtestClient>;
         let provider_info: ProviderInfo;
-        let signer: Signer;
+        let signer: Signer<HDKey>;
 
         match config.esplora.clone() {
             Some(esplora) => match config.rpc.clone() {
@@ -122,7 +122,7 @@ impl TestContext {
                         elements_url: Some(rpc.url),
                         auth: Some(auth),
                     };
-                    signer = Signer::new(config.mnemonic.as_str(), provider);
+                    signer = Signer::new(HDKey::new(config.mnemonic.as_str()).unwrap(), provider);
                     client = None;
                 }
                 None => {
@@ -140,7 +140,7 @@ impl TestContext {
                         elements_url: None,
                         auth: None,
                     };
-                    signer = Signer::new(config.mnemonic.as_str(), provider);
+                    signer = Signer::new(HDKey::new(config.mnemonic.as_str()).unwrap(), provider);
                     client = None;
                 }
             },
