@@ -5,6 +5,7 @@ use bitcoincore_rpc::bitcoin::bip32::{DerivationPath, Fingerprint, Xpriv, Xpub};
 use bitcoincore_rpc::bitcoin::key::{Keypair, Secp256k1};
 use bitcoincore_rpc::bitcoin::secp256k1::{All, SecretKey};
 use bitcoincore_rpc::bitcoin::{NetworkKind, PrivateKey, PublicKey, XOnlyPublicKey};
+
 use elements_miniscript::elements::Address;
 use elements_miniscript::slip77::MasterBlindingKey;
 use elements_miniscript::{ConfidentialDescriptor, Descriptor, DescriptorPublicKey};
