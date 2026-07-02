@@ -29,7 +29,7 @@ use crate::signer::KeyOrigin;
 use crate::signer::wtns_injector::WtnsInjector;
 use crate::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, TxReceipt, UTXO};
 
-use super::error::SignerError;
+use super::error::{KeyOriginError, SignerError};
 
 /// A placeholder dummy fee amount used during transaction estimation.
 pub const PLACEHOLDER_FEE: u64 = 1;
@@ -66,6 +66,46 @@ pub struct Signer<K> {
     provider: Box<dyn ProviderTrait>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
+}
+
+impl<K: KeyOrigin> SignerTrait for Signer<K> {
+    fn sign_program(
+        &self,
+        pst: &PartiallySignedTransaction,
+        program: &dyn ProgramTrait,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<schnorr::Signature, SignerError> {
+        let env = program.get_env(pst, input_index, network)?;
+        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
+
+        let private_key = self.get_private_key();
+        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
+
+        Ok(self.secp.sign_schnorr(&msg, &keypair))
+    }
+
+    fn sign_input(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
+        let tx = pst.extract_tx()?;
+
+        let mut sighash_cache = SighashCache::new(&tx);
+        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
+
+        let message = pst
+            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
+            .to_secp_msg();
+
+        let private_key = self.get_private_key();
+        let public_key = private_key.public_key(&self.secp);
+
+        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+
+        Ok((public_key, signature))
+    }
 }
 
 enum Estimate {
@@ -132,8 +172,14 @@ impl<K: KeyOrigin> Signer<K> {
     }
 
     /// Proxies to the underlying key provider to get the blinding public key.
-    pub fn get_blinding_public_key(&self) -> PublicKey {
-        self.key_origin.get_blinding_public_key(&self.secp, &self.network)
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the unblinding key is missing or fails to derive.
+    pub fn get_blinding_public_key(&self) -> Result<PublicKey, SignerError> {
+        Ok(self
+            .key_origin
+            .get_blinding_public_key(&self.secp, &self.network)
+            .ok_or(KeyOriginError::RequiredUnblindingKey)?)
     }
 
     /// Proxies to the underlying key provider to get the active private key.
@@ -142,14 +188,25 @@ impl<K: KeyOrigin> Signer<K> {
     }
 
     /// Proxies to the underlying key provider to get the blinding private key.
-    pub fn get_blinding_private_key(&self) -> PrivateKey {
-        self.key_origin.get_blinding_private_key(&self.secp, &self.network)
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the unblinding key is missing or fails to derive.
+    pub fn get_blinding_private_key(&self) -> Result<PrivateKey, SignerError> {
+        Ok(self
+            .key_origin
+            .get_blinding_private_key(&self.secp, &self.network)
+            .ok_or(KeyOriginError::RequiredUnblindingKey)?)
     }
 
     /// Proxies to the underlying key provider to get the confidential address.
-    #[must_use]
-    pub fn get_confidential_address(&self) -> Address {
-        self.key_origin.get_confidential_address(&self.secp, &self.network)
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the unblinding key or confidential address fails to derive.
+    pub fn get_confidential_address(&self) -> Result<Address, SignerError> {
+        Ok(self
+            .key_origin
+            .get_confidential_address(&self.secp, &self.network)
+            .ok_or(KeyOriginError::RequiredUnblindingKey)?)
     }
 
     /// Proxies to the underlying key provider to get the standard unblinded address.
@@ -248,7 +305,7 @@ impl<K: KeyOrigin> Signer<K> {
     /// # Errors
     /// Returns a `SignerError` if querying the network or unblinding operations fail.
     pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|_| true, &|_| true)
+        self.get_utxos_filter(|_| true, |_| true)
     }
 
     /// Finds all known UTXOs belonging to the specific `AssetId`.
@@ -256,7 +313,7 @@ impl<K: KeyOrigin> Signer<K> {
     /// # Errors
     /// Returns a `SignerError` if network interaction or confidential output decryption fails.
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.asset() == asset, &|utxo| utxo.asset() == asset)
+        self.get_utxos_filter(move |utxo| utxo.asset() == asset, move |utxo| utxo.asset() == asset)
     }
 
     /// Finds all known UTXOs deriving from a targeted `Txid`.
@@ -265,7 +322,10 @@ impl<K: KeyOrigin> Signer<K> {
     /// Returns a `SignerError` if querying the network fails.
     // TODO: can this be optimized to not populate TxOuts that are filtered out?
     pub fn get_utxos_txid(&self, txid: Txid) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
+        self.get_utxos_filter(
+            move |utxo| utxo.outpoint.txid == txid,
+            move |utxo| utxo.outpoint.txid == txid,
+        )
     }
 
     /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
@@ -275,47 +335,31 @@ impl<K: KeyOrigin> Signer<K> {
     /// Returns a `SignerError` if retrieving remote outputs or executing confidential node unblinding throws an error.
     pub fn get_utxos_filter(
         &self,
-        explicit_filter: &dyn Fn(&UTXO) -> bool,
-        confidential_filter: &dyn Fn(&UTXO) -> bool,
+        explicit_filter: impl Fn(&UTXO) -> bool,
+        confidential_filter: impl Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
-        // fetch explicit and confidential utxos
-        let mut all_utxos = self
-            .provider
-            .fetch_address_utxos(&self.key_origin.get_confidential_address(&self.secp, &self.network))?;
+        let confidential_addr = self.get_confidential_address()?;
+        let all_utxos = self.provider.fetch_address_utxos(&confidential_addr)?;
 
-        // filter out only confidential utxos and unblind them
-        let mut confidential_utxos = self.unblind(
-            all_utxos
-                .iter()
-                .filter(|utxo| utxo.txout.value.is_confidential())
-                .cloned()
-                .collect(),
-        )?;
-        // leave only explicit utxos
-        all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
+        // partition confidential and explicit utxos
+        let (confidential_utxos, mut explicit_utxos): (Vec<UTXO>, Vec<UTXO>) = all_utxos
+            .into_iter()
+            .partition(|utxo| utxo.txout.value.is_confidential());
 
-        all_utxos.retain(explicit_filter);
-        confidential_utxos.retain(confidential_filter);
+        let mut unblinded_utxos = self.unblind(confidential_utxos)?;
+
+        unblinded_utxos.retain(confidential_filter);
+        explicit_utxos.retain(explicit_filter);
 
         // push unblinded utxos to explicit ones
-        all_utxos.extend(confidential_utxos);
+        explicit_utxos.extend(unblinded_utxos);
 
-        Ok(all_utxos)
+        Ok(explicit_utxos)
     }
 
+    /// Proxies to the underlying key provider to get unblinded UTXOs.
     fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
-        let mut unblinded: Vec<UTXO> = Vec::new();
-
-        for mut utxo in utxos {
-            let blinding_key = self.get_blinding_private_key();
-            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
-
-            utxo.secrets = Some(secrets);
-
-            unblinded.push(utxo);
-        }
-
-        Ok(unblinded)
+        Ok(self.key_origin.unblind(&self.secp, &self.network, utxos)?)
     }
 
     fn estimate_tx(
@@ -425,44 +469,6 @@ impl<K: KeyOrigin> Signer<K> {
         Ok(pst.extract_tx()?)
     }
 
-    fn sign_program(
-        &self,
-        pst: &PartiallySignedTransaction,
-        program: &dyn ProgramTrait,
-        input_index: usize,
-        network: &SimplicityNetwork,
-    ) -> Result<schnorr::Signature, SignerError> {
-        let env = program.get_env(pst, input_index, network)?;
-        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
-
-        let private_key = self.get_private_key();
-        let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
-
-        Ok(self.secp.sign_schnorr(&msg, &keypair))
-    }
-
-    fn sign_input(
-        &self,
-        pst: &PartiallySignedTransaction,
-        input_index: usize,
-    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
-        let tx = pst.extract_tx()?;
-
-        let mut sighash_cache = SighashCache::new(&tx);
-        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
-
-        let message = pst
-            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
-            .to_secp_msg();
-
-        let private_key = self.get_private_key();
-        let public_key = private_key.public_key(&self.secp);
-
-        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
-
-        Ok((public_key, signature))
-    }
-
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
@@ -545,6 +551,6 @@ mod tests {
         let signer = create_signer();
 
         println!("{}", signer.get_address());
-        println!("{}", signer.get_confidential_address());
+        println!("{}", signer.get_confidential_address().unwrap());
     }
 }

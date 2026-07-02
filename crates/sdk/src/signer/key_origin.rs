@@ -11,7 +11,8 @@ use elements_miniscript::slip77::MasterBlindingKey;
 use elements_miniscript::{ConfidentialDescriptor, Descriptor, DescriptorPublicKey};
 
 use crate::provider::SimplicityNetwork;
-use crate::signer::SignerError;
+use crate::signer::error::KeyOriginError;
+use crate::transaction::UTXO;
 
 /// A generalized interface for providing cryptographic keys and addresses.
 ///
@@ -29,7 +30,7 @@ pub trait KeyOrigin {
 
     /// Resolves the corresponding blinding public key.
     #[must_use]
-    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PublicKey;
+    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PublicKey>;
 
     /// Internally derives and exposes the wallet's signing active private key.
     ///
@@ -46,14 +47,14 @@ pub trait KeyOrigin {
     /// # Panics
     /// Panics if the master SLIP77 key cannot be derived.
     #[must_use]
-    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey;
+    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PrivateKey>;
 
     /// Returns the confidential elements address matching the local wallet logic.
     ///
     /// # Panics
     /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
-    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address;
+    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<Address>;
 
     /// Returns the standard unblinded address matching the local wallet logic.
     ///
@@ -61,6 +62,17 @@ pub trait KeyOrigin {
     /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     fn get_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address;
+
+    /// Unblinds a list of transaction outputs (UTXOs) using the blinding keys.
+    ///
+    /// # Errors
+    /// Returns a `KeyOriginError` if the blinding keys cannot be resolved or if unblinding fails.
+    fn unblind(
+        &self,
+        secp: &Secp256k1<All>,
+        network: &SimplicityNetwork,
+        utxos: Vec<UTXO>,
+    ) -> Result<Vec<UTXO>, KeyOriginError>;
 }
 
 /// A Hierarchical Deterministic (HD) key provider based on BIP39 and SLIP77.
@@ -78,11 +90,11 @@ impl HDKey {
     /// Constructs a new `HDKey` from a BIP39 mnemonic phrase.
     ///
     /// # Errors
-    /// Returns a `SignerError::Mnemonic` if the provided phrase is invalid.
-    pub fn new(mnemonic: &str) -> Result<Self, SignerError> {
+    /// Returns a `KeyOriginError::Mnemonic` if the provided phrase is invalid.
+    pub fn new(mnemonic: &str) -> Result<Self, KeyOriginError> {
         let mnemonic: Mnemonic = mnemonic
             .parse()
-            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))?;
+            .map_err(|e: bip39::Error| KeyOriginError::Mnemonic(e.to_string()))?;
         let seed = mnemonic.to_seed("");
         let xprv = Xpriv::new_master(NetworkKind::Test, &seed)?;
 
@@ -94,36 +106,44 @@ impl HDKey {
         })
     }
 
-    fn derive_xpriv(&self, path: &DerivationPath, secp: &Secp256k1<All>) -> Result<Xpriv, SignerError> {
+    fn derive_xpriv(&self, path: &DerivationPath, secp: &Secp256k1<All>) -> Result<Xpriv, KeyOriginError> {
         Ok(self.xprv.derive_priv(secp, path)?)
     }
 
-    fn master_xpriv(&self, secp: &Secp256k1<All>) -> Result<Xpriv, SignerError> {
+    fn master_xpriv(&self, secp: &Secp256k1<All>) -> Result<Xpriv, KeyOriginError> {
         self.derive_xpriv(&DerivationPath::master(), secp)
     }
 
-    fn derive_xpub(&self, path: &DerivationPath, secp: &Secp256k1<All>) -> Result<Xpub, SignerError> {
+    fn derive_xpub(&self, path: &DerivationPath, secp: &Secp256k1<All>) -> Result<Xpub, KeyOriginError> {
         let derived = self.derive_xpriv(path, secp)?;
 
         Ok(Xpub::from_priv(secp, &derived))
     }
 
-    fn master_xpub(&self, secp: &Secp256k1<All>) -> Result<Xpub, SignerError> {
+    fn master_xpub(&self, secp: &Secp256k1<All>) -> Result<Xpub, KeyOriginError> {
         self.derive_xpub(&DerivationPath::master(), secp)
     }
 
-    fn fingerprint(&self, secp: &Secp256k1<All>) -> Result<Fingerprint, SignerError> {
+    fn fingerprint(&self, secp: &Secp256k1<All>) -> Result<Fingerprint, KeyOriginError> {
         Ok(self.master_xpub(secp)?.fingerprint())
     }
 
-    fn get_slip77_descriptor(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Result<String, SignerError> {
+    fn get_slip77_descriptor(
+        &self,
+        secp: &Secp256k1<All>,
+        network: &SimplicityNetwork,
+    ) -> Result<String, KeyOriginError> {
         let wpkh_descriptor = self.get_wpkh_descriptor(secp, network)?;
         let blinding_key = self.master_blinding;
 
         Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
     }
 
-    fn get_wpkh_descriptor(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Result<String, SignerError> {
+    fn get_wpkh_descriptor(
+        &self,
+        secp: &Secp256k1<All>,
+        network: &SimplicityNetwork,
+    ) -> Result<String, KeyOriginError> {
         let fingerprint = self.fingerprint(secp)?;
         let path = self.get_derivation_path(network)?;
         let xpub = self.derive_xpub(&path, secp)?;
@@ -132,11 +152,11 @@ impl HDKey {
     }
 
     #[allow(clippy::unused_self)]
-    fn get_derivation_path(&self, network: &SimplicityNetwork) -> Result<DerivationPath, SignerError> {
+    fn get_derivation_path(&self, network: &SimplicityNetwork) -> Result<DerivationPath, KeyOriginError> {
         let coin_type = if network.is_mainnet() { 1776 } else { 1 };
         let path = format!("84h/{coin_type}h/0h");
 
-        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
+        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| KeyOriginError::DerivationPath(e.to_string()))
     }
 }
 
@@ -152,8 +172,8 @@ impl KeyOrigin for HDKey {
         self.get_private_key(secp, network).public_key(secp)
     }
 
-    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PublicKey {
-        self.get_blinding_private_key(secp, network).public_key(secp)
+    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PublicKey> {
+        Some(self.get_blinding_private_key(secp, network).unwrap().public_key(secp))
     }
 
     fn get_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
@@ -162,7 +182,7 @@ impl KeyOrigin for HDKey {
 
         let derived = full_path.extend(
             DerivationPath::from_str("0/1")
-                .map_err(|e| SignerError::DerivationPath(e.to_string()))
+                .map_err(|e| KeyOriginError::DerivationPath(e.to_string()))
                 .unwrap(),
         );
 
@@ -171,34 +191,36 @@ impl KeyOrigin for HDKey {
         PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
     }
 
-    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
+    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PrivateKey> {
         let blinding_key = self
             .master_blinding
             .blinding_private_key(&self.get_address(secp, network).script_pubkey());
 
-        PrivateKey::new(blinding_key, NetworkKind::Test)
+        Some(PrivateKey::new(blinding_key, NetworkKind::Test))
     }
 
-    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
+    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<Address> {
         let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(
             &self.get_slip77_descriptor(secp, network).unwrap(),
         )
-        .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
+        .map_err(|e| KeyOriginError::Slip77Descriptor(e.to_string()))
         .unwrap();
 
         // confidential descriptor doesn't support multipath
         descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
 
-        descriptor
-            .at_derivation_index(1)
-            .unwrap()
-            .address(secp, network.address_params())
-            .unwrap()
+        Some(
+            descriptor
+                .at_derivation_index(1)
+                .unwrap()
+                .address(secp, network.address_params())
+                .unwrap(),
+        )
     }
 
     fn get_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
         let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor(secp, network).unwrap())
-            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
+            .map_err(|e| KeyOriginError::WpkhDescriptor(e.to_string()))
             .unwrap();
 
         descriptor.into_single_descriptors().unwrap()[0]
@@ -206,6 +228,26 @@ impl KeyOrigin for HDKey {
             .unwrap()
             .address(network.address_params())
             .unwrap()
+    }
+
+    fn unblind(
+        &self,
+        secp: &Secp256k1<All>,
+        network: &SimplicityNetwork,
+        utxos: Vec<UTXO>,
+    ) -> Result<Vec<UTXO>, KeyOriginError> {
+        let blinding_key = self.get_blinding_private_key(secp, network).unwrap();
+        let mut unblinded: Vec<UTXO> = Vec::with_capacity(utxos.len());
+
+        for mut utxo in utxos {
+            let secrets = utxo.txout.unblind(secp, blinding_key.inner)?;
+
+            utxo.secrets = Some(secrets);
+
+            unblinded.push(utxo);
+        }
+
+        Ok(unblinded)
     }
 }
 
@@ -244,35 +286,59 @@ impl KeyOrigin for SingleKey {
         self.get_private_key(secp, network).public_key(secp)
     }
 
-    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PublicKey {
-        self.get_blinding_private_key(secp, network).public_key(secp)
+    fn get_blinding_public_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PublicKey> {
+        self.get_blinding_private_key(secp, network).map(|x| x.public_key(secp))
     }
 
     fn get_private_key(&self, _secp: &Secp256k1<All>, _network: &SimplicityNetwork) -> PrivateKey {
         PrivateKey::new(self.secret_key, NetworkKind::Test)
     }
 
-    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> PrivateKey {
-        let master_blinding = self
-            .blinding_key
-            .expect("Blinding key is required for confidential operations");
+    fn get_blinding_private_key(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<PrivateKey> {
+        let master_blinding = self.blinding_key?;
 
         let script_pubkey = self.get_address(secp, network).script_pubkey();
         let blinding_key = master_blinding.blinding_private_key(&script_pubkey);
 
-        PrivateKey::new(blinding_key, NetworkKind::Test)
+        Some(PrivateKey::new(blinding_key, NetworkKind::Test))
     }
 
-    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
+    fn get_confidential_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Option<Address> {
+        let blinding_pubkey = self.get_blinding_public_key(secp, network)?;
         let ecdsa_pubkey = self.get_ecdsa_public_key(secp, network);
-        let blinding_pubkey = self.get_blinding_public_key(secp, network);
 
-        Address::p2wpkh(&ecdsa_pubkey, Some(blinding_pubkey.inner), network.address_params())
+        Some(Address::p2wpkh(
+            &ecdsa_pubkey,
+            Some(blinding_pubkey.inner),
+            network.address_params(),
+        ))
     }
 
     fn get_address(&self, secp: &Secp256k1<All>, network: &SimplicityNetwork) -> Address {
         let ecdsa_pubkey = self.get_ecdsa_public_key(secp, network);
 
         Address::p2wpkh(&ecdsa_pubkey, None, network.address_params())
+    }
+
+    fn unblind(
+        &self,
+        secp: &Secp256k1<All>,
+        network: &SimplicityNetwork,
+        utxos: Vec<UTXO>,
+    ) -> Result<Vec<UTXO>, KeyOriginError> {
+        let blinding_key = self
+            .get_blinding_private_key(secp, network)
+            .ok_or(KeyOriginError::RequiredUnblindingKey)?;
+        let mut unblinded: Vec<UTXO> = Vec::with_capacity(utxos.len());
+
+        for mut utxo in utxos {
+            let secrets = utxo.txout.unblind(secp, blinding_key.inner)?;
+
+            utxo.secrets = Some(secrets);
+
+            unblinded.push(utxo);
+        }
+
+        Ok(unblinded)
     }
 }

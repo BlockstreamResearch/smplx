@@ -15,7 +15,7 @@ fn make_confidential_to_bob<'a, K1: KeyOrigin, K2: KeyOrigin>(
 
     ft.add_output(
         PartialOutput::new(bob.get_address().script_pubkey(), 1000, asset)
-            .with_blinding_key(bob.get_blinding_public_key()),
+            .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     let tx_receipt = alice.broadcast(&ft)?;
@@ -49,7 +49,7 @@ fn issue_explicit_to_alice_with_reissuance<'a, K1: KeyOrigin, K2: KeyOrigin>(
             100,
             issuance_details.inflation_asset_id,
         )
-        .with_blinding_key(bob.get_blinding_public_key()),
+        .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     let tx_receipt = bob.broadcast(&ft)?;
@@ -73,7 +73,7 @@ fn reissue_tokens_to_bob<'a, K: KeyOrigin>(
             reissuance_token_utxo.unblinded_amount(),
             reissuance_token_utxo.unblinded_asset(),
         )
-        .with_blinding_key(bob.get_blinding_public_key()),
+        .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     ft.add_issuance_input(
