@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Extended `simplex install` to accept dependency arguments (`simplex install <source>` or `simplex install <alias>=<source>`).
+
 ## [0.0.8]
 
 - Fixed many issues in the sdk crate regarding the Liquid mainnet network:
