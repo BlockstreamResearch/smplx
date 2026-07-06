@@ -91,8 +91,9 @@ impl HDKey {
     ///
     /// # Errors
     /// Returns a `KeyOriginError::Mnemonic` if the provided phrase is invalid.
-    pub fn new(mnemonic: &str) -> Result<Self, KeyOriginError> {
+    pub fn new(mnemonic: impl AsRef<str>) -> Result<Self, KeyOriginError> {
         let mnemonic: Mnemonic = mnemonic
+            .as_ref()
             .parse()
             .map_err(|e: bip39::Error| KeyOriginError::Mnemonic(e.to_string()))?;
         let seed = mnemonic.to_seed("");
@@ -324,11 +325,13 @@ impl KeyOrigin for SingleKey {
         &self,
         secp: &Secp256k1<All>,
         network: &SimplicityNetwork,
-        utxos: Vec<UTXO>,
+        mut utxos: Vec<UTXO>,
     ) -> Result<Vec<UTXO>, KeyOriginError> {
-        let blinding_key = self
-            .get_blinding_private_key(secp, network)
-            .ok_or(KeyOriginError::RequiredUnblindingKey)?;
+        let Some(blinding_key) = self.get_blinding_private_key(secp, network) else {
+            utxos.clear();
+            return Ok(utxos);
+        };
+
         let mut unblinded: Vec<UTXO> = Vec::with_capacity(utxos.len());
 
         for mut utxo in utxos {
