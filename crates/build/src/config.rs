@@ -5,10 +5,15 @@ use serde::Deserialize;
 use super::error::BuildError;
 use super::error::DependencyValidationError;
 
+// Default values for optional [build] fields.
 pub const DEFAULT_OUT_DIR_NAME: &str = "src/artifacts";
 pub const DEFAULT_INCLUDE_PATH: &str = "**/*.simf";
 pub const DEFAULT_SRC_DIR_NAME: &str = "simf";
 pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
+
+// TOML section names.
+pub const BUILD_SECTION: &str = "build";
+pub const DEPENDENCIES_SECTION: &str = "dependencies";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -43,7 +48,7 @@ impl BuildConfig {
     pub fn from_source(content: &str) -> Result<Self, BuildError> {
         let table: toml::Table = toml::from_str(content)?;
 
-        match table.get("build") {
+        match table.get(BUILD_SECTION) {
             Some(section) => Ok(section.clone().try_into()?),
             None => Ok(Self::default()),
         }
@@ -68,7 +73,7 @@ impl DependencyConfig {
     /// (empty) config. Each dependency is validated to declare exactly one source.
     pub fn from_source(content: &str) -> Result<Self, BuildError> {
         let table: toml::Table = toml::from_str(content)?;
-        let res: Self = match table.get("dependencies") {
+        let res: Self = match table.get(DEPENDENCIES_SECTION) {
             Some(section) => section.clone().try_into()?,
             None => Self::default(),
         };

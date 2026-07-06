@@ -67,8 +67,9 @@ impl Cli {
 
                 Ok(Regtest::run(&loaded_config.regtest)?)
             }
-            Command::Install => {
+            Command::Install { deps } => {
                 let config_path = Config::get_default_path()?;
+                Config::add_dependency_to(&config_path, deps)?;
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Install::run(&loaded_config.dependencies)?)
