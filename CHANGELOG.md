@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Extended `simplex install` to accept dependency arguments (`simplex install <source>` or `simplex install <alias>=<source>`).
+- Extended `simplex install` to accept dependency arguments (`simplex install <dep>` or `simplex install <alias>=<dep>`).
 
 ## [0.0.8]
 
