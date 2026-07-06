@@ -1,15 +1,19 @@
 use simplex::simplicityhl::elements::AssetId;
 
-use simplex::signer::Signer;
+use simplex::signer::{KeyOrigin, Signer};
 use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature};
 
-fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<()> {
+fn make_confidential_to_bob<K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &Signer<K1>,
+    bob: &Signer<K2>,
+    asset: AssetId,
+) -> anyhow::Result<()> {
     let mut ft = FinalTransaction::new();
 
     ft.add_output(
         PartialOutput::new(bob.get_address().script_pubkey(), 1000, asset)
-            .with_blinding_key(bob.get_blinding_public_key()),
+            .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     let tx_receipt = alice.broadcast(&ft)?;
@@ -18,7 +22,10 @@ fn make_confidential_to_bob(alice: &Signer, bob: &Signer, asset: AssetId) -> any
     Ok(())
 }
 
-fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<()> {
+fn issue_confidential_to_alice<K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &Signer<K1>,
+    bob: &Signer<K2>,
+) -> anyhow::Result<()> {
     let utxos = bob.get_utxos()?;
 
     let mut ft = FinalTransaction::new();
@@ -31,7 +38,7 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
 
     ft.add_output(
         PartialOutput::new(alice.get_address().script_pubkey(), 1000, issuance_details.asset_id)
-            .with_blinding_key(alice.get_blinding_public_key()),
+            .with_blinding_key(alice.get_blinding_public_key()?),
     );
     ft.add_output(
         PartialOutput::new(
@@ -39,7 +46,7 @@ fn issue_confidential_to_alice(alice: &Signer, bob: &Signer) -> anyhow::Result<(
             100,
             issuance_details.inflation_asset_id,
         )
-        .with_blinding_key(alice.get_blinding_public_key()),
+        .with_blinding_key(alice.get_blinding_public_key()?),
     );
 
     let tx_receipt = bob.broadcast(&ft)?;

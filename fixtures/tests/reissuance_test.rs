@@ -1,17 +1,21 @@
 use simplex::simplicityhl::elements::AssetId;
 
-use simplex::signer::Signer;
+use simplex::signer::{KeyOrigin, Signer};
 use simplex::transaction::partial_input::IssuanceInput;
 use simplex::transaction::{
     FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, RequiredSignature, TxReceipt,
 };
 
-fn make_confidential_to_bob<'a>(alice: &'a Signer, bob: &Signer, asset: AssetId) -> anyhow::Result<TxReceipt<'a>> {
+fn make_confidential_to_bob<'a, K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &'a Signer<K1>,
+    bob: &Signer<K2>,
+    asset: AssetId,
+) -> anyhow::Result<TxReceipt<'a>> {
     let mut ft = FinalTransaction::new();
 
     ft.add_output(
         PartialOutput::new(bob.get_address().script_pubkey(), 1000, asset)
-            .with_blinding_key(bob.get_blinding_public_key()),
+            .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     let tx_receipt = alice.broadcast(&ft)?;
@@ -20,9 +24,9 @@ fn make_confidential_to_bob<'a>(alice: &'a Signer, bob: &Signer, asset: AssetId)
     Ok(tx_receipt)
 }
 
-fn issue_explicit_to_alice_with_reissuance<'a>(
-    alice: &Signer,
-    bob: &'a Signer,
+fn issue_explicit_to_alice_with_reissuance<'a, K1: KeyOrigin, K2: KeyOrigin>(
+    alice: &Signer<K1>,
+    bob: &'a Signer<K2>,
 ) -> anyhow::Result<(TxReceipt<'a>, IssuanceDetails)> {
     let utxos = bob.get_utxos()?;
 
@@ -45,7 +49,7 @@ fn issue_explicit_to_alice_with_reissuance<'a>(
             100,
             issuance_details.inflation_asset_id,
         )
-        .with_blinding_key(bob.get_blinding_public_key()),
+        .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     let tx_receipt = bob.broadcast(&ft)?;
@@ -54,8 +58,8 @@ fn issue_explicit_to_alice_with_reissuance<'a>(
     Ok((tx_receipt, issuance_details))
 }
 
-fn reissue_tokens_to_bob<'a>(
-    bob: &'a Signer,
+fn reissue_tokens_to_bob<'a, K: KeyOrigin>(
+    bob: &'a Signer<K>,
     issuance_details: &IssuanceDetails,
     reissuance_amount: u64,
 ) -> anyhow::Result<TxReceipt<'a>> {
@@ -69,7 +73,7 @@ fn reissue_tokens_to_bob<'a>(
             reissuance_token_utxo.unblinded_amount(),
             reissuance_token_utxo.unblinded_asset(),
         )
-        .with_blinding_key(bob.get_blinding_public_key()),
+        .with_blinding_key(bob.get_blinding_public_key()?),
     );
 
     ft.add_issuance_input(

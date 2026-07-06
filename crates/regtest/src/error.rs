@@ -2,6 +2,7 @@ use std::io;
 
 use smplx_sdk::provider::RpcError;
 use smplx_sdk::signer::SignerError;
+use smplx_sdk::signer::error::KeyOriginError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RegtestError {
@@ -10,6 +11,9 @@ pub enum RegtestError {
 
     #[error(transparent)]
     Signer(#[from] SignerError),
+
+    #[error(transparent)]
+    KeyOrigin(#[from] KeyOriginError),
 
     #[error("Failed to terminate elements")]
     ElementsTermination(),

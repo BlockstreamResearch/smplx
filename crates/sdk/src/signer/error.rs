@@ -16,17 +16,9 @@ pub enum SignerError {
     #[error(transparent)]
     WtnsInjectError(#[from] WtnsWrappingError),
 
-    /// Error indicating an incorrectly formatted mnemonic phrase.
-    #[error("Failed to parse a mnemonic: {0}")]
-    Mnemonic(String),
-
     /// Error thrown when PSET transaction extraction fails.
     #[error("Failed to extract tx from pst: {0}")]
     TxExtraction(#[from] simplicityhl::elements::pset::Error),
-
-    /// Error indicating failure to unblind a confidential transaction output.
-    #[error("Failed to unblind txout: {0}")]
-    Unblind(#[from] simplicityhl::elements::UnblindError),
 
     /// Error thrown when PSET blinding fails.
     #[error("Failed to blind a PST: {0}")]
@@ -52,22 +44,6 @@ pub enum SignerError {
     #[error("Invalid secret key")]
     InvalidSecretKey(#[from] simplicityhl::elements::secp256k1_zkp::UpstreamError),
 
-    /// Error thrown when HD wallet private key derivation fails.
-    #[error("Failed to derive a private key: {0}")]
-    PrivateKeyDerivation(#[from] elements_miniscript::bitcoin::bip32::Error),
-
-    /// Error thrown when constructing a derivation path string fails.
-    #[error("Failed to construct a derivation path: {0}")]
-    DerivationPath(String),
-
-    /// Error indicating failure to construct a valid WPKH (Witness Public Key Hash) descriptor.
-    #[error("Failed to construct a wpkh descriptor: {0}")]
-    WpkhDescriptor(String),
-
-    /// Error indicating failure to construct a valid SLIP77 blinding key descriptor.
-    #[error("Failed to construct a slip77 descriptor: {0}")]
-    Slip77Descriptor(String),
-
     /// Error thrown if there's a problem during descriptor conversion.
     #[error("Failed to convert a descriptor: {0}")]
     DescriptorConversion(#[from] elements_miniscript::descriptor::ConversionError),
@@ -79,6 +55,10 @@ pub enum SignerError {
     /// Error indicating an expected witness field could not be found.
     #[error("Missing such witness field: {0}")]
     WtnsFieldNotFound(String),
+
+    /// Error forwarded from `KeyOrigin`.
+    #[error(transparent)]
+    KeyOrigin(#[from] KeyOriginError),
 }
 
 /// Errors originating from manipulating witness paths and injecting values.
@@ -103,4 +83,36 @@ pub enum WtnsWrappingError {
     /// Error indicating that a path traversal attempted to reach an undefined or mismatched Either branch.
     #[error("Path reached undefined branch of Either")]
     EitherBranchMismatch,
+}
+
+/// Errors originating from manipulating witness paths and injecting values.
+#[derive(Debug, thiserror::Error)]
+pub enum KeyOriginError {
+    /// Error indicating an incorrectly formatted mnemonic phrase.
+    #[error("Failed to parse a mnemonic: {0}")]
+    Mnemonic(String),
+
+    /// Error thrown when constructing a derivation path string fails.
+    #[error("Failed to construct a derivation path: {0}")]
+    DerivationPath(String),
+
+    /// Error indicating failure to construct a valid SLIP77 blinding key descriptor.
+    #[error("Failed to construct a slip77 descriptor: {0}")]
+    Slip77Descriptor(String),
+
+    /// Error indicating failure to construct a valid WPKH (Witness Public Key Hash) descriptor.
+    #[error("Failed to construct a wpkh descriptor: {0}")]
+    WpkhDescriptor(String),
+
+    /// Error thrown when HD wallet private key derivation fails.
+    #[error("Failed to derive a private key: {0}")]
+    PrivateKeyDerivation(#[from] elements_miniscript::bitcoin::bip32::Error),
+
+    /// Error thrown when there is no pissibility to obtain a .
+    #[error("Required unblinding key, but it's empty")]
+    RequiredUnblindingKey,
+
+    /// Error indicating failure to unblind a confidential transaction output.
+    #[error("Failed to unblind txout: {0}")]
+    Unblind(#[from] simplicityhl::elements::UnblindError),
 }
