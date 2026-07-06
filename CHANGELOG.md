@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.8]
+
+- Fixed many issues in the sdk crate regarding the Liquid mainnet network:
+  - Changed `NetworkKind` to `Main` when `Liquid` is specified.
+  - Changed the default descriptor derivation to `0` from `1`.
+  - The change output populated by `Signer` is now confidential instead of being explicit.
+  - The `xpub.parent_fingerprint` is now zeroed out before descriptor serialization to be compatible with the Blockstream app.
+
 ## [0.0.7]
 
 - Added support for SimplicityHL modules and multifile programs.
