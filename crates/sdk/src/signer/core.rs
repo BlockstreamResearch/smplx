@@ -17,7 +17,7 @@ use bip39::rand::thread_rng;
 
 use elements_miniscript::{
     ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
-    bitcoin::{NetworkKind, PrivateKey, PublicKey, bip32::DerivationPath},
+    bitcoin::{PrivateKey, PublicKey, bip32::DerivationPath},
     elements::{
         EcdsaSighashType,
         bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
@@ -121,6 +121,7 @@ enum Estimate {
     Failure(u64),
 }
 
+// TODO: refactor descriptors to be a standalone object to specify custom derivation paths.
 impl Signer {
     /// Creates a new `Signer` instance seeded from the provided mnemonic and paired with the specified provider.
     ///
@@ -128,15 +129,15 @@ impl Signer {
     /// Panics if the mnemonic fails to parse, or if deriving the master private key fails.
     #[must_use]
     pub fn new(mnemonic: &str, provider: Box<dyn ProviderTrait>) -> Self {
+        let network = *provider.get_network();
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
             .parse()
             .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))
             .unwrap();
-        let seed = mnemonic.to_seed("");
-        let xprv = Xpriv::new_master(NetworkKind::Test, &seed).unwrap();
 
-        let network = *provider.get_network();
+        let seed = mnemonic.to_seed("");
+        let xprv = Xpriv::new_master(network, &seed).unwrap();
 
         Self {
             mnemonic,
@@ -278,7 +279,7 @@ impl Signer {
         descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
 
         descriptor
-            .at_derivation_index(1)
+            .at_derivation_index(0)
             .unwrap()
             .address(&self.secp, self.network.address_params())
             .unwrap()
@@ -295,7 +296,7 @@ impl Signer {
             .unwrap();
 
         descriptor.into_single_descriptors().unwrap()[0]
-            .at_derivation_index(1)
+            .at_derivation_index(0)
             .unwrap()
             .address(self.network.address_params())
             .unwrap()
@@ -390,19 +391,19 @@ impl Signer {
         let full_path = self.get_derivation_path().unwrap();
 
         let derived = full_path.extend(
-            DerivationPath::from_str("0/1")
+            DerivationPath::from_str("0/0")
                 .map_err(|e| SignerError::DerivationPath(e.to_string()))
                 .unwrap(),
         );
 
         let ext_derived = master_xprv.derive_priv(&self.secp, &derived).unwrap();
 
-        PrivateKey::new(ext_derived.private_key, NetworkKind::Test)
+        PrivateKey::new(ext_derived.private_key, self.network)
     }
 
     /// Generates the private key linked to confidential payload blinding.
     ///
-    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin-mainnet) network kind.
+    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin/Liquid-mainnet) network kind.
     /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
     ///
     /// # Panics
@@ -414,7 +415,7 @@ impl Signer {
             .unwrap()
             .blinding_private_key(&self.get_address().script_pubkey());
 
-        PrivateKey::new(blinding_key, NetworkKind::Test)
+        PrivateKey::new(blinding_key, self.network)
     }
 
     fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
@@ -440,12 +441,14 @@ impl Signer {
     ) -> Result<Estimate, SignerError> {
         // estimate the tx fee with the change
         // use this wpkh address as a change script
-        // TODO: this should be confidential
-        fee_tx.add_output(PartialOutput::new(
-            self.get_address().script_pubkey(),
-            PLACEHOLDER_FEE,
-            self.network.policy_asset(),
-        ));
+        fee_tx.add_output(
+            PartialOutput::new(
+                self.get_address().script_pubkey(),
+                PLACEHOLDER_FEE,
+                self.network.policy_asset(),
+            )
+            .with_blinding_key(self.get_blinding_public_key()),
+        );
 
         fee_tx.add_output(PartialOutput::new(
             Script::new(),
@@ -469,6 +472,10 @@ impl Signer {
         }
 
         // not enough funds, so we need to estimate without the change
+        // TODO: if a UTXO being spent is confidential + there are no
+        // confidential outputs + there is no change, this will fail
+        // with `RPC error -26: bad-txns-in-ne-out, value in != value out`.
+        // Fix this by adding a dummy change or throwing a clear error.
         fee_tx.remove_output(fee_tx.n_outputs() - 2);
 
         let final_tx = self.sign_tx(&fee_tx)?;
@@ -624,7 +631,10 @@ impl Signer {
     fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
         let fingerprint = self.fingerprint()?;
         let path = self.get_derivation_path()?;
-        let xpub = self.derive_xpub(&path)?;
+        let mut xpub = self.derive_xpub(&path)?;
+
+        // TODO: Blockstream app does this. Is this a bug?
+        xpub.parent_fingerprint = Fingerprint::default();
 
         Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
     }
@@ -646,7 +656,7 @@ mod tests {
 
     fn create_signer() -> Signer {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
-        let network = SimplicityNetwork::LiquidTestnet;
+        let network = SimplicityNetwork::Liquid;
 
         Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
     }
