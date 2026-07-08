@@ -10,6 +10,7 @@ merkle = { path = "deps/merkle" }
 base_math = { path = "deps/math" }
 
 test_crate = { git = "https://github.com/LesterEvSe/test-simplex-crate" }
+temp = { git = "https://github.com/BlockstreamResearch/simplicity-contracts" }
 
 # [regtest]
 # mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"

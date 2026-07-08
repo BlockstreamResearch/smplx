@@ -21,3 +21,4 @@ pathdiff = { version = "0.2.3" }
 prettyplease = { version = "0.2.37" }
 glob = { version = "0.3.3"}
 globwalk = { version = "0.9.1"}
+toml_edit = "0.25.12"

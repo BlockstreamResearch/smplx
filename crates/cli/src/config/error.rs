@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use smplx_build::error::DependencyValidationError;
+use smplx_build::error::{DependencyValidationError, TomlEditError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
@@ -9,6 +9,9 @@ pub enum ConfigError {
 
     #[error("TOML parse error: {0}")]
     TomlParse(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    TomlEdit(#[from] TomlEditError),
 
     #[error(transparent)]
     Dependency(#[from] DependencyValidationError),
@@ -30,19 +33,4 @@ pub enum ConfigError {
 
     #[error("Path doesn't exist: '{0}'")]
     PathNotExists(PathBuf),
-
-    #[error("failed to parse `{path}` for editing: {source}")]
-    UnableToEdit {
-        path: PathBuf,
-        source: toml_edit::TomlError,
-    },
-
-    #[error("`[dependencies]` in `Simplex.toml` is not a table")]
-    MalformedDependenciesTable,
-
-    #[error("malformed dependency spec `{0}` (expected `<source>` or `<alias>=<source>`)")]
-    MalformedDep(String),
-
-    #[error("dependency `{0}` already exists")]
-    DuplicateAlias(String),
 }

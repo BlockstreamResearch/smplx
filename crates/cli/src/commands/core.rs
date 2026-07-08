@@ -20,9 +20,9 @@ pub enum Command {
         flags: TestFlags,
     },
     /// Install a `SimplicityHL` dependency (requires the dep to be a simplex project)
+    /// If `deps` is empty, install everything from `Simplex.toml`.
     Install {
         /// Dependencies to install, as `<source>` or `<alias>=<source>`.
-        /// With no arguments, installs everything from `Simplex.toml`.
         #[arg(value_name = "DEP")]
         deps: Vec<String>,
     },

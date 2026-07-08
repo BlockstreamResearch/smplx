@@ -1,6 +1,13 @@
 use std::collections::HashMap;
+use std::path::Path;
+
+use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
 use serde::Deserialize;
+
+use crate::dep_spec::DepSpec;
+use crate::dep_spec::Source;
+use crate::error::TomlEditError;
 
 use super::error::BuildError;
 use super::error::DependencyValidationError;
@@ -81,6 +88,70 @@ impl DependencyConfig {
         res.validate()?;
 
         Ok(res)
+    }
+
+    /// Appends new entries to the `[dependencies]` table of the config file at `path`,
+    /// preserving existing formatting and comments.
+    ///
+    /// # Errors
+    /// - `TomlEditError::MalformedDep`: If an entry in `deps` cannot be parsed as
+    ///   `<source>` or `<alias>=<source>`.
+    /// - `TomlEditError::UnableToEdit`: If the file at `path` cannot be parsed as TOML
+    ///   for editing.
+    /// - `TomlEditError::MalformedDependenciesTable`: If `[dependencies]` exists but
+    ///   is not a TOML table.
+    /// - `TomlEditError::DuplicateAlias`: If an alias appears twice in `deps`, or
+    ///   already exists in `[dependencies]`.
+    /// - Any other I/O errors that may occur when reading or writing the file.
+    pub fn add_dependency_to(path: &Path, deps: &[String]) -> Result<(), TomlEditError> {
+        if deps.is_empty() {
+            return Ok(());
+        }
+
+        let specs: Vec<DepSpec> = deps
+            .iter()
+            .map(|raw| DepSpec::parse_dep(raw))
+            .collect::<Result<_, _>>()?;
+
+        let raw = std::fs::read_to_string(path)?;
+        let mut doc: DocumentMut = raw.parse().map_err(|source| TomlEditError::UnableToEdit {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+        let deps_table = doc
+            .entry(DEPENDENCIES_SECTION)
+            .or_insert(Item::Table(toml_edit::Table::new()))
+            .as_table_mut()
+            .ok_or(TomlEditError::MalformedDependenciesTable)?;
+
+        // Batches are small (typically <=10), so a linear scan over a Vec is cheaper
+        // than the constant overhead of a HashSet.
+        let mut seen_in_batch: Vec<&str> = Vec::with_capacity(specs.len());
+        for spec in &specs {
+            if seen_in_batch.contains(&spec.alias.as_str()) || deps_table.contains_key(&spec.alias) {
+                return Err(TomlEditError::DuplicateAlias(spec.alias.clone()));
+            }
+            seen_in_batch.push(spec.alias.as_str());
+        }
+
+        for spec in &specs {
+            let mut inline = InlineTable::new();
+            match &spec.source {
+                Source::Git(url) => {
+                    inline.insert("git", Value::from(url.as_str()));
+                }
+                Source::Path(p) => {
+                    inline.insert("path", Value::from(p.as_str()));
+                }
+            }
+            deps_table.insert(&spec.alias, Item::Value(Value::InlineTable(inline)));
+        }
+
+        std::fs::write(path, doc.to_string())?;
+        println!("Added: {}", DepSpec::format_batch(&specs));
+
+        Ok(())
     }
 
     pub fn validate(&self) -> Result<(), DependencyValidationError> {
