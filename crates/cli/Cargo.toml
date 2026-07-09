@@ -23,11 +23,11 @@ smplx-sdk = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+toml_edit = { workspace = true }
 minreq = { workspace = true }
 
 anyhow = "1"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
-toml_edit = "0.25.12"
 ctrlc = { version = "3.5.2", features = ["termination"] }
 serde_json = { version = "1.0.149" }
