@@ -21,6 +21,7 @@ hmac = { version = "0.12.1" }
 sha2 = { version = "0.10.9", features = ["compress"] }
 thiserror = { version = "2.0.18" }
 toml = { version = "0.9.8" }
+toml_edit = { version = "0.25.12" }
 minreq = { version = "3.0.0", features = ["https", "json-using-serde"] }
 
 electrsd = { version = "0.29.0", features = ["legacy"] }

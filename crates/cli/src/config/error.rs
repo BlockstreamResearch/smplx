@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use smplx_build::error::DependencyValidationError;
+use smplx_build::error::{DependencyValidationError, TomlEditError};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
@@ -9,6 +9,9 @@ pub enum ConfigError {
 
     #[error("TOML parse error: {0}")]
     TomlParse(#[from] toml::de::Error),
+
+    #[error(transparent)]
+    TomlEdit(#[from] TomlEditError),
 
     #[error(transparent)]
     Dependency(#[from] DependencyValidationError),
