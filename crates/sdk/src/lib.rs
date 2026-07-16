@@ -4,6 +4,8 @@
 #![cfg_attr(not(doc), doc = "Simplex SDK")]
 #![warn(clippy::all, clippy::pedantic, missing_docs)]
 
+/// Out-of-process SimplicityHL compiler: store, provisioning, and pinned compiles.
+pub mod compiler;
 /// Common constants and identifiers used across the Simplex SDK.
 pub mod constants;
 /// Global state, configuration, and shared context used throughout the SDK.
