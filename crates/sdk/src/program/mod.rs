@@ -1,5 +1,7 @@
 /// Definitions and traits for handling program arguments in Simplicity programs.
 pub mod arguments;
+/// Source-free program artifact — address + spend without the linked frontend.
+pub mod artifact;
 /// Core definitions, features, and abstractions for working with Simplicity programs.
 pub mod core;
 /// Error types and definitions for program compilation, manipulation, and execution failures.
