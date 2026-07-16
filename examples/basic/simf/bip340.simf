@@ -1,3 +1,5 @@
+simc ">=0.9.0";
+
 pub fn verify_sig(pk: Pubkey, sig: Signature) {
     jet::bip_0340_verify((pk, jet::sig_all_hash()), sig);
 }

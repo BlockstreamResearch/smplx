@@ -1,3 +1,5 @@
+simc ">=0.8.0";
+
 use crate::bip340::verify_sig;
 
 fn main() {
