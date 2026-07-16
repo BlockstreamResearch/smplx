@@ -125,7 +125,10 @@ impl ArtifactsResolver {
     /// Checks whether the source declares a `fn main(...)`,
     /// finding it even when nested inside `mod { ... }` blocks.
     fn contains_main(source: &str) -> bool {
-        let Ok(parsed_program) = parse::Program::parse_from_str(source) else {
+        // Strip a leading `simc "<range>";` directive first: the parser predates it
+        // and would otherwise reject `simc` as a reserved keyword.
+        let source = crate::version::without_directive(source);
+        let Ok(parsed_program) = parse::Program::parse_from_str(&source) else {
             return false;
         };
 

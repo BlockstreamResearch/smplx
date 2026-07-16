@@ -5,6 +5,7 @@ pub mod error;
 pub mod generator;
 pub mod macros;
 pub mod resolver;
+pub mod version;
 
 pub use config::{BuildConfig, DependencyConfig};
 pub use generator::ArtifactsGenerator;

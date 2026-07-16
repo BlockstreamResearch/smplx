@@ -137,7 +137,7 @@ impl ArtifactsGenerator {
         let dependency_map = Self::build_dependency_map(validated_deps, parent_dir)?;
 
         TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
-            .map_err(BuildError::Flattening)
+            .map_err(|errors| BuildError::Flattening(errors.to_string()))
     }
 
     /// Arranges a flat list of artifacts into a tree mirroring the source directory layout.

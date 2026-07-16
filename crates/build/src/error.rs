@@ -86,4 +86,7 @@ pub enum BuildError {
 
     #[error(transparent)]
     TomlEdit(#[from] TomlEditError),
+
+    #[error("Invalid compiler-version directive in '{file}': {error}")]
+    InvalidSimcDirective { file: PathBuf, error: String },
 }

@@ -139,6 +139,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bech32"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -579,7 +585,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1163,7 +1169,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1260,6 +1266,12 @@ dependencies = [
  "cc",
  "secp256k1-sys",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"
@@ -1359,9 +1371,8 @@ dependencies = [
 
 [[package]]
 name = "simplicityhl"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "361316795ec753230c421d964ab60940d20d5252c2d39272452528832c9e0ec5"
+version = "1.0.0"
+source = "git+https://github.com/Sdoba16/SimplicityHL?branch=master#1e7ea2ef81044001a77fcd86592ed039d464f69d"
 dependencies = [
  "base64 0.21.7",
  "chumsky",
@@ -1370,6 +1381,7 @@ dependencies = [
  "getrandom 0.2.17",
  "itertools",
  "miniscript",
+ "semver",
  "serde",
  "serde_json",
  "simplicity-lang",
@@ -1391,7 +1403,9 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
+ "semver",
  "serde",
+ "serde_json",
  "simplicityhl",
  "syn",
  "thiserror",
@@ -1446,6 +1460,7 @@ dependencies = [
 name = "smplx-sdk"
 version = "0.0.8"
 dependencies = [
+ "base64 0.22.1",
  "bip39",
  "bitcoin_hashes",
  "bitcoincore-rpc",
@@ -1453,6 +1468,7 @@ dependencies = [
  "elements-miniscript",
  "hex",
  "minreq 3.0.0",
+ "semver",
  "serde",
  "serde_json",
  "sha2",
@@ -1541,7 +1557,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1812,7 +1828,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

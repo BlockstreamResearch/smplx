@@ -13,7 +13,9 @@ thiserror = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 serde = { workspace = true }
-simplicityhl = { workspace = true }
+simplicityhl = { workspace = true, features = ["serde"] }
+semver = { version = "1" }
+serde_json = { version = "1.0" }
 
 syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
 proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
