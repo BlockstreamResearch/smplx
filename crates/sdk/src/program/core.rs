@@ -1,21 +1,25 @@
+use std::collections::HashMap;
 use std::iter;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use dyn_clone::DynClone;
 
-use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
+use simplicityhl::parse::ParseFromStr;
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
-use simplicityhl::{CompiledProgram, UnstableFeatures};
+use simplicityhl::simplicity::{BitMachine, Cmr, RedeemNode, Value, leaf_version};
+use simplicityhl::str::WitnessName;
+use simplicityhl::types::ResolvedType;
 use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
+use crate::compiler;
 use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
 
 use super::arguments::ArgumentsTrait;
+use super::artifact::Artifact;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
@@ -80,12 +84,52 @@ pub trait ProgramTrait: DynClone {
 /// Represents a program structure containing its source, a public key, arguments, and associated storage.
 ///
 /// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
+///
+/// The program's Simplicity — and thus its CMR, address and spend — is produced by
+/// an out-of-process `simc` pinned to a version, not the linked frontend.
+/// Compilation is lazy and cached across clones.
 #[derive(Clone)]
 pub struct Program {
-    source: &'static str,
+    /// `(relative-path, contents)` source files: the entry, everything its imports
+    /// reach, and dependency files under their embedded slots.
+    sources: Arc<[(String, String)]>,
+    /// Relative path of the entry file within [`sources`](Self::sources).
+    entry: String,
+    /// Dependency remappings resolving `use <alias>::…` imports.
+    deps: Arc<[(String, String, String)]>,
     pub_key: XOnlyPublicKey,
     arguments: Box<dyn ArgumentsTrait>,
     storage: Vec<[u8; 32]>,
+    /// `None` resolves lazily from the environment or the nearest `simplex.lock` —
+    /// never from what happens to be installed.
+    compiler_version: Option<String>,
+    /// Version-stable ABI baked in by the build tool. `None` when constructed
+    /// without it; `Some(Err)` when the JSON was malformed, surfaced on first use.
+    abi: Option<Result<Arc<AbiJson>, String>>,
+    /// Lazily compiled artifact, shared across clones so the compiler runs at most once.
+    compiled: Arc<OnceLock<Artifact>>,
+}
+
+/// The build tool's ABI record: `name -> type-string` maps.
+#[derive(Clone, serde::Deserialize)]
+struct AbiJson {
+    #[serde(default)]
+    witness_types: HashMap<String, String>,
+    #[serde(default)]
+    parameter_types: HashMap<String, String>,
+}
+
+impl AbiJson {
+    /// Reconstructs a `name -> ResolvedType` map from `name -> type-string`.
+    fn resolve(map: &HashMap<String, String>) -> Result<HashMap<WitnessName, ResolvedType>, ProgramError> {
+        map.iter()
+            .map(|(name, ty)| {
+                let resolved = ResolvedType::parse_from_str(ty)
+                    .map_err(|e| ProgramError::ProgramGenAbiMeta(format!("type `{ty}`: {e}")))?;
+                Ok((WitnessName::from_str_unchecked(name), resolved))
+            })
+            .collect()
+    }
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -106,7 +150,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.commitment_cmr()?;
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -151,25 +195,41 @@ impl ProgramTrait for Program {
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
-        let satisfied = self
-            .load()?
-            .satisfy(witness.clone())
-            .map_err(ProgramError::WitnessSatisfaction)?;
-
-        // execute() is called multiple times during fee estimation; output is buffered
-        // so only the final successful execution's logs are emitted to stderr.
-        let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), GlobalConfig::get_log_level());
-
+        let artifact = self.artifact()?;
         let env = self.get_env(pst, input_index, network)?;
 
-        let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
+        // When the ABI is baked in, a wrong-typed witness fails here naming its
+        // declared type; a malformed ABI is surfaced, not silently skipped.
+        match &self.abi {
+            Some(Ok(abi)) => {
+                let types = WitnessTypes::from(AbiJson::resolve(&abi.witness_types)?);
+                witness
+                    .is_consistent(&types)
+                    .map_err(|e| ProgramError::WitnessSatisfaction(e.to_string()))?;
+            }
+            Some(Err(_)) => {
+                self.require_abi()?;
+            }
+            None => {}
+        }
+
+        let redeem = artifact.satisfy(witness).map_err(ProgramError::WitnessSatisfaction)?;
+
+        // A debug artifact's symbols drive the tracker. Output is buffered so only
+        // the final execution's logs reach stderr (fee estimation runs this repeatedly).
+        let pruned = match artifact.debug_symbols() {
+            Some(symbols) => {
+                let mut tracker = ProgramLogger::make_tracker(symbols, GlobalConfig::get_log_level());
+                redeem.prune_with_tracker(&env, &mut tracker)?
+            }
+            None => redeem.prune(&env)?,
+        };
 
         if GlobalConfig::is_max_verbose() {
             ProgramLogger::buffer_cost_log(&pruned);
         }
 
         let mut mac = BitMachine::for_program(&pruned)?;
-
         let result = mac.exec(&pruned, &env)?;
 
         Ok((pruned, result))
@@ -197,15 +257,63 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
-    /// Creates a new instance of the struct with the provided source string and arguments.
+    /// Creates a program from a single self-contained source string; for multi-file
+    /// programs use [`Self::from_sources`].
     #[must_use]
     pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
+        Self::from_sources(&[("contract.simf", source)], "contract.simf", arguments)
+    }
+
+    /// Creates a program from `(relative-path, contents)` sources and the relative
+    /// path of the entry file among them.
+    #[must_use]
+    pub fn from_sources(sources: &[(&str, &str)], entry: &str, arguments: Box<dyn ArgumentsTrait>) -> Self {
+        let sources: Vec<(String, String)> = sources
+            .iter()
+            .map(|(path, contents)| ((*path).to_string(), (*contents).to_string()))
+            .collect();
         Self {
-            source,
+            sources: Arc::from(sources),
+            entry: entry.to_string(),
+            deps: Arc::from(Vec::new()),
             pub_key: tr_unspendable_key(),
             arguments,
             storage: Vec::new(),
+            compiler_version: None,
+            abi: None,
+            compiled: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// Attaches the build's dependency remappings: `(context, alias, target)` paths
+    /// relative to the materialized source root (`""` is the root).
+    #[must_use]
+    pub fn with_deps(mut self, deps: &[(&str, &str, &str)]) -> Self {
+        let deps: Vec<(String, String, String)> = deps
+            .iter()
+            .map(|(context, alias, target)| ((*context).to_string(), (*alias).to_string(), (*target).to_string()))
+            .collect();
+        self.deps = Arc::from(deps);
+        self
+    }
+
+    /// Pins the compiler version that produces this program's CMR and spend.
+    #[must_use]
+    pub fn with_compiler_version(mut self, version: impl Into<String>) -> Self {
+        self.compiler_version = Some(version.into());
+        self
+    }
+
+    /// Attaches the ABI emitted by the build tool, backing the type accessors
+    /// without a compiler. Malformed JSON is kept and reported on first use.
+    #[must_use]
+    pub fn with_abi_json(mut self, abi_json: &str) -> Self {
+        self.abi = Some(
+            serde_json::from_str::<AbiJson>(abi_json)
+                .map(Arc::new)
+                .map_err(|e| e.to_string()),
+        );
+        self
     }
 
     /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
@@ -259,9 +367,11 @@ impl Program {
     /// Returns a taproot address for a defined `SimplicityNetwork`.
     ///
     /// # Panics
-    /// Panics if generating the taproot spending information fails.
+    /// Panics if generating the taproot spending information fails, or when deriving
+    /// a mainnet address while debug verbosity is on (instrumentation changes the CMR).
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
+        Self::guard_debug_address(GlobalConfig::get_include_debug_symbols(), network);
         let spend_info = self.taproot_spending_info().unwrap();
 
         Address::p2tr(
@@ -271,6 +381,26 @@ impl Program {
             None,
             network.address_params(),
         )
+    }
+
+    /// Debug instrumentation changes the CMR. On regtest that is self-consistent; on
+    /// mainnet it must never escape — funds would go to an address nobody derives
+    /// without `-v`.
+    fn guard_debug_address(debug: bool, network: &SimplicityNetwork) {
+        if !debug {
+            return;
+        }
+        match network {
+            SimplicityNetwork::Liquid => panic!(
+                "refusing to derive a mainnet address from a debug-instrumented program \
+                 (-v/-vv changes the CMR); disable verbosity for mainnet use"
+            ),
+            SimplicityNetwork::LiquidTestnet => eprintln!(
+                "warning: deriving a testnet address from a debug-instrumented program; \
+                 it differs from the address of a non-verbose build"
+            ),
+            SimplicityNetwork::ElementsRegtest { .. } => {}
+        }
     }
 
     /// Retrieves the `ScriptPubKey` associated with the Simplicity address for the specified network.
@@ -288,40 +418,68 @@ impl Program {
     /// Retrieves program ABI metadata for argument types.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
+    /// Returns a `ProgramError` if the ABI was not baked in at build time or a
+    /// declared type cannot be parsed.
     pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
-        let compiled = self.load()?;
-        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
-
-        Ok(abi_meta.param_types)
+        let abi = self.require_abi()?;
+        Ok(Parameters::from(AbiJson::resolve(&abi.parameter_types)?))
     }
 
-    /// Retrieves the witness types from the compiled program's ABI metadata.
+    /// Retrieves the witness types from the program's ABI metadata.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
+    /// Returns a `ProgramError` if the ABI was not baked in at build time or a
+    /// declared type cannot be parsed.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let compiled = self.load()?;
-        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
-
-        Ok(abi_meta.witness_types)
+        let abi = self.require_abi()?;
+        Ok(WitnessTypes::from(AbiJson::resolve(&abi.witness_types)?))
     }
 
-    fn load(&self) -> Result<CompiledProgram, ProgramError> {
-        let compiled = CompiledProgram::new_with_unstable(
-            self.source,
-            &UnstableFeatures::all(),
-            self.arguments.build_arguments(),
-            GlobalConfig::get_include_debug_symbols(),
-            Box::new(ElementsJetHinter),
-        )
-        .map_err(ProgramError::Compilation)?;
+    fn require_abi(&self) -> Result<&AbiJson, ProgramError> {
+        match &self.abi {
+            Some(Ok(abi)) => Ok(abi),
+            Some(Err(parse_error)) => Err(ProgramError::ProgramGenAbiMeta(format!(
+                "ABI metadata is malformed ({parse_error}); regenerate bindings with `simplex build`"
+            ))),
+            None => Err(ProgramError::ProgramGenAbiMeta(
+                "ABI metadata is unavailable; regenerate bindings with `simplex build`".to_string(),
+            )),
+        }
+    }
 
-        Ok(compiled)
+    /// The compiled artifact, produced by the pinned `simc` on first use and cached.
+    fn artifact(&self) -> Result<&Artifact, ProgramError> {
+        if let Some(artifact) = self.compiled.get() {
+            return Ok(artifact);
+        }
+
+        let version = match &self.compiler_version {
+            Some(version) => version.clone(),
+            None => compiler::resolve_version().map_err(|e| ProgramError::Compilation(e.to_string()))?,
+        };
+        let simc = compiler::ensure(&version).map_err(|e| ProgramError::Compilation(e.to_string()))?;
+        let artifact = compiler::compile(
+            &simc,
+            &self.sources,
+            &self.entry,
+            &self.deps,
+            &self.arguments.build_arguments(),
+            // A verbose run derives and spends the instrumented program, consistently.
+            GlobalConfig::get_include_debug_symbols(),
+        )
+        .map_err(|e| ProgramError::Compilation(e.to_string()))?;
+
+        // If another thread won the race, keep its value; the result is deterministic.
+        let _ = self.compiled.set(artifact);
+        Ok(self.compiled.get().expect("artifact was just set"))
+    }
+
+    fn commitment_cmr(&self) -> Result<Cmr, ProgramError> {
+        Ok(self.artifact()?.cmr())
     }
 
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.commitment_cmr()?;
         let script = Script::from(cmr.as_ref().to_vec());
 
         Ok((script, leaf_version()))
@@ -404,6 +562,15 @@ mod tests {
         }
     }
 
+    /// The compiler version matching the linked frontend, if that exact `simc` is in
+    /// the store. Tests that need to actually compile skip when it is absent, so the
+    /// default `cargo test` stays hermetic; provision with `simplex build`/`toolchain`.
+    fn provisioned_matching_version() -> Option<String> {
+        let version = simplicityhl::version::SimcDirective::current_version().to_string();
+        let simc = crate::compiler::simc_path(&version).ok()?;
+        simc.is_file().then_some(version)
+    }
+
     fn dummy_asset_id(byte: u8) -> AssetId {
         AssetId::from_slice(&[byte; 32]).unwrap()
     }
@@ -437,7 +604,11 @@ mod tests {
 
     #[test]
     fn test_get_env_idx() {
-        let program = dummy_program();
+        let Some(version) = provisioned_matching_version() else {
+            eprintln!("skipping: no provisioned simc for the linked compiler version");
+            return;
+        };
+        let program = dummy_program().with_compiler_version(version);
         let network = dummy_network();
 
         let correct_script = program.get_script_pubkey(&network);
@@ -481,5 +652,73 @@ mod tests {
         for (n, expected) in cases {
             assert_eq!(Program::taproot_leaf_depths(n), expected, "n={n}");
         }
+    }
+
+    /// A witness value `A = v`, built the way generated `*Witness` structs do.
+    fn witness_a(value: u16) -> WitnessValues {
+        use simplicityhl::value::UIntValue;
+
+        let mut map = std::collections::HashMap::new();
+        map.insert(
+            WitnessName::from_str_unchecked("A"),
+            simplicityhl::Value::from(UIntValue::U16(value)),
+        );
+        WitnessValues::from(map)
+    }
+
+    #[test]
+    fn out_of_process_program_matches_linked_cmr() {
+        use simplicityhl::ast::ElementsJetHinter;
+        use simplicityhl::{CompiledProgram, UnstableFeatures};
+
+        const SRC: &str = "fn main() { let a: u16 = witness::A; assert!(jet::eq_16(a, 7)); }";
+
+        let Some(version) = provisioned_matching_version() else {
+            eprintln!("skipping: no provisioned simc for the linked compiler version");
+            return;
+        };
+
+        let network = dummy_network();
+
+        // Ground truth CMR from the linked frontend.
+        let linked = CompiledProgram::new_with_unstable(
+            SRC,
+            &UnstableFeatures::all(),
+            Arguments::default(),
+            false,
+            Box::new(ElementsJetHinter),
+        )
+        .unwrap();
+        let expected_cmr = linked.commit().cmr();
+
+        // Out-of-process program: CMR comes from the pinned simc.
+        let program = Program::new(SRC, Box::new(EmptyArguments)).with_compiler_version(version);
+        assert_eq!(
+            program.commitment_cmr().unwrap(),
+            expected_cmr,
+            "out-of-process CMR must match linked"
+        );
+
+        // And the full spend finalizes through the artifact satisfier.
+        let script = program.get_script_pubkey(&network);
+        let pst = make_pst_with_script(script);
+        let finalized = program.finalize(&pst, &witness_a(7), 0, &network).unwrap();
+        assert_eq!(
+            finalized.len(),
+            4,
+            "finalize returns witness, program, cmr, control block"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "refusing to derive a mainnet address")]
+    fn debug_address_refused_on_mainnet() {
+        Program::guard_debug_address(true, &SimplicityNetwork::Liquid);
+    }
+
+    #[test]
+    fn debug_address_allowed_off_mainnet_or_without_debug() {
+        Program::guard_debug_address(false, &SimplicityNetwork::Liquid);
+        Program::guard_debug_address(true, &SimplicityNetwork::default_regtest());
     }
 }

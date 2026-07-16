@@ -25,6 +25,9 @@ struct CostInfo {
 ///
 /// Buffers are flushed to stderr only on successful transaction finalization,
 /// discarding output from intermediate estimation passes.
+///
+/// Tracing resolves the artifact's CMR-keyed debug symbols (`simc --debug`);
+/// an uninstrumented program has none, so only cost metrics are buffered.
 pub struct ProgramLogger {
     /// Cost metrics from the most recent program execution.
     cost_info: Option<CostInfo>,
@@ -116,7 +119,7 @@ impl ProgramLogger {
         });
     }
 
-    /// Flushes all buffered cost and trace output to stderr, then clears buffers.
+    /// Flushes buffered output to stderr, then clears the buffers.
     ///
     /// Cost metrics are printed first, followed by execution trace lines in
     /// insertion order.
@@ -158,5 +161,11 @@ impl ProgramLogger {
             logger.borrow_mut().cost_info = None;
             logger.borrow_mut().trace_buffer.clear();
         });
+    }
+
+    /// Takes the buffered trace lines, clearing the buffer (test inspection).
+    #[cfg(test)]
+    pub(super) fn take_trace_buffer() -> Vec<String> {
+        PROGRAM_LOGGER.with(|logger| std::mem::take(&mut logger.borrow_mut().trace_buffer))
     }
 }

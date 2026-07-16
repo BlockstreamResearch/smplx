@@ -1,34 +1,28 @@
-//! Out-of-process SimplicityHL compiler.
-//!
-//! A contract's compiled Simplicity (and thus its CMR, address and spend) must come
-//! from the exact compiler version it was written for, not the linked `simplicityhl`.
-//! This module locates or downloads the pinned `simc` binary in the store under
-//! `~/.simplex/compilers/<version>/bin/simc` and runs it as a subprocess. The linked
-//! frontend is used only for version-stable work (flattening, ABI typing).
+//! Out-of-process SimplicityHL compiler: a contract's compiled Simplicity (and thus
+//! its address) must come from the exact compiler version it was written for, so the
+//! pinned `simc` from the store runs as a subprocess. The linked frontend does only
+//! version-stable work (flattening, ABI typing).
 
+mod backend;
 pub mod lockfile;
 mod provision;
 mod store;
 
+pub use backend::compile;
 pub use provision::{ensure, provision, sha256_hex};
 pub use store::{compilers_dir, host_asset, installed_versions, resolve_version, simc_path};
 
-/// The oldest SimplicityHL compiler Simplex can drive: the first versioned release.
-/// Older compilers predate the versioned `simc` interface and are rejected as too old
-/// at provisioning. From this floor up the interface is additive-only.
+/// The oldest compiler Simplex can drive: the first versioned release. From this
+/// floor up the `simc` interface is additive-only.
 pub const MIN_COMPILER_VERSION: &str = "0.7.0";
 
-/// The GitHub repository Simplex downloads `simc` compiler releases from.
-///
-/// The single release source: change this one line (then rebuild the `simplex` CLI)
-/// to point at a different SimplicityHL release repository. Must be a full
-/// `https://github.com/<owner>/<repo>` URL with no trailing slash.
+/// The single release source `simc` compilers are downloaded from: change this one
+/// line to point at a different repository. Full URL, no trailing slash.
 pub const RELEASE_SOURCE: &str = "https://github.com/Sdoba16/SimplicityHL";
 /// Release tags are `simplicityhl-<version>`, matching the compiler's CI.
 pub const TAG_PREFIX: &str = "simplicityhl-";
 
-/// The `owner/repo` slug of [`RELEASE_SOURCE`], for GitHub API calls. `None` if it
-/// is not a `github.com` URL (no release API to query).
+/// The `owner/repo` slug of [`RELEASE_SOURCE`]; `None` if not a `github.com` URL.
 #[must_use]
 pub fn source_repo() -> Option<String> {
     RELEASE_SOURCE
@@ -43,9 +37,8 @@ pub enum CompilerError {
     #[error("no SimplicityHL compiler version is pinned (no simplex.lock or SIMPLEX_COMPILER_VERSION found)")]
     NoVersion,
 
-    /// The requested version is not a semantic version. Also the path-safety gate:
-    /// the version becomes a store path and a URL segment, and semver's charset
-    /// cannot traverse either.
+    /// Not a semantic version. Also the path-safety gate: the version becomes a
+    /// store path and a URL segment, and semver's charset cannot traverse either.
     #[error("invalid compiler version '{0}': not a semantic version")]
     InvalidVersion(String),
 

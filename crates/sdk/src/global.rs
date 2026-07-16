@@ -34,8 +34,8 @@ impl GlobalConfig {
             })
     }
 
-    /// Returns whether the global configuration includes debug symbols,
-    /// defaulting to `false` if `GLOBAL_CONFIG` is not initialized.
+    /// Whether programs are compiled with debug instrumentation (`simc --debug`);
+    /// defaults to `false`. Instrumentation changes the program's CMR.
     pub fn get_include_debug_symbols() -> bool {
         GLOBAL_CONFIG
             .get()

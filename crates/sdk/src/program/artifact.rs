@@ -1,11 +1,6 @@
-//! Source-free program artifact.
-//!
-//! A [`Program`](super::core::Program) derives its address and satisfies a spend from
-//! an [`Artifact`] rather than the linked SimplicityHL frontend. The artifact holds
-//! the CMR (the address), the consensus-serialized commit DAG, and the witness
-//! layout, produced by the pinned out-of-process `simc`. [`Artifact::from_json`]
-//! parses `simc --json`; [`Artifact::from_compiled`] freezes an in-process
-//! `CompiledProgram` for the differential tests.
+//! Source-free program artifact: what a [`Program`](super::core::Program) derives
+//! its address from and satisfies a spend with, produced by the pinned
+//! out-of-process `simc` rather than the linked frontend.
 
 use std::sync::Arc;
 
@@ -26,16 +21,15 @@ pub struct Artifact {
     cmr: Cmr,
     /// The commit DAG, decoded once and shared by every satisfaction.
     commit: Arc<CommitNode>,
-    /// Witness node names in DAG post order, the order [`Self::satisfy`] assigns
-    /// values in. Frozen from `CompiledProgram::witness_layout`.
+    /// Witness names in DAG post order, the order [`Self::satisfy`] assigns values in.
     witness_names: Vec<WitnessName>,
-    /// CMR-keyed debug symbols, present for a `--debug` compile. Instrumentation is
-    /// part of the program, so the symbols describe exactly this artifact.
+    /// CMR-keyed debug symbols. Instrumentation is part of the program, so the
+    /// symbols describe exactly this artifact.
     debug_symbols: Option<DebugSymbols>,
 }
 
 impl Artifact {
-    /// Freeze a compiled program into a source-free artifact.
+    /// Freezes a compiled program into a source-free artifact.
     #[must_use]
     pub fn from_compiled(compiled: &CompiledProgram) -> Self {
         let commit = compiled.commit();
@@ -47,15 +41,13 @@ impl Artifact {
         }
     }
 
-    /// Build an artifact from the JSON output of `simc --json`.
-    ///
-    /// The CMR is recomputed from the decoded program bytes and cross-checked against
-    /// the `cmr` field, so a corrupt output is rejected here rather than surfacing
-    /// later as a wrong address.
+    /// Builds an artifact from `simc --json` output. The CMR is recomputed from the
+    /// program bytes and cross-checked against the declared one, so a corrupt output
+    /// fails here rather than as a wrong address.
     ///
     /// # Errors
     /// Returns an error if the JSON is malformed, the program bytes fail to decode,
-    /// or the recomputed CMR disagrees with the declared one.
+    /// or the CMRs disagree.
     pub fn from_json(json: &str) -> Result<Self, String> {
         use base64::Engine as _;
         use serde::Deserialize;
@@ -103,8 +95,7 @@ impl Artifact {
         })
     }
 
-    /// The program's CMR. The Taproot leaf script is `Script::from(cmr)`, so the
-    /// address and control block derive from this alone.
+    /// The program's CMR — the address and control block derive from this alone.
     #[must_use]
     pub fn cmr(&self) -> Cmr {
         self.cmr
@@ -116,17 +107,12 @@ impl Artifact {
         self.debug_symbols.as_ref()
     }
 
-    /// Reconstruct the redeem program from the frozen commit DAG and the witness
-    /// values, without the SimplicityHL frontend.
-    ///
-    /// Mirrors `CompiledProgram::satisfy`, but assigns witness values by post-order
-    /// index in the decoded commit DAG instead of by name. Each value is type-checked
-    /// against its witness node, so a wrong-typed value fails here with the witness
-    /// named rather than misbehaving in the bit machine. The result is not pruned.
+    /// Reconstructs the (unpruned) redeem program from the frozen commit DAG,
+    /// assigning witness values by post-order index instead of by name.
     ///
     /// # Errors
-    /// Returns an error if a witness value is missing or has the wrong type, or the
-    /// number of witness nodes disagrees with the frozen layout.
+    /// Returns an error if a witness value is missing or wrong-typed, or the witness
+    /// node count disagrees with the frozen layout.
     pub fn satisfy(&self, witness: &WitnessValues) -> Result<Arc<RedeemNode>, String> {
         // Structural values in layout order, converted exactly as `satisfy` does.
         let values = self
@@ -246,9 +232,6 @@ mod tests {
         WitnessValues::from(map)
     }
 
-    // The artifact path (freeze, decode, satisfy-by-index) reconstructs a redeem
-    // program byte-for-byte identical to `CompiledProgram::satisfy`, and freezes the
-    // same CMR.
     #[test]
     fn artifact_matches_frontend_bit_for_bit() {
         let src = "fn main() {
@@ -282,7 +265,6 @@ mod tests {
         );
     }
 
-    // A missing witness value is reported, not silently mis-satisfied.
     #[test]
     fn artifact_reports_missing_witness() {
         let compiled = compile("fn main() { let a: u16 = witness::A; assert!(jet::eq_16(a, 7)); }");
@@ -291,8 +273,6 @@ mod tests {
         assert!(err.contains("missing witness"), "got: {err}");
     }
 
-    // A wrong-typed witness value is rejected with the witness named, not fed into
-    // the bit machine.
     #[test]
     fn artifact_rejects_wrong_typed_witness() {
         let compiled = compile("fn main() { let a: u16 = witness::A; assert!(jet::eq_16(a, 7)); }");
@@ -318,12 +298,8 @@ mod tests {
         std::env::var_os("HOME").map(std::path::PathBuf::from)
     }
 
-    // The out-of-process build path: `simc --json` produces the artifact, and it
-    // matches the in-process one bit-for-bit (same CMR, same satisfied spend).
-    //
     // Skipped unless a matching `simc` is provisioned (`simplex toolchain install
-    // <version>`, or point `SIMC_BIN` at one), so the default `cargo test` stays
-    // hermetic.
+    // <version>`, or `SIMC_BIN`), so the default `cargo test` stays hermetic.
     #[test]
     fn from_json_via_real_simc_matches_from_compiled() {
         let Some(simc) = provisioned_simc() else {
@@ -357,6 +333,88 @@ mod tests {
             from_json.satisfy(&witness).unwrap().to_vec_with_witness(),
             from_compiled.satisfy(&witness).unwrap().to_vec_with_witness(),
             "spend from the out-of-process artifact must match the in-process one"
+        );
+    }
+
+    // Skipped unless a matching `simc` is provisioned, like the test above.
+    #[test]
+    fn compile_with_dependency_via_real_simc() {
+        let Some(simc) = provisioned_simc() else {
+            eprintln!("skipping: no provisioned simc for this compiler version");
+            return;
+        };
+
+        let sources = [
+            (
+                "main.simf".to_string(),
+                "use math::simple_op::hash;\n\
+                 fn main() { let a: u32 = witness::A; assert!(jet::eq_32(hash(a, 5), 3)); }"
+                    .to_string(),
+            ),
+            (
+                "__deps__/0/simple_op.simf".to_string(),
+                "pub fn hash(x: u32, y: u32) -> u32 { jet::xor_32(x, y) }".to_string(),
+            ),
+        ];
+        let deps = [(String::new(), "math".to_string(), "__deps__/0".to_string())];
+
+        let artifact = crate::compiler::compile(
+            &simc,
+            &sources,
+            "main.simf",
+            &deps,
+            &simplicityhl::Arguments::default(),
+            false,
+        )
+        .expect("dep-using program compiles out of process");
+
+        let witness = witness(&[("A", Value::from(UIntValue::U32(6)))]);
+        artifact.satisfy(&witness).expect("dep-using artifact satisfies");
+    }
+
+    // The `-v`/`-vv` path end to end, without a node. Skipped unless a matching
+    // `simc` is provisioned, like the tests above.
+    #[test]
+    fn debug_compile_carries_symbols_and_traces() {
+        use simplicityhl::tracker::TrackerLogLevel;
+
+        use crate::program::logger::ProgramLogger;
+
+        let Some(simc) = provisioned_simc() else {
+            eprintln!("skipping: no provisioned simc for this compiler version");
+            return;
+        };
+
+        let sources = [(
+            "main.simf".to_string(),
+            "fn main() { let x: u32 = dbg!(witness::A); assert!(jet::is_zero_32(x)); }".to_string(),
+        )];
+        let args = simplicityhl::Arguments::default();
+
+        let plain = crate::compiler::compile(&simc, &sources, "main.simf", &[], &args, false).expect("plain compile");
+        assert!(plain.debug_symbols().is_none(), "plain compile must carry no symbols");
+
+        let debug = crate::compiler::compile(&simc, &sources, "main.simf", &[], &args, true).expect("debug compile");
+        let symbols = debug.debug_symbols().expect("debug compile must carry symbols");
+        assert_ne!(
+            plain.cmr(),
+            debug.cmr(),
+            "debug instrumentation is part of the program, so the CMR must differ"
+        );
+
+        let witness = witness(&[("A", Value::from(UIntValue::U32(0)))]);
+        let redeem = debug.satisfy(&witness).expect("debug artifact satisfies");
+
+        let mut tracker = ProgramLogger::make_tracker(symbols, TrackerLogLevel::Trace);
+        let env = simplicityhl::dummy_env::dummy();
+        let _pruned = redeem
+            .prune_with_tracker(&env, &mut tracker)
+            .expect("prune with tracker");
+
+        let trace = ProgramLogger::take_trace_buffer();
+        assert!(
+            trace.iter().any(|line| line.contains("DBG: witness::A")),
+            "expected the dbg! expression in the trace, got: {trace:?}"
         );
     }
 }
