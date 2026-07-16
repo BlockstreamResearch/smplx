@@ -4,6 +4,7 @@ pub mod dep_spec;
 pub mod error;
 pub mod generator;
 pub mod macros;
+pub mod meta;
 pub mod resolver;
 pub mod version;
 

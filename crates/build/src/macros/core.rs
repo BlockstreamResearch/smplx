@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::path::PathBuf;
 
 use proc_macro2::Span;
 use quote::quote;
@@ -13,10 +14,24 @@ use super::parse::{SimfContent, SynFilePath};
 
 pub fn expand(input: &SynFilePath) -> syn::Result<proc_macro2::TokenStream> {
     let simf_content = SimfContent::new(input)?;
-    let abi_meta = compile_simf(&simf_content).map_err(|e| syn::Error::new(Span::call_site(), e))?;
+    let abi_meta = load_abi(input, &simf_content).map_err(|e| syn::Error::new(Span::call_site(), e))?;
     let generated = expand_inner(simf_content, abi_meta).map_err(|e| syn::Error::new(Span::call_site(), e))?;
 
     Ok(generated)
+}
+
+/// The contract's ABI, read from the sidecar `simplex build` wrote next to the source
+/// (so the frontend never runs in the user's crate) or, when there is no sidecar
+/// (a bare `include_simf!` on a raw `.simf`), extracted with the linked frontend.
+fn load_abi(input: &SynFilePath, simf_content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
+    if let Ok(path) = input.resolve() {
+        let sidecar = PathBuf::from(format!("{}.abi.json", path.display()));
+        if sidecar.is_file() {
+            let json = std::fs::read_to_string(&sidecar)?;
+            return crate::meta::abi_from_json(&json).map_err(Into::into);
+        }
+    }
+    compile_simf(simf_content)
 }
 
 fn expand_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2::TokenStream, Box<dyn Error>> {
@@ -87,10 +102,13 @@ fn construct_argument_helpers(derived_meta: &SimfContractMeta) -> syn::Result<pr
 }
 
 fn compile_simf(content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
-    let program = content.content.as_str();
+    // Strip a `simc` directive first: the linked frontend would version-check it
+    // against its own version, but here it only extracts version-stable typings —
+    // the pinned out-of-process `simc` is what enforces the directive.
+    let program = crate::version::without_directive(content.content.as_str());
 
     Ok(
-        TemplateProgram::new_with_unstable(program, &UnstableFeatures::all(), Box::new(ElementsJetHinter))?
+        TemplateProgram::new_with_unstable(program.as_ref(), &UnstableFeatures::all(), Box::new(ElementsJetHinter))?
             .generate_abi_meta()?,
     )
 }

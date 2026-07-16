@@ -30,6 +30,11 @@ impl Parse for SynFilePath {
 }
 
 impl SynFilePath {
+    /// The validated absolute path of the literal, used to locate the ABI sidecar.
+    pub fn resolve(&self) -> syn::Result<PathBuf> {
+        self.validate_path()
+    }
+
     #[inline]
     fn validate_path(&self) -> syn::Result<PathBuf> {
         let mut path = PathBuf::from_str(&self.path_literal).unwrap();
