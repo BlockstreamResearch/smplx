@@ -2,19 +2,20 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
 use crate::config::Dependency;
+use crate::deps::DepSources;
 use crate::{ArtifactsResolver, BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
 
 /// A temporary context struct to hold global state during recursion.
-/// This eliminates the need to pass `builder`, `visited`, and `config_filename`
+/// This eliminates the need to pass `remappings`, `visited`, and `config_filename`
 /// into every single recursive call.
 pub(crate) struct DepCollector {
-    builder: DependencyMapBuilder,
+    /// `(context, alias, target)` remappings, as real on-disk directories.
+    remappings: Vec<(CanonPath, String, CanonPath)>,
     visited: HashSet<CanonPath>,
     config_filename: String,
     deps_dir: PathBuf,
@@ -23,7 +24,7 @@ pub(crate) struct DepCollector {
 impl DepCollector {
     pub(crate) fn new(config_filename: String, deps_dir: PathBuf) -> Self {
         Self {
-            builder: DependencyMapBuilder::new(),
+            remappings: Vec::new(),
             visited: HashSet::new(),
             config_filename,
             deps_dir,
@@ -35,14 +36,11 @@ impl DepCollector {
         deps_config: &DependencyConfig,
         root: &CanonPath,
         root_simf_dir: &CanonPath,
-    ) -> Result<ValidatedDeps, BuildError> {
+    ) -> Result<DepSources, BuildError> {
         self.visited.insert(root.clone());
         self.rec_collect(deps_config, root_simf_dir, root)?;
 
-        self.builder
-            .clone()
-            .validate_deps()
-            .map_err(|e| BuildError::DependencyMap(e.to_string()))
+        DepSources::from_raw(root_simf_dir, &self.remappings)
     }
 
     /// Recursively registers each dependency's `simf` directory under its parent context,
@@ -84,8 +82,8 @@ impl DepCollector {
             let loaded_simf_dir = CanonPath::canonicalize(&loaded_context.as_path().join(loaded_src_dir))
                 .map_err(BuildError::PathCanonicalization)?;
 
-            self.builder
-                .add_dependency(simf_dir.clone(), dep_name.clone(), loaded_simf_dir.clone());
+            self.remappings
+                .push((simf_dir.clone(), dep_name.clone(), loaded_simf_dir.clone()));
 
             if !self.visited.insert(loaded_context.clone()) {
                 continue;

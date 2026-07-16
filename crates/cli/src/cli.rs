@@ -79,14 +79,13 @@ impl Cli {
                 Ok(Install::run(&loaded_config.dependencies)?)
             }
             Command::Toolchain { action } => match action {
-                // The default action resolves the *project's* directives, so it
-                // needs the project config; the store-management actions work
-                // from anywhere.
+                // Only the default action needs the project config; store
+                // management works from anywhere.
                 None => {
                     let config_path = Config::get_default_path()?;
                     let loaded_config = Config::load(config_path)?;
 
-                    Ok(Toolchain::run(&loaded_config.build)?)
+                    Ok(Toolchain::run(&loaded_config.build, &loaded_config.dependencies)?)
                 }
                 Some(ToolchainAction::List) => Ok(Toolchain::list()?),
                 Some(ToolchainAction::Install { version }) => Ok(Toolchain::install(version)?),

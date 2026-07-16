@@ -5,12 +5,12 @@ use std::{env, fs};
 use globwalk::FileType;
 
 use simplicityhl::parse::{self, ParseFromStr};
-use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
 use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
 use crate::config::DEFAULT_DEPENDENCY_DIR;
+use crate::deps::DepSources;
 use crate::{BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
@@ -72,16 +72,13 @@ impl ArtifactsResolver {
         Ok(path_outer)
     }
 
-    /// Builds a [`ValidatedDeps`] by recursively walking the dependency tree
+    /// Builds a [`DepSources`] by recursively walking the dependency tree
     /// starting from the current working directory.
     ///
     /// Each dependency may have its own config file declaring further dependencies.
     /// Those are registered with their own directory as the context, so that
     /// `crate::` and sibling imports resolve correctly relative to each package root.
-    pub fn resolve_remappings(
-        deps_config: &DependencyConfig,
-        config_filename: &str,
-    ) -> Result<ValidatedDeps, BuildError> {
+    pub fn resolve_remappings(deps_config: &DependencyConfig, config_filename: &str) -> Result<DepSources, BuildError> {
         let root_dir = env::current_dir()?;
         let canon_root = CanonPath::canonicalize(&root_dir).map_err(BuildError::PathCanonicalization)?;
 

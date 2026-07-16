@@ -7,10 +7,8 @@ use crate::macros::parse::SimfContent;
 use crate::macros::types::RustType;
 
 pub struct SimfContractMeta {
-    pub contract_source_const_name: proc_macro2::Ident,
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
-    pub simf_content: SimfContent,
     pub abi_meta: AbiMeta,
 }
 
@@ -46,13 +44,10 @@ impl SimfContractMeta {
         let args_struct = WitnessStruct::generate_args_struct(&simf_content.contract_name, &abi_meta.param_types)?;
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
-        let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
 
         Ok(SimfContractMeta {
-            contract_source_const_name,
             args_struct,
             witness_struct,
-            simf_content,
             abi_meta,
         })
     }
@@ -382,10 +377,6 @@ pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
         .collect();
 
     words.join("")
-}
-
-pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
-    format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
 }
 
 pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {

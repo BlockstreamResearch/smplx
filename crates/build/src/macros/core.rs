@@ -20,9 +20,8 @@ pub fn expand(input: &SynFilePath) -> syn::Result<proc_macro2::TokenStream> {
     Ok(generated)
 }
 
-/// The contract's ABI, read from the sidecar `simplex build` wrote next to the source
-/// (so the frontend never runs in the user's crate) or, when there is no sidecar
-/// (a bare `include_simf!` on a raw `.simf`), extracted with the linked frontend.
+/// The contract's ABI, from the sidecar `simplex build` wrote, falling back to the
+/// linked frontend for a bare `include_simf!` with no sidecar.
 fn load_abi(input: &SynFilePath, simf_content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
     if let Ok(path) = input.resolve() {
         let sidecar = PathBuf::from(format!("{}.abi.json", path.display()));
@@ -39,28 +38,16 @@ fn expand_inner(simf_content: SimfContent, meta: AbiMeta) -> Result<proc_macro2:
 
     let derived_meta = SimfContractMeta::try_from(simf_content, meta)?;
 
-    let program_helpers = construct_program_helpers(&derived_meta);
     let witness_helpers = construct_witness_helpers(&derived_meta)?;
     let arguments_helpers = construct_argument_helpers(&derived_meta)?;
 
     Ok(quote! {
         pub mod #mod_ident{
-            #program_helpers
-
             #witness_helpers
 
             #arguments_helpers
         }
     })
-}
-
-fn construct_program_helpers(derived_meta: &SimfContractMeta) -> proc_macro2::TokenStream {
-    let contract_content = &derived_meta.simf_content.content;
-    let contract_source_name = &derived_meta.contract_source_const_name;
-
-    quote! {
-        pub const #contract_source_name: &str = #contract_content;
-    }
 }
 
 fn construct_witness_helpers(derived_meta: &SimfContractMeta) -> syn::Result<proc_macro2::TokenStream> {
@@ -102,9 +89,8 @@ fn construct_argument_helpers(derived_meta: &SimfContractMeta) -> syn::Result<pr
 }
 
 fn compile_simf(content: &SimfContent) -> Result<AbiMeta, Box<dyn Error>> {
-    // Strip a `simc` directive first: the linked frontend would version-check it
-    // against its own version, but here it only extracts version-stable typings —
-    // the pinned out-of-process `simc` is what enforces the directive.
+    // Strip a `simc` directive: only version-stable typings are extracted here, so
+    // the linked frontend must not version-check it.
     let program = crate::version::without_directive(content.content.as_str());
 
     Ok(

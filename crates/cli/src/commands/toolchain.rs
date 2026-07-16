@@ -1,26 +1,33 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use smplx_build::BuildConfig;
+use smplx_build::deps::DepSources;
+use smplx_build::error::BuildError;
 use smplx_build::version::{self, Version};
+use smplx_build::{ArtifactsResolver, BuildConfig, DependencyConfig};
 use smplx_sdk::compiler;
 use smplx_sdk::compiler::lockfile;
+
+use crate::config::CONFIG_FILENAME;
 
 use super::error::{CommandError, ToolchainError};
 
 pub struct Toolchain;
 
 impl Toolchain {
-    /// Resolves the version this project's directives require against the published
-    /// releases, downloads and verifies that `simc`, and updates `simplex.lock`. This
-    /// is the explicit resolve/update path; a satisfying lock keeps `simplex build` off
-    /// the network.
+    /// Resolves the project's directives against the published releases, provisions
+    /// that `simc`, and pins it in `simplex.lock`.
     ///
     /// # Errors
-    /// Returns a [`CommandError`] if directives cannot be read, the release index is
-    /// unreachable, no release satisfies the directives, or the download fails.
-    pub fn run(build: &BuildConfig) -> Result<(), CommandError> {
-        let requirements = read_requirements(build)?;
+    /// Returns a [`CommandError`] if directives cannot be read, resolution fails, or
+    /// the download fails.
+    pub fn run(build: &BuildConfig, deps: &DependencyConfig) -> Result<(), CommandError> {
+        let dep_sources = if deps.inner.is_empty() {
+            DepSources::default()
+        } else {
+            ArtifactsResolver::resolve_remappings(deps, CONFIG_FILENAME)?
+        };
+        let requirements = read_requirements(build, &dep_sources)?;
         if requirements.is_empty() {
             println!("No `simc` version directives found — resolving the newest release.");
         } else {
@@ -38,8 +45,7 @@ impl Toolchain {
         Ok(())
     }
 
-    /// Lists the compilers installed in the store, annotating the one the nearest
-    /// `simplex.lock` pins and whether its binary still matches the recorded hash.
+    /// Lists installed compilers, annotating the one the nearest `simplex.lock` pins.
     ///
     /// # Errors
     /// Returns a [`CommandError`] if the store root cannot be located.
@@ -82,13 +88,11 @@ impl Toolchain {
         Ok(())
     }
 
-    /// Installs an exact compiler version into the store (downloading it if
-    /// absent), without touching `simplex.lock` — pinning stays an explicit,
-    /// separate decision (`simplex toolchain` / `simplex build`).
+    /// Installs an exact compiler version into the store without touching
+    /// `simplex.lock` — pinning stays an explicit, separate decision.
     ///
     /// # Errors
-    /// Returns a [`CommandError`] if the version cannot be downloaded or fails
-    /// hash verification against a lock that pins this same version.
+    /// Returns a [`CommandError`] if the download or hash verification fails.
     pub fn install(version: &str) -> Result<(), CommandError> {
         let expected = std::env::current_dir()
             .ok()
@@ -110,13 +114,11 @@ impl Toolchain {
         Ok(())
     }
 
-    /// Removes an installed compiler from the store. Safe by construction: the
-    /// store is a cache — anything the lock still pins is re-downloaded (and
-    /// hash-verified) on the next build.
+    /// Removes an installed compiler; the store is a cache, so anything still
+    /// pinned is re-downloaded and verified on the next build.
     ///
     /// # Errors
-    /// Returns a [`CommandError`] if the store root cannot be located or the
-    /// directory cannot be deleted.
+    /// Returns a [`CommandError`] if the directory cannot be located or deleted.
     pub fn remove(version: &str) -> Result<(), CommandError> {
         let dir = compiler::compilers_dir().map_err(ToolchainError::from)?.join(version);
         if !dir.join("bin").join("simc").is_file() {
@@ -149,11 +151,8 @@ impl Toolchain {
     }
 }
 
-/// Resolve the compiler version `requirements` demand against the releases
-/// published at [`compiler::RELEASE_SOURCE`], and provision that exact `simc`
-/// (downloading it if the store lacks it). With no requirements, the newest
-/// release is chosen. A binary hash already recorded in `simplex.lock` for the
-/// selected version is enforced.
+/// Resolves `requirements` against the published releases and provisions the
+/// selected `simc`, enforcing any hash `simplex.lock` already records for it.
 ///
 /// # Errors
 /// Returns a [`CommandError`] if the release index is unreachable, no release
@@ -171,13 +170,31 @@ pub fn resolve_and_provision(requirements: &[version::FileRequirement]) -> Resul
     Ok((selected, simc))
 }
 
-/// The version requirements declared by the project's `.simf` directives.
+/// The directives declared by the project's `.simf` files and every dependency
+/// file — the pinned compiler compiles them all.
 ///
 /// # Errors
 /// Returns a [`CommandError`] on an unreadable source tree or a malformed directive.
-pub fn read_requirements(build: &BuildConfig) -> Result<Vec<version::FileRequirement>, CommandError> {
+pub fn read_requirements(
+    build: &BuildConfig,
+    deps: &DepSources,
+) -> Result<Vec<version::FileRequirement>, CommandError> {
     let src_dir = std::env::current_dir()?.join(&build.src_dir);
-    Ok(version::collect_requirements(&src_dir, &build.simf_files)?)
+    let mut requirements = version::collect_requirements(&src_dir, &build.simf_files)?;
+    for file in &deps.files {
+        let requirement =
+            version::requirement_of(&file.contents).map_err(|error| BuildError::InvalidSimcDirective {
+                file: file.real_path.clone(),
+                error,
+            })?;
+        if let Some(requirement) = requirement {
+            requirements.push(version::FileRequirement {
+                path: file.real_path.clone(),
+                requirement,
+            });
+        }
+    }
+    Ok(requirements)
 }
 
 #[derive(Deserialize)]
@@ -185,9 +202,8 @@ struct Tag {
     name: String,
 }
 
-/// The compiler versions published as `simplicityhl-<version>` release tags,
-/// paged through the GitHub API. Set `GITHUB_TOKEN` (or `GH_TOKEN`) to
-/// authenticate — unauthenticated requests share a small per-IP rate limit.
+/// The versions published as `simplicityhl-<version>` release tags. Set
+/// `GITHUB_TOKEN`/`GH_TOKEN` — anonymous requests share a small per-IP rate limit.
 fn fetch_versions() -> Result<Vec<Version>, ToolchainError> {
     let repo = compiler::source_repo().ok_or_else(|| {
         ToolchainError::Index(format!(
@@ -239,7 +255,7 @@ fn fetch_versions() -> Result<Vec<Version>, ToolchainError> {
     Ok(versions)
 }
 
-/// A short, readable form of a path for reporting.
+/// A cwd-relative form of a path for reporting.
 fn display(path: &Path) -> String {
     std::env::current_dir()
         .ok()
