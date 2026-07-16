@@ -4,13 +4,14 @@ use clap::Parser;
 
 use smplx_build::DependencyConfig;
 
-use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
 use crate::commands::init::Init;
 use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
+use crate::commands::toolchain::Toolchain;
+use crate::commands::{Command, ToolchainAction};
 use crate::config::Config;
 use crate::config::error::ConfigError;
 use crate::error::CliError;
@@ -77,6 +78,21 @@ impl Cli {
 
                 Ok(Install::run(&loaded_config.dependencies)?)
             }
+            Command::Toolchain { action } => match action {
+                // The default action resolves the *project's* directives, so it
+                // needs the project config; the store-management actions work
+                // from anywhere.
+                None => {
+                    let config_path = Config::get_default_path()?;
+                    let loaded_config = Config::load(config_path)?;
+
+                    Ok(Toolchain::run(&loaded_config.build)?)
+                }
+                Some(ToolchainAction::List) => Ok(Toolchain::list()?),
+                Some(ToolchainAction::Install { version }) => Ok(Toolchain::install(version)?),
+                Some(ToolchainAction::Remove { version }) => Ok(Toolchain::remove(version)?),
+                Some(ToolchainAction::Dir) => Ok(Toolchain::dir()?),
+            },
             Command::Build => {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;

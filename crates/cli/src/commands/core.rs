@@ -26,10 +26,33 @@ pub enum Command {
         #[arg(value_name = "DEP")]
         deps: Vec<String>,
     },
+    /// Manages SimplicityHL compilers; by default resolves and pins the project's version
+    Toolchain {
+        #[command(subcommand)]
+        action: Option<ToolchainAction>,
+    },
     /// Generates the simplicity contracts artifacts
     Build,
     /// Cleans Simplex artifacts in the current directory
     Clean,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ToolchainAction {
+    /// List the compilers installed in the store, annotated with the project's pin
+    List,
+    /// Install an exact compiler version into the store (does not touch simplex.lock)
+    Install {
+        /// The version to install, e.g. `0.9.1`
+        version: String,
+    },
+    /// Remove an installed compiler from the store
+    Remove {
+        /// The version to remove
+        version: String,
+    },
+    /// Print the compiler store directory
+    Dir,
 }
 
 #[allow(clippy::struct_excessive_bools)]

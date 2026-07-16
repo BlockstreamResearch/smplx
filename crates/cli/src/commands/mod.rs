@@ -6,5 +6,6 @@ pub mod init;
 pub mod install;
 pub mod regtest;
 pub mod test;
+pub mod toolchain;
 
 pub use core::*;

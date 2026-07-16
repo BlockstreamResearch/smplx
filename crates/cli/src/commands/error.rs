@@ -23,11 +23,35 @@ pub enum CommandError {
     #[error(transparent)]
     Install(#[from] InstallError),
 
+    #[error(transparent)]
+    Toolchain(#[from] ToolchainError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("Verbosity level should be either -v or -vv, got: -v x {0}")]
     BadVersbosityMode(u8),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ToolchainError {
+    #[error("Failed to read the release index from {0}")]
+    Index(String),
+
+    #[error("No SimplicityHL releases found at {0}")]
+    NoReleases(String),
+
+    #[error("{0}")]
+    Resolve(String),
+
+    #[error("{0}")]
+    InvalidLock(String),
+
+    #[error(transparent)]
+    Compiler(#[from] smplx_sdk::compiler::CompilerError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
