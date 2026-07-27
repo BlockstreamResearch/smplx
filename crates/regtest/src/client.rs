@@ -117,6 +117,9 @@ impl RegtestClient {
         bin_args.push(format!("-zmqpubhashblock=tcp://{zmq_addr}"));
         bin_args.push(format!("-zmqpubsequence=tcp://{zmq_addr}"));
 
+        bin_args.push(format!("-rpcworkqueue=64"));
+        bin_args.push(format!("-rpcthreads=16"));
+
         conf.args = bin_args.iter().map(std::convert::AsRef::as_ref).collect::<Vec<&str>>();
         conf.network = "liquidregtest";
         conf.p2p = bitcoind::P2P::Yes;
