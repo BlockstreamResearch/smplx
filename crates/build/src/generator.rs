@@ -192,7 +192,7 @@ impl ArtifactsGenerator {
 
     /// Generates a single `.rs` binding file for one simf artifact.
     fn generate_simf_binding(out_dir: &Path, artifact: SimfArtifact) -> Result<String, BuildError> {
-        let output_file = out_dir.join(format!("{}.rs", &artifact.contract_name));
+        let output_file = out_dir.join(format!("{}.rs", artifact.contract_name));
 
         let mut file = fs::OpenOptions::new()
             .create(true)
