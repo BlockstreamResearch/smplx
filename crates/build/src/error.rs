@@ -16,6 +16,28 @@ pub enum DependencyValidationError {
     Conflicting(String),
 }
 
+/// Errors produced while editing `Simplex.toml` to add or modify a dependency.
+#[derive(thiserror::Error, Debug)]
+pub enum TomlEditError {
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("failed to parse `{path}` for editing: {source}")]
+    UnableToEdit {
+        path: PathBuf,
+        source: toml_edit::TomlError,
+    },
+
+    #[error("`[dependencies]` in `Simplex.toml` is not a table")]
+    MalformedDependenciesTable,
+
+    #[error("malformed dependency spec `{0}` (expected `<source>` or `<alias>=<source>`)")]
+    MalformedDep(String),
+
+    #[error("dependency `{0}` already exists")]
+    DuplicateAlias(String),
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
     #[error("IO error: {0}")]
@@ -61,4 +83,7 @@ pub enum BuildError {
 
     #[error("Invalid git repository URL: '{0}'")]
     InvalidGitUrl(String),
+
+    #[error(transparent)]
+    TomlEdit(#[from] TomlEditError),
 }

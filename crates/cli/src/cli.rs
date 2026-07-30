@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use smplx_build::DependencyConfig;
+
 use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
@@ -10,6 +12,7 @@ use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
 use crate::config::Config;
+use crate::config::error::ConfigError;
 use crate::error::CliError;
 
 #[derive(Debug, Parser)]
@@ -67,8 +70,9 @@ impl Cli {
 
                 Ok(Regtest::run(&loaded_config.regtest)?)
             }
-            Command::Install => {
+            Command::Install { deps } => {
                 let config_path = Config::get_default_path()?;
+                DependencyConfig::add_dependency_to(&config_path, deps).map_err(ConfigError::from)?;
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Install::run(&loaded_config.dependencies)?)

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.9]
+
+- Extended `simplex install` to accept dependency arguments (`simplex install <dep>` or `simplex install <alias>=<dep>`).
+- Fixed a bug where electrs may fail to start indexing elements blocks on some linux systems.
+
 ## [0.0.8]
 
 - Fixed many issues in the sdk crate regarding the Liquid mainnet network:
