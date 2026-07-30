@@ -128,15 +128,18 @@ impl DependencyConfig {
         // Batches are small (typically <=10), so a linear scan over a Vec is cheaper
         // than the constant overhead of a HashSet.
         let mut seen_in_batch: Vec<&str> = Vec::with_capacity(specs.len());
+
         for spec in &specs {
             if seen_in_batch.contains(&spec.alias.as_str()) || deps_table.contains_key(&spec.alias) {
                 return Err(TomlEditError::DuplicateAlias(spec.alias.clone()));
             }
+
             seen_in_batch.push(spec.alias.as_str());
         }
 
         for spec in &specs {
             let mut inline = InlineTable::new();
+
             match &spec.source {
                 Source::Git(url) => {
                     inline.insert("git", Value::from(url.as_str()));
@@ -145,10 +148,12 @@ impl DependencyConfig {
                     inline.insert("path", Value::from(p.as_str()));
                 }
             }
+
             deps_table.insert(&spec.alias, Item::Value(Value::InlineTable(inline)));
         }
 
         std::fs::write(path, doc.to_string())?;
+
         println!("Added: {}", DepSpec::format_batch(&specs));
 
         Ok(())
