@@ -77,14 +77,13 @@ pub trait ProgramTrait: DynClone {
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
-/// Represents a program structure containing its source, a public key, arguments, and associated storage.
+/// Represents a program structure containing its public key, compiled program, and associated storage.
 ///
 /// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
 #[derive(Clone)]
 pub struct Program {
-    source: &'static str,
     pub_key: XOnlyPublicKey,
-    arguments: Box<dyn ArgumentsTrait>,
+    compiled_program: CompiledProgram,
     storage: Vec<[u8; 32]>,
 }
 
@@ -106,7 +105,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.compiled_program.commit().cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -152,7 +151,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
         let satisfied = self
-            .load()?
+            .compiled_program
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
@@ -200,10 +199,17 @@ impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
     pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
-        Self {
+        let compiled_program = CompiledProgram::new_with_unstable(
             source,
+            &UnstableFeatures::all(),
+            arguments.build_arguments(),
+            GlobalConfig::get_include_debug_symbols(),
+            Box::new(ElementsJetHinter),
+        ).expect("Failed to compile Simplicity program");
+
+        Self {
             pub_key: tr_unspendable_key(),
-            arguments,
+            compiled_program,
             storage: Vec::new(),
         }
     }
@@ -290,8 +296,7 @@ impl Program {
     /// # Errors
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
-        let compiled = self.load()?;
-        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+        let abi_meta = self.compiled_program.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
 
         Ok(abi_meta.param_types)
     }
@@ -301,27 +306,13 @@ impl Program {
     /// # Errors
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let compiled = self.load()?;
-        let abi_meta = compiled.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+        let abi_meta = self.compiled_program.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
 
         Ok(abi_meta.witness_types)
     }
 
-    fn load(&self) -> Result<CompiledProgram, ProgramError> {
-        let compiled = CompiledProgram::new_with_unstable(
-            self.source,
-            &UnstableFeatures::all(),
-            self.arguments.build_arguments(),
-            GlobalConfig::get_include_debug_symbols(),
-            Box::new(ElementsJetHinter),
-        )
-        .map_err(ProgramError::Compilation)?;
-
-        Ok(compiled)
-    }
-
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.compiled_program.commit().cmr();
         let script = Script::from(cmr.as_ref().to_vec());
 
         Ok((script, leaf_version()))
