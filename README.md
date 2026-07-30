@@ -115,7 +115,7 @@ Simplex CLI provides the following commands:
 
 - `simplex init` - Initializes a new Simplex project.
 - `simplex config` - Prints the current config.
-- `simplex install <dep> <dep>` - Installs SimplicityHL dependencies. Without a `<dep>` provided, installs everything listed in the `[dependencies]` config section. With one or more `<dep>` arguments, appends new entries to the config and then installs everything.
+- `simplex install <dep>` - Installs SimplicityHL dependencies. Without a `<dep>` provided, installs everything listed in the `[dependencies]` config section. With one or more `<dep>` arguments, appends new entries to the config and then installs everything.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
@@ -137,10 +137,11 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 ## Future work
 
-- [x] Complete `simplex init` and `simplex clean` tasks.
-- [x] Simplicity storage compatibility.
-- [x] Simplicity dependencies management.
+- [x] SimplicityHL storage compatibility.
+- [x] SimplicityHL dependencies management.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
+- [ ] SimplicityHL contracts fuzz testing.
+- [ ] SimplicityHL contracts static analyzer.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
 - [ ] Browser compatibility.

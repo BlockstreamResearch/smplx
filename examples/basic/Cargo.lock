@@ -1309,7 +1309,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smplx-build"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "glob",
  "globwalk",
@@ -1322,11 +1322,12 @@ dependencies = [
  "syn",
  "thiserror",
  "toml",
+ "toml_edit",
 ]
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1335,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "electrsd",
  "hex",
@@ -1349,7 +1350,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1367,7 +1368,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "either",
  "serde",
@@ -1379,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.8"
+version = "0.0.9"
 dependencies = [
  "electrsd",
  "proc-macro2",
@@ -1486,7 +1487,7 @@ dependencies = [
  "indexmap",
  "serde_core",
  "serde_spanned",
- "toml_datetime",
+ "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
  "winnow 0.7.15",
@@ -1502,6 +1503,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_datetime"
+version = "1.1.1+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3165f65f62e28e0115a00b2ebdd37eb6f3b641855f9d636d3cd4103767159ad7"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
+name = "toml_edit"
+version = "0.25.13+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
+dependencies = [
+ "indexmap",
+ "toml_datetime 1.1.1+spec-1.1.0",
+ "toml_parser",
+ "toml_writer",
+ "winnow 1.0.3",
+]
+
+[[package]]
 name = "toml_parser"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1512,9 +1535,9 @@ dependencies = [
 
 [[package]]
 name = "toml_writer"
-version = "1.1.1+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
+checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "typenum"
@@ -1818,6 +1841,9 @@ name = "winnow"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "wit-bindgen"
