@@ -43,7 +43,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<TxReceipt<'_>> {
 
     ft.add_program_input(
         PartialInput::new(p2pk_utxos[0].clone()),
-        ProgramInput::new(Box::new(p2pk.as_ref().clone()), Box::new(witness.clone())),
+        ProgramInput::new(Box::new(p2pk.as_ref().clone()), witness.clone()),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 

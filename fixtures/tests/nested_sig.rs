@@ -44,7 +44,7 @@ fn spend_nested_sig(
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(program.as_ref().clone()), Box::new(witness)),
+        ProgramInput::new(Box::new(program.as_ref().clone()), witness),
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
     );
 

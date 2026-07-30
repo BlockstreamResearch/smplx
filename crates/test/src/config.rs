@@ -22,6 +22,7 @@ pub struct TestConfig {
     pub bitcoins: u64,
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
+    pub proptest: Option<ProptestConfig>,
     pub verbosity: Verbosity,
 }
 
@@ -36,6 +37,14 @@ pub struct RpcConfig {
     pub url: String,
     pub username: String,
     pub password: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ProptestConfig {
+    pub cases: Option<u32>,
+    pub max_shrink_iters: Option<u32>,
+    pub max_global_rejects: Option<u32>,
+    pub max_local_rejects: Option<u32>,
 }
 
 impl TestConfig {
@@ -80,6 +89,7 @@ impl Default for TestConfig {
             bitcoins: DEFAULT_BITCOINS,
             esplora: None,
             rpc: None,
+            proptest: None,
             verbosity: Verbosity::None,
         }
     }

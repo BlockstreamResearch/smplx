@@ -39,7 +39,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<()> {
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(program.as_ref().clone()), Box::new(witness.clone())),
+        ProgramInput::new(Box::new(program.as_ref().clone()), witness),
         RequiredSignature::None,
     );
 

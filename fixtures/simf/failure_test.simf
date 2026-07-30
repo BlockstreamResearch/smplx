@@ -1,0 +1,13 @@
+fn not(bit: bool) -> bool {
+    <u1>::into(jet::complement_1(<bool>::into(bit)))
+}
+
+fn main() {
+    let failure_value: u256 = param::FAILURE_VALUE;
+    let cmp_value: u256 = witness::CMP_VALUE;
+
+    assert!(not(jet::eq_256(
+        failure_value,
+        cmp_value
+    )));
+}

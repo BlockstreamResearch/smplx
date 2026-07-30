@@ -9,8 +9,8 @@ pub mod logger;
 /// Definitions and traits for resolving and satisfying execution witnesses for Simplicity programs.
 pub mod witness;
 
-pub use arguments::ArgumentsTrait;
-pub use core::{Program, ProgramTrait};
+pub use arguments::{ArgumentsTrait, RandomArguments};
+pub use core::{Program, ProgramFactory, ProgramTrait};
 pub use error::ProgramError;
 pub use simplicityhl::tracker::TrackerLogLevel;
-pub use witness::WitnessTrait;
+pub use witness::{RandomWitness, WitnessTrait};
