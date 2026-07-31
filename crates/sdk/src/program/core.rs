@@ -83,7 +83,7 @@ pub trait ProgramTrait: DynClone {
 #[derive(Clone)]
 pub struct Program {
     pub_key: XOnlyPublicKey,
-    compiled_program: CompiledProgram,
+    compiled: CompiledProgram,
     storage: Vec<[u8; 32]>,
 }
 
@@ -105,7 +105,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.compiled_program.commit().cmr();
+        let cmr = self.compiled.commit().cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -137,7 +137,7 @@ impl ProgramTrait for Program {
                 .collect(),
             u32::try_from(input_index)?,
             cmr,
-            self.control_block()?,
+            self.control_block(),
             None,
             genesis_hash,
         ))
@@ -151,7 +151,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
         let satisfied = self
-            .compiled_program
+            .compiled
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
@@ -190,26 +190,30 @@ impl ProgramTrait for Program {
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
-            self.control_block()?.serialize(),
+            self.control_block().serialize(),
         ])
     }
 }
 
 impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
+    ///
+    /// # Panics
+    /// Panics if the `source` fails to compile as a Simplicity program.
     #[must_use]
-    pub fn new(source: &'static str, arguments: Box<dyn ArgumentsTrait>) -> Self {
-        let compiled_program = CompiledProgram::new_with_unstable(
+    pub fn new(source: &'static str, arguments: &dyn ArgumentsTrait) -> Self {
+        let compiled = CompiledProgram::new_with_unstable(
             source,
             &UnstableFeatures::all(),
             arguments.build_arguments(),
             GlobalConfig::get_include_debug_symbols(),
             Box::new(ElementsJetHinter),
-        ).expect("Failed to compile Simplicity program");
+        )
+        .expect("Failed to compile Simplicity program");
 
         Self {
             pub_key: tr_unspendable_key(),
-            compiled_program,
+            compiled,
             storage: Vec::new(),
         }
     }
@@ -268,7 +272,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info().unwrap();
+        let spend_info = self.taproot_spending_info();
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -296,7 +300,10 @@ impl Program {
     /// # Errors
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
-        let abi_meta = self.compiled_program.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+        let abi_meta = self
+            .compiled
+            .generate_abi_meta()
+            .map_err(ProgramError::ProgramGenAbiMeta)?;
 
         Ok(abi_meta.param_types)
     }
@@ -306,16 +313,19 @@ impl Program {
     /// # Errors
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let abi_meta = self.compiled_program.generate_abi_meta().map_err(ProgramError::ProgramGenAbiMeta)?;
+        let abi_meta = self
+            .compiled
+            .generate_abi_meta()
+            .map_err(ProgramError::ProgramGenAbiMeta)?;
 
         Ok(abi_meta.witness_types)
     }
 
-    fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
-        let cmr = self.compiled_program.commit().cmr();
+    fn script_version(&self) -> (Script, taproot::LeafVersion) {
+        let cmr = self.compiled.commit().cmr();
         let script = Script::from(cmr.as_ref().to_vec());
 
-        Ok((script, leaf_version()))
+        (script, leaf_version())
     }
 
     fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
@@ -337,9 +347,9 @@ impl Program {
         depths
     }
 
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+    fn taproot_spending_info(&self) -> taproot::TaprootSpendInfo {
         let mut builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version()?;
+        let (script, version) = self.script_version();
         let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
 
         builder = builder
@@ -352,16 +362,16 @@ impl Program {
                 .expect("tap tree should be valid");
         }
 
-        Ok(builder
+        builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
-            .expect("tap tree should be valid"))
+            .expect("tap tree should be valid")
     }
 
-    fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {
-        let info = self.taproot_spending_info()?;
-        let script_ver = self.script_version()?;
+    fn control_block(&self) -> taproot::ControlBlock {
+        let info = self.taproot_spending_info();
+        let script_ver = self.script_version();
 
-        Ok(info.control_block(&script_ver).expect("control block should exist"))
+        info.control_block(&script_ver).expect("control block should exist")
     }
 }
 
@@ -400,7 +410,7 @@ mod tests {
     }
 
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, Box::new(EmptyArguments))
+        Program::new(DUMMY_PROGRAM, &EmptyArguments)
     }
 
     fn dummy_network() -> SimplicityNetwork {
