@@ -209,7 +209,7 @@ impl Program {
             GlobalConfig::get_include_debug_symbols(),
             Box::new(ElementsJetHinter),
         )
-        .expect("Failed to compile Simplicity program");
+        .expect("Failed to compile a Simplicity program");
 
         Self {
             pub_key: tr_unspendable_key(),
