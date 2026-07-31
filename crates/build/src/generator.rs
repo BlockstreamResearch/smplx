@@ -265,9 +265,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
+                pub fn new(arguments: &impl ArgumentsTrait) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, Box::new(arguments)),
+                        program: Program::new(Self::SOURCE, arguments),
                     }
                 }
 

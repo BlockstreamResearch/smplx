@@ -8,7 +8,7 @@ use simplex_fixtures::artifacts::imports::multidep::derived_multidep::{MultidepA
 fn get_multidep(context: &simplex::TestContext) -> (MultidepProgram, Script) {
     let arguments = MultidepArguments { prev_hash: 5 };
 
-    let p2pk = MultidepProgram::new(arguments);
+    let p2pk = MultidepProgram::new(&arguments);
     let p2pk_script = p2pk.get_script_pubkey(context.get_network());
 
     (p2pk, p2pk_script)
