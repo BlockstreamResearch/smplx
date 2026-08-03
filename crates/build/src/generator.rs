@@ -312,6 +312,11 @@ impl ArtifactsGenerator {
                 pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
                     self.program.get_script_hash(network)
                 }
+
+                #[must_use]
+                pub fn get_tapleaf_hash(&self) -> [u8; 32] {
+                    self.program.get_tapleaf_hash()
+                }
             }
 
             impl AsRef<Program> for #program_name {

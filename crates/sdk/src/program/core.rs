@@ -1,6 +1,7 @@
 use std::iter;
 use std::sync::Arc;
 
+use bitcoin_hashes::Hash;
 use dyn_clone::DynClone;
 
 use simplicityhl::ast::ElementsJetHinter;
@@ -293,6 +294,14 @@ impl Program {
     #[must_use]
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
+    }
+
+    /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
+    #[must_use]
+    pub fn get_tapleaf_hash(&self) -> [u8; 32] {
+        let (script, version) = self.script_version();
+
+        taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
 
     /// Retrieves program ABI metadata for argument types.
