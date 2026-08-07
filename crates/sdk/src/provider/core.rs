@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[cfg(feature = "provider")]
 use bitcoincore_rpc::Auth;
 
 use simplicityhl::elements::{Address, Script, Transaction, Txid};
@@ -15,6 +16,7 @@ pub const DEFAULT_FEE_RATE: f32 = 100.0;
 pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
 
 /// Contains foundational configuration elements required for initializing a generic blockchain provider.
+#[cfg(feature = "provider")]
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     /// URL of the target Esplora REST service.
