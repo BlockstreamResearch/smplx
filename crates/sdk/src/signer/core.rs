@@ -439,15 +439,14 @@ impl Signer {
         let full_path = self.get_derivation_path().unwrap();
 
         let default_path;
-        let relative = match relative {
-            Some(path) => path,
-            None => {
-                default_path = DerivationPath::from_str("0/0")
-                    .map_err(|e| SignerError::DerivationPath(e.to_string()))
-                    .unwrap();
+        let relative = if let Some(path) = relative {
+            path
+        } else {
+            default_path = DerivationPath::from_str("0/0")
+                .map_err(|e| SignerError::DerivationPath(e.to_string()))
+                .unwrap();
 
-                &default_path
-            }
+            &default_path
         };
 
         let derived = full_path.extend(relative);
@@ -608,6 +607,7 @@ impl Signer {
         Ok(pst.extract_tx()?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
