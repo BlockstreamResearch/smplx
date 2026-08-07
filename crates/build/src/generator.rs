@@ -265,9 +265,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
+                pub fn new(arguments: &impl ArgumentsTrait) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, Box::new(arguments)),
+                        program: Program::new(Self::SOURCE, arguments),
                     }
                 }
 
@@ -284,7 +284,7 @@ impl ArtifactsGenerator {
                 }
 
                 #[must_use]
-                pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+                pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
                     self.program.set_storage_at(index, new_value);
                 }
 
@@ -294,12 +294,12 @@ impl ArtifactsGenerator {
                 }
 
                 #[must_use]
-                pub fn get_storage(&self) -> &[[u8; 32]] {
+                pub fn get_storage(&self) -> &[Vec<u8>] {
                     self.program.get_storage()
                 }
 
                 #[must_use]
-                pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+                pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
                     self.program.get_storage_at(index)
                 }
 
@@ -311,6 +311,16 @@ impl ArtifactsGenerator {
                 #[must_use]
                 pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
                     self.program.get_script_hash(network)
+                }
+
+                #[must_use]
+                pub fn get_cmr(&self) -> [u8; 32] {
+                    self.program.get_cmr()
+                }
+
+                #[must_use]
+                pub fn get_tapleaf_hash(&self) -> [u8; 32] {
+                    self.program.get_tapleaf_hash()
                 }
             }
 

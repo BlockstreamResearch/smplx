@@ -1,9 +1,11 @@
+#[cfg(feature = "provider")]
 use crate::provider::rpc::error::RpcError;
 
 /// Defines standard errors possible when using a blockchain interaction provider.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     /// Wrapper around an RPC-level error representing transport or network-level connectivity failures to the inner node.
+    #[cfg(feature = "provider")]
     #[error(transparent)]
     Rpc(#[from] RpcError),
 
