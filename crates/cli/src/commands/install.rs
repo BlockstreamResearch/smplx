@@ -75,7 +75,7 @@ impl Install {
     }
 
     fn clone_repo(
-        url: &String,
+        url: &str,
         reference: Option<&GitRef>,
         target_dir: &Path,
         installed_repos: &mut Vec<PathBuf>,
@@ -90,24 +90,34 @@ impl Install {
             return Ok(());
         }
 
-        let mut cmd = Command::new("git");
-        cmd.arg("clone").arg("--depth").arg("1");
+        let target_str = target_dir.to_str().unwrap_or_default();
 
-        if let Some(git_ref) = reference {
-            cmd.arg("--branch").arg(git_ref.as_str());
-        }
+        let execute_git = |args: &[&str]| -> Result<(), InstallError> {
+            let status = Command::new("git")
+                .args(args)
+                .status()
+                .map_err(|err| InstallError::GitExecution(err, url.to_owned()))?;
 
-        cmd.arg(url).arg(target_dir);
+            if !status.success() {
+                // Force to remove file, if something went wrong
+                let _ = std::fs::remove_dir_all(target_dir);
+                return Err(InstallError::GitCloneFailed(url.to_owned()));
+            }
 
-        // Assumes the directory is perfectly empty
-        let status = cmd
-            .status()
-            .map_err(|err| InstallError::GitExecution(err, url.clone()))?;
+            Ok(())
+        };
 
-        if !status.success() {
-            // Force to remove file, if something went wrong
-            let _ = std::fs::remove_dir_all(target_dir);
-            return Err(InstallError::GitCloneFailed(url.clone()));
+        match reference {
+            Some(GitRef::Tag(tag)) => {
+                execute_git(&["clone", "--depth", "1", "--branch", tag.as_str(), url, target_str])?;
+            }
+            Some(GitRef::Rev(rev)) => {
+                execute_git(&["clone", url, target_str])?;
+                execute_git(&["-C", target_str, "checkout", rev.as_str()])?;
+            }
+            None => {
+                execute_git(&["clone", "--depth", "1", url, target_str])?;
+            }
         }
 
         installed_repos.push(target_dir.to_path_buf());

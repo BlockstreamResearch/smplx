@@ -113,7 +113,8 @@ impl ArtifactsResolver {
         let repo_name = clean_url.split('/').next_back()?;
 
         let tag = match reference {
-            Some(git_ref) => git_ref.as_str(),
+            Some(GitRef::Rev(rev)) => rev.as_str(),
+            Some(GitRef::Tag(tag)) => tag.as_str(),
             None => "HEAD",
         };
         let url = format!("{url}@{tag}");

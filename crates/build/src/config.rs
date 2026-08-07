@@ -221,12 +221,3 @@ impl<'de> Deserialize<'de> for DependencyConfig {
         Ok(Self { inner })
     }
 }
-
-impl GitRef {
-    pub fn as_str(&self) -> &str {
-        match self {
-            GitRef::Rev(rev) => rev.as_str(),
-            GitRef::Tag(tag) => tag.as_str(),
-        }
-    }
-}
