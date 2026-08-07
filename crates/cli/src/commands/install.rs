@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 use std::{fs, path::PathBuf};
 
-use smplx_build::config::DEFAULT_DEPENDENCY_DIR;
+use smplx_build::config::{DEFAULT_DEPENDENCY_DIR, Dependency, GitRef};
 use smplx_build::{ArtifactsResolver, DependencyConfig};
 
 use crate::commands::error::CommandError;
@@ -49,11 +49,12 @@ impl Install {
         installed_repos: &mut Vec<PathBuf>,
     ) -> Result<(), InstallError> {
         for dependency in deps.inner.values() {
-            let Some(git_repo_url) = &dependency.git else {
-                continue;
+            let (git_repo_url, reference) = match dependency {
+                Dependency::Git { url, reference } => (url, reference),
+                Dependency::Path(_) => continue,
             };
 
-            let hashed_dir = ArtifactsResolver::generate_hashed_repo_path(git_repo_url)
+            let hashed_dir = ArtifactsResolver::generate_hashed_repo_path(git_repo_url, reference.as_ref())
                 .ok_or_else(|| InstallError::InvalidUrl(git_repo_url.clone()))?;
 
             let target_dir = deps_dir.join(hashed_dir);
@@ -62,37 +63,54 @@ impl Install {
                 fs::create_dir_all(&target_dir).map_err(|e| InstallError::CreateDir(e, target_dir.clone()))?;
             }
 
-            let is_empty = fs::read_dir(&target_dir)
-                .map_err(|e| InstallError::ReadDir(e, target_dir.clone()))?
-                .next()
-                .is_none();
-
-            // Consider it installed and skip cloning.
-            if is_empty {
-                // Assumes the directory is perfectly empty
-                let status = Command::new("git")
-                    .arg("clone")
-                    .arg("--depth")
-                    .arg("1")
-                    .arg(git_repo_url)
-                    .arg(&target_dir)
-                    .status()
-                    .map_err(|e| InstallError::GitExecution(e, git_repo_url.clone()))?;
-
-                if !status.success() {
-                    // Force to remove file, if something went wrong
-                    let _ = std::fs::remove_dir_all(&target_dir);
-                    return Err(InstallError::GitCloneFailed(git_repo_url.clone()));
-                }
-
-                installed_repos.push(target_dir.clone());
-            }
+            Self::clone_repo(git_repo_url, reference.as_ref(), &target_dir, installed_repos)?;
 
             let config_path = Config::get_path(&target_dir)?;
             let loaded_config = Config::load(config_path)?;
 
             Self::install_repos(&loaded_config.dependencies, deps_dir, installed_repos)?;
         }
+
+        Ok(())
+    }
+
+    fn clone_repo(
+        url: &String,
+        reference: Option<&GitRef>,
+        target_dir: &Path,
+        installed_repos: &mut Vec<PathBuf>,
+    ) -> Result<(), InstallError> {
+        let is_empty = fs::read_dir(target_dir)
+            .map_err(|err| InstallError::ReadDir(err, target_dir.to_path_buf()))?
+            .next()
+            .is_none();
+
+        // Consider it installed and skip cloning.
+        if !is_empty {
+            return Ok(());
+        }
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--depth").arg("1");
+
+        if let Some(git_ref) = reference {
+            cmd.arg("--branch").arg(git_ref.as_str());
+        }
+
+        cmd.arg(url).arg(target_dir);
+
+        // Assumes the directory is perfectly empty
+        let status = cmd
+            .status()
+            .map_err(|err| InstallError::GitExecution(err, url.clone()))?;
+
+        if !status.success() {
+            // Force to remove file, if something went wrong
+            let _ = std::fs::remove_dir_all(target_dir);
+            return Err(InstallError::GitCloneFailed(url.clone()));
+        }
+
+        installed_repos.push(target_dir.to_path_buf());
 
         Ok(())
     }

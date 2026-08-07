@@ -30,21 +30,44 @@ pub struct BuildConfig {
     pub out_dir: String,
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Default, Clone)]
 pub struct DependencyConfig {
-    #[serde(flatten)]
     pub inner: HashMap<String, Dependency>,
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
-#[serde(default)]
-pub struct Dependency {
-    /// Exact path to dir, where `Simplex.toml` file was located
-    pub path: Option<String>,
+#[derive(Debug, Clone)]
+pub enum Dependency {
+    Path(String),
+    Git { url: String, reference: Option<GitRef> },
+}
 
-    /// Link to git repo
-    pub git: Option<String>,
+#[derive(Debug, Clone)]
+pub enum GitRef {
+    Rev(String),
+    Tag(String),
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawDependencyConfig {
+    #[serde(flatten)]
+    inner: HashMap<String, RawDependency>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDependency {
+    /// The exact path to the directory containing the `Simplex.toml` file.
+    path: Option<String>,
+
+    /// The URL of the Git repository.
+    git: Option<String>,
+
+    /// The specific commit to download (only applicable if `git` is provided).
+    rev: Option<String>,
+
+    /// The specific tag to download (only applicable if `git` is provided).
+    tag: Option<String>,
 }
 
 impl BuildConfig {
@@ -80,14 +103,11 @@ impl DependencyConfig {
     /// (empty) config. Each dependency is validated to declare exactly one source.
     pub fn from_source(content: &str) -> Result<Self, BuildError> {
         let table: toml::Table = toml::from_str(content)?;
-        let res: Self = match table.get(DEPENDENCIES_SECTION) {
-            Some(section) => section.clone().try_into()?,
-            None => Self::default(),
-        };
 
-        res.validate()?;
-
-        Ok(res)
+        match table.get(DEPENDENCIES_SECTION) {
+            Some(section) => Ok(section.clone().try_into()?),
+            None => Ok(Self::default()),
+        }
     }
 
     /// Appends new entries to the `[dependencies]` table of the config file at `path`,
@@ -158,16 +178,55 @@ impl DependencyConfig {
 
         Ok(())
     }
+}
 
-    pub fn validate(&self) -> Result<(), DependencyValidationError> {
-        for (dep_name, dep) in &self.inner {
-            match (&dep.path, &dep.git) {
-                (None, None) => return Err(DependencyValidationError::Missing(dep_name.clone())),
-                (Some(_), Some(_)) => return Err(DependencyValidationError::Conflicting(dep_name.clone())),
-                _ => {}
+impl RawDependency {
+    fn into_dependency(self, name: &str) -> Result<Dependency, DependencyValidationError> {
+        match (self.path, self.git) {
+            (Some(_), Some(_)) => Err(DependencyValidationError::Conflicting(name.into())),
+            (None, None) => Err(DependencyValidationError::Missing(name.into())),
+
+            (Some(p), None) => {
+                if self.rev.is_some() || self.tag.is_some() {
+                    return Err(DependencyValidationError::PathWithGitField(name.into()));
+                }
+
+                Ok(Dependency::Path(p))
+            }
+
+            (None, Some(url)) => {
+                let reference = match (self.rev, self.tag) {
+                    (None, None) => None,
+                    (Some(v), None) => Some(GitRef::Rev(v)),
+                    (None, Some(t)) => Some(GitRef::Tag(t)),
+                    _ => return Err(DependencyValidationError::ConflictingGitRef(name.into())),
+                };
+
+                Ok(Dependency::Git { url, reference })
             }
         }
+    }
+}
 
-        Ok(())
+impl<'de> Deserialize<'de> for DependencyConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = RawDependencyConfig::deserialize(d)?;
+        let mut inner = HashMap::with_capacity(raw.inner.len());
+
+        for (name, r) in raw.inner {
+            let dep = r.into_dependency(&name).map_err(serde::de::Error::custom)?;
+            inner.insert(name, dep);
+        }
+
+        Ok(Self { inner })
+    }
+}
+
+impl GitRef {
+    pub fn as_str(&self) -> &str {
+        match self {
+            GitRef::Rev(rev) => rev.as_str(),
+            GitRef::Tag(tag) => tag.as_str(),
+        }
     }
 }

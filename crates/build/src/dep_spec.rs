@@ -34,6 +34,7 @@ impl DepSpec {
             None => (Self::derive_alias(raw)?, raw),
         };
 
+        //
         let source = Self::classify_source(source_str);
 
         Ok(DepSpec { alias, source })
