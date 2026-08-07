@@ -124,10 +124,7 @@ impl PartialInput {
     /// Sets the derivation path, relative to the account path, of the key that spends this input.
     ///
     /// Relative means it is appended to `m/84h/{coin}h/0h`.
-    ///
-    /// ```
-    /// let path = DerivationPath::from_str("0/3").expect("chain and index");
-    /// ```
+    /// Should be in the form of "m/n".
     #[must_use]
     pub fn with_derivation_path(mut self, derivation_path: DerivationPath) -> Self {
         self.derivation_path = Some(derivation_path);

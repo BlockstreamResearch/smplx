@@ -493,7 +493,7 @@ impl Signer {
         &self,
         mut fee_tx: FinalTransaction,
         fee_rate: f32,
-        available_delta: u64
+        available_delta: u64,
     ) -> Result<Estimate, SignerError> {
         // Estimate the tx fee with the change. The caller supplies the change target
         let change = match fee_tx.change() {

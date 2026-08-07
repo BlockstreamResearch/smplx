@@ -3,7 +3,7 @@ use elements_miniscript::bitcoin::PublicKey;
 use simplicityhl::elements::Script;
 
 /// Where a transaction's change should go, supplied by the caller.
-/// 
+///
 /// Without this the signer would send change to the single address it derives internally.
 #[derive(Debug, Clone)]
 pub struct ChangeOutput {

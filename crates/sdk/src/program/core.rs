@@ -301,7 +301,7 @@ impl Program {
     }
 
     /// Compiles the program and returns its Commitment Merkle Root.
-    /// 
+    ///
     /// # Panics
     /// Panics if the SimplicityHL compilation fails.
     pub fn get_cmr(&self) -> [u8; 32] {
@@ -309,7 +309,7 @@ impl Program {
     }
 
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
-    /// 
+    ///
     /// # Panics
     /// Panics if the SimplicityHL compilation fails.
     pub fn get_tapleaf_hash(&self) -> [u8; 32] {
