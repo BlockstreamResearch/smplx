@@ -20,7 +20,7 @@ workspace = true
 [dependencies]
 smplx-macros = { workspace = true }
 smplx-test = { workspace = true }
-smplx-sdk = { workspace = true }
+smplx-sdk = { workspace = true, features = ["provider"] }
 
 serde = { workspace = true }
 simplicityhl = { workspace = true, features = ["serde"] }

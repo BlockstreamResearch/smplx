@@ -1,5 +1,4 @@
-use std::iter;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bitcoin_hashes::Hash;
 use dyn_clone::DynClone;
@@ -10,8 +9,8 @@ use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
+use simplicityhl::{Arguments, Parameters, WitnessTypes, WitnessValues};
 use simplicityhl::{CompiledProgram, UnstableFeatures};
-use simplicityhl::{Parameters, WitnessTypes, WitnessValues};
 
 use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
@@ -79,13 +78,17 @@ pub trait ProgramTrait: DynClone {
 }
 
 /// Represents a program structure containing its public key, compiled program, and associated storage.
+/// A compiled program acts as a cache, instantiated during "loading".
 ///
 /// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
 #[derive(Clone)]
 pub struct Program {
+    source: Arc<str>,
+    arguments: Arguments,
     pub_key: XOnlyPublicKey,
-    compiled: CompiledProgram,
-    storage: Vec<[u8; 32]>,
+    storage: Vec<Vec<u8>>,
+    include_debug_symbols: Option<bool>,
+    compiled: Arc<OnceLock<CompiledProgram>>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -106,7 +109,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.compiled.commit().cmr();
+        let cmr = self.load()?.commit().cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -138,7 +141,7 @@ impl ProgramTrait for Program {
                 .collect(),
             u32::try_from(input_index)?,
             cmr,
-            self.control_block(),
+            self.control_block()?,
             None,
             genesis_hash,
         ))
@@ -152,7 +155,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
         let satisfied = self
-            .compiled
+            .load()?
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
@@ -191,31 +194,22 @@ impl ProgramTrait for Program {
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
-            self.control_block().serialize(),
+            self.control_block()?.serialize(),
         ])
     }
 }
 
 impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
-    ///
-    /// # Panics
-    /// Panics if the `source` fails to compile as a Simplicity program.
     #[must_use]
-    pub fn new(source: &'static str, arguments: &dyn ArgumentsTrait) -> Self {
-        let compiled = CompiledProgram::new_with_unstable(
-            source,
-            &UnstableFeatures::all(),
-            arguments.build_arguments(),
-            GlobalConfig::get_include_debug_symbols(),
-            Box::new(ElementsJetHinter),
-        )
-        .expect("Failed to compile a Simplicity program");
-
+    pub fn new(source: impl Into<Arc<str>>, arguments: &dyn ArgumentsTrait) -> Self {
         Self {
+            source: source.into(),
             pub_key: tr_unspendable_key(),
-            compiled,
+            arguments: arguments.build_arguments(),
             storage: Vec::new(),
+            include_debug_symbols: None,
+            compiled: Arc::new(OnceLock::new()),
         }
     }
 
@@ -228,10 +222,20 @@ impl Program {
         self
     }
 
+    /// Builds this program in the mode the protocol declares.
+    #[must_use]
+    pub fn with_debug_symbols(mut self, include: bool) -> Self {
+        self.include_debug_symbols = Some(include);
+        // This changes the output CMR, so we need to update the cache
+        self.compiled = Arc::new(OnceLock::new());
+
+        self
+    }
+
     /// Sets storage capacity for further usage.
     #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
-        self.storage = vec![[0u8; 32]; capacity];
+        self.storage = vec![vec![0u8; 32]; capacity];
 
         self
     }
@@ -240,10 +244,10 @@ impl Program {
     ///
     /// # Panics
     /// Panics if the `index` is out of bounds for the initiasized storage.
-    pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+    pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
         let slot = self.storage.get_mut(index).expect("Index out of bounds");
 
-        *slot = new_value;
+        *slot = new_value.into();
     }
 
     /// Returns the number of storage chunks for a program.
@@ -254,7 +258,7 @@ impl Program {
 
     /// Returns storage as a whole array of 32-byte chunks.
     #[must_use]
-    pub fn get_storage(&self) -> &[[u8; 32]] {
+    pub fn get_storage(&self) -> &[Vec<u8>] {
         &self.storage
     }
 
@@ -263,8 +267,8 @@ impl Program {
     /// # Panics
     /// Panics if the `index` is out of bounds for the initiated storage.
     #[must_use]
-    pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
-        self.storage[index]
+    pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
+        self.storage[index].clone()
     }
 
     /// Returns a taproot address for a defined `SimplicityNetwork`.
@@ -273,7 +277,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info();
+        let spend_info = self.taproot_spending_info().unwrap();
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -296,10 +300,22 @@ impl Program {
         hash_script(&self.get_script_pubkey(network))
     }
 
+    /// Compiles the program and returns its Commitment Merkle Root.
+    ///
+    /// # Panics
+    /// Panics if the `SimplicityHL` compilation fails.
+    #[must_use]
+    pub fn get_cmr(&self) -> [u8; 32] {
+        self.load().unwrap().commit().cmr().to_byte_array()
+    }
+
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
+    ///
+    /// # Panics
+    /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_tapleaf_hash(&self) -> [u8; 32] {
-        let (script, version) = self.script_version();
+        let (script, version) = self.script_version().unwrap();
 
         taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
@@ -310,7 +326,7 @@ impl Program {
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
         let abi_meta = self
-            .compiled
+            .load()?
             .generate_abi_meta()
             .map_err(ProgramError::ProgramGenAbiMeta)?;
 
@@ -323,42 +339,59 @@ impl Program {
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
         let abi_meta = self
-            .compiled
+            .load()?
             .generate_abi_meta()
             .map_err(ProgramError::ProgramGenAbiMeta)?;
 
         Ok(abi_meta.witness_types)
     }
 
-    fn script_version(&self) -> (Script, taproot::LeafVersion) {
-        let cmr = self.compiled.commit().cmr();
-        let script = Script::from(cmr.as_ref().to_vec());
+    fn load(&self) -> Result<&CompiledProgram, ProgramError> {
+        // Check cache first
+        if let Some(compiled) = self.compiled.get() {
+            return Ok(compiled);
+        }
 
-        (script, leaf_version())
+        let compiled = CompiledProgram::new_with_unstable(
+            Arc::clone(&self.source),
+            &UnstableFeatures::all(),
+            self.arguments.clone(),
+            self.include_debug_symbols
+                .unwrap_or_else(GlobalConfig::get_include_debug_symbols),
+            Box::new(ElementsJetHinter),
+        )
+        .map_err(ProgramError::Compilation)?;
+
+        // Update the cache
+        Ok(self.compiled.get_or_init(|| compiled))
     }
 
+    fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
+        let cmr = self.load()?.commit().cmr();
+        let script = Script::from(cmr.as_ref().to_vec());
+
+        Ok((script, leaf_version()))
+    }
+
+    /// Depths of a left-folded tap tree, in the order `TaprootBuilder` wants them.
+    ///
+    /// The tree is `tapbranch(tapbranch(tapbranch(cmr, e1), e2), e3)`: the program's own leaf
+    /// and the first extra leaf sit deepest, and each further leaf is one level shallower.
     fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
         assert!(total_leaves > 0, "Taproot tree must contain at least one leaf");
 
-        let next_pow2 = total_leaves.next_power_of_two();
-        let depth = next_pow2.ilog2() as usize;
-
-        let shallow_count = next_pow2 - total_leaves;
-        let deep_count = total_leaves - shallow_count;
-
+        let extra = total_leaves - 1;
         let mut depths = Vec::with_capacity(total_leaves);
-        depths.extend(iter::repeat_n(depth, deep_count));
 
-        if depth > 0 {
-            depths.extend(iter::repeat_n(depth - 1, shallow_count));
-        }
+        depths.push(extra);
+        depths.extend((1..=extra).rev());
 
         depths
     }
 
-    fn taproot_spending_info(&self) -> taproot::TaprootSpendInfo {
+    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let mut builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version();
+        let (script, version) = self.script_version()?;
         let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
 
         builder = builder
@@ -371,16 +404,16 @@ impl Program {
                 .expect("tap tree should be valid");
         }
 
-        builder
+        Ok(builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
-            .expect("tap tree should be valid")
+            .expect("tap tree should be valid"))
     }
 
-    fn control_block(&self) -> taproot::ControlBlock {
-        let info = self.taproot_spending_info();
-        let script_ver = self.script_version();
+    fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {
+        let info = self.taproot_spending_info()?;
+        let script_ver = self.script_version()?;
 
-        info.control_block(&script_ver).expect("control block should exist")
+        Ok(info.control_block(&script_ver).expect("control block should exist"))
     }
 }
 
@@ -446,6 +479,27 @@ mod tests {
     }
 
     #[test]
+    fn compiles_once_and_keeps_it() {
+        let program = dummy_program();
+
+        let first = program.load().expect("the dummy program compiles");
+        let second = program.load().expect("the dummy program compiles");
+
+        assert!(std::ptr::eq(first, second), "the program was compiled twice");
+    }
+
+    #[test]
+    fn changed_build_mode_is_not_served_the_old_compilation() {
+        let plain = dummy_program();
+        let plain_cmr = plain.get_cmr();
+
+        let debug = dummy_program().with_debug_symbols(true);
+        let debug_cmr = debug.get_cmr();
+
+        assert_ne!(plain_cmr, debug_cmr, "the build mode did not reach the compiler");
+    }
+
+    #[test]
     fn test_get_env_idx() {
         let program = dummy_program();
         let network = dummy_network();
@@ -477,19 +531,19 @@ mod tests {
     }
 
     #[test]
-    fn test_taproot_leaf_depths_known_values() {
-        let cases = [
-            (1, vec![0]),
-            (2, vec![1, 1]),
-            (3, vec![2, 2, 1]),
-            (4, vec![2, 2, 2, 2]),
-            (5, vec![3, 3, 2, 2, 2]),
-            (6, vec![3, 3, 3, 3, 2, 2]),
-            (8, vec![3, 3, 3, 3, 3, 3, 3, 3]),
-        ];
+    fn left_folded_depths() {
+        assert_eq!(Program::taproot_leaf_depths(1), vec![0]);
+        assert_eq!(Program::taproot_leaf_depths(2), vec![1, 1]);
+        assert_eq!(Program::taproot_leaf_depths(3), vec![2, 2, 1]);
+        assert_eq!(Program::taproot_leaf_depths(4), vec![3, 3, 2, 1]);
+        assert_eq!(Program::taproot_leaf_depths(5), vec![4, 4, 3, 2, 1]);
+    }
 
-        for (n, expected) in cases {
-            assert_eq!(Program::taproot_leaf_depths(n), expected, "n={n}");
-        }
+    // The measured boundary: a balanced tree agrees with a left fold up to three leaves and
+    // diverges from four. Four leaves balanced is [2, 2, 2, 2]; left-folded it is not.
+    #[test]
+    fn diverges_from_a_balanced_tree_at_four_leaves() {
+        assert_eq!(Program::taproot_leaf_depths(3), vec![2, 2, 1]);
+        assert_ne!(Program::taproot_leaf_depths(4), vec![2, 2, 2, 2]);
     }
 }

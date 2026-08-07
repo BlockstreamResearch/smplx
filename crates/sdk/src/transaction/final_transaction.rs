@@ -11,6 +11,7 @@ use simplicityhl::elements::{
 use crate::provider::SimplicityNetwork;
 use crate::utils;
 
+use super::change_output::ChangeOutput;
 use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
 use super::partial_output::PartialOutput;
 
@@ -143,6 +144,7 @@ impl FinalInput {
 pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
+    change: Option<ChangeOutput>,
 }
 
 impl FinalTransaction {
@@ -153,7 +155,20 @@ impl FinalTransaction {
         Self {
             inputs: Vec::new(),
             outputs: Vec::new(),
+            change: None,
         }
+    }
+
+    /// Sets where this transaction's change should go.
+    ///
+    /// Left unset, the signer sends change to the single address it derives internally.
+    pub fn add_change(&mut self, change: ChangeOutput) {
+        self.change = Some(change);
+    }
+
+    /// Drops the change target, returning to the signer's own address.
+    pub fn remove_change(&mut self) {
+        self.change = None;
     }
 
     /// Adds a new input to the transaction.
@@ -260,6 +275,18 @@ impl FinalTransaction {
         }
 
         None
+    }
+
+    /// Where this transaction's change should go, when the caller said.
+    #[must_use]
+    pub fn change(&self) -> Option<&ChangeOutput> {
+        self.change.as_ref()
+    }
+
+    /// Where this transaction's change should go, for a caller that needs to amend it.
+    #[must_use]
+    pub fn change_mut(&mut self) -> Option<&mut ChangeOutput> {
+        self.change.as_mut()
     }
 
     /// Provides a slice reference to the collection of `FinalInput` elements.
