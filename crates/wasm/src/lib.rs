@@ -60,7 +60,7 @@ impl WitnessTrait for FixedWitness {
     }
 }
 
-/// A compiled SimplicityHL contract.
+/// A compiled `SimplicityHL` contract.
 #[wasm_bindgen]
 pub struct Contract {
     program: Program,
@@ -68,7 +68,7 @@ pub struct Contract {
 
 #[wasm_bindgen]
 impl Contract {
-    /// Creates a contract from SimplicityHL source text delivered at runtime.
+    /// Creates a contract from `SimplicityHL` source text delivered at runtime.
     ///
     /// `argumentsJson` carries the contract's compile-time parameters.
     ///
@@ -79,9 +79,12 @@ impl Contract {
     /// leaf payload appended to the tree in declaration order.
     ///
     /// # Errors
-    /// Returns an error if the arguments are not valid SimplicityHL argument JSON, or if the
+    /// Returns an error if the arguments are not valid `SimplicityHL` argument JSON, or if the
     /// extra leaves are not a JSON array of hex strings.
     #[wasm_bindgen(constructor)]
+    // The owned `Option<String>` is wasm-bindgen's, not a choice: it implements no
+    // `OptionFromWasmAbi` for `&str`, so an optional string argument has to arrive owned.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         source: &str,
         arguments_json: Option<String>,
@@ -119,6 +122,7 @@ impl Contract {
 
     /// Compiles the contract and returns its Commitment Merkle Root as lowercase hex.
     #[wasm_bindgen(js_name = commitmentMerkleRoot)]
+    #[must_use]
     pub fn commitment_merkle_root(&self) -> String {
         let cmr = self.program.get_cmr();
 
@@ -271,6 +275,7 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the script or the blinding key cannot be parsed.
     #[wasm_bindgen(js_name = addChange)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_change(&mut self, script_pubkey_hex: &str, blinding_key_hex: Option<String>) -> Result<(), JsError> {
         let script = Script::from(
             hex::decode(script_pubkey_hex).map_err(|e| JsError::new(&format!("Invalid change script: {e}")))?,
@@ -337,7 +342,7 @@ impl TransactionBuilder {
 
     /// Adds a covenant input: an output locked by a Simplicity program, spent by satisfying it.
     ///
-    /// `witness_json` carries the witness values in SimplicityHL's own `.wit` shape.
+    /// `witness_json` carries the witness values in `SimplicityHL`'s own `.wit` shape.
     /// Passing `null` leaves them unset.
     ///
     /// `signature_witness` names the witness the signer must fill with a Schnorr signature
@@ -347,6 +352,7 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments or the witness cannot be parsed.
     #[wasm_bindgen(js_name = addContractInput)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_contract_input(
         &mut self,
         txid: &str,
@@ -394,7 +400,7 @@ impl TransactionBuilder {
                 program: Box::new(program),
                 witness: Box::new(FixedWitness(witness)),
             },
-            Self::required_signature(signature_witness.as_deref())?,
+            Self::required_signature(signature_witness.as_deref()),
         );
 
         Ok(())
@@ -402,11 +408,12 @@ impl TransactionBuilder {
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Covenant and OP_RETURN outputs are always unblinded.
+    /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
     ///
     /// # Errors
     /// Returns an error if the script, asset id or blinding key cannot be parsed.
     #[wasm_bindgen(js_name = addOutput)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_output(
         &mut self,
         script_pubkey_hex: &str,
@@ -435,7 +442,7 @@ impl TransactionBuilder {
     /// Runs the Simplicity program of one covenant input against this transaction.
     ///
     /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
-    /// take, and executes the result on a BitMachine.
+    /// take, and executes the result on a `BitMachine`.
     ///
     /// # Errors
     /// Returns an error if the input is not a covenant input, or if the program fails to
@@ -484,24 +491,24 @@ impl TransactionBuilder {
     ///
     /// A name that is empty or only separators asks for no signature, which is what a covenant
     /// that authenticates nothing wants.
-    fn required_signature(signature_witness: Option<&str>) -> Result<RequiredSignature, JsError> {
+    fn required_signature(signature_witness: Option<&str>) -> RequiredSignature {
         let Some(raw) = signature_witness.map(str::trim).filter(|name| !name.is_empty()) else {
-            return Ok(RequiredSignature::None);
+            return RequiredSignature::None;
         };
 
         let mut segments = raw.split('.').map(str::trim).filter(|part| !part.is_empty());
 
         let Some(name) = segments.next() else {
-            return Ok(RequiredSignature::None);
+            return RequiredSignature::None;
         };
 
         let path: Vec<&str> = segments.collect();
 
         if path.is_empty() {
-            return Ok(RequiredSignature::Witness(name.to_string()));
+            return RequiredSignature::Witness(name.to_string());
         }
 
-        Ok(RequiredSignature::witness_with_path(name, path))
+        RequiredSignature::witness_with_path(name, path)
     }
 
     /// Applies a declared sequence to an input.
