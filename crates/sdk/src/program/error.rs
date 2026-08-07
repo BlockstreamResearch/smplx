@@ -1,10 +1,6 @@
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
-    /// Error thrown when compiling the raw Simplicity program source fails.
-    #[error("Failed to compile Simplicity program: {0}")]
-    Compilation(String),
-
     /// Error indicating failure while matching or satisfying witness values to the program requirements.
     #[error("Failed to satisfy witness: {0}")]
     WitnessSatisfaction(String),

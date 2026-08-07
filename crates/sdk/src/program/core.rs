@@ -109,7 +109,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.compiled.commit().cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -141,7 +141,7 @@ impl ProgramTrait for Program {
                 .collect(),
             u32::try_from(input_index)?,
             cmr,
-            self.control_block()?,
+            self.control_block(),
             None,
             genesis_hash,
         ))
@@ -155,7 +155,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
         let satisfied = self
-            .load()?
+            .compiled
             .satisfy(witness.clone())
             .map_err(ProgramError::WitnessSatisfaction)?;
 
@@ -194,13 +194,16 @@ impl ProgramTrait for Program {
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
-            self.control_block()?.serialize(),
+            self.control_block().serialize(),
         ])
     }
 }
 
 impl Program {
     /// Creates a new instance of the struct with the provided source string and arguments.
+    ///
+    /// # Panics
+    /// Panics if the `source` fails to compile as a Simplicity program.
     #[must_use]
     pub fn new(source: impl Into<Arc<str>>, arguments: &dyn ArgumentsTrait) -> Self {
         Self {
@@ -277,7 +280,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info().unwrap();
+        let spend_info = self.taproot_spending_info();
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -368,7 +371,7 @@ impl Program {
         let cmr = self.load()?.commit().cmr();
         let script = Script::from(cmr.as_ref().to_vec());
 
-        Ok((script, leaf_version()))
+        (script, leaf_version())
     }
 
     /// Depths of a left-folded tap tree, in the order `TaprootBuilder` wants them.
@@ -387,9 +390,9 @@ impl Program {
         depths
     }
 
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+    fn taproot_spending_info(&self) -> taproot::TaprootSpendInfo {
         let mut builder = taproot::TaprootBuilder::new();
-        let (script, version) = self.script_version()?;
+        let (script, version) = self.script_version();
         let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
 
         builder = builder
@@ -402,16 +405,16 @@ impl Program {
                 .expect("tap tree should be valid");
         }
 
-        Ok(builder
+        builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
-            .expect("tap tree should be valid"))
+            .expect("tap tree should be valid")
     }
 
-    fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {
-        let info = self.taproot_spending_info()?;
-        let script_ver = self.script_version()?;
+    fn control_block(&self) -> taproot::ControlBlock {
+        let info = self.taproot_spending_info();
+        let script_ver = self.script_version();
 
-        Ok(info.control_block(&script_ver).expect("control block should exist"))
+        info.control_block(&script_ver).expect("control block should exist")
     }
 }
 
