@@ -22,7 +22,7 @@ use smplx_sdk::transaction::{
 
 use wasm_bindgen::prelude::*;
 
-/// Resolves a network name to the SDK's network enum.
+/// Resolves a network name to the Simplex SDK's network enum.
 fn network_from_str(network: &str) -> Result<SimplicityNetwork, JsError> {
     match network {
         "liquid" => Ok(SimplicityNetwork::Liquid),
@@ -63,7 +63,7 @@ pub struct Contract {
 
 #[wasm_bindgen]
 impl Contract {
-    /// Creates a contract from SimplicityHL source text delivered at runtime.
+    /// Creates a contract from `SimplicityHL` source text delivered at runtime.
     ///
     /// `argumentsJson` carries the contract's compile-time parameters.
     ///
@@ -74,7 +74,7 @@ impl Contract {
     /// leaf payload appended to the tree in declaration order.
     ///
     /// # Errors
-    /// Returns an error if the arguments are not valid SimplicityHL argument JSON, or if the
+    /// Returns an error if the arguments are not valid `SimplicityHL` argument JSON, or if the
     /// extra leaves are not a JSON array of hex strings.
     #[wasm_bindgen(constructor)]
     #[allow(clippy::needless_pass_by_value)]
@@ -342,7 +342,7 @@ impl TransactionBuilder {
 
     /// Adds a Simplicity contract input, spent by satisfying it.
     ///
-    /// `witness_json` carries the witness values in SimplicityHL's `.wit` shape.
+    /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
     ///
     /// `signature_witness` names the witness the signer must fill with a Schnorr signature
@@ -408,7 +408,7 @@ impl TransactionBuilder {
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Covenant and OP_RETURN outputs are always unblinded.
+    /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
     ///
     /// # Errors
     /// Returns an error if the script, asset id or blinding key cannot be parsed.
@@ -442,7 +442,7 @@ impl TransactionBuilder {
     /// Runs the Simplicity program of one contract input against this transaction.
     ///
     /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
-    /// take, and executes the result on a BitMachine.
+    /// take, and executes the result on a `BitMachine`.
     ///
     /// # Errors
     /// Returns an error if the input is not a contract input, or if the program fails to
