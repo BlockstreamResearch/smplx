@@ -3,12 +3,12 @@ use serde::Deserialize;
 use crate::error::BuildError;
 
 // Default values for optional [build] fields.
-pub(super) const DEFAULT_OUT_DIR_NAME: &str = "src/artifacts";
-pub(super) const DEFAULT_INCLUDE_PATH: &str = "**/*.simf";
-pub(super) const DEFAULT_SRC_DIR_NAME: &str = "simf";
+pub const DEFAULT_OUT_DIR_NAME: &str = "src/artifacts";
+pub const DEFAULT_INCLUDE_PATH: &str = "**/*.simf";
+pub const DEFAULT_SRC_DIR_NAME: &str = "simf";
 
 // TOML section name.
-pub(super) const BUILD_SECTION: &str = "build";
+pub const BUILD_SECTION: &str = "build";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
