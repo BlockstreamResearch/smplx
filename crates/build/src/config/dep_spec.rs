@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use super::error::TomlEditError;
+use crate::error::TomlEditError;
 
 pub struct DepSpec {
     pub alias: String,

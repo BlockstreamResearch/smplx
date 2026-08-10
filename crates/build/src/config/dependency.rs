@@ -5,30 +5,16 @@ use toml_edit::{DocumentMut, InlineTable, Item, Value};
 
 use serde::Deserialize;
 
-use crate::dep_spec::DepSpec;
-use crate::dep_spec::Source;
-use crate::error::TomlEditError;
+use super::dep_spec::DepSpec;
+use super::dep_spec::Source;
 
-use super::error::BuildError;
-use super::error::DependencyValidationError;
+use crate::error::{BuildError, DependencyValidationError, TomlEditError};
 
-// Default values for optional [build] fields.
-pub const DEFAULT_OUT_DIR_NAME: &str = "src/artifacts";
-pub const DEFAULT_INCLUDE_PATH: &str = "**/*.simf";
-pub const DEFAULT_SRC_DIR_NAME: &str = "simf";
+/// The default directory name used for Simplex project dependencies.
 pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
 
-// TOML section names.
-pub const BUILD_SECTION: &str = "build";
+// TOML section name.
 pub const DEPENDENCIES_SECTION: &str = "dependencies";
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-pub struct BuildConfig {
-    pub simf_files: Vec<String>,
-    pub src_dir: String,
-    pub out_dir: String,
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct DependencyConfig {
@@ -65,31 +51,6 @@ struct RawDependency {
     rev: Option<String>,
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
-}
-
-impl BuildConfig {
-    /// Parses the `[build]` section from TOML source text.
-    ///
-    /// The `[build]` table is nested, so this descends into it rather than reading
-    /// top-level keys. If the section is absent, returns [`BuildConfig::default`].
-    pub fn from_source(content: &str) -> Result<Self, BuildError> {
-        let table: toml::Table = toml::from_str(content)?;
-
-        match table.get(BUILD_SECTION) {
-            Some(section) => Ok(section.clone().try_into()?),
-            None => Ok(Self::default()),
-        }
-    }
-}
-
-impl Default for BuildConfig {
-    fn default() -> Self {
-        Self {
-            simf_files: vec![DEFAULT_INCLUDE_PATH.into()],
-            src_dir: DEFAULT_SRC_DIR_NAME.into(),
-            out_dir: DEFAULT_OUT_DIR_NAME.into(),
-        }
-    }
 }
 
 impl DependencyConfig {
