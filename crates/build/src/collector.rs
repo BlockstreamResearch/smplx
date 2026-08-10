@@ -107,7 +107,6 @@ impl DepCollector {
     fn resolve_dep_context(&self, dep: &Dependency, context: &CanonPath) -> Result<CanonPath, BuildError> {
         let raw_path = match dep {
             Dependency::Path(path) => context.as_path().join(path),
-
             Dependency::Git { url, reference } => {
                 let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref())
                     .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;

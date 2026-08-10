@@ -59,13 +59,10 @@ struct RawDependencyConfig {
 struct RawDependency {
     /// The exact path to the directory containing the `Simplex.toml` file.
     path: Option<String>,
-
     /// The URL of the Git repository.
     git: Option<String>,
-
     /// The specific commit to download (only applicable if `git` is provided).
     rev: Option<String>,
-
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
 }
@@ -185,7 +182,6 @@ impl RawDependency {
         match (self.path, self.git) {
             (Some(_), Some(_)) => Err(DependencyValidationError::Conflicting(name.into())),
             (None, None) => Err(DependencyValidationError::Missing(name.into())),
-
             (Some(p), None) => {
                 if self.rev.is_some() || self.tag.is_some() {
                     return Err(DependencyValidationError::PathWithGitField(name.into()));
@@ -193,7 +189,6 @@ impl RawDependency {
 
                 Ok(Dependency::Path(p))
             }
-
             (None, Some(url)) => {
                 let reference = match (self.rev, self.tag) {
                     (None, None) => None,
