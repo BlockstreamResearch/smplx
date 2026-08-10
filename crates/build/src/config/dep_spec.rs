@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
-use super::error::TomlEditError;
+use crate::error::TomlEditError;
 
-pub struct DepSpec {
+pub(super) struct DepSpec {
     pub alias: String,
     pub source: Source,
 }
 
-pub enum Source {
+pub(super) enum Source {
     Git(String),
     Path(String),
 }
@@ -27,7 +27,7 @@ impl DepSpec {
     /// - `TomlEditError::MalformedDep`: If `raw` contains `=` but either side is empty,
     ///   or if the alias cannot be derived from the source (e.g. the source contains
     ///   no non-empty path segment).
-    pub fn parse_dep(raw: &str) -> Result<DepSpec, TomlEditError> {
+    pub(super) fn parse_dep(raw: &str) -> Result<DepSpec, TomlEditError> {
         let (alias, source_str) = match raw.split_once('=') {
             Some((a, s)) if !a.is_empty() && !s.is_empty() => (a.to_owned(), s),
             Some(_) => return Err(TomlEditError::MalformedDep(raw.to_owned())),
@@ -41,7 +41,7 @@ impl DepSpec {
 
     /// Formats a batch of dependency specs as a bracketed, one-per-line list.
     #[must_use]
-    pub fn format_batch(specs: &[DepSpec]) -> String {
+    pub(super) fn format_batch(specs: &[DepSpec]) -> String {
         if specs.is_empty() {
             return "[]".to_owned();
         }

@@ -1,6 +1,5 @@
 mod collector;
 pub mod config;
-pub mod dep_spec;
 pub mod error;
 pub mod generator;
 pub mod macros;
