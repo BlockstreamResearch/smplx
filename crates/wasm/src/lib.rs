@@ -1,13 +1,8 @@
 #![warn(clippy::all, clippy::pedantic, missing_docs)]
 //! WebAssembly bindings for the Simplex SDK.
 //!
-//! This crate exists so the SDK itself stays free of `wasm-bindgen` annotations and the
-//! binding surface can be exactly what a host needs rather than the whole SDK. It follows
-//! the arrangement `lwk_wasm` already uses.
-//!
-//! The surface is deliberately small and grows with the host that consumes it. What is
-//! here is enough to establish that the module loads, that compilation runs inside the
-//! browser, and that a value derived from a compiled contract crosses the boundary.
+//! This crate exists so the SDK itself stays free of `wasm-bindgen` annotations
+//! and follows the arrangement of `lwk_wasm`.
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -47,7 +42,7 @@ impl ArgumentsTrait for FixedArguments {
     }
 }
 
-/// Witness values for a covenant input, resolved before the transaction is assembled.
+/// Witness values for a contract input, resolved before the transaction is assembled.
 ///
 /// Held as parsed `WitnessValues` so a malformed set is rejected when the caller supplies
 /// it rather than in the middle of signing.
@@ -68,22 +63,20 @@ pub struct Contract {
 
 #[wasm_bindgen]
 impl Contract {
-    /// Creates a contract from `SimplicityHL` source text delivered at runtime.
+    /// Creates a contract from SimplicityHL source text delivered at runtime.
     ///
     /// `argumentsJson` carries the contract's compile-time parameters.
     ///
     /// Shape: `{"NAME": {"value": "0x…", "type": "Pubkey"}}`.
-    /// Pass `null` for a contract that declares no parameters.
+    /// Pass `None` for a contract that declares no parameters.
     ///
     /// `extraLeavesJson` is a JSON array of hex strings, each an encoded taproot
     /// leaf payload appended to the tree in declaration order.
     ///
     /// # Errors
-    /// Returns an error if the arguments are not valid `SimplicityHL` argument JSON, or if the
+    /// Returns an error if the arguments are not valid SimplicityHL argument JSON, or if the
     /// extra leaves are not a JSON array of hex strings.
     #[wasm_bindgen(constructor)]
-    // The owned `Option<String>` is wasm-bindgen's, not a choice: it implements no
-    // `OptionFromWasmAbi` for `&str`, so an optional string argument has to arrive owned.
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         source: &str,
@@ -129,7 +122,7 @@ impl Contract {
         hex::encode(cmr)
     }
 
-    /// Compiles the contract and returns the scriptPubKey its funds sit behind, as hex.
+    /// Compiles the contract and returns the scriptPubKey its funds are locked with, as hex.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
@@ -138,6 +131,17 @@ impl Contract {
         let network = network_from_str(network)?;
 
         Ok(hex::encode(self.program.get_script_pubkey(&network).as_bytes()))
+    }
+
+    /// Compiles the contract and returns its scriptPubKey hash.
+    ///
+    /// # Errors
+    /// Returns an error if the network name is unknown or the source fails to compile.
+    #[wasm_bindgen(js_name = scriptHash)]
+    pub fn script_hash(&self, network: &str) -> Result<String, JsError> {
+        let network = network_from_str(network)?;
+
+        Ok(hex::encode(self.program.get_script_hash(&network)))
     }
 
     /// Compiles the contract and returns the taproot address its funds would sit at.
@@ -175,7 +179,7 @@ impl WalletSigner {
         })
     }
 
-    /// The unblinded address of the signer's own key.
+    /// The WPKH address of the signer's own key.
     #[wasm_bindgen(js_name = address)]
     #[must_use]
     pub fn address(&self) -> String {
@@ -184,7 +188,7 @@ impl WalletSigner {
         self.signer.get_address().to_string()
     }
 
-    /// The confidential address of the signer's own key.
+    /// The confidential WPKH address of the signer's own key.
     #[wasm_bindgen(js_name = confidentialAddress)]
     #[must_use]
     pub fn confidential_address(&self) -> String {
@@ -206,9 +210,6 @@ impl WalletSigner {
     }
 
     /// The scriptPubKey of the signer's own address, as lowercase hex.
-    ///
-    /// This is what a wallet output pays to, so it is what the caller encodes into the
-    /// `TxOut` of an input it wants signed, and what it passes as the change script.
     #[wasm_bindgen(js_name = scriptPubKeyHex)]
     #[must_use]
     pub fn script_pubkey_hex(&self) -> String {
@@ -225,7 +226,7 @@ impl WalletSigner {
     /// Blinds, signs and finalizes an assembled transaction.
     ///
     /// # Errors
-    /// Returns an error if the transaction cannot be balanced, blinded, signed or finalised.
+    /// Returns an error if the transaction cannot be balanced, blinded, signed or finalized.
     #[wasm_bindgen(js_name = finalizeTransaction)]
     pub fn finalize_transaction(
         &self,
@@ -235,7 +236,7 @@ impl WalletSigner {
         let (transaction, fee_sats) = self
             .signer
             .finalize_strict(builder.inner(), fee_rate)
-            .map_err(|e| JsError::new(&format!("Could not finalise the transaction: {e}")))?;
+            .map_err(|e| JsError::new(&format!("Could not finalize the transaction: {e}")))?;
 
         Ok(SignedTransaction {
             fee_sats,
@@ -247,11 +248,10 @@ impl WalletSigner {
 
 /// A transaction under construction.
 ///
-/// Inputs cross as an outpoint plus the raw `TxOut` they spend.
-/// Unblinding is done on the Signer side.
+/// Inputs are expected as an outpoint plus the raw `TxOut` they spend.
+/// Coin selection and unblinding are the caller's responsibility.
 ///
-/// Coin selection is the caller's.
-/// This assembles exactly what it is given and adds only the change and fee outputs.
+/// Assembles exactly what it is given and adds only the change and fee outputs.
 #[wasm_bindgen]
 pub struct TransactionBuilder {
     transaction: FinalTransaction,
@@ -340,14 +340,14 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Adds a covenant input: an output locked by a Simplicity program, spent by satisfying it.
+    /// Adds a Simplicity contract input, spent by satisfying it.
     ///
-    /// `witness_json` carries the witness values in `SimplicityHL`'s own `.wit` shape.
-    /// Passing `null` leaves them unset.
+    /// `witness_json` carries the witness values in SimplicityHL's `.wit` shape.
+    /// Passing `None` leaves them unset.
     ///
     /// `signature_witness` names the witness the signer must fill with a Schnorr signature
     /// over this transaction.
-    /// Leaving this `null` says the program needs no signature.
+    /// Leaving this `None` says the program needs no signature.
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments or the witness cannot be parsed.
@@ -408,7 +408,7 @@ impl TransactionBuilder {
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
+    /// A blinding key makes the output confidential. Covenant and OP_RETURN outputs are always unblinded.
     ///
     /// # Errors
     /// Returns an error if the script, asset id or blinding key cannot be parsed.
@@ -439,13 +439,13 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Runs the Simplicity program of one covenant input against this transaction.
+    /// Runs the Simplicity program of one contract input against this transaction.
     ///
     /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
-    /// take, and executes the result on a `BitMachine`.
+    /// take, and executes the result on a BitMachine.
     ///
     /// # Errors
-    /// Returns an error if the input is not a covenant input, or if the program fails to
+    /// Returns an error if the input is not a contract input, or if the program fails to
     /// satisfy, prune or execute.
     #[wasm_bindgen(js_name = dryRunContractInput)]
     pub fn dry_run_contract_input(&self, input_index: usize, network: &str) -> Result<(), JsError> {
@@ -483,14 +483,10 @@ impl TransactionBuilder {
         self.transaction.n_outputs()
     }
 
-    /// Which signature a covenant input needs, from the name the caller gave it.
+    /// Which signature a covenant input needs. Can either be a witness name like `SIGNATURE`,
+    /// or a withess path if the signature is embedded like `SIGNATURE.Left.Right.1`
     ///
-    /// A witness can sit at the top of an input's witness set or inside a structure, and the
-    /// SDK distinguishes the two. The binding takes one string for both and splits it on `.`,
-    /// so `unlock` is the flat form and `Left.Right.1`.
-    ///
-    /// A name that is empty or only separators asks for no signature, which is what a covenant
-    /// that authenticates nothing wants.
+    /// `None` means no signature is required.
     fn required_signature(signature_witness: Option<&str>) -> RequiredSignature {
         let Some(raw) = signature_witness.map(str::trim).filter(|name| !name.is_empty()) else {
             return RequiredSignature::None;
@@ -563,7 +559,7 @@ impl SignedTransaction {
     }
 }
 
-/// Returns the version of the SDK compiled into this module.
+/// The version of the Simplex SDK compiled into this module.
 #[wasm_bindgen(js_name = sdkVersion)]
 #[must_use]
 pub fn sdk_version() -> String {
