@@ -24,9 +24,6 @@ use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
 
-// NOTE: This is supposed to change once the versioning mechanism is implemented.
-pub const COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
-
 pub struct ArtifactsGenerator {}
 
 /// A single processed (flattened) `.simf` file with all metadata needed for binding generation.
@@ -52,7 +49,6 @@ struct TreeNode {
 
 #[derive(Default, Serialize)]
 struct Metadata {
-    simplicityhl_version: String,
     sources: BTreeMap<String, String>,
 }
 
@@ -81,8 +77,6 @@ impl ArtifactsGenerator {
             .iter()
             .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir, &mut metadata))
             .collect::<Result<Vec<_>, _>>()?;
-
-        metadata.simplicityhl_version = COMPILER_VERSION.to_string();
 
         let file = std::fs::File::create(&json_metadata_file)?;
         serde_json::to_writer_pretty(BufWriter::new(file), &metadata)?;
