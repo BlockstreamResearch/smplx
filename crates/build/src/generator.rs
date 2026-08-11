@@ -1,12 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use serde::Serialize;
 
 use simplicityhl::TemplateProgram;
 use simplicityhl::UnstableFeatures;
@@ -25,7 +26,7 @@ use super::error::BuildError;
 
 pub struct ArtifactsGenerator {}
 
-/// A single processed `.simf` file with all metadata needed for binding generation.
+/// A single processed (flattened) `.simf` file with all metadata needed for binding generation.
 ///
 /// Created once per source file and carries everything downstream — no recomputation
 /// of paths or contract names in later stages.
@@ -46,6 +47,12 @@ struct TreeNode {
     dirs: HashMap<String, TreeNode>,
 }
 
+#[derive(Default, Serialize)]
+struct Metadata {
+    simplicityhl_version: String,
+    sources: BTreeMap<String, String>,
+}
+
 impl ArtifactsGenerator {
     pub fn generate_artifacts(
         out_dir: impl AsRef<Path>,
@@ -57,17 +64,26 @@ impl ArtifactsGenerator {
         let out_dir = out_dir.as_ref();
         let base_dir = base_dir.as_ref();
 
+        let json_metadata_file = out_dir.join("metadata.json");
+
         let pathdiff = pathdiff::diff_paths(base_dir, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
             cwd,
             simf_file: base_dir.to_path_buf(),
         })?;
 
         let simf_out_dir = out_dir.join(pathdiff);
+        let mut metadata = Metadata::default();
 
         let artifacts = simfs
             .iter()
-            .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir))
+            .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir, &mut metadata))
             .collect::<Result<Vec<_>, _>>()?;
+
+        let version = Self::get_compiler_version()?;
+        metadata.simplicityhl_version = version;
+
+        let file = std::fs::File::create(&json_metadata_file)?;
+        serde_json::to_writer_pretty(BufWriter::new(file), &metadata)?;
 
         let tree = Self::build_tree(artifacts)?;
 
@@ -88,7 +104,30 @@ impl ArtifactsGenerator {
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
     }
 
-    /// Processes a single `.simf` source file:
+    // NOTE: Currently, the version is taken directly from the Cargo.toml file,
+    // but this is supposed to change once the versioning mechanism is implemented.
+    fn get_compiler_version() -> Result<String, BuildError> {
+        let start = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cargo_lock = start
+            .ancestors()
+            .map(|d| d.join("Cargo.lock"))
+            .find(|p| p.is_file())
+            .expect("Cargo.lock not found in any ancestor of CARGO_MANIFEST_DIR");
+
+        let lock_str = fs::read_to_string(cargo_lock)?;
+        let lock: toml::Value = toml::from_str(&lock_str)?;
+
+        let version = lock["package"]
+            .as_array()
+            .and_then(|pkgs| pkgs.iter().find(|p| p["name"].as_str() == Some("simplicityhl")))
+            .and_then(|p| p["version"].as_str())
+            .expect("simplicityhl must be in Cargo.lock")
+            .to_owned();
+
+        Ok(version)
+    }
+
+    /// Processes a single `.simf` source file and write it to metadata:
     /// - Writes its content to the mirrored path under `simf_out_dir`
     /// - Extracts the contract name
     ///
@@ -99,6 +138,7 @@ impl ArtifactsGenerator {
         base_dir: &Path,
         validated_deps: &ValidatedDeps,
         simf_out_dir: &Path,
+        metadata: &mut Metadata,
     ) -> Result<SimfArtifact, BuildError> {
         let relative_path = source
             .strip_prefix(base_dir)
@@ -113,6 +153,9 @@ impl ArtifactsGenerator {
 
         let content = Self::process_content(source, validated_deps)?;
         fs::write(&mirrored_path, &content)?;
+
+        let relative_path_str = relative_path.display().to_string();
+        metadata.sources.insert(relative_path_str, content);
 
         let contract_name = SimfContent::extract_content_from_path(&source.to_path_buf())
             .map_err(BuildError::FailedToExtractContent)?

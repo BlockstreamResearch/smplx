@@ -49,6 +49,9 @@ pub enum BuildError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    #[error("failed to serialize metadata: {0}")]
+    MetadataSerialization(#[from] serde_json::Error),
+
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
 
