@@ -24,6 +24,9 @@ use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
 
+// NOTE: This is supposed to change once the versioning mechanism is implemented.
+pub const COMPILER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub struct ArtifactsGenerator {}
 
 /// A single processed (flattened) `.simf` file with all metadata needed for binding generation.
@@ -79,8 +82,7 @@ impl ArtifactsGenerator {
             .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir, &mut metadata))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let version = Self::get_compiler_version()?;
-        metadata.simplicityhl_version = version;
+        metadata.simplicityhl_version = COMPILER_VERSION.to_string();
 
         let file = std::fs::File::create(&json_metadata_file)?;
         serde_json::to_writer_pretty(BufWriter::new(file), &metadata)?;
@@ -102,29 +104,6 @@ impl ArtifactsGenerator {
         validated_deps
             .with_root(canon_entry_root)
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
-    }
-
-    // NOTE: Currently, the version is taken directly from the Cargo.toml file,
-    // but this is supposed to change once the versioning mechanism is implemented.
-    fn get_compiler_version() -> Result<String, BuildError> {
-        let start = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let cargo_lock = start
-            .ancestors()
-            .map(|d| d.join("Cargo.lock"))
-            .find(|p| p.is_file())
-            .expect("Cargo.lock not found in any ancestor of CARGO_MANIFEST_DIR");
-
-        let lock_str = fs::read_to_string(cargo_lock)?;
-        let lock: toml::Value = toml::from_str(&lock_str)?;
-
-        let version = lock["package"]
-            .as_array()
-            .and_then(|pkgs| pkgs.iter().find(|p| p["name"].as_str() == Some("simplicityhl")))
-            .and_then(|p| p["version"].as_str())
-            .expect("simplicityhl must be in Cargo.lock")
-            .to_owned();
-
-        Ok(version)
     }
 
     /// Processes a single `.simf` source file and write it to metadata:
