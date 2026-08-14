@@ -90,6 +90,9 @@ pub enum BuildError {
     #[error("Failed to flatten program: {0}")]
     Flattening(String),
 
+    #[error("Failed to dry run the program: {0}")]
+    DryRun(String),
+
     #[error("Invalid git repository URL: '{0}'")]
     InvalidGitUrl(String),
 

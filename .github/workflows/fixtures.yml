@@ -130,6 +130,7 @@ jobs:
         run: |
           cd ${{ matrix.build-dir }}
           simplex build
+          cargo test --test metadata_cmr
           test -f src/artifacts/mod.rs
 
       - name: Check formatting

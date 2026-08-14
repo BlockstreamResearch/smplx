@@ -213,6 +213,23 @@ impl Program {
         }
     }
 
+    /// Builds a program around an already-compiled artifact, e.g. one compiled at build time
+    /// with fabricated arguments. `load` serves this instance and never compiles.
+    #[must_use]
+    pub fn from_compiled(source: impl Into<Arc<str>>, arguments: Arguments, compiled: CompiledProgram) -> Self {
+        let cache = OnceLock::new();
+        let _ = cache.set(compiled);
+
+        Self {
+            source: source.into(),
+            pub_key: tr_unspendable_key(),
+            arguments,
+            storage: Vec::new(),
+            include_debug_symbols: None,
+            compiled: Arc::new(cache),
+        }
+    }
+
     /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
     /// This is used to set the taproot public key for the program.
     #[must_use]

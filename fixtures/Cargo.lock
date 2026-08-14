@@ -1253,6 +1253,7 @@ name = "simplex_fixtures"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde_json",
  "smplx-std",
 ]
 
@@ -1320,6 +1321,7 @@ dependencies = [
  "serde",
  "serde_json",
  "simplicityhl",
+ "smplx-sdk",
  "syn",
  "thiserror",
  "toml",

@@ -8,3 +8,6 @@ version = "0.1.0"
 smplx-std = { path = "../crates/simplex" }
 
 anyhow = { version = "1.0.101" }
+
+[dev-dependencies]
+serde_json = { version = "1.0.151" }

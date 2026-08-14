@@ -4,7 +4,7 @@ use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
 
 use crate::macros::parse::SimfContent;
-use crate::macros::types::RustType;
+use crate::macros::types::{RustType, default_tokens, default_value};
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
@@ -30,6 +30,8 @@ pub struct WitnessField {
     witness_simf_name: String,
     struct_rust_field: proc_macro2::Ident,
     rust_type: RustType,
+    /// Kept so the field's default can be derived from the one policy in `default_value`.
+    resolved_type: ResolvedType,
 }
 
 pub struct WitnessStruct {
@@ -72,6 +74,7 @@ impl WitnessField {
             witness_simf_name,
             struct_rust_field,
             rust_type,
+            resolved_type: resolved_type.clone(),
         })
     }
 
@@ -105,7 +108,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("args");
-        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
+        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping()?;
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
@@ -186,7 +189,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("witness");
-        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
+        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping()?;
 
         Ok(GeneratedWitnessTokens {
             imports: quote! {
@@ -300,23 +303,23 @@ impl WitnessStruct {
         }
     }
 
-    fn generate_default_mapping(&self) -> proc_macro2::TokenStream {
+    fn generate_default_mapping(&self) -> syn::Result<proc_macro2::TokenStream> {
         let name = format_ident!("{}", self.struct_name);
         let fields: Vec<proc_macro2::TokenStream> = self
             .witness_values
             .iter()
             .map(|field| {
                 let field_name = format_ident!("{}", field.struct_rust_field);
-                let field_default_value = field.rust_type.get_default_value();
-                quote! { #field_name: #field_default_value }
+                let field_default_value = default_tokens(&default_value(&field.resolved_type)?);
+                Ok(quote! { #field_name: #field_default_value })
             })
-            .collect();
+            .collect::<syn::Result<_>>()?;
 
-        quote! {
+        Ok(quote! {
             #name {
                 #(#fields),*
             }
-        }
+        })
     }
 
     #[inline]
