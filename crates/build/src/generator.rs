@@ -12,20 +12,17 @@ use serde::Serialize;
 use simplicityhl::TemplateProgram;
 use simplicityhl::UnstableFeatures;
 use simplicityhl::ast::ElementsJetHinter;
-use simplicityhl::elements::hex::ToHex;
 use simplicityhl::resolution::DependencyMap;
 use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
 use simplicityhl::source::CanonSourceFile;
 
-use smplx_sdk::program::Program;
-
+use crate::contract_id::ContractId;
 use crate::macros::codegen::{
     convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
     convert_contract_name_to_struct_name,
 };
 use crate::macros::parse::SimfContent;
-use crate::macros::types::default_arguments;
 
 use super::error::BuildError;
 
@@ -59,7 +56,7 @@ struct Metadata {
 
 #[derive(Serialize)]
 struct SourceEntry {
-    cmr: String,
+    cmr: ContractId,
     content: String,
 }
 
@@ -135,15 +132,10 @@ impl ArtifactsGenerator {
             fs::create_dir_all(parent)?;
         }
 
-        let (template, content) = Self::process_content(source, validated_deps)?;
-        fs::write(&mirrored_path, &content)?;
-        let program = Self::dry_run(&template)?;
+        let source_entry = Self::process_content(source, validated_deps)?;
+        fs::write(&mirrored_path, &source_entry.content)?;
 
         let relative_path_str = relative_path.display().to_string();
-        let source_entry = SourceEntry {
-            cmr: program.get_cmr().to_hex(),
-            content,
-        };
         metadata.sources.insert(relative_path_str, source_entry);
 
         let contract_name = SimfContent::extract_content_from_path(&source.to_path_buf())
@@ -158,7 +150,7 @@ impl ArtifactsGenerator {
     }
 
     /// Reads and processes the content of a `.simf` file.
-    fn process_content(source: &Path, validated_deps: &ValidatedDeps) -> Result<(TemplateProgram, String), BuildError> {
+    fn process_content(source: &Path, validated_deps: &ValidatedDeps) -> Result<SourceEntry, BuildError> {
         let parent_dir = source.parent().ok_or_else(|| {
             BuildError::GenerationFailed(format!("Path '{}' has no parent directory", source.display()))
         })?;
@@ -179,17 +171,10 @@ impl ArtifactsGenerator {
         let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, unstable_features)
             .map_err(BuildError::Flattening)?;
 
-        Ok((template, flattened))
-    }
-
-    fn dry_run(template: &TemplateProgram) -> Result<Program, BuildError> {
-        let arguments = default_arguments(template.parameters()).map_err(|e| BuildError::DryRun(e.to_string()))?;
-        let compiled = template
-            .instantiate(arguments.clone(), false)
-            .map_err(BuildError::DryRun)?;
-        let source = template.resolved_program().to_string();
-
-        Ok(Program::from_compiled(source, arguments, compiled))
+        Ok(SourceEntry {
+            cmr: ContractId::dry_run(&template)?,
+            content: flattened,
+        })
     }
 
     /// Arranges a flat list of artifacts into a tree mirroring the source directory layout.

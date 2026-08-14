@@ -1321,7 +1321,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simplicityhl",
- "smplx-sdk",
  "syn",
  "thiserror",
  "toml",

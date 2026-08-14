@@ -1,14 +1,8 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
-use proc_macro2::TokenStream;
 use quote::quote;
 
-use simplicityhl::either::Either;
-use simplicityhl::num::U256;
-use simplicityhl::types::{TypeInner, UIntType};
-use simplicityhl::value::{UIntValue, ValueConstructible, ValueInner};
-use simplicityhl::{Arguments, Parameters, ResolvedType, Value};
+use simplicityhl::ResolvedType;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -65,119 +59,43 @@ impl RustTypeContext {
     }
 }
 
-/// The single source of truth for Simplex's default arguments.
-///
-/// [`default_tokens`] transcribes whatever this returns into the generated `Default` impl,
-/// so the values a contract is dry-run with and the values its generated struct defaults to
-/// are the same by construction.
-///
-/// # Errors
-/// Returns a `syn::Error` if the type is not supported by the macro conversions.
-pub fn default_value(ty: &ResolvedType) -> syn::Result<Value> {
-    match ty.as_inner() {
-        TypeInner::Boolean => Ok(Value::from(false)),
-        TypeInner::UInt(uint_ty) => Ok(Value::from(default_uint(*uint_ty))),
-        TypeInner::Option(inner) => Ok(Value::none(inner.as_ref().clone())),
-        TypeInner::Either(left, right) => Ok(Value::left(default_value(left)?, right.as_ref().clone())),
-        TypeInner::Tuple(elements) => {
-            let elements: syn::Result<Vec<_>> = elements.iter().map(|el| default_value(el)).collect();
-            Ok(Value::tuple(elements?))
-        }
-        TypeInner::Array(element, size) => {
-            let elements: syn::Result<Vec<_>> = (0..*size).map(|_| default_value(element)).collect();
-            Ok(Value::array(elements?, element.as_ref().clone()))
-        }
-        TypeInner::List(element, bound) => Ok(Value::list(std::iter::empty(), element.as_ref().clone(), *bound)),
-        _ => Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "Unsupported type in macro conversions",
-        )),
-    }
-}
-
-/// Builds a full set of default arguments for a program's parameters.
-///
-/// These are the values a contract is dry-run with when no real arguments exist yet.
-///
-/// # Errors
-/// Returns a `syn::Error` if any parameter has a type the macro conversions do not support.
-pub fn default_arguments(parameters: &Parameters) -> syn::Result<Arguments> {
-    parameters
-        .iter()
-        .map(|(name, ty)| Ok((name.clone(), default_value(ty)?)))
-        .collect::<syn::Result<HashMap<_, _>>>()
-        .map(Arguments::from)
-}
-
-fn default_uint(ty: UIntType) -> UIntValue {
-    match ty {
-        UIntType::U1 => UIntValue::U1(0),
-        UIntType::U2 => UIntValue::U2(0),
-        UIntType::U4 => UIntValue::U4(0),
-        UIntType::U8 => UIntValue::U8(0),
-        UIntType::U16 => UIntValue::U16(0),
-        UIntType::U32 => UIntValue::U32(0),
-        UIntType::U64 => UIntValue::U64(0),
-        UIntType::U128 => UIntValue::U128(0),
-        UIntType::U256 => UIntValue::U256(U256::MIN),
-    }
-}
-
-/// Transcribes a value into the Rust literal its generated struct field expects.
-///
-/// Mechanical by design: every default *decision* lives in [`default_value`], so the two
-/// cannot drift.
-pub fn default_tokens(value: &Value) -> TokenStream {
-    match value.inner() {
-        ValueInner::Boolean(b) => quote! { #b },
-        ValueInner::UInt(uint) => uint_tokens(*uint),
-        ValueInner::Option(None) => quote! { None },
-        ValueInner::Option(Some(inner)) => {
-            let inner = default_tokens(inner);
-            quote! { Some(#inner) }
-        }
-        ValueInner::Either(Either::Left(left)) => {
-            let left = default_tokens(left);
-            quote! { simplex::either::Either::Left(#left) }
-        }
-        ValueInner::Either(Either::Right(right)) => {
-            let right = default_tokens(right);
-            quote! { simplex::either::Either::Right(#right) }
-        }
-        ValueInner::Tuple(elements) => {
-            let elements = elements.iter().map(default_tokens);
-            quote! { (#(#elements),*) }
-        }
-        ValueInner::Array(elements) => array_tokens(&elements.iter().map(default_tokens).collect::<Vec<_>>()),
-        // The generated field is a collection; defaults are always the empty list.
-        ValueInner::List(..) => quote! { Default::default() },
-    }
-}
-
-fn uint_tokens(uint: UIntValue) -> TokenStream {
-    match uint {
-        UIntValue::U1(v) | UIntValue::U2(v) | UIntValue::U4(v) | UIntValue::U8(v) => quote! { #v },
-        UIntValue::U16(v) => quote! { #v },
-        UIntValue::U32(v) => quote! { #v },
-        UIntValue::U64(v) => quote! { #v },
-        UIntValue::U128(v) => quote! { #v },
-        UIntValue::U256(v) => array_tokens(&v.to_byte_array().iter().map(|b| quote! { #b }).collect::<Vec<_>>()),
-    }
-}
-
-/// Collapses uniform arrays to `[elem; N]` so a 32-byte default stays readable.
-fn array_tokens(elements: &[TokenStream]) -> TokenStream {
-    let len = proc_macro2::Literal::usize_unsuffixed(elements.len());
-    let uniform = elements.windows(2).all(|w| w[0].to_string() == w[1].to_string());
-
-    match elements.first() {
-        Some(first) if uniform => quote! { [#first; #len] },
-        _ => quote! { [#(#elements),*] },
-    }
-}
-
 impl RustType {
+    pub fn get_default_value(&self) -> proc_macro2::TokenStream {
+        match self {
+            RustType::Bool => quote! { Default::default() },
+            RustType::U1 => quote! { Default::default() },
+            RustType::U2 => quote! { Default::default() },
+            RustType::U4 => quote! { Default::default() },
+            RustType::U8 => quote! { Default::default() },
+            RustType::U16 => quote! { Default::default() },
+            RustType::U32 => quote! { Default::default() },
+            RustType::U64 => quote! { Default::default() },
+            RustType::U128 => quote! { Default::default() },
+            RustType::U256Array => quote! { [Default::default(); 32] },
+            RustType::Array(element, size) => {
+                let element_ty = element.get_default_value();
+                quote! { [#element_ty; #size] }
+            }
+            RustType::Tuple(elements) => {
+                let element_types: Vec<_> = elements.iter().map(RustType::get_default_value).collect();
+                quote! { (#(#element_types),*) }
+            }
+            RustType::Either(left, _) => {
+                let left_ty = left.get_default_value();
+                quote! { simplex::either::Either::Left(#left_ty) }
+            }
+            RustType::Option(_inner) => {
+                quote! { Default::default() }
+            }
+            RustType::List(_element, _size) => {
+                quote! { Default::default() }
+            }
+        }
+    }
+
     pub fn from_resolved_type(ty: &ResolvedType) -> syn::Result<Self> {
+        use simplicityhl::types::{TypeInner, UIntType};
+
         match ty.as_inner() {
             TypeInner::Boolean => Ok(RustType::Bool),
             TypeInner::UInt(uint_ty) => match uint_ty {
