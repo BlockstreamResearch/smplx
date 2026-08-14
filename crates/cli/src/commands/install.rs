@@ -93,12 +93,12 @@ impl Install {
         let target_str = target_dir.to_str().unwrap_or_default();
 
         let execute_git = |args: &[&str]| -> Result<(), InstallError> {
-            let status = Command::new("git")
+            let output = Command::new("git")
                 .args(args)
-                .status()
+                .output()
                 .map_err(|err| InstallError::GitExecution(err, url.to_owned()))?;
 
-            if !status.success() {
+            if !output.status.success() {
                 // Force to remove file, if something went wrong
                 let _ = std::fs::remove_dir_all(target_dir);
                 return Err(InstallError::GitCloneFailed(url.to_owned()));
