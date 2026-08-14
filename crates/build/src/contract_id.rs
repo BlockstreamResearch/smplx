@@ -16,7 +16,7 @@ pub(crate) struct ContractId(Cmr);
 impl ContractId {
     /// # Errors
     /// Returns a `BuildError` if a parameter type is unsupported, or if the program does not compile.
-    pub(crate) fn dry_run(template: &TemplateProgram) -> Result<Self, BuildError> {
+    pub(crate) fn from_template(template: &TemplateProgram) -> Result<Self, BuildError> {
         let arguments = Self::default_arguments(template.parameters())?;
         let compiled = template.instantiate(arguments, false).map_err(BuildError::DryRun)?;
 

@@ -67,7 +67,6 @@ jobs:
         run: |
           cd ${{ matrix.build-dir }}
           simplex build
-          cargo test --test metadata_cmr
           test -f src/artifacts/mod.rs
 
       - name: Build
@@ -79,6 +78,7 @@ jobs:
         run: |
           cd ${{ matrix.build-dir }}                     
           simplex test -v
+          simplex test --no-simplex -v metadata_cmr
 
   lint-checks:
     runs-on: ubuntu-latest
@@ -131,7 +131,6 @@ jobs:
         run: |
           cd ${{ matrix.build-dir }}
           simplex build
-          cargo test --test metadata_cmr
           test -f src/artifacts/mod.rs
 
       - name: Check formatting

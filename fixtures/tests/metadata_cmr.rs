@@ -1,10 +1,3 @@
-//! Checks that the CMRs `simplex build` wrote into `metadata.json` are the ones the generated
-//! bindings actually compile to.
-//!
-//! This is a plain `#[test]`, so it needs no regtest node. `simplex test` filters to
-//! `#[simplex::test]` functions and skips it; run it with
-//! `cargo test --test metadata_cmr` from `fixtures/`.
-
 use serde_json::Value;
 
 use simplex_fixtures::artifacts::dummy_panic::DummyPanicProgram;

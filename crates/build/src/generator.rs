@@ -26,6 +26,8 @@ use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
 
+const METADATA_FILENAME: &str = "metadata.json";
+
 pub struct ArtifactsGenerator {}
 
 /// A single processed (flattened) `.simf` file with all metadata needed for binding generation.
@@ -71,7 +73,7 @@ impl ArtifactsGenerator {
         let out_dir = out_dir.as_ref();
         let base_dir = base_dir.as_ref();
 
-        let json_metadata_file = out_dir.join("metadata.json");
+        let json_metadata_file = out_dir.join(METADATA_FILENAME);
 
         let pathdiff = pathdiff::diff_paths(base_dir, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
             cwd,
@@ -160,19 +162,18 @@ impl ArtifactsGenerator {
         let canon_source_file = CanonSourceFile::new(canon_source, Arc::from(content));
         let dependency_map = Self::build_dependency_map(validated_deps, parent_dir)?;
 
-        let unstable_features = &UnstableFeatures::all();
         let template = TemplateProgram::new_with_dep(
             canon_source_file.clone(),
             &dependency_map,
-            unstable_features,
+            &UnstableFeatures::all(),
             Box::new(ElementsJetHinter),
         )
         .map_err(|diags| BuildError::DryRun(diags.to_string()))?;
-        let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, unstable_features)
+        let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
             .map_err(BuildError::Flattening)?;
 
         Ok(SourceEntry {
-            cmr: ContractId::dry_run(&template)?,
+            cmr: ContractId::from_template(&template)?,
             content: flattened,
         })
     }
