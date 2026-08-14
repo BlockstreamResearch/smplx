@@ -1,5 +1,6 @@
 mod collector;
 pub mod config;
+mod contract_id;
 pub mod error;
 pub mod generator;
 pub mod macros;
