@@ -105,16 +105,12 @@ impl DepCollector {
     /// - `git` deps resolve into the flat root install dir (`self.deps_dir`).
     ///   reusing the exact hashed directory name produced by `install`.
     fn resolve_dep_context(&self, dep: &Dependency, context: &CanonPath) -> Result<CanonPath, BuildError> {
-        let raw_path = match (&dep.path, &dep.git) {
-            (Some(path), None) => context.as_path().join(path),
-            (None, Some(git_url)) => {
-                let hashed = ArtifactsResolver::generate_hashed_repo_path(git_url)
-                    .ok_or_else(|| BuildError::InvalidGitUrl(git_url.clone()))?;
+        let raw_path = match dep {
+            Dependency::Path(path) => context.as_path().join(path),
+            Dependency::Git { url, reference } => {
+                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref())
+                    .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;
                 self.deps_dir.join(hashed)
-            }
-            // `DependencyConfig::validate` guarantees exactly one of path/git is set.
-            (Some(_), Some(_)) | (None, None) => {
-                unreachable!("dependency source validated in 'DependencyConfig::validate'")
             }
         };
 

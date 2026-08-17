@@ -12,7 +12,7 @@ fn get_nested_sig(context: &simplex::TestContext) -> (NestedSigProgram, Script) 
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    let program = NestedSigProgram::new(arguments);
+    let program = NestedSigProgram::new(&arguments);
     let script = program.get_script_pubkey(context.get_network());
 
     (program, script)

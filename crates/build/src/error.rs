@@ -14,6 +14,12 @@ pub enum DependencyValidationError {
 
     #[error("Invalid dependency '{0}': cannot specify both 'path' and 'git', choose one")]
     Conflicting(String),
+
+    #[error("Invalid dependency '{0}': `path` cannot be combined with git-only fields (rev/tag)")]
+    PathWithGitField(String),
+
+    #[error("Invalid dependency '{0}': only one of `rev`, `tag` may be set")]
+    ConflictingGitRef(String),
 }
 
 /// Errors produced while editing `Simplex.toml` to add or modify a dependency.
@@ -42,6 +48,9 @@ pub enum TomlEditError {
 pub enum BuildError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+
+    #[error("failed to serialize metadata: {0}")]
+    MetadataSerialization(#[from] serde_json::Error),
 
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
@@ -80,6 +89,9 @@ pub enum BuildError {
 
     #[error("Failed to flatten program: {0}")]
     Flattening(String),
+
+    #[error("Failed to dry run the program: {0}")]
+    DryRun(String),
 
     #[error("Invalid git repository URL: '{0}'")]
     InvalidGitUrl(String),

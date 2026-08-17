@@ -10,12 +10,16 @@ readme = "../../README.md"
 [lints]
 workspace = true
 
+[features]
+default = ["provider"]
+provider = ["dep:minreq", "dep:bitcoincore-rpc"]
+
 [dependencies]
 thiserror = { workspace = true }
 sha2 = { workspace = true }
-minreq = { workspace = true }
+minreq = { workspace = true, optional = true }
 simplicityhl = { workspace = true }
-bitcoincore-rpc = { workspace = true }
+bitcoincore-rpc = { workspace = true, optional = true }
 serde = { workspace = true }
 hex = { workspace = true }
 

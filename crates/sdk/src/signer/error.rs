@@ -8,9 +8,23 @@ pub enum SignerError {
     #[error(transparent)]
     Program(#[from] ProgramError),
 
+    /// Error indicating that a Simplicity program failed to satisfy, prune or execute.
+    #[error("Covenant input {index} did not execute: {source}")]
+    CovenantExecution {
+        /// The index of the input whose program failed.
+        index: usize,
+        /// The underlying program failure.
+        source: ProgramError,
+    },
+
     /// Errors originating from provider network interactions.
     #[error(transparent)]
     Provider(#[from] ProviderError),
+
+    /// Error indicating a provider-backed operation was requested on a signer built without one.
+    #[cfg(feature = "provider")]
+    #[error("This signer was constructed without a provider")]
+    ProviderUnavailable,
 
     /// Errors encountered when attempting to inject or wrap witness fields.
     #[error(transparent)]
