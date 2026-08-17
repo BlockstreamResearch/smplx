@@ -321,7 +321,7 @@ impl ArtifactsGenerator {
                     self
                 }
 
-                #[must_use]
+                // No #[must-use], as we don't return any value.
                 pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
                     self.program.set_storage_at(index, new_value);
                 }
