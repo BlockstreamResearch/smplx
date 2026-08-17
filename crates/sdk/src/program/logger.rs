@@ -102,9 +102,9 @@ impl ProgramLogger {
     pub fn buffer_trace_log(input_index: usize, tracker_logs: String) {
         PROGRAM_LOGGER.with(|logger| {
             let mut logger = logger.borrow_mut();
-            let program_log = logger.logs.entry(input_index).or_insert(Default::default());
+            let program_log = logger.logs.entry(input_index).or_insert(ProgramInfo::default());
 
-            program_log.trace_buffer.push(tracker_logs)
+            program_log.trace_buffer.push(tracker_logs);
         });
     }
 
@@ -125,7 +125,7 @@ impl ProgramLogger {
 
         PROGRAM_LOGGER.with(|logger| {
             let mut logger = logger.borrow_mut();
-            let program_log = logger.logs.entry(input_index).or_insert(Default::default());
+            let program_log = logger.logs.entry(input_index).or_insert(ProgramInfo::default());
 
             program_log.cost_info = Some(CostInfo {
                 cmr: std::array::from_fn(|i| cmr_bytes[i]),
