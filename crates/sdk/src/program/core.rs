@@ -161,14 +161,15 @@ impl ProgramTrait for Program {
 
         // execute() is called multiple times during fee estimation; output is buffered
         // so only the final successful execution's logs are emitted to stderr.
-        let mut tracker = ProgramLogger::make_tracker(satisfied.debug_symbols(), GlobalConfig::get_log_level());
+        let mut tracker =
+            ProgramLogger::make_tracker(input_index, satisfied.debug_symbols(), GlobalConfig::get_log_level());
 
         let env = self.get_env(pst, input_index, network)?;
 
         let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
 
         if GlobalConfig::is_max_verbose() {
-            ProgramLogger::buffer_cost_log(&pruned);
+            ProgramLogger::buffer_cost_log(input_index, &pruned);
         }
 
         let mut mac = BitMachine::for_program(&pruned)?;
