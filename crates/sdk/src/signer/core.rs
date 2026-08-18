@@ -233,17 +233,30 @@ impl Signer {
         let mut curr_fee = MIN_FEE;
         let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
 
+        let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
+            .estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
+        {
+            Ok(Estimate::Success(tx, fee)) => {
+                ProgramLogger::flush_logs();
+                Ok(Some((tx, fee)))
+            }
+            Ok(Estimate::Failure(required_fee)) => {
+                *curr_fee = required_fee;
+                Ok(None)
+            }
+            Err(err) => {
+                ProgramLogger::flush_logs();
+                Err(err)
+            }
+        };
+
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-            if policy_amount_delta >= curr_fee.cast_signed() {
-                match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                    Estimate::Success(tx, fee) => {
-                        ProgramLogger::flush_logs();
-                        return Ok((tx, fee));
-                    }
-                    Estimate::Failure(required_fee) => curr_fee = required_fee,
-                }
+            if policy_amount_delta >= curr_fee.cast_signed()
+                && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
+            {
+                return Ok(result);
             }
 
             // IMPORTANT: must be added to the end of the transaction.
@@ -254,14 +267,10 @@ impl Signer {
         // need to try one more time after the loop
         let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-        if policy_amount_delta >= curr_fee.cast_signed() {
-            match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                Estimate::Success(tx, fee) => {
-                    ProgramLogger::flush_logs();
-                    return Ok((tx, fee));
-                }
-                Estimate::Failure(required_fee) => curr_fee = required_fee,
-            }
+        if policy_amount_delta >= curr_fee.cast_signed()
+            && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
+        {
+            return Ok(result);
         }
 
         Err(SignerError::NotEnoughFunds(curr_fee))
