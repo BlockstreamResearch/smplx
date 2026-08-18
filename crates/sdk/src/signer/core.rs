@@ -226,40 +226,51 @@ impl Signer {
 
         signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
 
-        // descending sort of both confidential and explicit utxos
+        // Descending sort of both confidential and explicit utxos
         signer_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount()));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
         let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
 
+        let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
+            .estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
+        {
+            Ok(Estimate::Success(tx, fee)) => {
+                ProgramLogger::flush_logs();
+                Ok(Some((tx, fee)))
+            }
+            Ok(Estimate::Failure(required_fee)) => {
+                *curr_fee = required_fee;
+                Ok(None)
+            }
+            Err(err) => {
+                ProgramLogger::flush_logs();
+                Err(err)
+            }
+        };
+
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-            if policy_amount_delta >= curr_fee.cast_signed() {
-                match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                    Estimate::Success(tx, fee) => {
-                        ProgramLogger::flush_logs();
-                        return Ok((tx, fee));
-                    }
-                    Estimate::Failure(required_fee) => curr_fee = required_fee,
-                }
+            if policy_amount_delta >= curr_fee.cast_signed()
+                && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
+            {
+                return Ok(result);
             }
 
+            // IMPORTANT: must be added to the end of the transaction.
+            // Otherwise, the logging of execution traces will be broken
             fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
         }
 
         // need to try one more time after the loop
         let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-        if policy_amount_delta >= curr_fee.cast_signed() {
-            match self.estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-                Estimate::Success(tx, fee) => {
-                    ProgramLogger::flush_logs();
-                    return Ok((tx, fee));
-                }
-                Estimate::Failure(required_fee) => curr_fee = required_fee,
-            }
+        if policy_amount_delta >= curr_fee.cast_signed()
+            && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
+        {
+            return Ok(result);
         }
 
         Err(SignerError::NotEnoughFunds(curr_fee))
@@ -374,12 +385,12 @@ impl Signer {
         explicit_filter: &dyn Fn(&UTXO) -> bool,
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
-        // fetch explicit and confidential utxos
+        // Fetch explicit and confidential utxos
         let mut all_utxos = self
             .get_provider()?
             .fetch_address_utxos(&self.get_confidential_address())?;
 
-        // filter out only confidential utxos and unblind them
+        // Filter out only confidential utxos and unblind them
         let mut confidential_utxos = self.unblind(
             all_utxos
                 .iter()
@@ -387,13 +398,13 @@ impl Signer {
                 .cloned()
                 .collect(),
         )?;
-        // leave only explicit utxos
+        // Leave only explicit utxos
         all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
 
         all_utxos.retain(explicit_filter);
         confidential_utxos.retain(confidential_filter);
 
-        // push unblinded utxos to explicit ones
+        // Push unblinded utxos to explicit ones
         all_utxos.extend(confidential_utxos);
 
         Ok(all_utxos)
@@ -520,7 +531,7 @@ impl Signer {
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
-            // we have enough funds to cover the change UTXO
+            // We have enough funds to cover the change UTXO
             let outputs = fee_tx.outputs_mut();
 
             outputs[outputs.len() - 2].amount = available_delta - fee;
@@ -565,7 +576,7 @@ impl Signer {
         }
 
         for (index, input_i) in inputs.iter().enumerate() {
-            // we need to prune the program
+            // We need to prune the program
             if let Some(program_input) = &input_i.program_input {
                 let signing_info: Option<(&String, &[String])> = match &input_i.required_sig {
                     RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[])),
@@ -574,7 +585,7 @@ impl Signer {
                 };
 
                 let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
-                    // sign the program and inject the signature into the witness
+                    // Sign the program and inject the signature into the witness
                     Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
@@ -584,7 +595,7 @@ impl Signer {
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
                     )?),
-                    // just build the witness
+                    // Just build the witness
                     None => Ok(program_input.witness.build_witness()),
                 };
 
@@ -595,7 +606,7 @@ impl Signer {
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {
-                // we need to sign the UTXO as is
+                // We need to sign the UTXO as is
                 // TODO: do we always sign?
                 let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
@@ -620,7 +631,7 @@ impl Signer {
     ) -> Result<WitnessValues, SignerError> {
         let signature = self.sign_program(pst, program, index, &self.network, derivation_path)?;
 
-        // inject the signature into the wtns name directly if the path is not provided
+        // Inject the signature into the wtns name directly if the path is not provided
         let sig_val = if sig_path.is_empty() {
             Value::byte_array(signature.serialize())
         } else {
