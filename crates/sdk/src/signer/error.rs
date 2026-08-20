@@ -9,10 +9,20 @@ pub enum SignerError {
     Program(#[from] ProgramError),
 
     /// Error indicating that a Simplicity program failed to satisfy, prune or execute.
-    #[error("Covenant input {index} did not execute: {source}")]
+    ///
+    /// Carries the two transaction-level facts a time-locked or replaceability-sensitive
+    /// branch reads, because a jet that fails on either of them says only that a jet failed.
+    /// Reading them out of the transaction afterwards is not possible: it was never built.
+    #[error(
+        "Covenant input {index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
+    )]
     CovenantExecution {
         /// The index of the input whose program failed.
         index: usize,
+        /// The locktime the transaction being satisfied carries.
+        locktime: u32,
+        /// The sequence of the failing input.
+        sequence: u32,
         /// The underlying program failure.
         source: ProgramError,
     },

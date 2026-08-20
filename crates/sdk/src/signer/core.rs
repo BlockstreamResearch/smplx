@@ -602,7 +602,16 @@ impl Signer {
                 let pruned_witness = program_input
                     .program
                     .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
-                    .map_err(|source| SignerError::CovenantExecution { index, source })?;
+                    .map_err(|source| SignerError::CovenantExecution {
+                        index,
+                        locktime: pst
+                            .locktime()
+                            .map_or(0, simplicityhl::elements::LockTime::to_consensus_u32),
+                        sequence: pst.inputs()[index]
+                            .sequence
+                            .map_or(u32::MAX, simplicityhl::elements::Sequence::to_consensus_u32),
+                        source,
+                    })?;
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {

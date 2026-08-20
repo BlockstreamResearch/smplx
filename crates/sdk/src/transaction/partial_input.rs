@@ -164,10 +164,12 @@ impl PartialInput {
             LockTime::Seconds(value) => Some(value),
             LockTime::Blocks(_) => None,
         };
-        // zero height locktime is essentially ignored
+        // A zero height is no height. The comment here always said so, while the code wrote it
+        // as a requirement of zero — which PSET reads as an input that constrains the locktime,
+        // so nothing else could raise it and every transaction came out locked at zero.
         let height_locktime = match self.locktime {
-            LockTime::Blocks(value) => Some(value),
-            LockTime::Seconds(_) => None,
+            LockTime::Blocks(value) if value.to_consensus_u32() > 0 => Some(value),
+            LockTime::Blocks(_) | LockTime::Seconds(_) => None,
         };
 
         Input {

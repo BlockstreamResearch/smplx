@@ -145,6 +145,12 @@ pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
     change: Option<ChangeOutput>,
+    /// The height this transaction may not be mined before, when it declares one.
+    ///
+    /// A property of the transaction rather than of any one input: PSET carries it per input
+    /// and takes the greatest, so it is written onto every input at extraction rather than
+    /// asked of whichever input happened to be added first.
+    locktime_height: Option<u32>,
 }
 
 impl FinalTransaction {
@@ -156,7 +162,17 @@ impl FinalTransaction {
             inputs: Vec::new(),
             outputs: Vec::new(),
             change: None,
+            locktime_height: None,
         }
+    }
+
+    /// Sets the block height this transaction may not be mined before.
+    ///
+    /// A contract checking `check_lock_height` reads the transaction's own locktime, so a
+    /// covenant whose spending path is time-locked cannot be satisfied without one. Nothing
+    /// here decides the value: the caller states it.
+    pub fn set_locktime_height(&mut self, height: u32) {
+        self.locktime_height = Some(height);
     }
 
     /// Sets where this transaction's change should go.
@@ -402,7 +418,19 @@ impl FinalTransaction {
 
         for i in 0..self.inputs.len() {
             let final_input = &self.inputs[i];
-            let pst_input = final_input.to_input();
+            let mut pst_input = final_input.to_input();
+
+            // Written onto every input, because PSET derives the transaction's locktime from
+            // the greatest one its inputs require. An input that already declares its own is
+            // left alone: that one was asked for deliberately and is not this to overwrite.
+            if let Some(height) = self.locktime_height
+                && pst_input.required_height_locktime.is_none()
+            {
+                pst_input.required_height_locktime = Some(
+                    simplicityhl::elements::locktime::Height::from_consensus(height)
+                        .expect("a block height is a valid locktime"),
+                );
+            }
 
             match final_input.partial_input.secrets {
                 // insert input secrets if present
@@ -503,6 +531,56 @@ mod tests {
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
+    }
+
+    /// A covenant branch guarded by `check_lock_height` reads the transaction's own locktime,
+    /// so the height a caller declares has to survive into the PSET the program executes
+    /// against. PSET derives it from the greatest its inputs require, which is why it is
+    /// written onto every input rather than onto whichever was added first.
+    #[test]
+    fn declared_height_becomes_the_transactions_locktime() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x02, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 9000, policy));
+        ft.set_locktime_height(2_580_990);
+
+        let (pst, _) = ft.extract_pst();
+
+        assert_eq!(
+            pst.locktime().expect("one height, so no conflict"),
+            simplicityhl::elements::LockTime::from_height(2_580_990).unwrap()
+        );
+        assert!(
+            pst.inputs()
+                .iter()
+                .all(|input| input.required_height_locktime.is_some())
+        );
+    }
+
+    /// Declaring none leaves the transaction where it was: locktime zero, no input constrained.
+    #[test]
+    fn a_transaction_that_declares_no_height_still_has_none() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        let (pst, _) = ft.extract_pst();
+
+        assert_eq!(pst.locktime().unwrap(), simplicityhl::elements::LockTime::ZERO);
     }
 
     #[test]
