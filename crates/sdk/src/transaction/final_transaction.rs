@@ -4,7 +4,7 @@ use bitcoin_hashes::sha256;
 
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
-    AssetId, TxOutSecrets,
+    AssetId, LockTime, Sequence, TxOutSecrets,
     confidential::{AssetBlindingFactor, ValueBlindingFactor},
 };
 
@@ -108,8 +108,8 @@ impl FinalInput {
     /// # Panics
     ///
     /// This function will panic if the `issuance_input` is of type `Reissuance`
-    ///  and the `partial_input.secrets` field is `None` or does not contain the necessary
-    ///  confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
+    /// and the `partial_input.secrets` field is `None` or does not contain the necessary
+    /// confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
@@ -145,12 +145,8 @@ pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
     change: Option<ChangeOutput>,
-    /// The height this transaction may not be mined before, when it declares one.
-    ///
-    /// A property of the transaction rather than of any one input: PSET carries it per input
-    /// and takes the greatest, so it is written onto every input at extraction rather than
-    /// asked of whichever input happened to be added first.
-    locktime_height: Option<u32>,
+    sequence: Sequence,
+    locktime: LockTime,
 }
 
 impl FinalTransaction {
@@ -162,17 +158,22 @@ impl FinalTransaction {
             inputs: Vec::new(),
             outputs: Vec::new(),
             change: None,
-            locktime_height: None,
+            sequence: Sequence::default(),
+            locktime: LockTime::ZERO,
         }
     }
-
-    /// Sets the block height this transaction may not be mined before.
+    /// Sets a specific `Sequence` for the transaction.
     ///
-    /// A contract checking `check_lock_height` reads the transaction's own locktime, so a
-    /// covenant whose spending path is time-locked cannot be satisfied without one. Nothing
-    /// here decides the value: the caller states it.
-    pub fn set_locktime_height(&mut self, height: u32) {
-        self.locktime_height = Some(height);
+    /// Injects this value into the inputs that don't declare their own sequence.
+    pub fn set_sequence(&mut self, sequence: Sequence) {
+        self.sequence = sequence;
+    }
+
+    /// Sets a specific `LockTime` for the transaction.
+    ///
+    /// Injects this value into the inputs that don't declare their own locktime.
+    pub fn set_locktime(&mut self, locktime: LockTime) {
+        self.locktime = locktime;
     }
 
     /// Sets where this transaction's change should go.
@@ -363,13 +364,13 @@ impl FinalTransaction {
 
         for input in &self.inputs {
             match input.partial_input.secrets {
-                // this is an unblinded confidential input
+                // This is an unblinded confidential input
                 Some(secrets) => {
                     if secrets.asset == network.policy_asset() {
                         available_amount += secrets.value;
                     }
                 }
-                // this is an explicit input
+                // This is an explicit input
                 None => {
                     if input.partial_input.asset.unwrap() == network.policy_asset() {
                         available_amount += input.partial_input.amount.unwrap();
@@ -417,25 +418,24 @@ impl FinalTransaction {
         let mut pst = PartiallySignedTransaction::new_v2();
 
         for i in 0..self.inputs.len() {
-            let final_input = &self.inputs[i];
-            let mut pst_input = final_input.to_input();
+            let mut final_input = self.inputs[i].clone();
 
-            // Written onto every input, because PSET derives the transaction's locktime from
-            // the greatest one its inputs require. An input that already declares its own is
-            // left alone: that one was asked for deliberately and is not this to overwrite.
-            if let Some(height) = self.locktime_height
-                && pst_input.required_height_locktime.is_none()
-            {
-                pst_input.required_height_locktime = Some(
-                    simplicityhl::elements::locktime::Height::from_consensus(height)
-                        .expect("a block height is a valid locktime"),
-                );
+            // Inject sequence if the input has none
+            if final_input.partial_input.sequence == Sequence::default() {
+                final_input.partial_input = final_input.partial_input.with_sequence(self.sequence);
             }
 
+            // Inject locktime if the input has none
+            if final_input.partial_input.locktime == LockTime::ZERO {
+                final_input.partial_input = final_input.partial_input.with_locktime(self.locktime);
+            }
+
+            let pst_input = final_input.to_input();
+
             match final_input.partial_input.secrets {
-                // insert input secrets if present
+                // Insert input secrets if present
                 Some(secrets) => input_secrets.insert(i, secrets),
-                // else populate input secrets with "explicit" amounts
+                // Else populate input secrets with "explicit" amounts
                 None => input_secrets.insert(
                     i,
                     TxOutSecrets {
@@ -470,7 +470,7 @@ impl FinalTransaction {
 mod tests {
     use bitcoin_hashes::Hash;
 
-    use simplicityhl::elements::{OutPoint, Script, TxOut, Txid};
+    use simplicityhl::elements::{LockTime, OutPoint, Script, TxOut, Txid};
 
     use crate::transaction::UTXO;
 
@@ -533,15 +533,11 @@ mod tests {
         assert_eq!(secrets, expected_secrets);
     }
 
-    /// A covenant branch guarded by `check_lock_height` reads the transaction's own locktime,
-    /// so the height a caller declares has to survive into the PSET the program executes
-    /// against. PSET derives it from the greatest its inputs require, which is why it is
-    /// written onto every input rather than onto whichever was added first.
     #[test]
     fn declared_height_becomes_the_transactions_locktime() {
         let policy = dummy_asset_id(0xAA);
-
         let mut ft = FinalTransaction::new();
+
         ft.add_input(
             PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
             RequiredSignature::None,
@@ -551,13 +547,13 @@ mod tests {
             RequiredSignature::None,
         );
         ft.add_output(PartialOutput::new(Script::new(), 9000, policy));
-        ft.set_locktime_height(2_580_990);
+        ft.set_locktime(LockTime::from_height(2_580_990).unwrap());
 
         let (pst, _) = ft.extract_pst();
 
         assert_eq!(
             pst.locktime().expect("one height, so no conflict"),
-            simplicityhl::elements::LockTime::from_height(2_580_990).unwrap()
+            LockTime::from_height(2_580_990).unwrap()
         );
         assert!(
             pst.inputs()
@@ -566,12 +562,11 @@ mod tests {
         );
     }
 
-    /// Declaring none leaves the transaction where it was: locktime zero, no input constrained.
     #[test]
-    fn a_transaction_that_declares_no_height_still_has_none() {
+    fn transaction_that_declares_no_height_still_has_none() {
         let policy = dummy_asset_id(0xAA);
-
         let mut ft = FinalTransaction::new();
+
         ft.add_input(
             PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
             RequiredSignature::None,
@@ -580,7 +575,7 @@ mod tests {
 
         let (pst, _) = ft.extract_pst();
 
-        assert_eq!(pst.locktime().unwrap(), simplicityhl::elements::LockTime::ZERO);
+        assert_eq!(pst.locktime().unwrap(), LockTime::ZERO);
     }
 
     #[test]

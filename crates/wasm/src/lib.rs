@@ -11,8 +11,8 @@ use std::sync::Arc;
 use elements_miniscript::bitcoin::PublicKey;
 
 use simplicityhl::ast::ElementsJetHinter;
-use simplicityhl::elements;
-use simplicityhl::elements::{AssetId, OutPoint, Script, Sequence, TxOut, Txid};
+use simplicityhl::elements::{self, Sequence};
+use simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, TxOut, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
@@ -343,7 +343,7 @@ impl WalletSigner {
     ) -> Result<SignedTransaction, JsError> {
         let (transaction, fee_sats) = self
             .signer
-            .finalize_strict(builder.inner(), fee_rate)
+            .finalize_strict(&builder.transaction, fee_rate)
             .map_err(|e| JsError::new(&format!("Could not finalize the transaction: {e}")))?;
 
         Ok(SignedTransaction {
@@ -374,6 +374,24 @@ impl TransactionBuilder {
         Self {
             transaction: FinalTransaction::new(),
         }
+    }
+
+    /// Sets the block height this transaction may not be mined before.
+    #[wasm_bindgen(js_name = setLocktimeHeight)]
+    pub fn set_locktime_height(&mut self, height: u32) {
+        self.transaction.set_locktime(LockTime::from_height(height).unwrap());
+    }
+
+    /// Sets the block time this transaction may not be mined before.
+    #[wasm_bindgen(js_name = setLocktimeTime)]
+    pub fn set_locktime_time(&mut self, time: u32) {
+        self.transaction.set_locktime(LockTime::from_time(time).unwrap());
+    }
+
+    /// Sets the sequence of for this transaction.
+    #[wasm_bindgen(js_name = setSequence)]
+    pub fn set_sequence(&mut self, sequence: u32) {
+        self.transaction.set_sequence(Sequence::from_consensus(sequence));
     }
 
     /// Sets where this transaction's change should go.
@@ -417,15 +435,9 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
     #[wasm_bindgen(js_name = addWalletInput)]
-    pub fn add_wallet_input(
-        &mut self,
-        txid: &str,
-        vout: u32,
-        tx_out_hex: &str,
-        sequence: Option<u32>,
-    ) -> Result<(), JsError> {
+    pub fn add_wallet_input(&mut self, txid: &str, vout: u32, tx_out_hex: &str) -> Result<(), JsError> {
         self.transaction.add_input(
-            Self::with_sequence(PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?), sequence),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             RequiredSignature::NativeEcdsa,
         );
 
@@ -456,7 +468,6 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
-        sequence: Option<u32>,
     ) -> Result<IssuanceReport, JsError> {
         let contract = issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
@@ -466,22 +477,12 @@ impl TransactionBuilder {
         // itself and an ordinary wallet input never needs a witness one, so the panicking case
         // cannot be reached from JavaScript.
         let details = self.transaction.add_issuance_input(
-            Self::with_sequence(PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?), sequence),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             RequiredSignature::NativeEcdsa,
         );
 
         Ok(issuance_report(&details))
-    }
-
-    /// Declares the block height this transaction may not be mined before.
-    ///
-    /// A covenant whose spending path checks a lock height cannot be satisfied by a
-    /// transaction that declares none, so a wallet spending one has to state it. Which height
-    /// is the caller's to decide; this only carries it.
-    #[wasm_bindgen(js_name = setLocktimeHeight)]
-    pub fn set_locktime_height(&mut self, height: u32) {
-        self.transaction.set_locktime_height(height);
     }
 
     /// Adds a Simplicity contract input, spent by satisfying it.
@@ -506,12 +507,11 @@ impl TransactionBuilder {
         arguments_json: Option<String>,
         witness_json: Option<String>,
         signature_witness: Option<String>,
-        sequence: Option<u32>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            Self::with_sequence(PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?), sequence),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             Self::program_input(
                 source,
                 arguments_json.as_deref(),
@@ -548,7 +548,6 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
-        sequence: Option<u32>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
     ) -> Result<IssuanceReport, JsError> {
@@ -561,7 +560,7 @@ impl TransactionBuilder {
         // one and never the native kind, so the panicking case cannot be reached from
         // JavaScript.
         let details = self.transaction.add_program_issuance_input(
-            Self::with_sequence(PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?), sequence),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             Self::program_input(
                 source,
                 arguments_json.as_deref(),
@@ -764,19 +763,6 @@ impl TransactionBuilder {
         }
 
         Ok(program)
-    }
-
-    /// Applies a declared sequence to an input.
-    fn with_sequence(input: PartialInput, sequence: Option<u32>) -> PartialInput {
-        match sequence {
-            Some(value) => input.with_sequence(Sequence(value)),
-            None => input,
-        }
-    }
-
-    /// The assembled transaction, for the signer in this crate.
-    fn inner(&self) -> &FinalTransaction {
-        &self.transaction
     }
 }
 
