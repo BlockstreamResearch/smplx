@@ -352,7 +352,7 @@ impl TransactionBuilder {
     /// Sets the block height this transaction may not be mined before.
     ///
     /// # Panics
-    /// Panics if `height` is not a block height, which Elements ends at `500_000_000`.
+    /// Panics if `height` is `500_000_000` or greater, which Elements reads as a time.
     #[wasm_bindgen(js_name = setLocktimeHeight)]
     pub fn set_locktime_height(&mut self, height: u32) {
         self.transaction.set_locktime(LockTime::from_height(height).unwrap());
@@ -361,7 +361,7 @@ impl TransactionBuilder {
     /// Sets the block time this transaction may not be mined before.
     ///
     /// # Panics
-    /// Panics if `time` is not a block time, which Elements starts at `500_000_000`.
+    /// Panics if `time` is below `500_000_000`, which Elements reads as a height.
     #[wasm_bindgen(js_name = setLocktimeTime)]
     pub fn set_locktime_time(&mut self, time: u32) {
         self.transaction.set_locktime(LockTime::from_time(time).unwrap());
