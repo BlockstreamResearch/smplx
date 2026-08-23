@@ -35,51 +35,6 @@ fn network_from_str(network: &str) -> Result<SimplicityNetwork, JsError> {
     }
 }
 
-/// An id as it is written turned into the bytes it is made of, which run the other way.
-fn read_id(written: &str) -> Result<[u8; 32], String> {
-    let decoded = hex::decode(written).map_err(|e| e.to_string())?;
-    let mut bytes: [u8; 32] = decoded
-        .try_into()
-        .map_err(|_| "an id is thirty-two bytes".to_string())?;
-
-    bytes.reverse();
-
-    Ok(bytes)
-}
-
-/// The same conversion back, because an id leaves here in the form everything else reads.
-fn write_id(bytes: [u8; 32]) -> String {
-    let mut written = bytes;
-
-    written.reverse();
-
-    hex::encode(written)
-}
-
-/// The issuer contract an issuance commits to, which is nothing unless one is named.
-///
-/// Elements derives an asset from the output being spent and the issuer contract together.
-/// Every asset in Liquid's public registry commits to one; a transaction manifest declares no
-/// such thing at any position, so its issuances commit to the empty one. Taken as an argument
-/// rather than assumed, because the wallet derives the same asset for itself and two
-/// derivations that agree only because neither was told anything have not agreed about
-/// anything.
-fn issuer_contract(written: Option<&str>) -> Result<[u8; 32], String> {
-    match written.map(str::trim).filter(|hex_id| !hex_id.is_empty()) {
-        Some(hex_id) => read_id(hex_id),
-        None => Ok([0_u8; 32]),
-    }
-}
-
-/// The module's account of one issuance, in the form ids are written in.
-fn issuance_report(details: &IssuanceDetails) -> IssuanceReport {
-    IssuanceReport {
-        asset_id: details.asset_id.to_string(),
-        entropy: write_id(details.asset_entropy.to_byte_array()),
-        reissuance_token_id: details.inflation_asset_id.to_string(),
-    }
-}
-
 /// What the module made of an issuance, reported rather than kept to itself.
 ///
 /// The caller derives the same three values before any of this runs, from the same output.
@@ -115,6 +70,24 @@ impl IssuanceReport {
     #[must_use]
     pub fn reissuance_token_id(&self) -> String {
         self.reissuance_token_id.clone()
+    }
+
+    /// The module's account of one issuance, in the form ids are written in.
+    fn of(details: &IssuanceDetails) -> Self {
+        Self {
+            asset_id: details.asset_id.to_string(),
+            entropy: Self::write_id(details.asset_entropy.to_byte_array()),
+            reissuance_token_id: details.inflation_asset_id.to_string(),
+        }
+    }
+
+    /// The bytes of an id written the way everything else reads it, which runs the other way.
+    fn write_id(bytes: [u8; 32]) -> String {
+        let mut written = bytes;
+
+        written.reverse();
+
+        hex::encode(written)
     }
 }
 
@@ -377,12 +350,18 @@ impl TransactionBuilder {
     }
 
     /// Sets the block height this transaction may not be mined before.
+    ///
+    /// # Panics
+    /// Panics if `height` is not a block height, which Elements ends at `500_000_000`.
     #[wasm_bindgen(js_name = setLocktimeHeight)]
     pub fn set_locktime_height(&mut self, height: u32) {
         self.transaction.set_locktime(LockTime::from_height(height).unwrap());
     }
 
     /// Sets the block time this transaction may not be mined before.
+    ///
+    /// # Panics
+    /// Panics if `time` is not a block time, which Elements starts at `500_000_000`.
     #[wasm_bindgen(js_name = setLocktimeTime)]
     pub fn set_locktime_time(&mut self, time: u32) {
         self.transaction.set_locktime(LockTime::from_time(time).unwrap());
@@ -469,7 +448,7 @@ impl TransactionBuilder {
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
-        let contract = issuer_contract(issuer_contract_hex.as_deref())
+        let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
         // The SDK panics here when the input requires a witness signature, and a panic inside
@@ -482,7 +461,7 @@ impl TransactionBuilder {
             RequiredSignature::NativeEcdsa,
         );
 
-        Ok(issuance_report(&details))
+        Ok(IssuanceReport::of(&details))
     }
 
     /// Adds a Simplicity contract input, spent by satisfying it.
@@ -551,7 +530,7 @@ impl TransactionBuilder {
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
     ) -> Result<IssuanceReport, JsError> {
-        let contract = issuer_contract(issuer_contract_hex.as_deref())
+        let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
         // The SDK panics here when the input requires the native signature rather than a
@@ -572,7 +551,7 @@ impl TransactionBuilder {
             Self::required_signature(signature_witness.as_deref()),
         );
 
-        Ok(issuance_report(&details))
+        Ok(IssuanceReport::of(&details))
     }
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
@@ -650,6 +629,26 @@ impl TransactionBuilder {
     #[must_use]
     pub fn output_count(&self) -> usize {
         self.transaction.n_outputs()
+    }
+
+    /// The issuer contract an issuance commits to, which is nothing unless one is named.
+    fn issuer_contract(written: Option<&str>) -> Result<[u8; 32], String> {
+        match written.map(str::trim).filter(|hex_id| !hex_id.is_empty()) {
+            Some(hex_id) => Self::read_id(hex_id),
+            None => Ok([0_u8; 32]),
+        }
+    }
+
+    /// An id as it is written turned into the bytes it is made of, which run the other way.
+    fn read_id(written: &str) -> Result<[u8; 32], String> {
+        let decoded = hex::decode(written).map_err(|e| e.to_string())?;
+        let mut bytes: [u8; 32] = decoded
+            .try_into()
+            .map_err(|_| "an id is thirty-two bytes".to_string())?;
+
+        bytes.reverse();
+
+        Ok(bytes)
     }
 
     /// Which signature a covenant input needs. Can either be a witness name like `SIGNATURE`,
@@ -817,7 +816,7 @@ mod tests {
     use simplicityhl::elements::{AssetId, OutPoint, Txid};
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{FromStr, IssuanceDetails, IssuanceReport, issuance_report, issuer_contract, read_id, write_id};
+    use super::{FromStr, IssuanceDetails, IssuanceReport, TransactionBuilder};
 
     /// Assets Liquid already carries, and the outputs they were issued from.
     ///
@@ -873,10 +872,10 @@ mod tests {
         };
         let entropy = asset_entropy(
             &outpoint,
-            issuer_contract(Some(contract)).expect("a chain vector's contract"),
+            TransactionBuilder::issuer_contract(Some(contract)).expect("a chain vector's contract"),
         );
 
-        issuance_report(&IssuanceDetails {
+        IssuanceReport::of(&IssuanceDetails {
             asset_id: AssetId::from_entropy(entropy),
             inflation_asset_id: AssetId::reissuance_token_from_entropy(entropy, false),
             asset_entropy: entropy,
@@ -901,7 +900,8 @@ mod tests {
     fn reports_an_entropy_its_own_asset_can_be_rederived_from() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
             let reported = report_for(txid, vout, contract).entropy;
-            let read_back = Midstate::from_byte_array(read_id(&reported).expect("a reported entropy"));
+            let read_back =
+                Midstate::from_byte_array(TransactionBuilder::read_id(&reported).expect("a reported entropy"));
 
             assert_eq!(AssetId::from_entropy(read_back).to_string(), asset);
         }
@@ -911,22 +911,25 @@ mod tests {
     fn commits_to_no_issuer_contract_unless_one_is_named() {
         let empty = [0_u8; 32];
 
-        assert_eq!(issuer_contract(None), Ok(empty));
-        assert_eq!(issuer_contract(Some("")), Ok(empty));
-        assert_eq!(issuer_contract(Some("   ")), Ok(empty));
-        assert_eq!(issuer_contract(Some(&"0".repeat(64))), Ok(empty));
+        assert_eq!(TransactionBuilder::issuer_contract(None), Ok(empty));
+        assert_eq!(TransactionBuilder::issuer_contract(Some("")), Ok(empty));
+        assert_eq!(TransactionBuilder::issuer_contract(Some("   ")), Ok(empty));
+        assert_eq!(TransactionBuilder::issuer_contract(Some(&"0".repeat(64))), Ok(empty));
     }
 
     #[test]
     fn an_id_leaves_in_the_form_it_arrived_in() {
         let written = "ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2";
 
-        assert_eq!(write_id(read_id(written).expect("a written id")), written);
+        assert_eq!(
+            IssuanceReport::write_id(TransactionBuilder::read_id(written).expect("a written id")),
+            written
+        );
     }
 
     #[test]
     fn refuses_an_issuer_contract_that_is_not_an_id() {
-        assert!(issuer_contract(Some("not hex at all")).is_err());
-        assert!(issuer_contract(Some("00ff")).is_err());
+        assert!(TransactionBuilder::issuer_contract(Some("not hex at all")).is_err());
+        assert!(TransactionBuilder::issuer_contract(Some("00ff")).is_err());
     }
 }
