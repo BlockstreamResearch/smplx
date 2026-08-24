@@ -11,8 +11,9 @@ use std::sync::Arc;
 use elements_miniscript::bitcoin::PublicKey;
 
 use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::elements::hashes::Hash;
 use simplicityhl::elements::{self, Sequence};
-use simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, TxOut, Txid};
+use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
@@ -76,22 +77,13 @@ impl IssuanceReport {
     fn of(details: &IssuanceDetails) -> Self {
         Self {
             asset_id: details.asset_id.to_string(),
-            entropy: Self::write_id(details.asset_entropy.to_byte_array()),
+            entropy: details.asset_entropy.to_string(),
             reissuance_token_id: details.inflation_asset_id.to_string(),
         }
     }
-
-    /// The bytes of an id written the way everything else reads it, which runs the other way.
-    fn write_id(bytes: [u8; 32]) -> String {
-        let mut written = bytes;
-
-        written.reverse();
-
-        hex::encode(written)
-    }
 }
 
-/// Compile-time parameters for a contract, resolved before construction.
+/// Compile-time parameters for a covenant, resolved before construction.
 #[derive(Clone)]
 struct FixedArguments(Arguments);
 
@@ -101,7 +93,7 @@ impl ArgumentsTrait for FixedArguments {
     }
 }
 
-/// Witness values for a contract input, resolved before the transaction is assembled.
+/// Witness values for a covenant input, resolved before the transaction is assembled.
 ///
 /// Held as parsed `WitnessValues` so a malformed set is rejected when the caller supplies
 /// it rather than in the middle of signing.
@@ -114,20 +106,20 @@ impl WitnessTrait for FixedWitness {
     }
 }
 
-/// A compiled `SimplicityHL` contract.
+/// A compiled `SimplicityHL` covenant.
 #[wasm_bindgen]
-pub struct Contract {
+pub struct Covenant {
     program: Program,
 }
 
 #[wasm_bindgen]
-impl Contract {
-    /// Creates a contract from `SimplicityHL` source text delivered at runtime.
+impl Covenant {
+    /// Creates a covenant from `SimplicityHL` source text delivered at runtime.
     ///
-    /// `argumentsJson` carries the contract's compile-time parameters.
+    /// `argumentsJson` carries the covenant's compile-time parameters.
     ///
     /// Shape: `{"NAME": {"value": "0x…", "type": "Pubkey"}}`.
-    /// Pass `None` for a contract that declares no parameters.
+    /// Pass `None` for a covenant that declares no parameters.
     ///
     /// `extraLeavesJson` is a JSON array of hex strings, each an encoded taproot
     /// leaf payload appended to the tree in declaration order.
@@ -142,7 +134,7 @@ impl Contract {
         arguments_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
-    ) -> Result<Contract, JsError> {
+    ) -> Result<Covenant, JsError> {
         Ok(Self {
             program: TransactionBuilder::program_of(
                 source,
@@ -153,7 +145,7 @@ impl Contract {
         })
     }
 
-    /// Compiles the contract and returns its Commitment Merkle Root as lowercase hex.
+    /// Compiles the covenant and returns its Commitment Merkle Root as lowercase hex.
     #[wasm_bindgen(js_name = commitmentMerkleRoot)]
     #[must_use]
     pub fn commitment_merkle_root(&self) -> String {
@@ -162,7 +154,7 @@ impl Contract {
         hex::encode(cmr)
     }
 
-    /// Compiles the contract and returns the scriptPubKey its funds are locked with, as hex.
+    /// Compiles the covenant and returns the `scriptPubKey` its funds are locked with, as hex.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
@@ -173,7 +165,7 @@ impl Contract {
         Ok(hex::encode(self.program.get_script_pubkey(&network).as_bytes()))
     }
 
-    /// Compiles the contract and returns its scriptPubKey hash.
+    /// Compiles the covenant and returns its `scriptPubKey` hash.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
@@ -184,19 +176,19 @@ impl Contract {
         Ok(hex::encode(self.program.get_script_hash(&network)))
     }
 
-    /// Compiles the contract and returns the taproot address its funds would sit at.
+    /// Compiles the covenant and returns the taproot address its funds would sit at.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
-    #[wasm_bindgen(js_name = contractAddress)]
-    pub fn contract_address(&self, network: &str) -> Result<String, JsError> {
+    #[wasm_bindgen(js_name = covenantAddress)]
+    pub fn covenant_address(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
 
         Ok(self.program.get_tr_address(&network).to_string())
     }
 }
 
-/// The compile-time parameters a contract source declares, as JSON of name to type.
+/// The compile-time parameters a covenant source declares, as JSON of name to type.
 ///
 /// `SimplicityHL` has no syntax that declares a parameter's type. `param::NAME` is written
 /// where a value is wanted, and the type checker gives it the type that position demands
@@ -219,14 +211,14 @@ impl Contract {
 ///
 /// # Errors
 /// Returns an error if the source does not parse or does not type-check.
-#[wasm_bindgen(js_name = contractParameterTypes)]
-pub fn contract_parameter_types(source: &str) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = covenantParameterTypes)]
+pub fn covenant_parameter_types(source: &str) -> Result<String, JsError> {
     let template = TemplateProgram::new_with_unstable(
         Arc::<str>::from(source),
         &UnstableFeatures::all(),
         Box::new(ElementsJetHinter),
     )
-    .map_err(|e| JsError::new(&format!("Contract does not compile: {e}")))?;
+    .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))?;
 
     let declared: BTreeMap<String, String> = template
         .parameters()
@@ -464,7 +456,7 @@ impl TransactionBuilder {
         Ok(IssuanceReport::of(&details))
     }
 
-    /// Adds a Simplicity contract input, spent by satisfying it.
+    /// Adds a Simplicity covenant input, spent by satisfying it.
     ///
     /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
@@ -475,9 +467,9 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments or the witness cannot be parsed.
-    #[wasm_bindgen(js_name = addContractInput)]
+    #[wasm_bindgen(js_name = addCovenantInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_contract_input(
+    pub fn add_covenant_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -504,18 +496,18 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Adds a Simplicity contract input that also creates a new asset.
+    /// Adds a Simplicity covenant input that also creates a new asset.
     ///
-    /// The contract half is the same as `addContractInput` and the issuance half the same as
+    /// The covenant half is the same as `addCovenantInput` and the issuance half the same as
     /// `addWalletIssuanceInput`: the asset is derived from the output this input spends, and
     /// `issuer_contract_hex` is what the issuance commits to, empty unless one is named.
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness or the
     /// issuer contract cannot be parsed.
-    #[wasm_bindgen(js_name = addContractIssuanceInput)]
+    #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_contract_issuance_input(
+    pub fn add_covenant_issuance_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -587,16 +579,16 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Runs the Simplicity program of one contract input against this transaction.
+    /// Runs the Simplicity program of one covenant input against this transaction.
     ///
     /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
     /// take, and executes the result on a `BitMachine`.
     ///
     /// # Errors
-    /// Returns an error if the input is not a contract input, or if the program fails to
+    /// Returns an error if the input is not a covenant input, or if the program fails to
     /// satisfy, prune or execute.
-    #[wasm_bindgen(js_name = dryRunContractInput)]
-    pub fn dry_run_contract_input(&self, input_index: usize, network: &str) -> Result<(), JsError> {
+    #[wasm_bindgen(js_name = dryRunCovenantInput)]
+    pub fn dry_run_covenant_input(&self, input_index: usize, network: &str) -> Result<(), JsError> {
         let network = network_from_str(network)?;
         let inputs = self.transaction.inputs();
         let input = inputs
@@ -634,21 +626,12 @@ impl TransactionBuilder {
     /// The issuer contract an issuance commits to, which is nothing unless one is named.
     fn issuer_contract(written: Option<&str>) -> Result<[u8; 32], String> {
         match written.map(str::trim).filter(|hex_id| !hex_id.is_empty()) {
-            Some(hex_id) => Self::read_id(hex_id),
+            Some(hex_id) if hex_id.len() != 64 => Err("an id is thirty-two bytes".to_string()),
+            Some(hex_id) => ContractHash::from_str(hex_id)
+                .map(ContractHash::to_byte_array)
+                .map_err(|e| e.to_string()),
             None => Ok([0_u8; 32]),
         }
-    }
-
-    /// An id as it is written turned into the bytes it is made of, which run the other way.
-    fn read_id(written: &str) -> Result<[u8; 32], String> {
-        let decoded = hex::decode(written).map_err(|e| e.to_string())?;
-        let mut bytes: [u8; 32] = decoded
-            .try_into()
-            .map_err(|_| "an id is thirty-two bytes".to_string())?;
-
-        bytes.reverse();
-
-        Ok(bytes)
     }
 
     /// Which signature a covenant input needs. Can either be a witness name like `SIGNATURE`,
@@ -696,7 +679,7 @@ impl TransactionBuilder {
         })
     }
 
-    /// The compiled contract and the witness values it is spent with.
+    /// The compiled covenant and the witness values it is spent with.
     ///
     /// Both are parsed here so a malformed set is rejected where the caller supplied it rather
     /// than in the middle of signing.
@@ -713,7 +696,7 @@ impl TransactionBuilder {
             _ => WitnessValues::default(),
         };
 
-        // The same build a `Contract` gets, because it has to be: the covenant being spent was
+        // The same build a `Covenant` gets, because it has to be: the covenant being spent was
         // committed to on chain by whatever built it, and a program compiled here in a different
         // mode, or without the leaves the deployment declared, locks to a different script. The
         // spend then fails at execution, after a person has already approved it.
@@ -728,7 +711,7 @@ impl TransactionBuilder {
         })
     }
 
-    /// One program, built exactly as `Contract::new` builds it.
+    /// One program, built exactly as `Covenant::new` builds it.
     fn program_of(
         source: &str,
         arguments_json: Option<&str>,
@@ -737,7 +720,7 @@ impl TransactionBuilder {
     ) -> Result<Program, JsError> {
         let arguments = match arguments_json {
             Some(json) if !json.trim().is_empty() => serde_json::from_str::<Arguments>(json)
-                .map_err(|e| JsError::new(&format!("Invalid contract arguments: {e}")))?,
+                .map_err(|e| JsError::new(&format!("Invalid covenant arguments: {e}")))?,
             _ => Arguments::default(),
         };
 
@@ -816,7 +799,7 @@ mod tests {
     use simplicityhl::elements::{AssetId, OutPoint, Txid};
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{FromStr, IssuanceDetails, IssuanceReport, TransactionBuilder};
+    use super::{ContractHash, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
 
     /// Assets Liquid already carries, and the outputs they were issued from.
     ///
@@ -900,8 +883,7 @@ mod tests {
     fn reports_an_entropy_its_own_asset_can_be_rederived_from() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
             let reported = report_for(txid, vout, contract).entropy;
-            let read_back =
-                Midstate::from_byte_array(TransactionBuilder::read_id(&reported).expect("a reported entropy"));
+            let read_back = Midstate::from_str(&reported).expect("a reported entropy");
 
             assert_eq!(AssetId::from_entropy(read_back).to_string(), asset);
         }
@@ -920,11 +902,11 @@ mod tests {
     #[test]
     fn an_id_leaves_in_the_form_it_arrived_in() {
         let written = "ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2";
+        let read = TransactionBuilder::issuer_contract(Some(written)).expect("a written id");
 
-        assert_eq!(
-            IssuanceReport::write_id(TransactionBuilder::read_id(written).expect("a written id")),
-            written
-        );
+        assert_eq!(read[0], 0xd2);
+        assert_eq!(read[31], 0xce);
+        assert_eq!(ContractHash::from_byte_array(read).to_string(), written);
     }
 
     #[test]
