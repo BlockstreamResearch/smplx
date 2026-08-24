@@ -4,7 +4,7 @@ use bitcoin_hashes::sha256;
 
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
-    AssetId, TxOutSecrets,
+    AssetId, LockTime, Sequence, TxOutSecrets,
     confidential::{AssetBlindingFactor, ValueBlindingFactor},
 };
 
@@ -108,8 +108,8 @@ impl FinalInput {
     /// # Panics
     ///
     /// This function will panic if the `issuance_input` is of type `Reissuance`
-    ///  and the `partial_input.secrets` field is `None` or does not contain the necessary
-    ///  confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
+    /// and the `partial_input.secrets` field is `None` or does not contain the necessary
+    /// confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
@@ -145,6 +145,8 @@ pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
     change: Option<ChangeOutput>,
+    sequence: Sequence,
+    locktime: LockTime,
 }
 
 impl FinalTransaction {
@@ -156,7 +158,22 @@ impl FinalTransaction {
             inputs: Vec::new(),
             outputs: Vec::new(),
             change: None,
+            sequence: Sequence::default(),
+            locktime: LockTime::ZERO,
         }
+    }
+    /// Sets a specific `Sequence` for the transaction.
+    ///
+    /// Injects this value into the inputs that don't declare their own sequence.
+    pub fn set_sequence(&mut self, sequence: Sequence) {
+        self.sequence = sequence;
+    }
+
+    /// Sets a specific `LockTime` for the transaction.
+    ///
+    /// Injects this value into the inputs that don't declare their own locktime.
+    pub fn set_locktime(&mut self, locktime: LockTime) {
+        self.locktime = locktime;
     }
 
     /// Sets where this transaction's change should go.
@@ -347,13 +364,13 @@ impl FinalTransaction {
 
         for input in &self.inputs {
             match input.partial_input.secrets {
-                // this is an unblinded confidential input
+                // This is an unblinded confidential input
                 Some(secrets) => {
                     if secrets.asset == network.policy_asset() {
                         available_amount += secrets.value;
                     }
                 }
-                // this is an explicit input
+                // This is an explicit input
                 None => {
                     if input.partial_input.asset.unwrap() == network.policy_asset() {
                         available_amount += input.partial_input.amount.unwrap();
@@ -401,13 +418,24 @@ impl FinalTransaction {
         let mut pst = PartiallySignedTransaction::new_v2();
 
         for i in 0..self.inputs.len() {
-            let final_input = &self.inputs[i];
+            let mut final_input = self.inputs[i].clone();
+
+            // Inject sequence if the input has none
+            if final_input.partial_input.sequence == Sequence::default() {
+                final_input.partial_input = final_input.partial_input.with_sequence(self.sequence);
+            }
+
+            // Inject locktime if the input has none
+            if final_input.partial_input.locktime == LockTime::ZERO {
+                final_input.partial_input = final_input.partial_input.with_locktime(self.locktime);
+            }
+
             let pst_input = final_input.to_input();
 
             match final_input.partial_input.secrets {
-                // insert input secrets if present
+                // Insert input secrets if present
                 Some(secrets) => input_secrets.insert(i, secrets),
-                // else populate input secrets with "explicit" amounts
+                // Else populate input secrets with "explicit" amounts
                 None => input_secrets.insert(
                     i,
                     TxOutSecrets {
@@ -442,7 +470,7 @@ impl FinalTransaction {
 mod tests {
     use bitcoin_hashes::Hash;
 
-    use simplicityhl::elements::{OutPoint, Script, TxOut, Txid};
+    use simplicityhl::elements::{LockTime, OutPoint, Script, TxOut, Txid};
 
     use crate::transaction::UTXO;
 
@@ -503,6 +531,51 @@ mod tests {
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
+    }
+
+    #[test]
+    fn declared_height_becomes_the_transactions_locktime() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x02, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 9000, policy));
+        ft.set_locktime(LockTime::from_height(2_580_990).unwrap());
+
+        let (pst, _) = ft.extract_pst();
+
+        assert_eq!(
+            pst.locktime().expect("one height, so no conflict"),
+            LockTime::from_height(2_580_990).unwrap()
+        );
+        assert!(
+            pst.inputs()
+                .iter()
+                .all(|input| input.required_height_locktime.is_some())
+        );
+    }
+
+    #[test]
+    fn transaction_that_declares_no_height_still_has_none() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        let (pst, _) = ft.extract_pst();
+
+        assert_eq!(pst.locktime().unwrap(), LockTime::ZERO);
     }
 
     #[test]

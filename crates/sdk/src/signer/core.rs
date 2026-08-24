@@ -8,7 +8,7 @@ use simplicityhl::Value;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, Script, Transaction};
+use simplicityhl::elements::{Address, LockTime, Script, Sequence, Transaction};
 #[cfg(feature = "provider")]
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
@@ -602,7 +602,14 @@ impl Signer {
                 let pruned_witness = program_input
                     .program
                     .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
-                    .map_err(|source| SignerError::CovenantExecution { index, source })?;
+                    .map_err(|source| SignerError::CovenantExecution {
+                        index,
+                        locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+                        sequence: pst.inputs()[index]
+                            .sequence
+                            .map_or(u32::MAX, Sequence::to_consensus_u32),
+                        source,
+                    })?;
 
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {

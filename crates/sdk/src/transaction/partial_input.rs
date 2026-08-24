@@ -164,10 +164,9 @@ impl PartialInput {
             LockTime::Seconds(value) => Some(value),
             LockTime::Blocks(_) => None,
         };
-        // zero height locktime is essentially ignored
         let height_locktime = match self.locktime {
-            LockTime::Blocks(value) => Some(value),
-            LockTime::Seconds(_) => None,
+            LockTime::Blocks(value) if value.to_consensus_u32() > 0 => Some(value),
+            LockTime::Blocks(_) | LockTime::Seconds(_) => None,
         };
 
         Input {
