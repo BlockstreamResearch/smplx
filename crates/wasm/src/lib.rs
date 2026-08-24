@@ -36,10 +36,7 @@ fn network_from_str(network: &str) -> Result<SimplicityNetwork, JsError> {
     }
 }
 
-/// What the module made of an issuance, reported rather than kept to itself.
-///
-/// The caller derives the same three values before any of this runs, from the same output.
-/// Returning them is what lets the two derivations be compared instead of one being trusted.
+/// Asset issuance details.
 #[wasm_bindgen]
 pub struct IssuanceReport {
     asset_id: String,
@@ -49,6 +46,14 @@ pub struct IssuanceReport {
 
 #[wasm_bindgen]
 impl IssuanceReport {
+    fn from_details(details: &IssuanceDetails) -> Self {
+        Self {
+            asset_id: details.asset_id.to_string(),
+            entropy: details.asset_entropy.to_string(),
+            reissuance_token_id: details.inflation_asset_id.to_string(),
+        }
+    }
+
     /// The asset this issuance creates.
     #[wasm_bindgen(getter, js_name = assetId)]
     #[must_use]
@@ -56,30 +61,18 @@ impl IssuanceReport {
         self.asset_id.clone()
     }
 
-    /// What a later reissuance of this same asset would be derived from.
-    ///
-    /// The output this issuance spends is gone once the transaction confirms, so this is the
-    /// only part of the derivation that survives it.
+    /// The entropy to derive the reissuance asset.
     #[wasm_bindgen(getter)]
     #[must_use]
     pub fn entropy(&self) -> String {
         self.entropy.clone()
     }
 
-    /// The token that authorises reissuing this asset, derived whether or not any is minted.
+    /// The reissuance asset this issuance creates.
     #[wasm_bindgen(getter, js_name = reissuanceTokenId)]
     #[must_use]
     pub fn reissuance_token_id(&self) -> String {
         self.reissuance_token_id.clone()
-    }
-
-    /// The module's account of one issuance, in the form ids are written in.
-    fn of(details: &IssuanceDetails) -> Self {
-        Self {
-            asset_id: details.asset_id.to_string(),
-            entropy: details.asset_entropy.to_string(),
-            reissuance_token_id: details.inflation_asset_id.to_string(),
-        }
     }
 }
 
@@ -94,9 +87,6 @@ impl ArgumentsTrait for FixedArguments {
 }
 
 /// Witness values for a covenant input, resolved before the transaction is assembled.
-///
-/// Held as parsed `WitnessValues` so a malformed set is rejected when the caller supplies
-/// it rather than in the middle of signing.
 #[derive(Clone)]
 struct FixedWitness(WitnessValues);
 
@@ -136,7 +126,7 @@ impl Covenant {
         include_debug_symbols: Option<bool>,
     ) -> Result<Covenant, JsError> {
         Ok(Self {
-            program: TransactionBuilder::program_of(
+            program: Self::from_source(
                 source,
                 arguments_json.as_deref(),
                 extra_leaves_json.as_deref(),
@@ -180,34 +170,50 @@ impl Covenant {
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
-    #[wasm_bindgen(js_name = covenantAddress)]
-    pub fn covenant_address(&self, network: &str) -> Result<String, JsError> {
+    #[wasm_bindgen(js_name = address)]
+    pub fn address(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
 
         Ok(self.program.get_tr_address(&network).to_string())
     }
+
+    fn from_source(
+        source: &str,
+        arguments_json: Option<&str>,
+        extra_leaves_json: Option<&str>,
+        include_debug_symbols: Option<bool>,
+    ) -> Result<Program, JsError> {
+        let arguments = match arguments_json {
+            Some(json) if !json.trim().is_empty() => serde_json::from_str::<Arguments>(json)
+                .map_err(|e| JsError::new(&format!("Invalid covenant arguments: {e}")))?,
+            _ => Arguments::default(),
+        };
+
+        let mut program = Program::new(Arc::<str>::from(source), &FixedArguments(arguments));
+
+        if let Some(include) = include_debug_symbols {
+            program = program.with_debug_symbols(include);
+        }
+
+        if let Some(json) = extra_leaves_json.filter(|json| !json.trim().is_empty()) {
+            let leaves: Vec<String> =
+                serde_json::from_str(json).map_err(|e| JsError::new(&format!("Invalid extra leaves: {e}")))?;
+
+            program = program.with_storage_capacity(leaves.len());
+
+            for (index, leaf) in leaves.iter().enumerate() {
+                let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
+                    .map_err(|e| JsError::new(&format!("Extra leaf {index} is not hex: {e}")))?;
+
+                program.set_storage_at(index, bytes);
+            }
+        }
+
+        Ok(program)
+    }
 }
 
 /// The compile-time parameters a covenant source declares, as JSON of name to type.
-///
-/// `SimplicityHL` has no syntax that declares a parameter's type. `param::NAME` is written
-/// where a value is wanted, and the type checker gives it the type that position demands
-/// (`simplicityhl` 0.6.0, `src/ast.rs` L1346-1350: the parameter is inserted into the global
-/// map with the expected type of the expression it stands in for). So the type of a parameter
-/// exists only as a result of analysing the program, and the only thing that can state it is
-/// the compiler.
-///
-/// Reading it needs no arguments, which is what makes it usable before they are built: a
-/// `TemplateProgram` is the program analysed but not instantiated, so its parameters are
-/// resolved while its arguments are still unknown. Asking a compiled program instead would be
-/// circular, since compiling one requires the arguments this is being asked in order to encode.
-///
-/// The alternative is a caller guessing a width. A guess is not silent here — the compiler
-/// requires an argument's type to equal the parameter's exactly — but it is still a guess, and
-/// the value written at a correct width is where the silence lives.
-///
-/// Types are spelled as the compiler spells them, which is the spelling the argument JSON's
-/// `type` field is read back in.
 ///
 /// # Errors
 /// Returns an error if the source does not parse or does not type-check.
@@ -323,8 +329,6 @@ impl WalletSigner {
 ///
 /// Inputs are expected as an outpoint plus the raw `TxOut` they spend.
 /// Coin selection and unblinding are the caller's responsibility.
-///
-/// Assembles exactly what it is given and adds only the change and fee outputs.
 #[wasm_bindgen]
 pub struct TransactionBuilder {
     transaction: FinalTransaction,
@@ -417,16 +421,6 @@ impl TransactionBuilder {
 
     /// Adds an ordinary wallet input that also creates a new asset.
     ///
-    /// The asset is a function of the output this input spends, so it cannot exist before that
-    /// output is chosen, and moving the issuance to another input mints a different asset.
-    ///
-    /// `issuer_contract_hex` is the issuer contract the issuance commits to, written the way an
-    /// id is written. Left unset it is the empty commitment, which is what a transaction
-    /// manifest declares.
-    ///
-    /// Returns the asset, the token that would authorise reissuing it, and the entropy both are
-    /// derived from.
-    ///
     /// # Errors
     /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed.
     #[wasm_bindgen(js_name = addWalletIssuanceInput)]
@@ -443,20 +437,16 @@ impl TransactionBuilder {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
-        // The SDK panics here when the input requires a witness signature, and a panic inside
-        // wasm aborts the module instead of returning. This binding chooses the signature
-        // itself and an ordinary wallet input never needs a witness one, so the panicking case
-        // cannot be reached from JavaScript.
         let details = self.transaction.add_issuance_input(
             PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             RequiredSignature::NativeEcdsa,
         );
 
-        Ok(IssuanceReport::of(&details))
+        Ok(IssuanceReport::from_details(&details))
     }
 
-    /// Adds a Simplicity covenant input, spent by satisfying it.
+    /// Adds a Simplicity covenant input.
     ///
     /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
@@ -485,9 +475,9 @@ impl TransactionBuilder {
             PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             Self::program_input(
                 source,
-                arguments_json.as_deref(),
-                witness_json.as_deref(),
-                extra_leaves_json.as_deref(),
+                arguments_json,
+                witness_json,
+                extra_leaves_json,
                 include_debug_symbols,
             )?,
             Self::required_signature(signature_witness.as_deref()),
@@ -498,9 +488,8 @@ impl TransactionBuilder {
 
     /// Adds a Simplicity covenant input that also creates a new asset.
     ///
-    /// The covenant half is the same as `addCovenantInput` and the issuance half the same as
-    /// `addWalletIssuanceInput`: the asset is derived from the output this input spends, and
-    /// `issuer_contract_hex` is what the issuance commits to, empty unless one is named.
+    /// The covenant half is the same as `addCovenantInput` and
+    /// the issuance half the same as `addWalletIssuanceInput`.
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness or the
@@ -525,25 +514,20 @@ impl TransactionBuilder {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
-        // The SDK panics here when the input requires the native signature rather than a
-        // witness one, and a panic inside wasm aborts the module instead of returning. The
-        // signature is derived from `signature_witness`, which yields no signature or a witness
-        // one and never the native kind, so the panicking case cannot be reached from
-        // JavaScript.
         let details = self.transaction.add_program_issuance_input(
             PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
             Self::program_input(
                 source,
-                arguments_json.as_deref(),
-                witness_json.as_deref(),
-                extra_leaves_json.as_deref(),
+                arguments_json,
+                witness_json,
+                extra_leaves_json,
                 include_debug_symbols,
             )?,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             Self::required_signature(signature_witness.as_deref()),
         );
 
-        Ok(IssuanceReport::of(&details))
+        Ok(IssuanceReport::from_details(&details))
     }
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
@@ -658,10 +642,6 @@ impl TransactionBuilder {
         RequiredSignature::witness_with_path(name, path)
     }
 
-    /// The output an input spends, from what the wallet already holds about it.
-    ///
-    /// `tx_out_hex` is the consensus encoding of that output rather than a summary of it,
-    /// because a re-encoded summary is a second opinion about what the chain holds.
     fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str) -> Result<UTXO, JsError> {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).map_err(|e| JsError::new(&format!("Invalid txid: {e}")))?,
@@ -679,72 +659,23 @@ impl TransactionBuilder {
         })
     }
 
-    /// The compiled covenant and the witness values it is spent with.
-    ///
-    /// Both are parsed here so a malformed set is rejected where the caller supplied it rather
-    /// than in the middle of signing.
     fn program_input(
         source: &str,
-        arguments_json: Option<&str>,
-        witness_json: Option<&str>,
-        extra_leaves_json: Option<&str>,
+        arguments_json: Option<String>,
+        witness_json: Option<String>,
+        extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
     ) -> Result<ProgramInput, JsError> {
         let witness = match witness_json {
-            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(json)
+            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(&json)
                 .map_err(|e| JsError::new(&format!("Invalid witness values: {e}")))?,
             _ => WitnessValues::default(),
         };
 
-        // The same build a `Covenant` gets, because it has to be: the covenant being spent was
-        // committed to on chain by whatever built it, and a program compiled here in a different
-        // mode, or without the leaves the deployment declared, locks to a different script. The
-        // spend then fails at execution, after a person has already approved it.
         Ok(ProgramInput {
-            program: Box::new(Self::program_of(
-                source,
-                arguments_json,
-                extra_leaves_json,
-                include_debug_symbols,
-            )?),
+            program: Box::new(Covenant::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
             witness: Box::new(FixedWitness(witness)),
         })
-    }
-
-    /// One program, built exactly as `Covenant::new` builds it.
-    fn program_of(
-        source: &str,
-        arguments_json: Option<&str>,
-        extra_leaves_json: Option<&str>,
-        include_debug_symbols: Option<bool>,
-    ) -> Result<Program, JsError> {
-        let arguments = match arguments_json {
-            Some(json) if !json.trim().is_empty() => serde_json::from_str::<Arguments>(json)
-                .map_err(|e| JsError::new(&format!("Invalid covenant arguments: {e}")))?,
-            _ => Arguments::default(),
-        };
-
-        let mut program = Program::new(Arc::<str>::from(source), &FixedArguments(arguments));
-
-        if let Some(include) = include_debug_symbols {
-            program = program.with_debug_symbols(include);
-        }
-
-        if let Some(json) = extra_leaves_json.filter(|json| !json.trim().is_empty()) {
-            let leaves: Vec<String> =
-                serde_json::from_str(json).map_err(|e| JsError::new(&format!("Invalid extra leaves: {e}")))?;
-
-            program = program.with_storage_capacity(leaves.len());
-
-            for (index, leaf) in leaves.iter().enumerate() {
-                let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
-                    .map_err(|e| JsError::new(&format!("Extra leaf {index} is not hex: {e}")))?;
-
-                program.set_storage_at(index, bytes);
-            }
-        }
-
-        Ok(program)
     }
 }
 
@@ -797,23 +728,11 @@ pub fn sdk_version() -> String {
 mod tests {
     use simplicityhl::elements::hashes::sha256::Midstate;
     use simplicityhl::elements::{AssetId, OutPoint, Txid};
+
     use smplx_sdk::utils::asset_entropy;
 
     use super::{ContractHash, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
 
-    /// Assets Liquid already carries, and the outputs they were issued from.
-    ///
-    /// The point of asserting against these rather than against this module's own output is
-    /// that an id has two written forms and only one of them is the one anybody reads. A
-    /// derivation consistent with itself reproduces none of these; the exact rule Elements
-    /// uses, written the way Elements writes it, reproduces all four.
-    ///
-    /// Each entry is a transaction id, an output index, the issuer contract that issuance
-    /// committed to, the asset that came out, and its reissuance token. Taken from Blockstream's
-    /// Liquid Esplora, `GET /liquid/api/asset/<id>`, which reports `issuance_prevout`,
-    /// `contract_hash` and `reissuance_token`. They are the same four the wallet's own
-    /// derivation is measured against, deliberately: two implementations checked against
-    /// different vectors can both pass and still disagree with each other.
     const ON_CHAIN: [(&str, u32, &str, &str, &str); 4] = [
         (
             "9596d259270ef5bac0020435e6d859aea633409483ba64e232b8ba04ce288668",
@@ -822,8 +741,6 @@ mod tests {
             "ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2",
             "59fe4d2127ba9f16bd6850a3e6271a166e7ed2e1669f6c107d655791c94ee98f",
         ),
-        // The index is part of what is hashed, so at least one case is issued from somewhere
-        // other than the first output.
         (
             "fc2535f2e4fc2ef1d19b832248e3edc2c3f4c4e3ee9c2bc51777bd738a6f9582",
             10,
@@ -847,7 +764,6 @@ mod tests {
         ),
     ];
 
-    /// What the module reports for one issuance on one output, without assembling a transaction.
     fn report_for(txid: &str, vout: u32, contract: &str) -> IssuanceReport {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).expect("a chain vector's txid"),
@@ -858,7 +774,7 @@ mod tests {
             TransactionBuilder::issuer_contract(Some(contract)).expect("a chain vector's contract"),
         );
 
-        IssuanceReport::of(&IssuanceDetails {
+        IssuanceReport::from_details(&IssuanceDetails {
             asset_id: AssetId::from_entropy(entropy),
             inflation_asset_id: AssetId::reissuance_token_from_entropy(entropy, false),
             asset_entropy: entropy,
@@ -900,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    fn an_id_leaves_in_the_form_it_arrived_in() {
+    fn id_leaves_in_the_form_it_arrived_in() {
         let written = "ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2";
         let read = TransactionBuilder::issuer_contract(Some(written)).expect("a written id");
 
