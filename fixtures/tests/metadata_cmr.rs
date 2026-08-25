@@ -33,7 +33,7 @@ fn expected_cmr<'a>(metadata: &'a Value, source: &str) -> &'a str {
 
 macro_rules! assert_metadata_cmr {
     ($metadata:expr, $source:literal, $program:ty, $arguments:ty) => {{
-        let program = <$program>::new(&<$arguments>::default());
+        let program = <$program>::new(<$arguments>::default());
 
         assert_eq!(
             to_hex(program.get_cmr()),

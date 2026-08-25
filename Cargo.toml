@@ -16,6 +16,8 @@ smplx-sdk = { path = "./crates/sdk", version = "0.0.10", default-features = fals
 smplx-std = { path = "./crates/simplex", version = "0.0.10" }
 smplx-wasm = { path = "./crates/wasm", version = "0.0.10" }
 
+rand_core = { version = "0.9.5" }
+rand = { version = "0.9.4" }
 serde = { version = "1.0.228", features = ["derive"] }
 hex = { version = "0.4.3" }
 hmac = { version = "0.12.1" }
