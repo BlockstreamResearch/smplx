@@ -131,6 +131,7 @@ jobs:
         shell: bash
         run: |
           cd ${{ matrix.build-dir }}
+          simplex install
           simplex build
           test -f src/artifacts/mod.rs
 
