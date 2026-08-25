@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-build"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "glob",
  "globwalk",
@@ -1365,7 +1365,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-cli"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "anyhow",
  "clap",
@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1394,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "electrsd",
  "hex",
@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1426,7 +1426,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "either",
  "serde",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "electrsd",
  "proc-macro2",
@@ -1455,7 +1455,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-wasm"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "elements-miniscript",
  "hex",

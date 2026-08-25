@@ -1,6 +1,6 @@
 [package]
 name = "smplx-test"
-version = "0.0.9"
+version = "0.0.10"
 description = "Simplex test command internal implementation"
 license.workspace = true
 edition.workspace = true

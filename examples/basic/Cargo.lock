@@ -1211,9 +1211,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.150"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",
@@ -1309,7 +1309,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smplx-build"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "glob",
  "globwalk",
@@ -1318,6 +1318,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde",
+ "serde_json",
  "simplicityhl",
  "syn",
  "thiserror",
@@ -1327,7 +1328,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-macros"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1336,7 +1337,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "electrsd",
  "hex",
@@ -1350,7 +1351,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "bip39",
  "bitcoin_hashes",
@@ -1368,7 +1369,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "either",
  "serde",
@@ -1380,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "electrsd",
  "proc-macro2",
