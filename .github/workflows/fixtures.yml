@@ -65,6 +65,7 @@ jobs:
       - name: Generate contract artifacts
         shell: bash
         run: |
+          simplex install
           cd ${{ matrix.build-dir }}
           simplex build
           test -f src/artifacts/mod.rs
