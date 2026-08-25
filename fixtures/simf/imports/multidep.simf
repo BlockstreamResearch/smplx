@@ -1,9 +1,9 @@
 use merkle::build_root::{get_root, hash as and_hash};
-use test_crate::smth::{assert_eq_32, hash as or_hash};
+use std::lib::asserts::assert_eq_32;
 
 pub fn get_block_value_hash(prev_hash: u32, tx1: u32, tx2: u32) -> u32 {
     let root: u32 = get_root(tx1, tx2);
-    or_hash(prev_hash, root)
+    jet::xor_32(prev_hash, root)
 }
 
 fn main() {
