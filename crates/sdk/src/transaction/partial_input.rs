@@ -1,3 +1,5 @@
+use elements_miniscript::bitcoin::bip32::DerivationPath;
+
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
@@ -55,6 +57,11 @@ pub struct PartialInput {
     /// Optional blinding secrets mapping values and asset states into confidential outputs.
     /// Note: if UTXO is confidential, `secrets` are `Some`.
     pub secrets: Option<TxOutSecrets>,
+    /// Derivation path of the key that can spend this input, relative to the account path.
+    ///
+    /// `None` means the signer's default path. A wallet whose UTXOs sit across many
+    /// derivation indices must set this per input, or the signer will sign with the wrong key.
+    pub derivation_path: Option<DerivationPath>,
 }
 
 /// Represents an input that runs a specific Simplicity program with an associated witness.
@@ -110,7 +117,19 @@ impl PartialInput {
             amount,
             asset,
             secrets: utxo.secrets,
+            derivation_path: None,
         }
+    }
+
+    /// Sets the derivation path, relative to the account path, of the key that spends this input.
+    ///
+    /// Relative means it is appended to `m/84h/{coin}h/0h`.
+    /// Should be in the form of "m/n".
+    #[must_use]
+    pub fn with_derivation_path(mut self, derivation_path: DerivationPath) -> Self {
+        self.derivation_path = Some(derivation_path);
+
+        self
     }
 
     /// Sets a specific `Sequence` for the input.
@@ -145,10 +164,9 @@ impl PartialInput {
             LockTime::Seconds(value) => Some(value),
             LockTime::Blocks(_) => None,
         };
-        // zero height locktime is essentially ignored
         let height_locktime = match self.locktime {
-            LockTime::Blocks(value) => Some(value),
-            LockTime::Seconds(_) => None,
+            LockTime::Blocks(value) if value.to_consensus_u32() > 0 => Some(value),
+            LockTime::Blocks(_) | LockTime::Seconds(_) => None,
         };
 
         Input {

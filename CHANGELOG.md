@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.0.10]
+
+- Added `SECURITY.md` for security reporting guidelines.
+
+### wasm
+
+- Implemented new `wasm` crate with wasm bindings for the sdk.
+
+### sdk
+
+- Put provider-related code under `provider` feature for wasm compatibility.
+- Optimized `Program` usage by ~50% via SimplicityHL compilation artifacts caching.
+- Added `get_tapleaf_hash` function to `Program` to get the executable tap leaf hash.
+- Removed `#[must_use]` from `set_storage_at` function.
+- Fixed many bugs in `Program` execution logging. Now traces are rendered correctly if multiple programs are specified or if the execution returns with an error.
+- Refactored program's tap storage tree to fold left.
+- Refactored `Signer` to be wasm-compatible.
+- Added `get_private_key_at` function to `Signer` for LWK compatibility.
+- Added configurable `ChangeOutput` to `FinalTransaction` to specify where the transaction change should go.
+- Added `set_sequence` and `set_locktime` functions to `FinalTransaction`.
+
+### cli
+
+- Added `metadata.json` file in the `simplex build` output to find the flattened sources and CMRs.
+- Added dry run check to the `simplex build` to catch the compilation errors early.
+- Added an ability to specify `tag` and `rev` during dependencies installation.
+- Fixed an excessive git errors logging during dependencies installation.
+
 ## [0.0.9]
 
 - Extended `simplex install` to accept dependency arguments (`simplex install <dep>` or `simplex install <alias>=<dep>`).

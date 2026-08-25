@@ -10,7 +10,7 @@ use simplicityhl::source::CanonPath;
 use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
-use crate::config::DEFAULT_DEPENDENCY_DIR;
+use crate::config::{DEFAULT_DEPENDENCY_DIR, GitRef};
 use crate::{BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
@@ -108,9 +108,16 @@ impl ArtifactsResolver {
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
     /// - `None` when the URL is empty or malformed such that no repository name
     ///   can be determined.
-    pub fn generate_hashed_repo_path(url: &str) -> Option<PathBuf> {
+    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>) -> Option<PathBuf> {
         let clean_url = url.strip_suffix(".git").unwrap_or(url);
         let repo_name = clean_url.split('/').next_back()?;
+
+        let tag = match reference {
+            Some(GitRef::Rev(rev)) => rev.as_str(),
+            Some(GitRef::Tag(tag)) => tag.as_str(),
+            None => "HEAD",
+        };
+        let url = format!("{url}@{tag}");
 
         let mut hasher = DefaultHasher::new();
         url.hash(&mut hasher);

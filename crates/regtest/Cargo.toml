@@ -1,6 +1,6 @@
 [package]
 name = "smplx-regtest"
-version = "0.0.9"
+version = "0.0.10"
 description = "Simplex regtest command internal implementation"
 license.workspace = true
 edition.workspace = true
@@ -11,7 +11,7 @@ readme = "../../README.md"
 workspace = true
 
 [dependencies]
-smplx-sdk = { workspace = true }
+smplx-sdk = { workspace = true, features = ["provider"] }
 
 thiserror = { workspace = true }
 electrsd = { workspace = true }

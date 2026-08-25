@@ -11,3 +11,6 @@ target/
 # Debugging data
 logs.md
 tmp_vendor
+
+# wasm-bindgen output, built by crates/wasm/build.sh
+crates/wasm/pkg/

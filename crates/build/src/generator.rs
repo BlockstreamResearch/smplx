@@ -1,20 +1,23 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use serde::Serialize;
 
 use simplicityhl::TemplateProgram;
 use simplicityhl::UnstableFeatures;
+use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::resolution::DependencyMap;
 use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
 use simplicityhl::source::CanonSourceFile;
 
+use crate::contract_id::ContractId;
 use crate::macros::codegen::{
     convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
     convert_contract_name_to_struct_name,
@@ -23,9 +26,11 @@ use crate::macros::parse::SimfContent;
 
 use super::error::BuildError;
 
+const METADATA_FILENAME: &str = "metadata.json";
+
 pub struct ArtifactsGenerator {}
 
-/// A single processed `.simf` file with all metadata needed for binding generation.
+/// A single processed (flattened) `.simf` file with all metadata needed for binding generation.
 ///
 /// Created once per source file and carries everything downstream — no recomputation
 /// of paths or contract names in later stages.
@@ -46,6 +51,17 @@ struct TreeNode {
     dirs: HashMap<String, TreeNode>,
 }
 
+#[derive(Default, Serialize)]
+struct Metadata {
+    sources: BTreeMap<String, SourceEntry>,
+}
+
+#[derive(Serialize)]
+struct SourceEntry {
+    cmr: ContractId,
+    content: String,
+}
+
 impl ArtifactsGenerator {
     pub fn generate_artifacts(
         out_dir: impl AsRef<Path>,
@@ -57,17 +73,23 @@ impl ArtifactsGenerator {
         let out_dir = out_dir.as_ref();
         let base_dir = base_dir.as_ref();
 
+        let json_metadata_file = out_dir.join(METADATA_FILENAME);
+
         let pathdiff = pathdiff::diff_paths(base_dir, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
             cwd,
             simf_file: base_dir.to_path_buf(),
         })?;
 
         let simf_out_dir = out_dir.join(pathdiff);
+        let mut metadata = Metadata::default();
 
         let artifacts = simfs
             .iter()
-            .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir))
+            .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir, &mut metadata))
             .collect::<Result<Vec<_>, _>>()?;
+
+        let file = std::fs::File::create(&json_metadata_file)?;
+        serde_json::to_writer_pretty(BufWriter::new(file), &metadata)?;
 
         let tree = Self::build_tree(artifacts)?;
 
@@ -88,7 +110,7 @@ impl ArtifactsGenerator {
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
     }
 
-    /// Processes a single `.simf` source file:
+    /// Processes a single `.simf` source file and write it to metadata:
     /// - Writes its content to the mirrored path under `simf_out_dir`
     /// - Extracts the contract name
     ///
@@ -99,6 +121,7 @@ impl ArtifactsGenerator {
         base_dir: &Path,
         validated_deps: &ValidatedDeps,
         simf_out_dir: &Path,
+        metadata: &mut Metadata,
     ) -> Result<SimfArtifact, BuildError> {
         let relative_path = source
             .strip_prefix(base_dir)
@@ -111,8 +134,11 @@ impl ArtifactsGenerator {
             fs::create_dir_all(parent)?;
         }
 
-        let content = Self::process_content(source, validated_deps)?;
-        fs::write(&mirrored_path, &content)?;
+        let source_entry = Self::process_content(source, validated_deps)?;
+        fs::write(&mirrored_path, &source_entry.content)?;
+
+        let relative_path_str = relative_path.display().to_string();
+        metadata.sources.insert(relative_path_str, source_entry);
 
         let contract_name = SimfContent::extract_content_from_path(&source.to_path_buf())
             .map_err(BuildError::FailedToExtractContent)?
@@ -126,7 +152,7 @@ impl ArtifactsGenerator {
     }
 
     /// Reads and processes the content of a `.simf` file.
-    fn process_content(source: &Path, validated_deps: &ValidatedDeps) -> Result<String, BuildError> {
+    fn process_content(source: &Path, validated_deps: &ValidatedDeps) -> Result<SourceEntry, BuildError> {
         let parent_dir = source.parent().ok_or_else(|| {
             BuildError::GenerationFailed(format!("Path '{}' has no parent directory", source.display()))
         })?;
@@ -136,8 +162,20 @@ impl ArtifactsGenerator {
         let canon_source_file = CanonSourceFile::new(canon_source, Arc::from(content));
         let dependency_map = Self::build_dependency_map(validated_deps, parent_dir)?;
 
-        TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
-            .map_err(BuildError::Flattening)
+        let template = TemplateProgram::new_with_dep(
+            canon_source_file.clone(),
+            &dependency_map,
+            &UnstableFeatures::all(),
+            Box::new(ElementsJetHinter),
+        )
+        .map_err(|diags| BuildError::DryRun(diags.to_string()))?;
+        let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
+            .map_err(BuildError::Flattening)?;
+
+        Ok(SourceEntry {
+            cmr: ContractId::from_template(&template)?,
+            content: flattened,
+        })
     }
 
     /// Arranges a flat list of artifacts into a tree mirroring the source directory layout.
@@ -265,9 +303,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: impl ArgumentsTrait + 'static) -> Self {
+                pub fn new(arguments: &impl ArgumentsTrait) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, Box::new(arguments)),
+                        program: Program::new(Self::SOURCE, arguments),
                     }
                 }
 
@@ -283,8 +321,8 @@ impl ArtifactsGenerator {
                     self
                 }
 
-                #[must_use]
-                pub fn set_storage_at(&mut self, index: usize, new_value: [u8; 32]) {
+                // No #[must-use], as we don't return any value.
+                pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
                     self.program.set_storage_at(index, new_value);
                 }
 
@@ -294,12 +332,12 @@ impl ArtifactsGenerator {
                 }
 
                 #[must_use]
-                pub fn get_storage(&self) -> &[[u8; 32]] {
+                pub fn get_storage(&self) -> &[Vec<u8>] {
                     self.program.get_storage()
                 }
 
                 #[must_use]
-                pub fn get_storage_at(&self, index: usize) -> [u8; 32] {
+                pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
                     self.program.get_storage_at(index)
                 }
 
@@ -311,6 +349,16 @@ impl ArtifactsGenerator {
                 #[must_use]
                 pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
                     self.program.get_script_hash(network)
+                }
+
+                #[must_use]
+                pub fn get_cmr(&self) -> [u8; 32] {
+                    self.program.get_cmr()
+                }
+
+                #[must_use]
+                pub fn get_tapleaf_hash(&self) -> [u8; 32] {
+                    self.program.get_tapleaf_hash()
                 }
             }
 

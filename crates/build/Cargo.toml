@@ -1,6 +1,6 @@
 [package]
 name = "smplx-build"
-version = "0.0.9"
+version = "0.0.10"
 description = "Simplex build command internal implementation"
 license.workspace = true
 edition.workspace = true
@@ -22,3 +22,4 @@ pathdiff = { version = "0.2.3" }
 prettyplease = { version = "0.2.37" }
 glob = { version = "0.3.3"}
 globwalk = { version = "0.9.1"}
+serde_json = { version = "1.0.151" }

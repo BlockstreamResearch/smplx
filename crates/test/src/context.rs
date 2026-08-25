@@ -70,16 +70,22 @@ impl TestContext {
         &self.signer
     }
 
+    /// # Panics
+    /// Panics when the signer was built without a provider, which a test context never is.
     pub fn get_default_provider(&self) -> &dyn ProviderTrait {
-        self.signer.get_provider()
+        self.signer
+            .get_provider()
+            .expect("a test context always has a provider")
     }
 
     pub fn get_config(&self) -> &TestConfig {
         &self.config
     }
 
+    /// # Panics
+    /// Panics when the signer was built without a provider, which a test context never is.
     pub fn get_network(&self) -> &SimplicityNetwork {
-        self.signer.get_provider().get_network()
+        self.get_default_provider().get_network()
     }
 
     pub fn get_network_utils(&self) -> NetworkUtils {

@@ -1,0 +1,7 @@
+fn check_tapleaf(passed_tapleaf_hash: u256) {
+    assert!(jet::eq_256(jet::tapleaf_hash(), passed_tapleaf_hash))
+}
+
+fn main() {
+    check_tapleaf(witness::PROGRAM_TAPLEAF_HASH);
+}
