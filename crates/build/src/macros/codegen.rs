@@ -8,6 +8,7 @@ use crate::macros::types::{AllocationType, RustType};
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
+    pub program_struct_name: proc_macro2::Ident,
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
     pub simf_content: SimfContent,
@@ -24,6 +25,11 @@ pub struct GeneratedWitnessTokens {
     pub imports: proc_macro2::TokenStream,
     pub struct_token_stream: proc_macro2::TokenStream,
     pub struct_impl: proc_macro2::TokenStream,
+}
+
+pub struct GeneratedProgramTraitHelperTokens {
+    pub imports: proc_macro2::TokenStream,
+    pub helper_impls: proc_macro2::TokenStream,
 }
 
 pub struct WitnessField {
@@ -48,13 +54,39 @@ impl SimfContractMeta {
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
-
+        let program_struct_name = construct_program_name(&simf_content.contract_name);
         Ok(SimfContractMeta {
             contract_source_const_name,
+            program_struct_name,
             args_struct,
             witness_struct,
             simf_content,
             abi_meta,
+        })
+    }
+
+    /// Generates code necessary for creating mutant testing using simplex.
+    pub fn generate_program_trait_helpers_impl(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
+        let args_struct_name = &self.args_struct.struct_name;
+        let program_name = &self.program_struct_name;
+
+        let program_helpers_impl = quote! {
+            impl ProgramFactory<#program_name> for #program_name {
+                fn instantiate_program(args: impl Into<Arguments>) -> Box<#program_name> {
+                    Box::new(#program_name::new(args))
+                }
+            }
+        };
+
+        Ok(GeneratedProgramTraitHelperTokens {
+            imports: quote! {
+                use super::{super::#program_name, #args_struct_name};
+                use simplex::program::{Program, ProgramFactory};
+                use simplex::simplicityhl::{Arguments};
+            },
+            helper_impls: quote! {
+                #program_helpers_impl
+            },
         })
     }
 }
@@ -117,6 +149,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("args");
+        let rand_mapping: proc_macro2::TokenStream = self.generate_rand_mapping();
         let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
 
         Ok(GeneratedArgumentTokens {
@@ -128,6 +161,8 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
+                    use simplex::rand_core::{RngCore};
+                    use simplex::rand::Rng;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -143,6 +178,12 @@ impl WitnessStruct {
                         #arguments_conversion_from_args_map
 
                         Ok(#struct_to_return)
+                    }
+
+                    /// Generate a random Arguments struct instance using the provided RNG.
+                    pub fn generate_arguments_raw<R: RngCore + ?Sized>(rng: &mut R) -> Self
+                    {
+                        #rand_mapping
                     }
                 }
 
@@ -163,6 +204,13 @@ impl WitnessStruct {
                     {
                         let x = Arguments::deserialize(deserializer)?;
                         Self::from_arguments(&x).map_err(simplex::serde::de::Error::custom)
+                    }
+                }
+
+                impl simplex::program::RandomArguments for #struct_name {
+                    fn generate_arguments(rng: &mut dyn RngCore) -> simplex::simplicityhl::Arguments
+                    {
+                        Self::generate_arguments_raw(rng).into()
                     }
                 }
 
@@ -208,6 +256,7 @@ impl WitnessStruct {
             proc_macro2::TokenStream,
         ) = self.generate_from_args_conversion_with_param_name("witness");
         let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
+        let rand_mapping: proc_macro2::TokenStream = self.generate_rand_mapping();
 
         Ok(GeneratedWitnessTokens {
             imports: quote! {
@@ -218,6 +267,8 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
+                    use simplex::rand_core::{RngCore};
+                    use simplex::rand::Rng;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -233,6 +284,12 @@ impl WitnessStruct {
                         #arguments_conversion_from_args_map
 
                         Ok(#struct_to_return)
+                    }
+
+                    /// Generate a random Witness struct instance using the provided RNG.
+                    pub fn generate_witness_raw<R: RngCore + ?Sized>(rng: &mut R) -> Self
+                    {
+                        #rand_mapping
                     }
                 }
 
@@ -253,6 +310,13 @@ impl WitnessStruct {
                     {
                         let x = WitnessValues::deserialize(deserializer)?;
                         Self::from_witness(&x).map_err(simplex::serde::de::Error::custom)
+                    }
+                }
+
+                impl simplex::program::RandomWitness for #struct_name {
+                    fn generate_witness(rng: &mut dyn RngCore) -> simplex::simplicityhl::WitnessValues
+                    {
+                        Self::generate_witness_raw(rng).into()
                     }
                 }
 
@@ -323,6 +387,24 @@ impl WitnessStruct {
         quote! {
             #[derive(Debug, Clone, PartialEq, Eq)]
             pub struct #name {
+                #(#fields),*
+            }
+        }
+    }
+
+    fn generate_rand_mapping(&self) -> proc_macro2::TokenStream {
+        let name = format_ident!("{}", self.struct_name);
+        let fields: Vec<proc_macro2::TokenStream> = self
+            .witness_values
+            .iter()
+            .map(|field| {
+                let field_name = format_ident!("{}", field.struct_rust_field);
+                let field_default_value = field.rust_type.get_random_value();
+                quote! { #field_name: #field_default_value }
+            })
+            .collect();
+        quote! {
+            #name {
                 #(#fields),*
             }
         }

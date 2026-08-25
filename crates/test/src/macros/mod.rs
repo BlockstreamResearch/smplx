@@ -1,3 +1,3 @@
 pub mod core;
 
-pub use core::expand;
+pub use core::{expand_fuzz, expand_test};
