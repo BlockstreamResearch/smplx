@@ -29,7 +29,10 @@ pub enum Command {
     /// Generates the simplicity contracts artifacts
     Build,
     /// Cleans Simplex artifacts in the current directory
-    Clean,
+    Clean {
+        #[command(flatten)]
+        flags: CleanFlags,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -67,4 +70,12 @@ pub struct TestFlags {
     /// Run non-simplex tests (may be used for running unit tests)
     #[arg(long = "no-simplex")]
     pub no_simplex: bool,
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Args, Clone)]
+pub struct CleanFlags {
+    /// Remove all files created by simplex
+    #[arg(long = "all")]
+    pub remove_all: bool,
 }
