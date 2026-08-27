@@ -8,7 +8,9 @@ use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
 
-use smplx_sdk::program::{ArgumentsTrait, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
+use smplx_sdk::program::{
+    ArgumentsTrait, Program, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait,
+};
 use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 
