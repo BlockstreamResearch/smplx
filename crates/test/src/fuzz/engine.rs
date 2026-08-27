@@ -8,9 +8,7 @@ use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
 
-use smplx_sdk::program::{
-    ArgumentsTrait, Program, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait,
-};
+use smplx_sdk::program::{ArgumentsTrait, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness, WitnessTrait};
 use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
 use smplx_sdk::signer::Signer;
 
@@ -145,23 +143,23 @@ where
     }
 }
 
-pub struct FuzzStrategyBuilder<Args, Wit, BaseStrat> {
+pub struct FuzzStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
     base_strat: Option<BaseStrat>,
     _placeholder: PhantomData<(Args, Wit)>,
 }
 
-impl<Args, Wit> FuzzStrategyBuilder<Args, Wit, ()> {
+impl<Args, Wit> FuzzStrategyBuilder<Args, Wit> {
     pub fn new() -> Self {
-        Self {
-            base_strat: None,
-            _placeholder: Default::default(),
-        }
+        Self::default()
     }
 }
 
-impl<Args, Wit> Default for FuzzStrategyBuilder<Args, Wit, ()> {
+impl<Args, Wit> Default for FuzzStrategyBuilder<Args, Wit> {
     fn default() -> Self {
-        Self::new()
+        Self {
+            base_strat: Some(InterestingRandom::default()),
+            _placeholder: Default::default(),
+        }
     }
 }
 

@@ -175,9 +175,7 @@ mod failure_test_prop {
         fuzz_engine_builder: FuzzEngineBuilder<FailureTestProgram, FailureTestArguments, FailureTestWitness>,
     ) -> anyhow::Result<()> {
         // TODO: Add additional strategies to builder to make proper proptest
-        let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness, _>::new()
-            .with_random_interesting_values()
-            .build();
+        let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
         let transaction_builder = failure_transaction_builder()?;
         let runner = fuzz_engine_builder.build(strategy_storage, transaction_builder);
         runner.run_with_check(FailureTestCheck);
