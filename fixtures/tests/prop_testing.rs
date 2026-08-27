@@ -5,10 +5,8 @@ mod failure_test_prop {
     use simplex::fuzz::engine::FuzzStrategyBuilder;
     use simplex::fuzz::{FuzzEngineBuilder, FuzzError, ProgramCheck, ProgramExecResult};
     use simplex::program::ProgramError;
-    use simplex::provider::SimplicityNetwork;
-    use simplex::simplicityhl::elements::hashes::Hash;
+    use simplex::simplicityhl::elements::Script;
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
-    use simplex::simplicityhl::elements::{OutPoint, Script, TxOut, Txid};
     use simplex::simplicityhl::{Arguments, WitnessValues};
     use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
 
@@ -20,14 +18,8 @@ mod failure_test_prop {
     const FAILURE_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
     fn failure_transaction_builder() -> Result<FinalTransactionBuilder, FuzzError> {
-        let network = SimplicityNetwork::default_regtest();
-        let utxo = UTXO {
-            outpoint: OutPoint::new(Txid::all_zeros(), 0),
-            txout: TxOut::new_fee(0, network.policy_asset()),
-            secrets: None,
-        };
         let mut transaction = FinalTransaction::new();
-        transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+        transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
 
         FinalTransactionBuilder::new(transaction, [FAILURE_PROGRAM_TARGET])
     }
