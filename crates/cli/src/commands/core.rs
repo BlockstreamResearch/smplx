@@ -75,7 +75,7 @@ pub struct TestFlags {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct CleanFlags {
-    /// Remove all files created by simplex
+    /// Remove all files created by Simplex, including installed dependencies
     #[arg(long = "all")]
     pub remove_all: bool,
 }
