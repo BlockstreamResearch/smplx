@@ -15,10 +15,6 @@ use crate::utils::tagged_hash;
 use super::UTXO;
 
 /// Defines the 32-byte message a witness signature actually covers.
-///
-/// The signer derives it from the input's `sighash_all`, which only becomes known
-/// once the change and fee outputs are appended during finalization. That is why the
-/// derivation is expressed here as a rule rather than as a message computed by the caller.
 #[derive(Clone)]
 pub enum SigMessage {
     /// Sign `sighash_all` itself.
@@ -40,8 +36,7 @@ pub enum RequiredSignature {
     Witness(String),
     /// A witness payload requiring traversal through a specified path hierarchy.
     WitnessWithPath(String, Vec<String>),
-    /// Like `WitnessWithPath`, but over a message derived from `sighash_all` rather than
-    /// over `sighash_all` itself. An empty path injects the signature into `name` directly.
+    /// Like `WitnessWithPath`, but over a message derived from `sighash_all`.
     WitnessWithMessage(String, Vec<String>, SigMessage),
 }
 
@@ -81,7 +76,7 @@ impl RequiredSignature {
     }
 
     /// Creates a `WitnessWithMessage` requirement using an iterator of path segments.
-    pub fn with_message<I>(name: &str, path: I, message: SigMessage) -> Self
+    pub fn with_with_message<I>(name: &str, path: I, message: SigMessage) -> Self
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -94,12 +89,12 @@ impl RequiredSignature {
     }
 
     /// Creates a requirement for a BIP-340 tagged signature over `tag` and `sighash_all`.
-    pub fn tagged<I>(name: &str, path: I, tag: &str) -> Self
+    pub fn witness_tagged<I>(name: &str, path: I, tag: &str) -> Self
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        Self::with_message(name, path, SigMessage::Tagged(tag.to_string()))
+        Self::with_with_message(name, path, SigMessage::Tagged(tag.to_string()))
     }
 }
 
@@ -343,7 +338,7 @@ mod tests {
 
     #[test]
     fn tagged_constructor_builds_a_tagged_message() {
-        let required = RequiredSignature::tagged("SIGNATURE", ["Left", "1"], "SimplexTag");
+        let required = RequiredSignature::witness_tagged("SIGNATURE", ["Left", "1"], "SimplexTag");
 
         let RequiredSignature::WitnessWithMessage(name, path, message) = required else {
             panic!("expected a WitnessWithMessage requirement");
