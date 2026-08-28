@@ -76,7 +76,7 @@ impl RequiredSignature {
     }
 
     /// Creates a `WitnessWithMessage` requirement using an iterator of path segments.
-    pub fn with_with_message<I>(name: &str, path: I, message: SigMessage) -> Self
+    pub fn witness_with_message<I>(name: &str, path: I, message: SigMessage) -> Self
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -94,7 +94,7 @@ impl RequiredSignature {
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        Self::with_with_message(name, path, SigMessage::Tagged(tag.to_string()))
+        Self::witness_with_message(name, path, SigMessage::Tagged(tag.to_string()))
     }
 }
 
