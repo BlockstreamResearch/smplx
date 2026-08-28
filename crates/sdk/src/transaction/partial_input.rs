@@ -1,13 +1,33 @@
+use std::fmt;
+use std::sync::Arc;
+
 use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
+use simplicityhl::simplicity::hashes::Hash;
 
 use crate::program::ProgramTrait;
 use crate::program::WitnessTrait;
+use crate::utils::tagged_hash;
 
 use super::UTXO;
+
+/// Defines the 32-byte message a witness signature actually covers.
+///
+/// The signer derives it from the input's `sighash_all`, which only becomes known
+/// once the change and fee outputs are appended during finalization. That is why the
+/// derivation is expressed here as a rule rather than as a message computed by the caller.
+#[derive(Clone)]
+pub enum SigMessage {
+    /// Sign `sighash_all` itself.
+    Sighash,
+    /// Sign the BIP-340 tagged hash `sha256(sha256(tag) || sha256(tag) || sighash_all)`.
+    Tagged(String),
+    /// Sign whatever the closure derives from `sighash_all`.
+    Custom(Arc<dyn Fn([u8; 32]) -> [u8; 32] + Send + Sync>),
+}
 
 /// Defines the type of signature required for an input.
 #[derive(Debug, Clone)]
@@ -20,6 +40,31 @@ pub enum RequiredSignature {
     Witness(String),
     /// A witness payload requiring traversal through a specified path hierarchy.
     WitnessWithPath(String, Vec<String>),
+    /// Like `WitnessWithPath`, but over a message derived from `sighash_all` rather than
+    /// over `sighash_all` itself. An empty path injects the signature into `name` directly.
+    WitnessWithMessage(String, Vec<String>, SigMessage),
+}
+
+impl SigMessage {
+    /// Derives the message to sign from the input's `sighash_all`.
+    #[must_use]
+    pub fn digest(&self, sighash: [u8; 32]) -> [u8; 32] {
+        match self {
+            Self::Sighash => sighash,
+            Self::Tagged(tag) => tagged_hash(tag, &sighash).to_byte_array(),
+            Self::Custom(derive) => derive(sighash),
+        }
+    }
+}
+
+impl fmt::Debug for SigMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sighash => f.write_str("Sighash"),
+            Self::Tagged(tag) => f.debug_tuple("Tagged").field(tag).finish(),
+            Self::Custom(_) => f.write_str("Custom(<closure>)"),
+        }
+    }
 }
 
 impl RequiredSignature {
@@ -33,6 +78,28 @@ impl RequiredSignature {
             name.to_string(),
             path.into_iter().map(|s| s.as_ref().to_string()).collect(),
         )
+    }
+
+    /// Creates a `WitnessWithMessage` requirement using an iterator of path segments.
+    pub fn with_message<I>(name: &str, path: I, message: SigMessage) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        RequiredSignature::WitnessWithMessage(
+            name.to_string(),
+            path.into_iter().map(|s| s.as_ref().to_string()).collect(),
+            message,
+        )
+    }
+
+    /// Creates a requirement for a BIP-340 tagged signature over `tag` and `sighash_all`.
+    pub fn tagged<I>(name: &str, path: I, tag: &str) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        Self::with_message(name, path, SigMessage::Tagged(tag.to_string()))
     }
 }
 
@@ -237,5 +304,56 @@ impl IssuanceInput {
             blinded_issuance: Some(0x00),
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SIGHASH: [u8; 32] = [0x11; 32];
+
+    #[test]
+    fn sighash_message_is_the_sighash() {
+        assert_eq!(SigMessage::Sighash.digest(SIGHASH), SIGHASH);
+    }
+
+    #[test]
+    fn tagged_message_is_the_tagged_hash() {
+        assert_eq!(
+            SigMessage::Tagged("SimplexTag".to_string()).digest(SIGHASH),
+            tagged_hash("SimplexTag", &SIGHASH).to_byte_array()
+        );
+    }
+
+    #[test]
+    fn custom_message_receives_the_sighash() {
+        let message = SigMessage::Custom(Arc::new(|sighash: [u8; 32]| {
+            let mut digest = sighash;
+            digest[0] ^= 0xff;
+
+            digest
+        }));
+
+        let mut expected = SIGHASH;
+        expected[0] ^= 0xff;
+
+        assert_eq!(message.digest(SIGHASH), expected);
+    }
+
+    #[test]
+    fn tagged_constructor_builds_a_tagged_message() {
+        let required = RequiredSignature::tagged("SIGNATURE", ["Left", "1"], "SimplexTag");
+
+        let RequiredSignature::WitnessWithMessage(name, path, message) = required else {
+            panic!("expected a WitnessWithMessage requirement");
+        };
+
+        assert_eq!(name, "SIGNATURE");
+        assert_eq!(path, ["Left", "1"]);
+        assert_eq!(
+            message.digest(SIGHASH),
+            tagged_hash("SimplexTag", &SIGHASH).to_byte_array()
+        );
     }
 }
