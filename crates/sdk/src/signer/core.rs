@@ -578,16 +578,13 @@ impl Signer {
             pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
         }
 
-        // `SigMessage` holds an `Arc` in one variant, so this cannot be promoted to a constant
-        let sighash_message = SigMessage::Sighash;
-
         for (index, input_i) in inputs.iter().enumerate() {
             // We need to prune the program
             if let Some(program_input) = &input_i.program_input {
                 let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &sighash_message)),
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
                     RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
-                        Some((wtns_name, sig_path, &sighash_message))
+                        Some((wtns_name, sig_path, &SigMessage::Sighash))
                     }
                     RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
                         Some((wtns_name, sig_path, message))

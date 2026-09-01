@@ -14,6 +14,9 @@ use crate::utils::tagged_hash;
 
 use super::UTXO;
 
+/// Derives the 32-byte message to sign from the input's `sighash_all`.
+pub type SigMessageFn = Arc<dyn Fn([u8; 32]) -> [u8; 32] + Send + Sync>;
+
 /// Defines the 32-byte message a witness signature actually covers.
 #[derive(Clone)]
 pub enum SigMessage {
@@ -22,7 +25,7 @@ pub enum SigMessage {
     /// Sign the BIP-340 tagged hash `sha256(sha256(tag) || sha256(tag) || sighash_all)`.
     Tagged(String),
     /// Sign whatever the closure derives from `sighash_all`.
-    Custom(Arc<dyn Fn([u8; 32]) -> [u8; 32] + Send + Sync>),
+    Custom(SigMessageFn),
 }
 
 /// Defines the type of signature required for an input.
