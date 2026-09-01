@@ -195,7 +195,9 @@ impl FinalTransaction {
     /// (i.e. if `required_sig` is `RequiredSignature::Witness` or `RequiredSignature::WitnessWithPath`)
     pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
         match required_sig {
-            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
+            RequiredSignature::Witness(_)
+            | RequiredSignature::WitnessWithPath(_, _)
+            | RequiredSignature::WitnessWithMessage(_, _, _) => {
                 panic!("Requested signature is not NativeEcdsa or None")
             }
             _ => {}
@@ -234,7 +236,9 @@ impl FinalTransaction {
         required_sig: RequiredSignature,
     ) -> IssuanceDetails {
         match required_sig {
-            RequiredSignature::Witness(_) | RequiredSignature::WitnessWithPath(_, _) => {
+            RequiredSignature::Witness(_)
+            | RequiredSignature::WitnessWithPath(_, _)
+            | RequiredSignature::WitnessWithMessage(_, _, _) => {
                 panic!("Requested signature is not NativeEcdsa or None")
             }
             _ => {}

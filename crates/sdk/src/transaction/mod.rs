@@ -12,7 +12,7 @@ pub mod utxo;
 
 pub use change_output::ChangeOutput;
 pub use final_transaction::{FinalInput, FinalTransaction, IssuanceDetails};
-pub use partial_input::{PartialInput, ProgramInput, RequiredSignature};
+pub use partial_input::{PartialInput, ProgramInput, RequiredSignature, SigMessage};
 pub use partial_output::PartialOutput;
 pub use tx_receipt::TxReceipt;
 pub use utxo::UTXO;
