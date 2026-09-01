@@ -1,0 +1,37 @@
+fn checksig(msg: u256, sig: Signature) {
+    jet::bip_0340_verify((param::PUBLIC_KEY, msg), sig);
+}
+
+/// sha256("SimplexFixture/SigMessage")
+fn tag_hash() -> u256 {
+    0x844d91d7104634bfb6d6ba46312aba0245d1d3ecd7738e3e5e9229404224971b
+}
+
+/// sha256(tag_hash || tag_hash || sig_all_hash), the BIP-340 tagged hash.
+fn tagged_message() -> u256 {
+    let ctx: Ctx8 = jet::sha_256_ctx_8_init();
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, tag_hash());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, tag_hash());
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::sig_all_hash());
+
+    jet::sha_256_ctx_8_finalize(ctx)
+}
+
+/// sha256(sig_all_hash). Not a tagged hash and not the sighash itself,
+/// so neither Sighash nor Tagged can produce it.
+fn custom_message() -> u256 {
+    let ctx: Ctx8 = jet::sha_256_ctx_8_init();
+    let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::sig_all_hash());
+
+    jet::sha_256_ctx_8_finalize(ctx)
+}
+
+fn main() {
+    match witness::SIGNATURE {
+        Left(plain: Signature) => checksig(jet::sig_all_hash(), plain),
+        Right(derived: Either<Signature, Signature>) => match derived {
+            Left(tagged: Signature) => checksig(tagged_message(), tagged),
+            Right(custom: Signature) => checksig(custom_message(), custom),
+        },
+    }
+}

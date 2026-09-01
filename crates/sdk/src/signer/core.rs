@@ -39,7 +39,7 @@ use crate::program::logger::ProgramLogger;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;
-use crate::transaction::{ChangeOutput, FinalTransaction, PartialOutput, RequiredSignature};
+use crate::transaction::{ChangeOutput, FinalTransaction, PartialOutput, RequiredSignature, SigMessage};
 #[cfg(feature = "provider")]
 use crate::transaction::{PartialInput, TxReceipt, UTXO};
 
@@ -61,6 +61,7 @@ pub trait SignerTrait {
         input_index: usize,
         network: &SimplicityNetwork,
         derivation_path: Option<&DerivationPath>,
+        message: &SigMessage,
     ) -> Result<schnorr::Signature, SignerError>;
 
     /// Generates an ECDSA signature to spend a standard transaction input.
@@ -98,9 +99,11 @@ impl SignerTrait for Signer {
         input_index: usize,
         network: &SimplicityNetwork,
         derivation_path: Option<&DerivationPath>,
+        message: &SigMessage,
     ) -> Result<schnorr::Signature, SignerError> {
         let env = program.get_env(pst, input_index, network)?;
-        let msg = Message::from_digest(env.c_tx_env().sighash_all().to_byte_array());
+        let sighash = env.c_tx_env().sighash_all().to_byte_array();
+        let msg = Message::from_digest(message.digest(sighash));
 
         let private_key = self.get_private_key_at(derivation_path);
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
@@ -578,15 +581,20 @@ impl Signer {
         for (index, input_i) in inputs.iter().enumerate() {
             // We need to prune the program
             if let Some(program_input) = &input_i.program_input {
-                let signing_info: Option<(&String, &[String])> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[])),
-                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => Some((wtns_name, sig_path)),
+                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
+                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
+                        Some((wtns_name, sig_path, &SigMessage::Sighash))
+                    }
+                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
+                        Some((wtns_name, sig_path, message))
+                    }
                     _ => None,
                 };
 
                 let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
                     // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path)) => Ok(self.get_signed_program_witness(
+                    Some((witness_name, sig_path, message)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
@@ -594,6 +602,7 @@ impl Signer {
                         sig_path,
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
+                        message,
                     )?),
                     // Just build the witness
                     None => Ok(program_input.witness.build_witness()),
@@ -635,8 +644,9 @@ impl Signer {
         sig_path: &[String],
         index: usize,
         derivation_path: Option<&DerivationPath>,
+        message: &SigMessage,
     ) -> Result<WitnessValues, SignerError> {
-        let signature = self.sign_program(pst, program, index, &self.network, derivation_path)?;
+        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
 
         // Inject the signature into the wtns name directly if the path is not provided
         let sig_val = if sig_path.is_empty() {
