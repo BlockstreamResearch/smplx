@@ -23,6 +23,7 @@ pub enum Command {
     /// If `deps` is empty, install everything from `Simplex.toml`.
     Install {
         /// Dependencies to install, as `<source>` or `<alias>=<source>`.
+        /// The bare name `std` pins the latest `SimplicityHL` standard library release.
         #[arg(value_name = "DEP")]
         deps: Vec<String>,
     },

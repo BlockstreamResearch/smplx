@@ -42,6 +42,12 @@ pub enum TomlEditError {
 
     #[error("dependency `{0}` already exists")]
     DuplicateAlias(String),
+
+    #[error("failed to list the tags of `{url}`: {reason}")]
+    RemoteTags { url: String, reason: String },
+
+    #[error("`{0}` publishes no release tag")]
+    NoTags(String),
 }
 
 #[derive(thiserror::Error, Debug)]
