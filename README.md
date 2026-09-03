@@ -115,7 +115,7 @@ Simplex CLI provides the following commands:
 
 - `simplex init` - Initializes a new Simplex project.
 - `simplex config` - Prints the current config.
-- `simplex install <dep>` - Installs SimplicityHL dependencies. Without a `<dep>` provided, installs everything listed in the `[dependencies]` config section. With one or more `<dep>` arguments, appends new entries to the config and then installs everything. The bar name `std` pins the latest `SimpliclityHL` [standard library](https://github.com/BlockstreamResearch/simplicityhl-std) release.
+- `simplex install <dep>` - Installs SimplicityHL dependencies. Without a `<dep>` provided, installs everything listed in the `[dependencies]` config section. With one or more `<dep>` arguments, appends new entries to the config and then installs everything. The bare name `std` pins the latest `SimplicityHL` [standard library](https://github.com/BlockstreamResearch/simplicityhl-std) release.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
