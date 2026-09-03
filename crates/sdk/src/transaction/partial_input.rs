@@ -11,7 +11,6 @@ use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOut
 use simplicityhl::simplicity::hashes::Hash;
 
 use crate::program::ProgramTrait;
-use crate::program::WitnessTrait;
 use crate::utils::tagged_hash;
 
 use super::UTXO;
