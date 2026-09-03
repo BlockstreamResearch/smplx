@@ -170,7 +170,7 @@ impl ArtifactsGenerator {
         )
         .map_err(|diags| BuildError::DryRun(diags.to_string()))?;
         let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
-            .map_err(BuildError::Flattening)?;
+            .map_err(|diags| BuildError::Flattening(diags.to_string()))?;
 
         Ok(SourceEntry {
             cmr: ContractId::from_template(&template)?,

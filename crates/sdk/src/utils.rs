@@ -39,10 +39,10 @@ pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> sha256::Midstate
     AssetId::generate_asset_entropy(*outpoint, contract_hash)
 }
 
-/// Hashes arbitrary data with and additional `TapData` and tags.
+/// Computes the BIP-340 tagged hash `sha256(sha256(tag) || sha256(tag) || data)`.
 #[must_use]
-pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
-    let tag = sha256::Hash::hash(b"TapData");
+pub fn tagged_hash(tag: &str, data: &[u8]) -> sha256::Hash {
+    let tag = sha256::Hash::hash(tag.as_bytes());
 
     let mut eng = sha256::Hash::engine();
     eng.input(tag.as_byte_array());
@@ -50,6 +50,12 @@ pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
     eng.input(data);
 
     sha256::Hash::from_engine(eng)
+}
+
+/// Hashes arbitrary data with and additional `TapData` and tags.
+#[must_use]
+pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
+    tagged_hash("TapData", data)
 }
 
 /// Computes the SHA-256 hash of a given script and returns the resulting 32-byte array.
@@ -80,5 +86,28 @@ mod tests {
     #[test]
     fn generates_mnemonic() {
         let _ = random_mnemonic();
+    }
+
+    #[test]
+    fn tagged_hash_doubles_the_tag_digest() {
+        let data = [0x42_u8; 32];
+        let tag_digest = Sha256::digest(b"OracleNetworkV1/Price");
+
+        let mut expected = Sha256::new();
+        expected.update(tag_digest);
+        expected.update(tag_digest);
+        expected.update(data);
+
+        assert_eq!(
+            tagged_hash("OracleNetworkV1/Price", &data).to_byte_array(),
+            <[u8; 32]>::from(expected.finalize())
+        );
+    }
+
+    #[test]
+    fn tap_data_hash_is_tagged_with_tap_data() {
+        let data = b"payload";
+
+        assert_eq!(tap_data_hash(data), tagged_hash("TapData", data));
     }
 }
