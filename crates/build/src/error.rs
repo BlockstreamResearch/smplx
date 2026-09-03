@@ -15,10 +15,10 @@ pub enum DependencyValidationError {
     #[error("Invalid dependency '{0}': cannot specify both 'path' and 'git', choose one")]
     Conflicting(String),
 
-    #[error("Invalid dependency '{0}': `path` cannot be combined with git-only fields (rev/tag)")]
+    #[error("Invalid dependency '{0}': `path` cannot be combined with git-only fields (rev/tag/branch)")]
     PathWithGitField(String),
 
-    #[error("Invalid dependency '{0}': only one of `rev`, `tag` may be set")]
+    #[error("Invalid dependency '{0}': only one of `rev`, `tag`, `branch` may be set")]
     ConflictingGitRef(String),
 }
 

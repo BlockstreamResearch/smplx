@@ -115,6 +115,9 @@ impl Install {
                 execute_git(&["clone", url, target_str])?;
                 execute_git(&["-C", target_str, "checkout", rev.as_str()])?;
             }
+            Some(GitRef::Branch(branch)) => {
+                execute_git(&["clone", "-b", branch, url, target_str])?;
+            }
             None => {
                 execute_git(&["clone", "--depth", "1", url, target_str])?;
             }

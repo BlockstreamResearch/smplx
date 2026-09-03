@@ -31,6 +31,7 @@ pub enum Dependency {
 pub enum GitRef {
     Rev(String),
     Tag(String),
+    Branch(String),
 }
 
 #[derive(Deserialize, Default)]
@@ -51,6 +52,8 @@ struct RawDependency {
     rev: Option<String>,
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
+    /// The specific branch to download (only applicable if `branch` is provided)
+    branch: Option<String>,
 }
 
 impl DependencyConfig {
@@ -144,17 +147,18 @@ impl RawDependency {
             (Some(_), Some(_)) => Err(DependencyValidationError::Conflicting(name.into())),
             (None, None) => Err(DependencyValidationError::Missing(name.into())),
             (Some(p), None) => {
-                if self.rev.is_some() || self.tag.is_some() {
+                if self.rev.is_some() || self.tag.is_some() || self.branch.is_some() {
                     return Err(DependencyValidationError::PathWithGitField(name.into()));
                 }
 
                 Ok(Dependency::Path(p))
             }
             (None, Some(url)) => {
-                let reference = match (self.rev, self.tag) {
-                    (None, None) => None,
-                    (Some(v), None) => Some(GitRef::Rev(v)),
-                    (None, Some(t)) => Some(GitRef::Tag(t)),
+                let reference = match (self.rev, self.tag, self.branch) {
+                    (None, None, None) => None,
+                    (Some(v), None, None) => Some(GitRef::Rev(v)),
+                    (None, Some(t), None) => Some(GitRef::Tag(t)),
+                    (None, None, Some(t)) => Some(GitRef::Branch(t)),
                     _ => return Err(DependencyValidationError::ConflictingGitRef(name.into())),
                 };
 
