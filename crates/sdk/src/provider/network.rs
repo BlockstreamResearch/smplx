@@ -51,6 +51,13 @@ pub enum SimplicityNetwork {
         /// Regtest mode `AssetId`, which is used as a default policy asset locally.
         policy_asset: elements::AssetId,
     },
+    /// Custom Elements environment whose genesis is derived from its chain parameters.
+    ElementsCustom {
+        /// Custom network policy asset.
+        policy_asset: elements::AssetId,
+        /// Custom network genesis block hash.
+        genesis_hash: elements::BlockHash,
+    },
 }
 
 impl SimplicityNetwork {
@@ -73,7 +80,7 @@ impl SimplicityNetwork {
         match self {
             Self::Liquid => elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).unwrap(),
             Self::LiquidTestnet => elements::AssetId::from_str(LIQUID_TESTNET_POLICY_ASSET_STR).unwrap(),
-            Self::ElementsRegtest { policy_asset } => *policy_asset,
+            Self::ElementsRegtest { policy_asset } | Self::ElementsCustom { policy_asset, .. } => *policy_asset,
         }
     }
 
@@ -84,6 +91,7 @@ impl SimplicityNetwork {
             Self::Liquid => *LIQUID_MAINNET_GENESIS,
             Self::LiquidTestnet => *LIQUID_TESTNET_GENESIS,
             Self::ElementsRegtest { .. } => *LIQUID_REGTEST_GENESIS,
+            Self::ElementsCustom { genesis_hash, .. } => *genesis_hash,
         }
     }
 
@@ -99,7 +107,7 @@ impl SimplicityNetwork {
         match self {
             Self::Liquid => &elements::AddressParams::LIQUID,
             Self::LiquidTestnet => &elements::AddressParams::LIQUID_TESTNET,
-            Self::ElementsRegtest { .. } => &elements::AddressParams::ELEMENTS,
+            Self::ElementsRegtest { .. } | Self::ElementsCustom { .. } => &elements::AddressParams::ELEMENTS,
         }
     }
 }
