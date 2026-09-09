@@ -645,12 +645,19 @@ resolve_dep_bins() {
   fi
 
   # The first version with `smplx-nextest` binary
-  local simplex_turning_point="0.0.6"
+  local simplex_turning_point_nextest="0.0.6"
 
-  if version_gt "${simplex_turning_point}" "$version"; then
-      DEP_BINS=(elementsd electrs)
-    else
-      DEP_BINS=(elementsd electrs smplx-nextest)
+  # The first version with `simfmt` binary
+  local simplex_turning_point_simfmt="0.0.11"
+
+  DEP_BINS=(elementsd electrs)
+
+  if ! version_gt "${simplex_turning_point_nextest}" "$version"; then
+      DEP_BINS+=(smplx-nextest)
+  fi
+
+  if ! version_gt "${simplex_turning_point_simfmt}" "$version"; then
+      DEP_BINS+=(simfmt)
   fi
 
   BINS=("${BINS[@]}" "${DEP_BINS[@]}")
