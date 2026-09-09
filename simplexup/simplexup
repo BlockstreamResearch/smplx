@@ -16,9 +16,11 @@ DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
 
 SMPLX_BIN_NAME="simplex"
 DEP_BINS=()
-BINS=("${SMPLX_BIN_NAME}")
+BINS=()
 HASH_NAMES=()
 HASH_VALUES=()
+
+VERSIONED_DEP_BINS=(smplx-nextest simfmt)
 
 main() {
   need_cmd git
@@ -369,6 +371,7 @@ use() {
   [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
 
   SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION}")
+  resolve_dep_bins "${SIMPLEX_VERSION#v}"
 
   SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
 
@@ -403,6 +406,8 @@ to allow the newly installed version to take precedence!
 EOF
       fi
     done
+
+    remove_unneeded_binaries
     exit 0
   else
     err "version $SIMPLEX_VERSION not installed"
@@ -660,7 +665,26 @@ resolve_dep_bins() {
       DEP_BINS+=(simfmt)
   fi
 
-  BINS=("${BINS[@]}" "${DEP_BINS[@]}")
+  BINS=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
+}
+
+remove_unneeded_binaries() {
+  local versioned_bin required_bin required
+
+  for versioned_bin in "${VERSIONED_DEP_BINS[@]}"; do
+    required=false
+
+    for required_bin in "${BINS[@]}"; do
+      if [ "$versioned_bin" = "$required_bin" ]; then
+        required=true
+        break
+      fi
+    done
+
+    if ! $required; then
+      ensure rm -f "$SIMPLEX_BIN_DIR/$versioned_bin"
+    fi
+  done
 }
 
 add_v_prefix() {
