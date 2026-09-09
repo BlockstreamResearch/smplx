@@ -67,17 +67,23 @@ jobs:
           cargo build --target $TARGET --profile $RUST_PROFILE --bins
           mv $OUT_DIR/${{ env.RUST_PROFILE }}/simplex simplex
 
-      - name: Download nextest, elementsd and electrs
+      - name: Download nextest, simfmt, elementsd and electrs
         env:
+          SIMFMT_VERSION: ${{ vars.SIFMMT_VERSION }}
+          SIMFMT_TARGET: ${{ matrix.target }}
           NEXTEST_VERSION: "0.9.137"
           ELEMENTSD_VERSION: "23.3.1"
           ELEMENTSD_TARGET: ${{ matrix.elementsd_target }}
           ELECTRS_TARGET: ${{ matrix.electrs_target }}
           NEXTEST_TARGET: ${{ matrix.nextest_target }}
         run: |
+          #!/usr/bin/env bash
+          set -eo pipefail
+          
           ELEMENTSD_FILENAME="elements-${ELEMENTSD_VERSION}-${ELEMENTSD_TARGET}.tar.gz"
           ELECTRS_FILENAME="electrs_${ELECTRS_TARGET}_esplora_027e38d3ebc2f85b28ae76f8f3448438ee4fc7b1_liquid.zip"
           NEXTEST_FILENAME="cargo-nextest-${NEXTEST_VERSION}-${NEXTEST_TARGET}.tar.gz"
+          SIMFMT_FILENAME="simfmt-v${SIMFMT_VERSION}-${SIMFMT_TARGET}.tar.gz"
           
           curl -Ls "https://github.com/ElementsProject/elements/releases/download/elements-${ELEMENTSD_VERSION}/${ELEMENTSD_FILENAME}" -o ${ELEMENTSD_FILENAME}
           tar -xzf ${ELEMENTSD_FILENAME} && rm ${ELEMENTSD_FILENAME}
@@ -90,6 +96,9 @@ jobs:
           curl -Ls "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${NEXTEST_FILENAME}" -o ${NEXTEST_FILENAME}
           tar -xzf ${NEXTEST_FILENAME} && rm ${NEXTEST_FILENAME}
           mv cargo-nextest smplx-nextest
+          
+          curl -fLsS "https://github.com/BlockstreamResearch/simfmt/releases/download/v${SIMFMT_VERSION}/${SIMFMT_FILENAME}" -o "${SIMFMT_FILENAME}"
+          tar -xzf "${SIMFMT_FILENAME}" && rm "${SIMFMT_FILENAME}"
 
       - name: Sign elementsd binary
         run: |
@@ -106,6 +115,7 @@ jobs:
             elementsd
             electrs
             smplx-nextest
+            simfmt
 
       - name: Record attestation URL
         env:
@@ -116,7 +126,7 @@ jobs:
       - name: Archive binaries
         env:
           ARCHIVE: simplex-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.archive }}
-        run: tar czf ${ARCHIVE} simplex elementsd electrs smplx-nextest
+        run: tar czf ${ARCHIVE} simplex elementsd electrs smplx-nextest simfmt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
