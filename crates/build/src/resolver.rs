@@ -1,3 +1,5 @@
+#[cfg(feature = "full")]
+use std::collections::BTreeSet;
 use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
@@ -29,26 +31,50 @@ impl ArtifactsResolver {
     #[cfg(feature = "full")]
     pub fn resolve_files_to_build(
         root_dir: &Path,
-        src_dir: &String,
-        simfs: &[String],
+        src_dir: &impl AsRef<str>,
+        simfs: &[impl AsRef<str>],
     ) -> Result<Vec<PathBuf>, BuildError> {
-        let base = root_dir.join(src_dir);
+        let files = Self::resolve_simf_files(root_dir, src_dir, simfs)?;
 
         let mut paths = Vec::new();
 
+        for path in files {
+            let content = fs::read_to_string(&path)?;
+
+            if Self::contains_main(&content) {
+                paths.push(path);
+            }
+        }
+
+        Ok(paths)
+    }
+
+    /// Resolves every source file matched by `simfs` beneath `src_dir` relative
+    /// to `project_root`.
+    ///
+    /// Returned paths are canonicalized, sorted, and deduplicated. Unlike
+    /// [`Self::resolve_files_to_build`], this does not require a source file to
+    /// contain a `main` function.
+    ///
+    /// # Errors
+    /// Returns a [`BuildError`] if a glob cannot be constructed, the directory
+    /// walk fails, or a matching path cannot be canonicalized.
+    #[cfg(feature = "full")]
+    pub fn resolve_simf_files(
+        project_root: impl AsRef<Path>,
+        src_dir: impl AsRef<str>,
+        simfs: &[impl AsRef<str>],
+    ) -> Result<BTreeSet<PathBuf>, BuildError> {
+        let base = project_root.as_ref().join(src_dir.as_ref());
         let walker = globwalk::GlobWalkerBuilder::from_patterns(base, simfs)
             .follow_links(true)
             .file_type(FileType::FILE)
             .build()?
             .filter_map(Result::ok);
+        let mut paths = BTreeSet::new();
 
-        for img in walker {
-            let path = img.path().to_path_buf().canonicalize()?;
-            let content = std::fs::read_to_string(&path)?;
-
-            if Self::contains_main(&content) {
-                paths.push(path);
-            }
+        for entry in walker {
+            paths.insert(entry.path().canonicalize()?);
         }
 
         Ok(paths)
