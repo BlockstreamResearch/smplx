@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use bitcoin_hashes::sha256;
 
@@ -392,15 +392,16 @@ impl FinalTransaction {
         available_amount.cast_signed() - consumed_amount.cast_signed()
     }
 
-    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0.
-    /// Skips all the issuance/reissuance outputs.
+    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
+    ///
+    /// Issued and reissued amounts are credited to the input that declares them, so a newly created
+    /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
     ///
     /// # Panics
     /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
     #[must_use]
     pub fn is_balanced(&self) -> bool {
         let mut transfers: HashMap<AssetId, i64> = HashMap::new();
-        let mut issuance: HashSet<AssetId> = HashSet::new();
 
         // Collecting all inputs
         for input in &self.inputs {
@@ -412,24 +413,31 @@ impl FinalTransaction {
             let transfer_entry = transfers.entry(asset).or_insert(0);
             *transfer_entry += amount.cast_signed();
 
-            if let Some(issuance_details) = input.get_issuance_details() {
-                issuance.insert(issuance_details.asset_id);
-                issuance.insert(issuance_details.inflation_asset_id);
+            // Issuance brings new assets into the transaction, so the declared amounts count as inputs.
+            // A reissuance mints no new inflation tokens
+            if let Some(issuance_details) = input.get_issuance_details()
+                && let Some(issuance_input) = &input.issuance_input
+            {
+                let (issuance_amount, inflation_amount) = match issuance_input {
+                    IssuanceInput::Issuance {
+                        issuance_amount,
+                        inflation_amount,
+                        ..
+                    } => (*issuance_amount, *inflation_amount),
+                    IssuanceInput::Reissuance { issuance_amount, .. } => (*issuance_amount, 0),
+                };
+
+                *transfers.entry(issuance_details.asset_id).or_insert(0) += issuance_amount.cast_signed();
+                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += inflation_amount.cast_signed();
             }
         }
 
-        // If such asset is present, decrease the delta.
-        // If the asset is not present, check that it resolved to issuance
         for output in &self.outputs {
             match transfers.get_mut(&output.asset) {
                 Some(value) => {
                     *value -= output.amount.cast_signed();
                 }
-                None => {
-                    if !issuance.contains(&output.asset) {
-                        return false;
-                    }
-                }
+                None => return false,
             }
         }
 
@@ -771,5 +779,147 @@ mod tests {
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
+    }
+
+    #[test]
+    fn balanced_transfer_single_asset() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn output_without_input_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1, dummy_asset_id(0xBB)));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn leftover_input_amount_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn issuance_is_balanced_against_its_declared_amounts() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 1, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn issuing_more_than_declared_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 0, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 1_000_000_000, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn minting_inflation_keys_that_were_never_declared_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 0, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 42, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn reissuance_alongside_a_transfer_of_the_same_asset_is_balanced() {
+        let policy = dummy_asset_id(0xAA);
+        let entropy = [0x07; 32];
+
+        let mut probe = FinalTransaction::new();
+        let details = probe.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1, dummy_asset_id(0xBB))),
+            IssuanceInput::new_reissuance(100, entropy),
+            RequiredSignature::None,
+        );
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x02, 0, 1, details.inflation_asset_id)),
+            RequiredSignature::None,
+        );
+        ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x03, 0, 50, details.asset_id)),
+            IssuanceInput::new_reissuance(100, entropy),
+            RequiredSignature::None,
+        );
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x04, 0, 1000, policy)),
+            RequiredSignature::None,
+        );
+
+        ft.add_output(PartialOutput::new(Script::new(), 150, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn confidential_input_amounts_are_counted() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+
+        assert!(ft.is_balanced());
     }
 }
