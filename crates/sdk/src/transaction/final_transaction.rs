@@ -433,6 +433,10 @@ impl FinalTransaction {
         }
 
         for output in &self.outputs {
+            if output.script_pubkey.is_op_return() && output.amount == 0 {
+                continue;
+            }
+
             match transfers.get_mut(&output.asset) {
                 Some(value) => {
                     *value -= output.amount.cast_signed();
@@ -919,6 +923,22 @@ mod tests {
             RequiredSignature::None,
         );
         ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn balanced_transfer_single_asset_with_metadata_output() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+        ft.add_output(PartialOutput::new_metadata("burn".as_bytes()));
 
         assert!(ft.is_balanced());
     }
