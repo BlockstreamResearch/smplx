@@ -22,7 +22,7 @@ pub struct TestConfig {
     pub bitcoins: u64,
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
-    pub proptest: Option<ProptestConfig>,
+    pub fuzz: Option<FuzzConfig>,
     pub verbosity: Verbosity,
 }
 
@@ -40,9 +40,8 @@ pub struct RpcConfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct ProptestConfig {
+pub struct FuzzConfig {
     pub cases: Option<u32>,
-    pub max_shrink_iters: Option<u32>,
     pub max_global_rejects: Option<u32>,
     pub max_local_rejects: Option<u32>,
 }
@@ -89,7 +88,7 @@ impl Default for TestConfig {
             bitcoins: DEFAULT_BITCOINS,
             esplora: None,
             rpc: None,
-            proptest: None,
+            fuzz: None,
             verbosity: Verbosity::None,
         }
     }
