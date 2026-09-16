@@ -19,8 +19,7 @@ use simplicityhl::source::CanonSourceFile;
 
 use crate::contract_id::ContractId;
 use crate::macros::codegen::{
-    convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
-    convert_contract_name_to_struct_name,
+    construct_program_name, convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
 };
 use crate::macros::parse::SimfContent;
 
@@ -279,11 +278,7 @@ impl ArtifactsGenerator {
     }
 
     fn generate_simf_binding_code(contract_name: &str, target_simf: &Path) -> Result<TokenStream, BuildError> {
-        let program_name = {
-            let base_name = convert_contract_name_to_struct_name(contract_name);
-            format_ident!("{base_name}Program")
-        };
-
+        let program_name = construct_program_name(contract_name);
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
         let target_simf_str = target_simf.to_string_lossy().into_owned();
@@ -295,6 +290,7 @@ impl ArtifactsGenerator {
             use simplex::simplicityhl::elements::Script;
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 
+            #[derive(Clone)]
             pub struct #program_name {
                 program: Program,
             }

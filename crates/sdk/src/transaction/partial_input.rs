@@ -1,4 +1,5 @@
 use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use elements_miniscript::bitcoin::bip32::DerivationPath;
@@ -136,6 +137,12 @@ pub struct ProgramInput {
     pub program: Box<dyn ProgramTrait>,
     /// The witness values required to satisfy the program.
     pub witness: WitnessValues,
+}
+
+impl Debug for ProgramInput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.witness)
+    }
 }
 
 /// Represents an input designated for asset issuance or reissuance.
