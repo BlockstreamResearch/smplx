@@ -170,6 +170,12 @@ impl WitnessStruct {
                         #default_mapping
                     }
                 }
+
+                impl From<#struct_name> for simplex::simplicityhl::Arguments {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::Arguments {
+                        val.build_arguments()
+                    }
+                }
             },
         })
     }
@@ -248,6 +254,12 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for simplex::simplicityhl::WitnessValues {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::WitnessValues {
+                        val.build_witness()
                     }
                 }
             },

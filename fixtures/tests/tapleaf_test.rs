@@ -8,7 +8,7 @@ fn program_tapleaf_test(context: simplex::TestContext) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
 
-    let tapleaf_check = TapleafCheckProgram::new(&TapleafCheckArguments::default());
+    let tapleaf_check = TapleafCheckProgram::new(TapleafCheckArguments::default());
     let tapleaf_check_script = tapleaf_check.get_script_pubkey(context.get_network());
 
     let tx_receipt = signer.send(tapleaf_check_script.clone(), 50)?;
@@ -24,7 +24,7 @@ fn program_tapleaf_test(context: simplex::TestContext) -> anyhow::Result<()> {
 
     ft.add_program_input(
         PartialInput::new(tapleaf_check_utxo),
-        ProgramInput::new(Box::new(tapleaf_check.as_ref().clone()), Box::new(witness.clone())),
+        ProgramInput::new(Box::new(tapleaf_check.as_ref().clone()), witness),
         RequiredSignature::None,
     );
 
