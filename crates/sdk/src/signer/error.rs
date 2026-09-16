@@ -56,6 +56,10 @@ pub enum SignerError {
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 
+    /// Error indicating the transaction is not balanced.
+    #[error("Transaction is not balanced or malformed")]
+    Unbalanced(),
+
     /// Error indicating the transaction inputs cover an amount that is lower than the dust limit.
     #[error("Fee amount is too low: {0}")]
     DustAmount(i64),

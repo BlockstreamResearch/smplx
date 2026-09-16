@@ -540,6 +540,10 @@ impl Signer {
             outputs[outputs.len() - 2].amount = available_delta - fee;
             outputs[outputs.len() - 1].amount = fee;
 
+            if !fee_tx.is_balanced() {
+                return Err(SignerError::Unbalanced());
+            }
+
             let final_tx = self.sign_tx(&fee_tx)?;
 
             return Ok(Estimate::Success(final_tx, fee));
@@ -563,6 +567,10 @@ impl Signer {
 
         // Change the fee output amount
         outputs[outputs.len() - 1].amount = available_delta;
+
+        if !fee_tx.is_balanced() {
+            return Err(SignerError::Unbalanced());
+        }
 
         // Finalize the tx with fee and without the change
         let final_tx = self.sign_tx(&fee_tx)?;
