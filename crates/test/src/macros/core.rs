@@ -96,11 +96,13 @@ fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<p
                     "::",
                     ::core::stringify!(#name)
                 )),
+                fork: false,
+                max_shrink_iters: 0,
                 source_file: Some(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/src/",
-                    stringify!(#name),
-                    ".txt"
+                  env!("CARGO_MANIFEST_DIR"),
+                  "/src/",
+                  stringify!(#name),
+                  ".any"
                 )),
                 ..Default::default()
             };
