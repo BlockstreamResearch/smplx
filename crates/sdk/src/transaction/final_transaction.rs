@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bitcoin_hashes::sha256;
 
@@ -361,7 +361,7 @@ impl FinalTransaction {
     /// and outputs contribute to the calculation.
     ///
     /// # Panics
-    /// Function will panic if the asset doesn't be unblinded correctly, and PST input asset and amount is confidential.
+    /// Function will panic if the asset isn't unblinded correctly, and if PST input asset and amount is confidential.
     #[must_use]
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
         let mut available_amount = 0;
@@ -390,6 +390,51 @@ impl FinalTransaction {
             .fold(0_u64, |acc, output| acc + output.amount);
 
         available_amount.cast_signed() - consumed_amount.cast_signed()
+    }
+
+    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0.
+    /// Skips all the issuance/reissuance outputs.
+    /// 
+    /// # Panics
+    /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
+    #[must_use]
+    pub fn is_balanced(&self) -> bool {
+        let mut transfers: HashMap<AssetId, i64> = HashMap::new();
+        let mut issuance: HashSet<AssetId> = HashSet::new();
+
+        // Collecting all inputs
+        for input in &self.inputs {
+            let (asset, amount) = match input.partial_input.secrets {
+                Some(secrets) => (secrets.asset, secrets.value),
+                None => (input.partial_input.asset.unwrap(), input.partial_input.amount.unwrap()),
+            };
+
+            let transfer_entry = transfers.entry(asset).or_insert(0);
+            *transfer_entry += amount.cast_signed();
+
+            if let Some(issuance_details) = input.get_issuance_details() {
+                issuance.insert(issuance_details.asset_id);
+                issuance.insert(issuance_details.inflation_asset_id);
+            }
+        }
+
+        // If such asset is present, decrease the delta.
+        // If the asset is not present, check that it resolved to issuance
+        for output in &self.outputs {
+            match transfers.get_mut(&output.asset) {
+                Some(value) => {
+                    *value -= output.amount.cast_signed();
+                }
+                None => {
+                    if !issuance.contains(&output.asset) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // All transfers including fee should sum up to 0
+        transfers.values().all(|&value| value == 0)
     }
 
     /// Computes the transaction fee based on the provided weight and fee rate.
