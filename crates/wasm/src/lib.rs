@@ -476,13 +476,13 @@ impl TransactionBuilder {
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
     ) -> Result<(), JsError> {
-        let mut input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, blinding_secrets_json.as_deref())?);
-
-        if let Some(path) = derivation_path {
-            input = input.with_derivation_path(
-                Self::relative_path(&path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?,
-            );
-        }
+        let input = Self::input_at(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
 
         self.transaction.add_input(input, RequiredSignature::NativeEcdsa);
 
@@ -509,13 +509,13 @@ impl TransactionBuilder {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
-        let mut input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, blinding_secrets_json.as_deref())?);
-
-        if let Some(path) = derivation_path {
-            input = input.with_derivation_path(
-                Self::relative_path(&path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?,
-            );
-        }
+        let input = Self::input_at(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
 
         let details = self.transaction.add_issuance_input(
             input,
@@ -535,8 +535,12 @@ impl TransactionBuilder {
     /// over this transaction.
     /// Leaving this `None` says the program needs no signature.
     ///
+    /// `derivation_path` is the path of the key that signature is made with, relative to the
+    /// account path. Omitting it keeps the signer's default.
+    ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments or the witness cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
+    /// derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addCovenantInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_input(
@@ -550,9 +554,10 @@ impl TransactionBuilder {
         signature_witness: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
+        derivation_path: Option<String>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, None)?),
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -572,8 +577,8 @@ impl TransactionBuilder {
     /// the issuance half the same as `addWalletIssuanceInput`.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
-    /// issuer contract cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness, the
+    /// issuer contract or the derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_issuance_input(
@@ -590,12 +595,13 @@ impl TransactionBuilder {
         issuer_contract_hex: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
+        derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
         let details = self.transaction.add_program_issuance_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, None)?),
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -722,6 +728,28 @@ impl TransactionBuilder {
         RequiredSignature::witness_with_path(name, path)
     }
 
+    /// The input spending `txid:vout`, with the wallet's reading of it and the key that spends it.
+    ///
+    /// Omitting `derivation_path` keeps the signer's default, which is what an input at the
+    /// account's first index wants.
+    fn input_at(
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        secrets_json: Option<&str>,
+        derivation_path: Option<&str>,
+    ) -> Result<PartialInput, JsError> {
+        let input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, secrets_json)?);
+
+        let Some(path) = derivation_path else {
+            return Ok(input);
+        };
+
+        let path = Self::relative_path(path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?;
+
+        Ok(input.with_derivation_path(path))
+    }
+
     fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str, secrets_json: Option<&str>) -> Result<UTXO, JsError> {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).map_err(|e| JsError::new(&format!("Invalid txid: {e}")))?,
@@ -843,7 +871,7 @@ pub fn sdk_version() -> String {
 #[cfg(test)]
 mod tests {
     use simplicityhl::elements::hashes::sha256::Midstate;
-    use simplicityhl::elements::{AssetId, OutPoint, Txid};
+    use simplicityhl::elements::{AssetId, OutPoint, TxOut, Txid};
 
     use smplx_sdk::utils::asset_entropy;
 
@@ -1063,5 +1091,96 @@ mod tests {
             "0/7"
         );
         assert!(TransactionBuilder::relative_path("not a path").is_err());
+    }
+
+    fn spent_output() -> String {
+        hex::encode(simplicityhl::elements::encode::serialize(&TxOut::default()))
+    }
+
+    fn path_of(builder: &TransactionBuilder, index: usize) -> Option<String> {
+        builder.transaction.inputs()[index]
+            .partial_input
+            .derivation_path
+            .as_ref()
+            .map(ToString::to_string)
+    }
+
+    // A covenant's signature witness is filled with the key at the input's derivation path, just
+    // as a wallet input's signature is, so a covenant held by any key but the account's first
+    // needs to name it.
+    #[test]
+    fn a_covenant_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            None,
+            None,
+            Some("0/7".to_string()),
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn a_covenant_input_naming_no_key_keeps_the_signers_default() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            None,
+            None,
+            None,
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0), None);
+    }
+
+    #[test]
+    fn a_covenant_issuance_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_issuance_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            1_000,
+            0,
+            None,
+            None,
+            None,
+            Some("0/7".to_string()),
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn a_wallet_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
     }
 }
