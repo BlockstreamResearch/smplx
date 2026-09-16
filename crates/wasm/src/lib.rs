@@ -146,6 +146,17 @@ impl Covenant {
         hex::encode(cmr)
     }
 
+    /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
+    ///
+    /// The Commitment Merkle Root identifies the program. This identifies the leaf that program
+    /// sits in, which is what a taproot spend commits to and what a signature over the input
+    /// covers, so the two together say both what the contract is and where it is being spent from.
+    #[wasm_bindgen(js_name = tapleafHash)]
+    #[must_use]
+    pub fn tapleaf_hash(&self) -> String {
+        hex::encode(self.program.get_tapleaf_hash())
+    }
+
     /// Compiles the covenant and returns the `scriptPubKey` its funds are locked with, as hex.
     ///
     /// # Errors
@@ -809,7 +820,38 @@ mod tests {
 
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{ContractHash, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
+    use super::{ContractHash, Covenant, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
+
+    const TRIVIAL: &str = "fn main() { }";
+    const COMPARING: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
+
+    // The Commitment Merkle Root says what the program is. The tapleaf hash says which leaf it
+    // sits in, which is what a taproot spend commits to. They answer different questions, so a
+    // caller handed one in place of the other would be told something true about the wrong thing.
+    #[test]
+    fn the_tapleaf_hash_is_not_the_commitment_merkle_root() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+
+        assert_eq!(covenant.tapleaf_hash().len(), 64);
+        assert_ne!(covenant.tapleaf_hash(), covenant.commitment_merkle_root());
+    }
+
+    #[test]
+    fn the_same_contract_answers_the_same_tapleaf_hash_twice() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let again = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+
+        assert_eq!(covenant.tapleaf_hash(), again.tapleaf_hash());
+    }
+
+    #[test]
+    fn a_different_contract_answers_a_different_one() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let other = Covenant::new(COMPARING, None, None, None).expect("a covenant that compiles");
+
+        assert_ne!(covenant.tapleaf_hash(), other.tapleaf_hash());
+        assert_ne!(covenant.commitment_merkle_root(), other.commitment_merkle_root());
+    }
 
     const ON_CHAIN: [(&str, u32, &str, &str, &str); 4] = [
         (
