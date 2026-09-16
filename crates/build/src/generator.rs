@@ -290,7 +290,7 @@ impl ArtifactsGenerator {
 
         let code = quote! {
             use simplex::include_simf;
-            use simplex::program::{ArgumentsTrait, Program};
+            use simplex::program::{Program};
             use simplex::provider::SimplicityNetwork;
             use simplex::simplicityhl::elements::Script;
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
@@ -303,9 +303,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: &impl ArgumentsTrait) -> Self {
+                pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, arguments),
+                        program: Program::new(Self::SOURCE, arguments.into()),
                     }
                 }
 
