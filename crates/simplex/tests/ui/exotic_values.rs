@@ -1,9 +1,77 @@
 use simplex::include_simf;
-use simplex::program::{WitnessTrait, ArgumentsTrait};
+use simplex::program::Program;
+use simplex::program::{ArgumentsTrait, WitnessTrait};
+use simplex::provider::SimplicityNetwork;
+use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
+use simplex::simplicityhl::elements::Script;
+
+#[derive(Clone)]
+pub struct ExoticValuesProgram {
+    program: Program,
+}
+impl ExoticValuesProgram {
+    pub const SOURCE: &'static str = derived_exotic_values::EXOTIC_VALUES_CONTRACT_SOURCE;
+    #[must_use]
+    pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+        Self {
+            program: Program::new(Self::SOURCE, arguments.into()),
+        }
+    }
+    #[must_use]
+    pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
+        self.program = self.program.with_taproot_pubkey(pub_key);
+        self
+    }
+    #[must_use]
+    pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+        self.program = self.program.with_storage_capacity(capacity);
+        self
+    }
+    pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
+        self.program.set_storage_at(index, new_value);
+    }
+    #[must_use]
+    pub fn get_storage_len(&self) -> usize {
+        self.program.get_storage_len()
+    }
+    #[must_use]
+    pub fn get_storage(&self) -> &[Vec<u8>] {
+        self.program.get_storage()
+    }
+    #[must_use]
+    pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
+        self.program.get_storage_at(index)
+    }
+    #[must_use]
+    pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
+        self.program.get_script_pubkey(network)
+    }
+    #[must_use]
+    pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
+        self.program.get_script_hash(network)
+    }
+}
+impl AsRef<Program> for ExoticValuesProgram {
+    fn as_ref(&self) -> &Program {
+        &self.program
+    }
+}
+impl AsMut<Program> for ExoticValuesProgram {
+    fn as_mut(&mut self) -> &mut Program {
+        &mut self.program
+    }
+}
 
 include_simf!("../../../../crates/simplex/tests/ui_simfs/exotic_values.simf");
 
 fn main() -> Result<(), String> {
+    let _ = test_e2e_behaviour()?;
+    let _ = test_default()?;
+
+    Ok(())
+}
+
+fn test_e2e_behaviour() -> Result<(), String> {
     let original_witness = derived_exotic_values::ExoticValuesWitness::default();
 
     let witness_values = original_witness.build_witness();
@@ -13,9 +81,20 @@ fn main() -> Result<(), String> {
     let original_arguments = derived_exotic_values::ExoticValuesArguments::default();
 
     let arguments_values = original_arguments.build_arguments();
-    let recovered_arguments =
-        derived_exotic_values::ExoticValuesArguments::from_arguments(&arguments_values)?;
+    let recovered_arguments = derived_exotic_values::ExoticValuesArguments::from_arguments(&arguments_values)?;
     assert_eq!(original_arguments, recovered_arguments);
 
+    Ok(())
+}
+
+fn test_default() -> Result<(), String> {
+    assert_eq!(
+        derived_exotic_values::ExoticValuesWitness::default(),
+        derived_exotic_values::ExoticValuesWitness::default()
+    );
+    assert_eq!(
+        derived_exotic_values::ExoticValuesArguments::default(),
+        derived_exotic_values::ExoticValuesArguments::default()
+    );
     Ok(())
 }
