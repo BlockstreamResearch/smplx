@@ -353,6 +353,24 @@ impl FinalTransaction {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
     }
 
+    /// Checks whether any input being spent is confidential.
+    ///
+    /// This is the other half of the question `needs_blinding` answers. Blinding balances the
+    /// inputs against the outputs, so a transaction spending a confidential input needs at least
+    /// one blinded output to balance against. Left without one it is rejected by the node as
+    /// `bad-txns-in-ne-out`, because the explicit output values cannot be reconciled with input
+    /// values the node cannot see.
+    #[must_use]
+    pub fn has_confidential_input(&self) -> bool {
+        self.inputs.iter().any(|el| {
+            // The commitments on the spent output are what the node sees, and carrying secrets is
+            // the invariant `PartialInput` states for a confidential UTXO. Either one answers yes.
+            el.partial_input.witness_utxo.value.is_confidential()
+                || el.partial_input.witness_utxo.asset.is_confidential()
+                || el.partial_input.secrets.is_some()
+        })
+    }
+
     /// Calculates the fee delta for a transaction based on the inputs and outputs.
     ///
     /// The fee delta represents the net difference between the available asset amount
@@ -496,6 +514,13 @@ mod tests {
         }
     }
 
+    fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+        let secret = simplicityhl::elements::secp256k1_zkp::SecretKey::from_slice(&[0x11; 32]).unwrap();
+
+        elements_miniscript::bitcoin::PublicKey::new(secret.public_key(&secp))
+    }
+
     fn confidential_utxo(txid_byte: u8, vout: u32, asset: AssetId, value: u64) -> UTXO {
         UTXO {
             outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
@@ -507,6 +532,65 @@ mod tests {
                 ValueBlindingFactor::zero(),
             )),
         }
+    }
+
+    // `needs_blinding` and `has_confidential_input` are the two halves of one question, and the
+    // transaction that gets rejected as `bad-txns-in-ne-out` is exactly the one where they
+    // disagree: something confidential going in, nothing blinded coming out.
+    #[test]
+    fn an_explicit_input_is_not_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+
+        assert!(!ft.has_confidential_input());
+    }
+
+    #[test]
+    fn an_input_carrying_secrets_is_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+
+        assert!(ft.has_confidential_input());
+    }
+
+    #[test]
+    fn a_confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        assert!(ft.has_confidential_input());
+        assert!(!ft.needs_blinding());
+    }
+
+    #[test]
+    fn a_blinded_output_is_what_balances_it() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy).with_blinding_key(dummy_blinding_key()));
+
+        assert!(ft.has_confidential_input());
+        assert!(ft.needs_blinding());
     }
 
     // Manually construct PST and check extract_pst correctness based on it

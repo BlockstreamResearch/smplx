@@ -302,6 +302,30 @@ impl Signer {
         }
     }
 
+    /// Reports what an assembled transaction would cost in fees at the given rate.
+    ///
+    /// The fee follows from the signed transaction's weight, which only the signer can measure,
+    /// so a caller that selects its own inputs cannot derive it from a table of per-input and
+    /// per-output constants without drifting from what the node actually charges. Answering here
+    /// lets such a caller size its coin selection against the real number: it reports the fee the
+    /// transaction would pay when it is already funded, and the fee it would have to cover when it
+    /// is not, so the same answer serves both.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the transaction cannot be signed for measurement, or if it
+    /// spends a confidential input with nothing blinded to balance against.
+    pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
+        // An unfunded transaction has a negative delta, which must not wrap into a huge budget.
+        let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
+        let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
+
+        ProgramLogger::flush_logs();
+
+        Ok(match estimate? {
+            Estimate::Success(_, fee) | Estimate::Failure(fee) => fee,
+        })
+    }
+
     /// Returns a reference to the active configured network provider.
     ///
     /// # Errors
@@ -516,6 +540,15 @@ impl Signer {
             }
         };
 
+        // Blinding balances the inputs against the outputs, and the change output is what normally
+        // carries that balance. A confidential input with an explicit change target and no blinded
+        // output of the caller's own leaves nothing to balance against, which the node rejects as
+        // `bad-txns-in-ne-out`. No amount of funding fixes that, so say so rather than estimating a
+        // transaction that cannot be valid.
+        if fee_tx.has_confidential_input() && !fee_tx.needs_blinding() && change.blinding_key.is_none() {
+            return Err(SignerError::ConfidentialInputWithoutBlindedOutput);
+        }
+
         let mut change_output = PartialOutput::new(change.script_pubkey, PLACEHOLDER_FEE, self.network.policy_asset());
 
         if let Some(blinding_key) = change.blinding_key {
@@ -545,12 +578,24 @@ impl Signer {
             return Ok(Estimate::Success(final_tx, fee));
         }
 
-        // Not enough funds, so we need to estimate without the change
-        // TODO: if a UTXO being spent is confidential + there are no
-        // confidential outputs + there is no change, this will fail
-        // with `RPC error -26: bad-txns-in-ne-out, value in != value out`.
-        // Fix this by adding a dummy change or throwing a clear error.
-        fee_tx.remove_output(fee_tx.n_outputs() - 2);
+        // Not enough funds for the change, so estimate without it. Dropping the change is only safe
+        // while something else stays blinded: when it is the transaction's only blinded output and
+        // an input is confidential, removing it leaves the blinding nothing to balance against and
+        // the node rejects the result as `bad-txns-in-ne-out`. The change has to survive there,
+        // which means it has to be paid for, so report what covering it costs and let the caller
+        // bring another input.
+        let change_index = fee_tx.n_outputs() - 2;
+        let blinded_without_change = fee_tx
+            .outputs()
+            .iter()
+            .enumerate()
+            .any(|(index, output)| index != change_index && output.blinding_key.is_some());
+
+        if fee_tx.has_confidential_input() && !blinded_without_change {
+            return Ok(Estimate::Failure(fee + MIN_FEE));
+        }
+
+        fee_tx.remove_output(change_index);
 
         let final_tx = self.sign_tx(&fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
@@ -750,6 +795,89 @@ mod tests {
         let network = SimplicityNetwork::Liquid;
 
         Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
+    }
+
+    fn confidential_input(signer: &Signer, value: u64) -> PartialInput {
+        use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
+        use simplicityhl::elements::hashes::Hash;
+        use simplicityhl::elements::{TxOut, TxOutSecrets};
+
+        PartialInput::new(UTXO {
+            outpoint: OutPoint::new(Txid::from_slice(&[0x01; 32]).unwrap(), 0),
+            txout: TxOut::default(),
+            secrets: Some(TxOutSecrets::new(
+                signer.network.policy_asset(),
+                AssetBlindingFactor::zero(),
+                value,
+                ValueBlindingFactor::zero(),
+            )),
+        })
+    }
+
+    // The change output is what carries the blinding balance. Pinning it to an explicit address
+    // while spending a confidential input asks for a transaction the node rejects as
+    // `bad-txns-in-ne-out`, and no amount of funding changes that, so it is refused by name rather
+    // than estimated.
+    #[test]
+    fn an_explicit_change_target_cannot_balance_a_confidential_input() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            50_000,
+            signer.network.policy_asset(),
+        ));
+        ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
+
+        assert!(matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
+    }
+
+    // A blinded output of the caller's own balances it just as well, so the explicit change target
+    // is no longer the deciding fact.
+    #[test]
+    fn a_blinded_output_of_its_own_lets_the_explicit_change_target_stand() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(
+            PartialOutput::new(
+                signer.get_address().script_pubkey(),
+                50_000,
+                signer.network.policy_asset(),
+            )
+            .with_blinding_key(signer.get_blinding_public_key()),
+        );
+        ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
+
+        assert!(!matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
+    }
+
+    // The signer's own change target is blinded, so the default path is never the refused one.
+    #[test]
+    fn the_default_change_target_balances_it_by_itself() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            50_000,
+            signer.network.policy_asset(),
+        ));
+
+        assert!(!matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
     }
 
     #[test]

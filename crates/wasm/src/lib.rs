@@ -304,6 +304,23 @@ impl WalletSigner {
         hex::encode(self.signer.get_blinding_public_key().to_bytes())
     }
 
+    /// Reports what an assembled transaction would cost in fees, in satoshis.
+    ///
+    /// The fee follows from the signed transaction's weight, so a caller doing its own coin
+    /// selection should size the selection against this rather than against per-input and
+    /// per-output constants of its own. It answers for an underfunded transaction too, reporting
+    /// the fee that would have to be covered, so the caller can add inputs until it is.
+    ///
+    /// # Errors
+    /// Returns an error if the transaction cannot be signed for measurement, or if it spends a
+    /// confidential input with nothing blinded to balance against.
+    #[wasm_bindgen(js_name = estimateFee)]
+    pub fn estimate_fee(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
+        self.signer
+            .estimate_fee(&builder.transaction, fee_rate)
+            .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
+    }
+
     /// Blinds, signs and finalizes an assembled transaction.
     ///
     /// # Errors
