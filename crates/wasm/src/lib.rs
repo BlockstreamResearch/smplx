@@ -209,21 +209,48 @@ impl Covenant {
         }
 
         if let Some(json) = extra_leaves_json.filter(|json| !json.trim().is_empty()) {
-            let leaves: Vec<String> =
-                serde_json::from_str(json).map_err(|e| JsError::new(&format!("Invalid extra leaves: {e}")))?;
+            let leaves = state_leaves(json).map_err(|e| JsError::new(&e))?;
 
             program = program.with_storage_capacity(leaves.len());
 
-            for (index, leaf) in leaves.iter().enumerate() {
-                let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
-                    .map_err(|e| JsError::new(&format!("Extra leaf {index} is not hex: {e}")))?;
-
-                program.set_storage_at(index, bytes);
+            for (index, leaf) in leaves.into_iter().enumerate() {
+                program.set_storage_at(index, leaf);
             }
         }
 
         Ok(program)
     }
+}
+
+/// Reads the state leaves a covenant's address commits to, as a JSON array of hex strings.
+///
+/// Each leaf is checked here rather than left to the assertion inside `set_storage_at`, because a
+/// panic in wasm aborts the caller instead of handing it something it can act on. Returns the
+/// sentence rather than a `JsError` for the same reason the other readers here do: constructing one
+/// off-wasm aborts, which would make this unreachable from a test.
+fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
+    let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
+    let mut leaves = Vec::with_capacity(declared.len());
+
+    for (index, leaf) in declared.iter().enumerate() {
+        let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
+            .map_err(|e| format!("Extra leaf {index} is not hex: {e}"))?;
+
+        if bytes.len() != Program::STORAGE_SLOT_BYTES {
+            return Err(format!(
+                "Extra leaf {index} is {} bytes, and a leaf is {}. A contract reads its state in \
+                 {}-byte steps, so a leaf of any other width commits to something the contract \
+                 cannot read back.",
+                bytes.len(),
+                Program::STORAGE_SLOT_BYTES,
+                Program::STORAGE_SLOT_BYTES,
+            ));
+        }
+
+        leaves.push(bytes);
+    }
+
+    Ok(leaves)
 }
 
 /// The compile-time parameters a covenant source declares, as JSON of name to type.
@@ -842,6 +869,48 @@ mod tests {
         let again = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
 
         assert_eq!(covenant.tapleaf_hash(), again.tapleaf_hash());
+    }
+
+    // A leaf that is not a full slot wide is refused at this boundary rather than left to the
+    // panic inside the SDK, because a panic in wasm aborts the caller instead of handing it
+    // something it can act on.
+    #[test]
+    fn a_state_leaf_that_is_not_a_full_slot_is_refused() {
+        let refused = super::state_leaves("[\"00\"]").expect_err("a one byte leaf");
+
+        assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
+    }
+
+    #[test]
+    fn a_state_leaf_that_is_not_hex_is_refused() {
+        assert!(super::state_leaves("[\"nonsense\"]").is_err());
+    }
+
+    #[test]
+    fn full_width_leaves_are_read_in_the_order_they_were_given() {
+        let read = super::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
+            .expect("two full leaves");
+
+        assert_eq!(read, vec![vec![0x00; 32], vec![0x11; 32]]);
+    }
+
+    #[test]
+    fn a_full_width_state_leaf_is_accepted_and_moves_the_address() {
+        let leaf = "00".repeat(32);
+        let other = format!("{}01", "00".repeat(31));
+
+        let plain = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let stateful =
+            Covenant::new(TRIVIAL, None, Some(format!("[\"{leaf}\"]")), None).expect("a covenant with state");
+        let moved = Covenant::new(TRIVIAL, None, Some(format!("[\"{other}\"]")), None).expect("a covenant with state");
+
+        let network = "liquidtestnet";
+
+        assert_ne!(plain.address(network).unwrap(), stateful.address(network).unwrap());
+        assert_ne!(stateful.address(network).unwrap(), moved.address(network).unwrap());
+        // The program did not change, only where its funds sit.
+        assert_eq!(stateful.commitment_merkle_root(), moved.commitment_merkle_root());
+        assert_eq!(stateful.tapleaf_hash(), moved.tapleaf_hash());
     }
 
     #[test]
