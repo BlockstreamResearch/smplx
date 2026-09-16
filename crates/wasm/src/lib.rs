@@ -118,7 +118,7 @@ impl Covenant {
     ///
     /// # Errors
     /// Returns an error if the arguments are not valid `SimplicityHL` argument JSON, or if the
-    /// extra leaves are not a JSON array of hex strings.
+    /// extra leaves are not a JSON array of 32-byte hex strings.
     #[wasm_bindgen(constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
@@ -209,7 +209,7 @@ impl Covenant {
         }
 
         if let Some(json) = extra_leaves_json.filter(|json| !json.trim().is_empty()) {
-            let leaves = state_leaves(json).map_err(|e| JsError::new(&e))?;
+            let leaves = Self::state_leaves(json).map_err(|e| JsError::new(&e))?;
 
             program = program.with_storage_capacity(leaves.len());
 
@@ -220,37 +220,37 @@ impl Covenant {
 
         Ok(program)
     }
-}
 
-/// Reads the state leaves a covenant's address commits to, as a JSON array of hex strings.
-///
-/// Each leaf is checked here rather than left to the assertion inside `set_storage_at`, because a
-/// panic in wasm aborts the caller instead of handing it something it can act on. Returns the
-/// sentence rather than a `JsError` for the same reason the other readers here do: constructing one
-/// off-wasm aborts, which would make this unreachable from a test.
-fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
-    let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
-    let mut leaves = Vec::with_capacity(declared.len());
+    /// Reads the state leaves a covenant's address commits to, as a JSON array of hex strings.
+    ///
+    /// Each leaf is checked here rather than left to the assertion inside `set_storage_at`,
+    /// because a panic in wasm aborts the caller instead of handing it something it can act on.
+    /// Returns the sentence rather than a `JsError` for the same reason the other readers here do:
+    /// constructing one off-wasm aborts, which would make this unreachable from a test.
+    fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
+        let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
+        let mut leaves = Vec::with_capacity(declared.len());
 
-    for (index, leaf) in declared.iter().enumerate() {
-        let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
-            .map_err(|e| format!("Extra leaf {index} is not hex: {e}"))?;
+        for (index, leaf) in declared.iter().enumerate() {
+            let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
+                .map_err(|e| format!("Extra leaf {index} is not hex: {e}"))?;
 
-        if bytes.len() != Program::STORAGE_SLOT_BYTES {
-            return Err(format!(
-                "Extra leaf {index} is {} bytes, and a leaf is {}. A contract reads its state in \
-                 {}-byte steps, so a leaf of any other width commits to something the contract \
-                 cannot read back.",
-                bytes.len(),
-                Program::STORAGE_SLOT_BYTES,
-                Program::STORAGE_SLOT_BYTES,
-            ));
+            if bytes.len() != Program::STORAGE_SLOT_BYTES {
+                return Err(format!(
+                    "Extra leaf {index} is {} bytes, and a leaf is {}. A contract reads its state in \
+                     {}-byte steps, so a leaf of any other width commits to something the contract \
+                     cannot read back.",
+                    bytes.len(),
+                    Program::STORAGE_SLOT_BYTES,
+                    Program::STORAGE_SLOT_BYTES,
+                ));
+            }
+
+            leaves.push(bytes);
         }
 
-        leaves.push(bytes);
+        Ok(leaves)
     }
-
-    Ok(leaves)
 }
 
 /// The compile-time parameters a covenant source declares, as JSON of name to type.
@@ -904,19 +904,19 @@ mod tests {
     // something it can act on.
     #[test]
     fn a_state_leaf_that_is_not_a_full_slot_is_refused() {
-        let refused = super::state_leaves("[\"00\"]").expect_err("a one byte leaf");
+        let refused = Covenant::state_leaves("[\"00\"]").expect_err("a one byte leaf");
 
         assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
     }
 
     #[test]
     fn a_state_leaf_that_is_not_hex_is_refused() {
-        assert!(super::state_leaves("[\"nonsense\"]").is_err());
+        assert!(Covenant::state_leaves("[\"nonsense\"]").is_err());
     }
 
     #[test]
     fn full_width_leaves_are_read_in_the_order_they_were_given() {
-        let read = super::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
+        let read = Covenant::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
             .expect("two full leaves");
 
         assert_eq!(read, vec![vec![0x00; 32], vec![0x11; 32]]);
