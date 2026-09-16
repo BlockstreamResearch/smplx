@@ -394,7 +394,7 @@ impl FinalTransaction {
 
     /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0.
     /// Skips all the issuance/reissuance outputs.
-    /// 
+    ///
     /// # Panics
     /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
     #[must_use]

@@ -136,15 +136,29 @@ impl RawDependency {
             (None, Some(url)) => {
                 let reference = match (self.rev, self.tag, self.branch) {
                     (None, None, None) => None,
-                    (Some(v), None, None) => Some(GitRef::Rev(v)),
-                    (None, Some(t), None) => Some(GitRef::Tag(t)),
-                    (None, None, Some(b)) => Some(GitRef::Branch(b)),
+                    (Some(v), None, None) => Some(GitRef::Rev(Self::reject_dash_prefix(name, "rev", v)?)),
+                    (None, Some(t), None) => Some(GitRef::Tag(Self::reject_dash_prefix(name, "tag", t)?)),
+                    (None, None, Some(b)) => Some(GitRef::Branch(Self::reject_dash_prefix(name, "branch", b)?)),
                     _ => return Err(DependencyValidationError::ConflictingGitRef(name.into())),
                 };
+
+                let url = Self::reject_dash_prefix(name, "git", url)?;
 
                 Ok(Dependency::Git { url, reference })
             }
         }
+    }
+
+    fn reject_dash_prefix(name: &str, field: &'static str, value: String) -> Result<String, DependencyValidationError> {
+        if value.starts_with('-') {
+            return Err(DependencyValidationError::DashPrefixed {
+                name: name.into(),
+                field,
+                value,
+            });
+        }
+
+        Ok(value)
     }
 }
 
