@@ -5,7 +5,7 @@ use std::sync::Arc;
 use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
-use proptest::strategy::{Strategy, ValueTree};
+use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
 
 use smplx_sdk::program::{ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
@@ -21,14 +21,9 @@ use crate::fuzz::{ProgramCheck, ProgramExecResult};
 pub struct SimplexFuzzEngine<Program, Args, Wit> {
     runner: TestRunner,
     fuzz_context: FuzzContext,
-    local_fuzz_config: LocalFuzzConfig,
     strategy_storage: BoxedStrategy<(Arguments, WitnessValues)>,
     blueprint: FinalTransactionBuilder,
     _phantom: PhantomData<(Program, Args, Wit)>,
-}
-
-pub struct LocalFuzzConfig {
-    runs: usize,
 }
 
 pub struct FuzzEngineBuilder<Program, Args, Wit> {
@@ -64,17 +59,13 @@ where
     pub fn from_context(mut config: proptest::test_runner::Config, test_context: TestContext) -> Self {
         let default_network = SimplicityNetwork::default_regtest();
         let smplx_test_context = test_context.get_config();
-        if let Some(proptest_conf) = smplx_test_context.proptest.as_ref() {
+        if let Some(proptest_conf) = smplx_test_context.fuzz.as_ref() {
             if let Some(cases) = proptest_conf.cases {
                 config.cases = cases;
             }
 
             if let Some(max_global_rejects) = proptest_conf.max_global_rejects {
                 config.max_global_rejects = max_global_rejects;
-            }
-
-            if let Some(max_shrink_iters) = proptest_conf.max_shrink_iters {
-                config.max_shrink_iters = max_shrink_iters;
             }
 
             if let Some(max_local_rejects) = proptest_conf.max_local_rejects {
@@ -117,6 +108,7 @@ where
         self
     }
 
+    // ONLY for testing purposes (TODO: remove)
     pub fn build(
         self,
         strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
@@ -135,7 +127,6 @@ where
                 signer_option: self.signer_option,
                 network: self.network,
             },
-            local_fuzz_config: LocalFuzzConfig { runs: 500 },
             strategy_storage: strategy_storage.boxed(),
             blueprint,
             _phantom: PhantomData,
@@ -235,60 +226,41 @@ where
         let mut runner = self.runner;
         let context = self.fuzz_context;
         let blueprint = self.blueprint;
-        let strategy_storage = self.strategy_storage;
 
-        // TODO: add collected strategies usage to modify FinalTransaction or inputs into `proptest::prop_oneof[ strategy list ... ]`
+        let strategy = self.strategy_storage.no_shrink();
 
-        let mut runner_cnt = 0;
-        while runner_cnt < self.local_fuzz_config.runs {
-            // TODO: If counterexample recorded, replay it first, without incrementing runs.
-            // TODO: evaluate incremental runs
-            let mut inc_runs = || {
-                debug_assert!(
-                    runner_cnt <= self.local_fuzz_config.runs,
-                    "worker runs were not distributed correctly"
-                );
-                runner_cnt += 1;
-            };
+        let result = runner.run(&strategy, |(arguments, witness)| {
+            Self::single_fuzz(&context, &blueprint, &program_post_hook, arguments, witness)
+        });
 
-            match Self::single_fuzz(&mut runner, &context, &blueprint, &program_post_hook, &strategy_storage) {
-                Ok(fuzz_outcome) => match fuzz_outcome {
-                    FuzzOutcome::Case(_case) => {
-                        inc_runs();
-                    }
-                    FuzzOutcome::CounterExample(CounterExampleOutcome { args, wit }) => {
-                        panic!("program failed tith these arguments: {args} and witness: {wit}");
-                    }
-                },
-                Err(err) => match err {
-                    TestCaseError::Fail(e) => {
-                        panic!("{e}");
-                    }
-                    TestCaseError::Reject(e) => {
-                        panic!("{e}");
-                    }
-                },
+        match result {
+            Ok(()) => {}
+            Err(proptest::test_runner::TestError::Fail(reason, (args, wit))) => {
+                panic!("Program failed with these arguments: {args} and witness: {wit}, reason: `{reason}`");
+            }
+            Err(err) => {
+                panic!("Fuzzing aborted: {err}");
             }
         }
     }
 
+    /// Extracted helper that performs exactly one isolated test run.
     fn single_fuzz(
-        test_runner: &mut TestRunner,
         fuzz_context: &FuzzContext,
         initial_tx: &FinalTransactionBuilder,
         program_post_hook: &impl ProgramCheck,
-        strategy: &BoxedStrategy<(Arguments, WitnessValues)>,
-    ) -> Result<FuzzOutcome, TestCaseError> {
-        // TODO: extract seed in order to save it in failure case
-        let (arguments, witness) = strategy
-            .new_tree(test_runner)
-            .map_err(|error| TestCaseError::fail(format!("failed to generate fuzz inputs: {error}")))?
-            .current();
+        arguments: Arguments,
+        witness: WitnessValues,
+    ) -> Result<(), TestCaseError> {
         let (program, script) = Program::build_program(arguments.clone(), &fuzz_context.network);
+
         let final_transaction = initial_tx
             .prepare_transaction(program.as_ref().as_ref(), &script, &arguments, &witness)
             .map_err(|error| TestCaseError::fail(format!("failed to prepare fuzz transaction: {error}")))?;
-        let pst = fuzz_context.sign_or_extract(&final_transaction)?;
+
+        let pst = fuzz_context
+            .sign_or_extract(&final_transaction)
+            .map_err(|error| TestCaseError::fail(format!("failed to sign: {error}")))?;
 
         // Iterate over program inputs to check contract execution
         for target in initial_tx.targets().iter().copied() {
@@ -301,6 +273,7 @@ where
                     .as_ref()
                     .as_ref()
                     .execute(&pst, &witness, input_index, &fuzz_context.network);
+
             if let Err(error) =
                 program_post_hook.call(fuzz_context, &pst, &arguments, &witness, input_index, exec_result)
             {
@@ -309,6 +282,7 @@ where
                 )));
             }
         }
-        Ok(FuzzOutcome::Case(CaseOutcome {}))
+
+        Ok(())
     }
 }
