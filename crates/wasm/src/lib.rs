@@ -9,11 +9,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use elements_miniscript::bitcoin::PublicKey;
+use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::hashes::Hash;
 use simplicityhl::elements::{self, Sequence};
-use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, Txid};
+use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
@@ -410,11 +412,24 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
     #[wasm_bindgen(js_name = addWalletInput)]
-    pub fn add_wallet_input(&mut self, txid: &str, vout: u32, tx_out_hex: &str) -> Result<(), JsError> {
-        self.transaction.add_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
-            RequiredSignature::NativeEcdsa,
-        );
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_wallet_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        blinding_secrets_json: Option<String>,
+        derivation_path: Option<String>,
+    ) -> Result<(), JsError> {
+        let mut input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, blinding_secrets_json.as_deref())?);
+
+        if let Some(path) = derivation_path {
+            input = input.with_derivation_path(
+                Self::relative_path(&path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?,
+            );
+        }
+
+        self.transaction.add_input(input, RequiredSignature::NativeEcdsa);
 
         Ok(())
     }
@@ -433,12 +448,22 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
+        blinding_secrets_json: Option<String>,
+        derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
+        let mut input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, blinding_secrets_json.as_deref())?);
+
+        if let Some(path) = derivation_path {
+            input = input.with_derivation_path(
+                Self::relative_path(&path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?,
+            );
+        }
+
         let details = self.transaction.add_issuance_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            input,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             RequiredSignature::NativeEcdsa,
         );
@@ -472,7 +497,7 @@ impl TransactionBuilder {
         include_debug_symbols: Option<bool>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, None)?),
             Self::program_input(
                 source,
                 arguments_json,
@@ -515,7 +540,7 @@ impl TransactionBuilder {
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
         let details = self.transaction.add_program_issuance_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, None)?),
             Self::program_input(
                 source,
                 arguments_json,
@@ -642,7 +667,7 @@ impl TransactionBuilder {
         RequiredSignature::witness_with_path(name, path)
     }
 
-    fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str) -> Result<UTXO, JsError> {
+    fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str, secrets_json: Option<&str>) -> Result<UTXO, JsError> {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).map_err(|e| JsError::new(&format!("Invalid txid: {e}")))?,
             vout,
@@ -654,9 +679,45 @@ impl TransactionBuilder {
 
         Ok(UTXO {
             outpoint,
-            secrets: None,
+            secrets: secrets_json
+                .map(Self::blinding_secrets)
+                .transpose()
+                .map_err(|e| JsError::new(&format!("Invalid blinding secrets: {e}")))?,
             txout,
         })
+    }
+
+    /// Reads the unblinded value, asset and blinding factors of a confidential output.
+    ///
+    /// The builder never sees a blinding key, so it cannot work these out. Whoever holds the
+    /// key — the wallet — has already unblinded the output and passes what it found.
+    fn blinding_secrets(secrets_json: &str) -> Result<TxOutSecrets, String> {
+        let parsed: serde_json::Value = serde_json::from_str(secrets_json).map_err(|e| e.to_string())?;
+
+        let field = |name: &str| -> Result<String, String> {
+            parsed
+                .get(name)
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .ok_or_else(|| format!("no \"{name}\""))
+        };
+
+        let value = parsed
+            .get("value")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "no \"value\"".to_string())?;
+
+        Ok(TxOutSecrets::new(
+            AssetId::from_str(&field("asset")?).map_err(|e| e.to_string())?,
+            AssetBlindingFactor::from_str(&field("assetBlindingFactor")?).map_err(|e| e.to_string())?,
+            value,
+            ValueBlindingFactor::from_str(&field("valueBlindingFactor")?).map_err(|e| e.to_string())?,
+        ))
+    }
+
+    /// Reads a derivation path relative to the account path, e.g. `0/7`.
+    fn relative_path(path: &str) -> Result<DerivationPath, String> {
+        DerivationPath::from_str(path).map_err(|e| e.to_string())
     }
 
     fn program_input(
@@ -829,5 +890,50 @@ mod tests {
     fn refuses_an_issuer_contract_that_is_not_an_id() {
         assert!(TransactionBuilder::issuer_contract(Some("not hex at all")).is_err());
         assert!(TransactionBuilder::issuer_contract(Some("00ff")).is_err());
+    }
+
+    const SECRETS: &str = r#"{
+        "value": 100000,
+        "asset": "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49",
+        "assetBlindingFactor": "0000000000000000000000000000000000000000000000000000000000000001",
+        "valueBlindingFactor": "0000000000000000000000000000000000000000000000000000000000000002"
+    }"#;
+
+    #[test]
+    fn reads_back_what_the_wallet_unblinded() {
+        let secrets = TransactionBuilder::blinding_secrets(SECRETS).expect("the wallet's own reading");
+
+        assert_eq!(secrets.value, 100_000);
+        assert_eq!(
+            secrets.asset.to_string(),
+            "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49"
+        );
+    }
+
+    #[test]
+    fn refuses_secrets_that_leave_a_field_out() {
+        for missing in ["value", "asset", "assetBlindingFactor", "valueBlindingFactor"] {
+            let without = SECRETS.replace(missing, "somethingElse");
+
+            assert!(
+                TransactionBuilder::blinding_secrets(&without).is_err(),
+                "a reading without {missing} is not a reading"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_secrets_that_are_not_a_reading_at_all() {
+        assert!(TransactionBuilder::blinding_secrets("not json").is_err());
+        assert!(TransactionBuilder::blinding_secrets("{}").is_err());
+    }
+
+    #[test]
+    fn reads_a_path_relative_to_the_account() {
+        assert_eq!(
+            TransactionBuilder::relative_path("0/7").expect("a path").to_string(),
+            "0/7"
+        );
+        assert!(TransactionBuilder::relative_path("not a path").is_err());
     }
 }
