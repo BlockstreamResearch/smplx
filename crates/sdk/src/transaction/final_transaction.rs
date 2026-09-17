@@ -355,16 +355,11 @@ impl FinalTransaction {
 
     /// Checks whether any input being spent is confidential.
     ///
-    /// This is the other half of the question `needs_blinding` answers. Blinding balances the
-    /// inputs against the outputs, so a transaction spending a confidential input needs at least
-    /// one blinded output to balance against. Left without one it is rejected by the node as
-    /// `bad-txns-in-ne-out`, because the explicit output values cannot be reconciled with input
-    /// values the node cannot see.
+    /// Blinding balances the inputs against the outputs, so a transaction spending a confidential input needs
+    /// at least one blinded output to balance against. Left without one it is rejected by the node as `bad-txns-in-ne-out`.
     #[must_use]
     pub fn has_confidential_input(&self) -> bool {
         self.inputs.iter().any(|el| {
-            // The commitments on the spent output are what the node sees, and carrying secrets is
-            // the invariant `PartialInput` states for a confidential UTXO. Either one answers yes.
             el.partial_input.witness_utxo.value.is_confidential()
                 || el.partial_input.witness_utxo.asset.is_confidential()
                 || el.partial_input.secrets.is_some()
@@ -506,19 +501,19 @@ mod tests {
         Txid::from_slice(&[byte; 32]).unwrap()
     }
 
+    fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+        let secret = simplicityhl::elements::secp256k1_zkp::SecretKey::from_slice(&[0x11; 32]).unwrap();
+
+        elements_miniscript::bitcoin::PublicKey::new(secret.public_key(&secp))
+    }
+
     fn explicit_utxo(txid_byte: u8, vout: u32, amount: u64, asset: AssetId) -> UTXO {
         UTXO {
             outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
             txout: TxOut::new_fee(amount, asset),
             secrets: None,
         }
-    }
-
-    fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
-        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
-        let secret = simplicityhl::elements::secp256k1_zkp::SecretKey::from_slice(&[0x11; 32]).unwrap();
-
-        elements_miniscript::bitcoin::PublicKey::new(secret.public_key(&secp))
     }
 
     fn confidential_utxo(txid_byte: u8, vout: u32, asset: AssetId, value: u64) -> UTXO {
@@ -534,11 +529,8 @@ mod tests {
         }
     }
 
-    // `needs_blinding` and `has_confidential_input` are the two halves of one question, and the
-    // transaction that gets rejected as `bad-txns-in-ne-out` is exactly the one where they
-    // disagree: something confidential going in, nothing blinded coming out.
     #[test]
-    fn an_explicit_input_is_not_a_confidential_one() {
+    fn explicit_input_is_not_a_confidential_one() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -551,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn an_input_carrying_secrets_is_a_confidential_one() {
+    fn input_carrying_secrets_is_a_confidential_one() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -564,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn a_confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+    fn confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -579,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn a_blinded_output_is_what_balances_it() {
+    fn blinded_output_is_what_balances_the_transaction() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 

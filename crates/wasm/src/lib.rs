@@ -147,10 +147,6 @@ impl Covenant {
     }
 
     /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
-    ///
-    /// The Commitment Merkle Root identifies the program. This identifies the leaf that program
-    /// sits in, which is what a taproot spend commits to and what a signature over the input
-    /// covers, so the two together say both what the contract is and where it is being spent from.
     #[wasm_bindgen(js_name = tapleafHash)]
     #[must_use]
     pub fn tapleaf_hash(&self) -> String {
@@ -221,12 +217,6 @@ impl Covenant {
         Ok(program)
     }
 
-    /// Reads the state leaves a covenant's address commits to, as a JSON array of hex strings.
-    ///
-    /// Each leaf is checked here rather than left to the assertion inside `set_storage_at`,
-    /// because a panic in wasm aborts the caller instead of handing it something it can act on.
-    /// Returns the sentence rather than a `JsError` for the same reason the other readers here do:
-    /// constructing one off-wasm aborts, which would make this unreachable from a test.
     fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
         let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
         let mut leaves = Vec::with_capacity(declared.len());
@@ -237,8 +227,8 @@ impl Covenant {
 
             if bytes.len() != Program::STORAGE_SLOT_BYTES {
                 return Err(format!(
-                    "Extra leaf {index} is {} bytes, and a leaf is {}. A contract reads its state in \
-                     {}-byte steps, so a leaf of any other width commits to something the contract \
+                    "Extra leaf {index} is {} bytes, and a leaf is {}. A covenant reads its state in \
+                     {}-byte steps, so a leaf of any other width commits to something the covenant \
                      cannot read back.",
                     bytes.len(),
                     Program::STORAGE_SLOT_BYTES,
@@ -344,14 +334,8 @@ impl WalletSigner {
 
     /// Reports what an assembled transaction would cost in fees, in satoshis.
     ///
-    /// The fee follows from the signed transaction's weight, so a caller doing its own coin
-    /// selection should size the selection against this rather than against per-input and
-    /// per-output constants of its own. It answers for an underfunded transaction too, reporting
-    /// the fee that would have to be covered, so the caller can add inputs until it is.
-    ///
     /// # Errors
-    /// Returns an error if the transaction cannot be signed for measurement, or if it spends a
-    /// confidential input with nothing blinded to balance against.
+    /// Returns an error if the transaction cannot be signed.
     #[wasm_bindgen(js_name = estimateFee)]
     pub fn estimate_fee(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
         self.signer
@@ -728,10 +712,6 @@ impl TransactionBuilder {
         RequiredSignature::witness_with_path(name, path)
     }
 
-    /// The input spending `txid:vout`, with the wallet's reading of it and the key that spends it.
-    ///
-    /// Omitting `derivation_path` keeps the signer's default, which is what an input at the
-    /// account's first index wants.
     fn input_at(
         txid: &str,
         vout: u32,
@@ -770,10 +750,6 @@ impl TransactionBuilder {
         })
     }
 
-    /// Reads the unblinded value, asset and blinding factors of a confidential output.
-    ///
-    /// The builder never sees a blinding key, so it cannot work these out. Whoever holds the
-    /// key — the wallet — has already unblinded the output and passes what it found.
     fn blinding_secrets(secrets_json: &str) -> Result<TxOutSecrets, String> {
         let parsed: serde_json::Value = serde_json::from_str(secrets_json).map_err(|e| e.to_string())?;
 
@@ -880,11 +856,8 @@ mod tests {
     const TRIVIAL: &str = "fn main() { }";
     const COMPARING: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
 
-    // The Commitment Merkle Root says what the program is. The tapleaf hash says which leaf it
-    // sits in, which is what a taproot spend commits to. They answer different questions, so a
-    // caller handed one in place of the other would be told something true about the wrong thing.
     #[test]
-    fn the_tapleaf_hash_is_not_the_commitment_merkle_root() {
+    fn tapleaf_hash_is_not_the_commitment_merkle_root() {
         let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
 
         assert_eq!(covenant.tapleaf_hash().len(), 64);
@@ -892,25 +865,22 @@ mod tests {
     }
 
     #[test]
-    fn the_same_contract_answers_the_same_tapleaf_hash_twice() {
+    fn the_same_covenant_returns_the_same_tapleaf_hash_twice() {
         let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
         let again = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
 
         assert_eq!(covenant.tapleaf_hash(), again.tapleaf_hash());
     }
 
-    // A leaf that is not a full slot wide is refused at this boundary rather than left to the
-    // panic inside the SDK, because a panic in wasm aborts the caller instead of handing it
-    // something it can act on.
     #[test]
-    fn a_state_leaf_that_is_not_a_full_slot_is_refused() {
+    fn state_leaf_that_is_not_a_full_slot_is_refused() {
         let refused = Covenant::state_leaves("[\"00\"]").expect_err("a one byte leaf");
 
         assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
     }
 
     #[test]
-    fn a_state_leaf_that_is_not_hex_is_refused() {
+    fn state_leaf_that_is_not_hex_is_refused() {
         assert!(Covenant::state_leaves("[\"nonsense\"]").is_err());
     }
 
@@ -923,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_width_state_leaf_is_accepted_and_moves_the_address() {
+    fn full_width_state_leaf_is_accepted_and_moves_the_address() {
         let leaf = "00".repeat(32);
         let other = format!("{}01", "00".repeat(31));
 
@@ -942,7 +912,7 @@ mod tests {
     }
 
     #[test]
-    fn a_different_contract_answers_a_different_one() {
+    fn different_covenant_answers_a_different_one() {
         let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
         let other = Covenant::new(COMPARING, None, None, None).expect("a covenant that compiles");
 
@@ -1105,11 +1075,8 @@ mod tests {
             .map(ToString::to_string)
     }
 
-    // A covenant's signature witness is filled with the key at the input's derivation path, just
-    // as a wallet input's signature is, so a covenant held by any key but the account's first
-    // needs to name it.
     #[test]
-    fn a_covenant_input_is_signed_with_the_key_it_names() {
+    fn covenant_input_is_signed_with_the_key_it_names() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_input(
@@ -1130,7 +1097,7 @@ mod tests {
     }
 
     #[test]
-    fn a_covenant_input_naming_no_key_keeps_the_signers_default() {
+    fn covenant_input_naming_no_key_keeps_the_signers_default() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_input(
@@ -1151,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn a_covenant_issuance_input_is_signed_with_the_key_it_names() {
+    fn covenant_issuance_input_is_signed_with_the_key_it_names() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_issuance_input(
@@ -1175,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wallet_input_is_signed_with_the_key_it_names() {
+    fn wallet_input_is_signed_with_the_key_it_names() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));

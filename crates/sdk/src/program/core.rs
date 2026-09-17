@@ -201,6 +201,9 @@ impl ProgramTrait for Program {
 }
 
 impl Program {
+    /// The width of a storage slot.
+    pub const STORAGE_SLOT_BYTES: usize = 32;
+
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
     pub fn new(source: impl Into<Arc<str>>, arguments: &dyn ArgumentsTrait) -> Self {
@@ -241,16 +244,11 @@ impl Program {
         self
     }
 
-    /// The width of a storage slot. A contract reads one in a single 32-byte hash step.
-    pub const STORAGE_SLOT_BYTES: usize = 32;
-
     /// Sets a 32-byte value at the specified index in the storage.
     ///
     /// # Panics
     /// Panics if the `index` is out of bounds for the initialized storage, or if the value is not
-    /// `STORAGE_SLOT_BYTES` wide. A slot of any other width hashes into a leaf the contract cannot
-    /// reproduce, which yields a perfectly valid address that nothing can ever spend from, so it is
-    /// refused here rather than committed to.
+    /// `STORAGE_SLOT_BYTES` wide.
     pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
         let value = new_value.into();
 
@@ -458,11 +456,8 @@ mod tests {
         Program::new(Arc::<str>::from(DUMMY_PROGRAM), &EmptyArguments).with_storage_capacity(slots)
     }
 
-    // A storage slot is hashed into a hidden tapleaf the address commits to, and the contract reads
-    // it back in one 32-byte step. A slot of any other width yields a perfectly valid address that
-    // nothing can ever spend from, so it is refused rather than committed to.
     #[test]
-    fn a_storage_slot_takes_a_full_width_value() {
+    fn storage_slot_takes_a_full_width_value() {
         let mut program = stateful(1);
 
         program.set_storage_at(0, vec![0x11; Program::STORAGE_SLOT_BYTES]);
@@ -472,17 +467,16 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "A storage slot is 32 bytes, and this one is 1")]
-    fn a_storage_slot_refuses_a_short_value() {
+    fn storage_slot_refuses_a_short_value() {
         stateful(1).set_storage_at(0, vec![0x11]);
     }
 
     #[test]
     #[should_panic(expected = "A storage slot is 32 bytes, and this one is 33")]
-    fn a_storage_slot_refuses_a_long_one() {
+    fn storage_slot_refuses_a_long_one() {
         stateful(1).set_storage_at(0, vec![0x11; 33]);
     }
 
-    // What the slot is for: the address moves with it, while the program does not.
     #[test]
     fn changing_a_slot_changes_the_address_but_not_the_program() {
         let mut one = stateful(1);

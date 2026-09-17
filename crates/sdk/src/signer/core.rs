@@ -304,18 +304,9 @@ impl Signer {
 
     /// Reports what an assembled transaction would cost in fees at the given rate.
     ///
-    /// The fee follows from the signed transaction's weight, which only the signer can measure,
-    /// so a caller that selects its own inputs cannot derive it from a table of per-input and
-    /// per-output constants without drifting from what the node actually charges. Answering here
-    /// lets such a caller size its coin selection against the real number: it reports the fee the
-    /// transaction would pay when it is already funded, and the fee it would have to cover when it
-    /// is not, so the same answer serves both.
-    ///
     /// # Errors
-    /// Returns a `SignerError` if the transaction cannot be signed for measurement, or if it
-    /// spends a confidential input with nothing blinded to balance against.
+    /// Returns a `SignerError` if the transaction cannot be signed.
     pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
-        // An unfunded transaction has a negative delta, which must not wrap into a huge budget.
         let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
         let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
 
@@ -540,11 +531,8 @@ impl Signer {
             }
         };
 
-        // Blinding balances the inputs against the outputs, and the change output is what normally
-        // carries that balance. A confidential input with an explicit change target and no blinded
-        // output of the caller's own leaves nothing to balance against, which the node rejects as
-        // `bad-txns-in-ne-out`. No amount of funding fixes that, so say so rather than estimating a
-        // transaction that cannot be valid.
+        // A confidential input with an explicit change target and no blinded
+        // output cannot be balanced, which the node rejects with `bad-txns-in-ne-out`.
         if fee_tx.has_confidential_input() && !fee_tx.needs_blinding() && change.blinding_key.is_none() {
             return Err(SignerError::ConfidentialInputWithoutBlindedOutput);
         }
@@ -578,12 +566,10 @@ impl Signer {
             return Ok(Estimate::Success(final_tx, fee));
         }
 
-        // Not enough funds for the change, so estimate without it. Dropping the change is only safe
-        // while something else stays blinded: when it is the transaction's only blinded output and
-        // an input is confidential, removing it leaves the blinding nothing to balance against and
-        // the node rejects the result as `bad-txns-in-ne-out`. The change has to survive there,
-        // which means it has to be paid for, so report what covering it costs and let the caller
-        // bring another input.
+        // Not enough funds for the change, so estimate without it. 
+        // Dropping the change is only safe while something else stays blinded. 
+        // When it is the transaction's only blinded output and an input is confidential, 
+        // removing it make the transaction unblindable.
         let change_index = fee_tx.n_outputs() - 2;
         let blinded_without_change = fee_tx
             .outputs()
@@ -814,12 +800,8 @@ mod tests {
         })
     }
 
-    // The change output is what carries the blinding balance. Pinning it to an explicit address
-    // while spending a confidential input asks for a transaction the node rejects as
-    // `bad-txns-in-ne-out`, and no amount of funding changes that, so it is refused by name rather
-    // than estimated.
     #[test]
-    fn an_explicit_change_target_cannot_balance_a_confidential_input() {
+    fn explicit_change_target_cannot_balance_a_confidential_input() {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
@@ -837,10 +819,8 @@ mod tests {
         ));
     }
 
-    // A blinded output of the caller's own balances it just as well, so the explicit change target
-    // is no longer the deciding fact.
     #[test]
-    fn a_blinded_output_of_its_own_lets_the_explicit_change_target_stand() {
+    fn blinded_output_lets_the_explicit_change_target_stand() {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
@@ -861,9 +841,8 @@ mod tests {
         ));
     }
 
-    // The signer's own change target is blinded, so the default path is never the refused one.
     #[test]
-    fn the_default_change_target_balances_it_by_itself() {
+    fn default_change_target_balances_it_by_itself() {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
