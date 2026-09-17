@@ -566,9 +566,9 @@ impl Signer {
             return Ok(Estimate::Success(final_tx, fee));
         }
 
-        // Not enough funds for the change, so estimate without it. 
-        // Dropping the change is only safe while something else stays blinded. 
-        // When it is the transaction's only blinded output and an input is confidential, 
+        // Not enough funds for the change, so estimate without it.
+        // Dropping the change is only safe while something else stays blinded.
+        // When it is the transaction's only blinded output and an input is confidential,
         // removing it make the transaction unblindable.
         let change_index = fee_tx.n_outputs() - 2;
         let blinded_without_change = fee_tx
