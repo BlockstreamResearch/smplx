@@ -353,6 +353,19 @@ impl FinalTransaction {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
     }
 
+    /// Checks whether any input being spent is confidential.
+    ///
+    /// Blinding balances the inputs against the outputs, so a transaction spending a confidential input needs
+    /// at least one blinded output to balance against. Left without one it is rejected by the node as `bad-txns-in-ne-out`.
+    #[must_use]
+    pub fn has_confidential_input(&self) -> bool {
+        self.inputs.iter().any(|el| {
+            el.partial_input.witness_utxo.value.is_confidential()
+                || el.partial_input.witness_utxo.asset.is_confidential()
+                || el.partial_input.secrets.is_some()
+        })
+    }
+
     /// Calculates the fee delta for a transaction based on the inputs and outputs.
     ///
     /// The fee delta represents the net difference between the available asset amount
@@ -545,6 +558,13 @@ mod tests {
         Txid::from_slice(&[byte; 32]).unwrap()
     }
 
+    fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+        let secret = simplicityhl::elements::secp256k1_zkp::SecretKey::from_slice(&[0x11; 32]).unwrap();
+
+        elements_miniscript::bitcoin::PublicKey::new(secret.public_key(&secp))
+    }
+
     fn explicit_utxo(txid_byte: u8, vout: u32, amount: u64, asset: AssetId) -> UTXO {
         UTXO {
             outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
@@ -564,6 +584,62 @@ mod tests {
                 ValueBlindingFactor::zero(),
             )),
         }
+    }
+
+    #[test]
+    fn explicit_input_is_not_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+
+        assert!(!ft.has_confidential_input());
+    }
+
+    #[test]
+    fn input_carrying_secrets_is_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+
+        assert!(ft.has_confidential_input());
+    }
+
+    #[test]
+    fn confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        assert!(ft.has_confidential_input());
+        assert!(!ft.needs_blinding());
+    }
+
+    #[test]
+    fn blinded_output_is_what_balances_the_transaction() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy).with_blinding_key(dummy_blinding_key()));
+
+        assert!(ft.has_confidential_input());
+        assert!(ft.needs_blinding());
     }
 
     // Manually construct PST and check extract_pst correctness based on it

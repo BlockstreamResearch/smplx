@@ -9,11 +9,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use elements_miniscript::bitcoin::PublicKey;
+use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use simplicityhl::ast::ElementsJetHinter;
+use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::hashes::Hash;
 use simplicityhl::elements::{self, Sequence};
-use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, Txid};
+use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
@@ -116,7 +118,7 @@ impl Covenant {
     ///
     /// # Errors
     /// Returns an error if the arguments are not valid `SimplicityHL` argument JSON, or if the
-    /// extra leaves are not a JSON array of hex strings.
+    /// extra leaves are not a JSON array of 32-byte hex strings.
     #[wasm_bindgen(constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
@@ -142,6 +144,13 @@ impl Covenant {
         let cmr = self.program.get_cmr();
 
         hex::encode(cmr)
+    }
+
+    /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
+    #[wasm_bindgen(js_name = tapleafHash)]
+    #[must_use]
+    pub fn tapleaf_hash(&self) -> String {
+        hex::encode(self.program.get_tapleaf_hash())
     }
 
     /// Compiles the covenant and returns the `scriptPubKey` its funds are locked with, as hex.
@@ -196,20 +205,41 @@ impl Covenant {
         }
 
         if let Some(json) = extra_leaves_json.filter(|json| !json.trim().is_empty()) {
-            let leaves: Vec<String> =
-                serde_json::from_str(json).map_err(|e| JsError::new(&format!("Invalid extra leaves: {e}")))?;
+            let leaves = Self::state_leaves(json).map_err(|e| JsError::new(&e))?;
 
             program = program.with_storage_capacity(leaves.len());
 
-            for (index, leaf) in leaves.iter().enumerate() {
-                let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
-                    .map_err(|e| JsError::new(&format!("Extra leaf {index} is not hex: {e}")))?;
-
-                program.set_storage_at(index, bytes);
+            for (index, leaf) in leaves.into_iter().enumerate() {
+                program.set_storage_at(index, leaf);
             }
         }
 
         Ok(program)
+    }
+
+    fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
+        let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
+        let mut leaves = Vec::with_capacity(declared.len());
+
+        for (index, leaf) in declared.iter().enumerate() {
+            let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
+                .map_err(|e| format!("Extra leaf {index} is not hex: {e}"))?;
+
+            if bytes.len() != Program::STORAGE_SLOT_BYTES {
+                return Err(format!(
+                    "Extra leaf {index} is {} bytes, and a leaf is {}. A covenant reads its state in \
+                     {}-byte steps, so a leaf of any other width commits to something the covenant \
+                     cannot read back.",
+                    bytes.len(),
+                    Program::STORAGE_SLOT_BYTES,
+                    Program::STORAGE_SLOT_BYTES,
+                ));
+            }
+
+            leaves.push(bytes);
+        }
+
+        Ok(leaves)
     }
 }
 
@@ -300,6 +330,17 @@ impl WalletSigner {
     #[must_use]
     pub fn blinding_public_key(&self) -> String {
         hex::encode(self.signer.get_blinding_public_key().to_bytes())
+    }
+
+    /// Reports what an assembled transaction would cost in fees, in satoshis.
+    ///
+    /// # Errors
+    /// Returns an error if the transaction cannot be signed.
+    #[wasm_bindgen(js_name = estimateFee)]
+    pub fn estimate_fee(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
+        self.signer
+            .estimate_fee(&builder.transaction, fee_rate)
+            .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
     }
 
     /// Blinds, signs and finalizes an assembled transaction.
@@ -410,11 +451,24 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
     #[wasm_bindgen(js_name = addWalletInput)]
-    pub fn add_wallet_input(&mut self, txid: &str, vout: u32, tx_out_hex: &str) -> Result<(), JsError> {
-        self.transaction.add_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
-            RequiredSignature::NativeEcdsa,
-        );
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_wallet_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        blinding_secrets_json: Option<String>,
+        derivation_path: Option<String>,
+    ) -> Result<(), JsError> {
+        let input = Self::input_at(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
+
+        self.transaction.add_input(input, RequiredSignature::NativeEcdsa);
 
         Ok(())
     }
@@ -433,12 +487,22 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
+        blinding_secrets_json: Option<String>,
+        derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
+        let input = Self::input_at(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
+
         let details = self.transaction.add_issuance_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            input,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             RequiredSignature::NativeEcdsa,
         );
@@ -455,8 +519,12 @@ impl TransactionBuilder {
     /// over this transaction.
     /// Leaving this `None` says the program needs no signature.
     ///
+    /// `derivation_path` is the path of the key that signature is made with, relative to the
+    /// account path. Omitting it keeps the signer's default.
+    ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments or the witness cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
+    /// derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addCovenantInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_input(
@@ -470,9 +538,10 @@ impl TransactionBuilder {
         signature_witness: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
+        derivation_path: Option<String>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -492,8 +561,8 @@ impl TransactionBuilder {
     /// the issuance half the same as `addWalletIssuanceInput`.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
-    /// issuer contract cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness, the
+    /// issuer contract or the derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_issuance_input(
@@ -510,12 +579,13 @@ impl TransactionBuilder {
         issuer_contract_hex: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
+        derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
         let details = self.transaction.add_program_issuance_input(
-            PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex)?),
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -642,7 +712,25 @@ impl TransactionBuilder {
         RequiredSignature::witness_with_path(name, path)
     }
 
-    fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str) -> Result<UTXO, JsError> {
+    fn input_at(
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        secrets_json: Option<&str>,
+        derivation_path: Option<&str>,
+    ) -> Result<PartialInput, JsError> {
+        let input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, secrets_json)?);
+
+        let Some(path) = derivation_path else {
+            return Ok(input);
+        };
+
+        let path = Self::relative_path(path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?;
+
+        Ok(input.with_derivation_path(path))
+    }
+
+    fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str, secrets_json: Option<&str>) -> Result<UTXO, JsError> {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).map_err(|e| JsError::new(&format!("Invalid txid: {e}")))?,
             vout,
@@ -654,9 +742,41 @@ impl TransactionBuilder {
 
         Ok(UTXO {
             outpoint,
-            secrets: None,
+            secrets: secrets_json
+                .map(Self::blinding_secrets)
+                .transpose()
+                .map_err(|e| JsError::new(&format!("Invalid blinding secrets: {e}")))?,
             txout,
         })
+    }
+
+    fn blinding_secrets(secrets_json: &str) -> Result<TxOutSecrets, String> {
+        let parsed: serde_json::Value = serde_json::from_str(secrets_json).map_err(|e| e.to_string())?;
+
+        let field = |name: &str| -> Result<String, String> {
+            parsed
+                .get(name)
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+                .ok_or_else(|| format!("no \"{name}\""))
+        };
+
+        let value = parsed
+            .get("value")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "no \"value\"".to_string())?;
+
+        Ok(TxOutSecrets::new(
+            AssetId::from_str(&field("asset")?).map_err(|e| e.to_string())?,
+            AssetBlindingFactor::from_str(&field("assetBlindingFactor")?).map_err(|e| e.to_string())?,
+            value,
+            ValueBlindingFactor::from_str(&field("valueBlindingFactor")?).map_err(|e| e.to_string())?,
+        ))
+    }
+
+    /// Reads a derivation path relative to the account path, e.g. `0/7`.
+    fn relative_path(path: &str) -> Result<DerivationPath, String> {
+        DerivationPath::from_str(path).map_err(|e| e.to_string())
     }
 
     fn program_input(
@@ -727,11 +847,78 @@ pub fn sdk_version() -> String {
 #[cfg(test)]
 mod tests {
     use simplicityhl::elements::hashes::sha256::Midstate;
-    use simplicityhl::elements::{AssetId, OutPoint, Txid};
+    use simplicityhl::elements::{AssetId, OutPoint, TxOut, Txid};
 
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{ContractHash, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
+    use super::{ContractHash, Covenant, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
+
+    const TRIVIAL: &str = "fn main() { }";
+    const COMPARING: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
+
+    #[test]
+    fn tapleaf_hash_is_not_the_commitment_merkle_root() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+
+        assert_eq!(covenant.tapleaf_hash().len(), 64);
+        assert_ne!(covenant.tapleaf_hash(), covenant.commitment_merkle_root());
+    }
+
+    #[test]
+    fn the_same_covenant_returns_the_same_tapleaf_hash_twice() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let again = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+
+        assert_eq!(covenant.tapleaf_hash(), again.tapleaf_hash());
+    }
+
+    #[test]
+    fn state_leaf_that_is_not_a_full_slot_is_refused() {
+        let refused = Covenant::state_leaves("[\"00\"]").expect_err("a one byte leaf");
+
+        assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
+    }
+
+    #[test]
+    fn state_leaf_that_is_not_hex_is_refused() {
+        assert!(Covenant::state_leaves("[\"nonsense\"]").is_err());
+    }
+
+    #[test]
+    fn full_width_leaves_are_read_in_the_order_they_were_given() {
+        let read = Covenant::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
+            .expect("two full leaves");
+
+        assert_eq!(read, vec![vec![0x00; 32], vec![0x11; 32]]);
+    }
+
+    #[test]
+    fn full_width_state_leaf_is_accepted_and_moves_the_address() {
+        let leaf = "00".repeat(32);
+        let other = format!("{}01", "00".repeat(31));
+
+        let plain = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let stateful =
+            Covenant::new(TRIVIAL, None, Some(format!("[\"{leaf}\"]")), None).expect("a covenant with state");
+        let moved = Covenant::new(TRIVIAL, None, Some(format!("[\"{other}\"]")), None).expect("a covenant with state");
+
+        let network = "liquidtestnet";
+
+        assert_ne!(plain.address(network).unwrap(), stateful.address(network).unwrap());
+        assert_ne!(stateful.address(network).unwrap(), moved.address(network).unwrap());
+        // The program did not change, only where its funds sit.
+        assert_eq!(stateful.commitment_merkle_root(), moved.commitment_merkle_root());
+        assert_eq!(stateful.tapleaf_hash(), moved.tapleaf_hash());
+    }
+
+    #[test]
+    fn different_covenant_answers_a_different_one() {
+        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
+        let other = Covenant::new(COMPARING, None, None, None).expect("a covenant that compiles");
+
+        assert_ne!(covenant.tapleaf_hash(), other.tapleaf_hash());
+        assert_ne!(covenant.commitment_merkle_root(), other.commitment_merkle_root());
+    }
 
     const ON_CHAIN: [(&str, u32, &str, &str, &str); 4] = [
         (
@@ -829,5 +1016,138 @@ mod tests {
     fn refuses_an_issuer_contract_that_is_not_an_id() {
         assert!(TransactionBuilder::issuer_contract(Some("not hex at all")).is_err());
         assert!(TransactionBuilder::issuer_contract(Some("00ff")).is_err());
+    }
+
+    const SECRETS: &str = r#"{
+        "value": 100000,
+        "asset": "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49",
+        "assetBlindingFactor": "0000000000000000000000000000000000000000000000000000000000000001",
+        "valueBlindingFactor": "0000000000000000000000000000000000000000000000000000000000000002"
+    }"#;
+
+    #[test]
+    fn reads_back_what_the_wallet_unblinded() {
+        let secrets = TransactionBuilder::blinding_secrets(SECRETS).expect("the wallet's own reading");
+
+        assert_eq!(secrets.value, 100_000);
+        assert_eq!(
+            secrets.asset.to_string(),
+            "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49"
+        );
+    }
+
+    #[test]
+    fn refuses_secrets_that_leave_a_field_out() {
+        for missing in ["value", "asset", "assetBlindingFactor", "valueBlindingFactor"] {
+            let without = SECRETS.replace(missing, "somethingElse");
+
+            assert!(
+                TransactionBuilder::blinding_secrets(&without).is_err(),
+                "a reading without {missing} is not a reading"
+            );
+        }
+    }
+
+    #[test]
+    fn refuses_secrets_that_are_not_a_reading_at_all() {
+        assert!(TransactionBuilder::blinding_secrets("not json").is_err());
+        assert!(TransactionBuilder::blinding_secrets("{}").is_err());
+    }
+
+    #[test]
+    fn reads_a_path_relative_to_the_account() {
+        assert_eq!(
+            TransactionBuilder::relative_path("0/7").expect("a path").to_string(),
+            "0/7"
+        );
+        assert!(TransactionBuilder::relative_path("not a path").is_err());
+    }
+
+    fn spent_output() -> String {
+        hex::encode(simplicityhl::elements::encode::serialize(&TxOut::default()))
+    }
+
+    fn path_of(builder: &TransactionBuilder, index: usize) -> Option<String> {
+        builder.transaction.inputs()[index]
+            .partial_input
+            .derivation_path
+            .as_ref()
+            .map(ToString::to_string)
+    }
+
+    #[test]
+    fn covenant_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            None,
+            None,
+            Some("0/7".to_string()),
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn covenant_input_naming_no_key_keeps_the_signers_default() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            None,
+            None,
+            None,
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0), None);
+    }
+
+    #[test]
+    fn covenant_issuance_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_covenant_issuance_input(
+            ON_CHAIN[0].0,
+            0,
+            &spent_output(),
+            TRIVIAL,
+            None,
+            None,
+            Some("SIGNATURE".to_string()),
+            1_000,
+            0,
+            None,
+            None,
+            None,
+            Some("0/7".to_string()),
+        );
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn wallet_input_is_signed_with_the_key_it_names() {
+        let mut builder = TransactionBuilder::new();
+
+        let added = builder.add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));
+
+        assert!(added.is_ok());
+        assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
     }
 }

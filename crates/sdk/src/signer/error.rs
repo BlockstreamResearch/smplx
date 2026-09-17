@@ -72,6 +72,13 @@ pub enum SignerError {
     #[error("Not enough funds on account to cover transaction costs: {0}")]
     NotEnoughFunds(u64),
 
+    /// Error indicating a confidential input was left with no blinded output to balance against.
+    ///
+    /// Raised when the caller pins an explicit change target while spending confidential inputs,
+    /// which the node would reject as `bad-txns-in-ne-out`.
+    #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
+    ConfidentialInputWithoutBlindedOutput,
+
     /// Error indicating an invalid upstream `secp256k1` secret key.
     #[error("Invalid secret key")]
     InvalidSecretKey(#[from] simplicityhl::elements::secp256k1_zkp::UpstreamError),
