@@ -141,6 +141,7 @@ mod tests {
         assert!(liquid.is_mainnet());
         assert!(!testnet.is_mainnet());
         assert!(!regtest.is_mainnet());
+
         for (network, asset, genesis, params) in [
             (
                 liquid,
@@ -165,6 +166,7 @@ mod tests {
             assert_eq!(network.genesis_block_hash().to_string(), genesis);
             assert_eq!(network.address_params(), params);
         }
+
         assert_eq!(NetworkKind::from(liquid), NetworkKind::Main);
         assert_eq!(NetworkKind::from(&testnet), NetworkKind::Test);
         assert_eq!(NetworkKind::from(regtest), NetworkKind::Test);

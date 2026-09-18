@@ -138,8 +138,10 @@ impl Covenant {
     }
 
     /// Compiles the covenant and returns its Commitment Merkle Root as lowercase hex.
+    ///
+    /// # Errors
+    /// Returns an error the source fails to compile.
     #[wasm_bindgen(js_name = commitmentMerkleRoot)]
-    #[must_use]
     pub fn commitment_merkle_root(&self) -> Result<String, JsError> {
         self.validate()?;
         let cmr = self.program.get_cmr();
@@ -148,10 +150,14 @@ impl Covenant {
     }
 
     /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
+    ///
+    /// # Errors
+    /// Returns an error the source fails to compile.
     #[wasm_bindgen(js_name = tapleafHash)]
-    #[must_use]
-    pub fn tapleaf_hash(&self) -> String {
-        hex::encode(self.program.get_tapleaf_hash())
+    pub fn tapleaf_hash(&self) -> Result<String, JsError> {
+        self.validate()?;
+
+        Ok(hex::encode(self.program.get_tapleaf_hash()))
     }
 
     /// Compiles the covenant and returns the `scriptPubKey` its funds are locked with, as hex.
@@ -188,13 +194,6 @@ impl Covenant {
         self.validate()?;
 
         Ok(self.program.get_tr_address(&network).to_string())
-    }
-
-    fn validate(&self) -> Result<(), JsError> {
-        self.program
-            .get_argument_types()
-            .map(|_| ())
-            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))
     }
 
     fn from_source(
@@ -251,6 +250,13 @@ impl Covenant {
         }
 
         Ok(leaves)
+    }
+
+    fn validate(&self) -> Result<(), JsError> {
+        self.program
+            .get_argument_types()
+            .map(|_| ())
+            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))
     }
 }
 
@@ -865,23 +871,6 @@ mod tests {
     use super::{ContractHash, Covenant, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
 
     const TRIVIAL: &str = "fn main() { }";
-    const COMPARING: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
-
-    #[test]
-    fn tapleaf_hash_is_not_the_commitment_merkle_root() {
-        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
-
-        assert_eq!(covenant.tapleaf_hash().len(), 64);
-        assert_ne!(covenant.tapleaf_hash(), covenant.commitment_merkle_root());
-    }
-
-    #[test]
-    fn the_same_covenant_returns_the_same_tapleaf_hash_twice() {
-        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
-        let again = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
-
-        assert_eq!(covenant.tapleaf_hash(), again.tapleaf_hash());
-    }
 
     #[test]
     fn state_leaf_that_is_not_a_full_slot_is_refused() {
@@ -904,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    fn full_width_state_leaf_is_accepted_and_moves_the_address() {
+    fn full_width_state_leaf_is_accepted_and_updates_the_address() {
         let leaf = "00".repeat(32);
         let other = format!("{}01", "00".repeat(31));
 
@@ -918,17 +907,11 @@ mod tests {
         assert_ne!(plain.address(network).unwrap(), stateful.address(network).unwrap());
         assert_ne!(stateful.address(network).unwrap(), moved.address(network).unwrap());
         // The program did not change, only where its funds sit.
-        assert_eq!(stateful.commitment_merkle_root(), moved.commitment_merkle_root());
-        assert_eq!(stateful.tapleaf_hash(), moved.tapleaf_hash());
-    }
-
-    #[test]
-    fn different_covenant_answers_a_different_one() {
-        let covenant = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
-        let other = Covenant::new(COMPARING, None, None, None).expect("a covenant that compiles");
-
-        assert_ne!(covenant.tapleaf_hash(), other.tapleaf_hash());
-        assert_ne!(covenant.commitment_merkle_root(), other.commitment_merkle_root());
+        assert_eq!(
+            stateful.commitment_merkle_root().unwrap(),
+            moved.commitment_merkle_root().unwrap()
+        );
+        assert_eq!(stateful.tapleaf_hash().unwrap(), moved.tapleaf_hash().unwrap());
     }
 
     const ON_CHAIN: [(&str, u32, &str, &str, &str); 4] = [

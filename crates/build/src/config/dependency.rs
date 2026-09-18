@@ -162,6 +162,20 @@ impl RawDependency {
     }
 }
 
+impl<'de> Deserialize<'de> for DependencyConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = RawDependencyConfig::deserialize(d)?;
+        let mut inner = HashMap::with_capacity(raw.inner.len());
+
+        for (name, r) in raw.inner {
+            let dep = r.into_dependency(&name).map_err(serde::de::Error::custom)?;
+            inner.insert(name, dep);
+        }
+
+        Ok(Self { inner })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,20 +231,7 @@ mod tests {
 
         assert!(content.contains("# keep this comment"));
         assert!(content.contains("local = { path = \"../local\" }"));
+
         let _ = std::fs::remove_file(path);
-    }
-}
-
-impl<'de> Deserialize<'de> for DependencyConfig {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let raw = RawDependencyConfig::deserialize(d)?;
-        let mut inner = HashMap::with_capacity(raw.inner.len());
-
-        for (name, r) in raw.inner {
-            let dep = r.into_dependency(&name).map_err(serde::de::Error::custom)?;
-            inner.insert(name, dep);
-        }
-
-        Ok(Self { inner })
     }
 }

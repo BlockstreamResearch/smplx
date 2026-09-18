@@ -171,18 +171,24 @@ mod tests {
     #[test]
     fn rustfmt_accepts_an_absolute_source_path() {
         let path = std::env::temp_dir().join(format!("smplx-valid-{}.rs", std::process::id()));
+
         fs::write(&path, "fn main(){}").unwrap();
         Init::execute_cargo_fmt(&path).unwrap();
+
         assert_eq!(fs::read_to_string(&path).unwrap(), "fn main() {}\n");
+
         fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn rustfmt_accepts_the_initial_unresolved_artifacts_module() {
         let path = std::env::temp_dir().join(format!("smplx-initial-lib-{}.rs", std::process::id()));
+
         fs::write(&path, "pub mod artifacts;").unwrap();
         Init::execute_cargo_fmt(&path).unwrap();
+
         assert_eq!(fs::read_to_string(&path).unwrap(), "pub mod artifacts;\n");
+
         fs::remove_file(path).unwrap();
     }
 }

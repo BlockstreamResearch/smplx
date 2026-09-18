@@ -78,6 +78,7 @@ mod tests {
         assert_eq!(loaded.rpc_password.as_deref(), Some("password"));
         assert!(defaults.rpc_port.is_none());
         assert!(defaults.esplora_port.is_none());
+
         let _ = std::fs::remove_file(path);
     }
 }
