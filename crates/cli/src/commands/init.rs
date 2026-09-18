@@ -154,10 +154,35 @@ fn main() {
     fn execute_cargo_fmt(file: impl AsRef<Path>) -> Result<(), InitError> {
         let mut cargo_test_command = std::process::Command::new("rustfmt");
 
-        cargo_test_command.args(file.as_ref());
+        cargo_test_command
+            .args(["--config", "skip_children=true"])
+            .arg(file.as_ref());
 
         let _output = cargo_test_command.output().map_err(InitError::FmtError);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rustfmt_accepts_an_absolute_source_path() {
+        let path = std::env::temp_dir().join(format!("smplx-valid-{}.rs", std::process::id()));
+        fs::write(&path, "fn main(){}").unwrap();
+        Init::execute_cargo_fmt(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "fn main() {}\n");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rustfmt_accepts_the_initial_unresolved_artifacts_module() {
+        let path = std::env::temp_dir().join(format!("smplx-initial-lib-{}.rs", std::process::id()));
+        fs::write(&path, "pub mod artifacts;").unwrap();
+        Init::execute_cargo_fmt(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "pub mod artifacts;\n");
+        fs::remove_file(path).unwrap();
     }
 }
