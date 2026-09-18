@@ -40,6 +40,30 @@ pub struct ProgramLogger {
     pub logs: HashMap<usize, ProgramInfo>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buffered_logs_can_be_cleared_per_program_or_globally() {
+        ProgramLogger::clear_logs();
+        ProgramLogger::buffer_trace_log(1, "first".to_string());
+        ProgramLogger::buffer_trace_log(2, "second".to_string());
+
+        PROGRAM_LOGGER.with(|logger| assert_eq!(logger.borrow().logs.len(), 2));
+        ProgramLogger::clear_program_logs(1);
+        PROGRAM_LOGGER.with(|logger| assert!(!logger.borrow().logs.contains_key(&1)));
+        PROGRAM_LOGGER.with(|logger| {
+            let logger = logger.borrow();
+            assert_eq!(logger.logs.len(), 1);
+            assert!(logger.logs.contains_key(&2));
+        });
+
+        ProgramLogger::clear_logs();
+        PROGRAM_LOGGER.with(|logger| assert!(logger.borrow().logs.is_empty()));
+    }
+}
+
 impl ProgramLogger {
     /// Mirrors [`DefaultTracker::with_log_level`] with buffered sinks instead of stderr.
     /// Clears any previously buffered `input_index` logs before configuring the tracker.
