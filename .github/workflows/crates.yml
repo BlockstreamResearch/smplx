@@ -39,6 +39,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: rustfmt
 
       - name: Use Rust cache
         uses: Swatinem/rust-cache@v2
