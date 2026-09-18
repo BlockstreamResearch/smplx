@@ -140,10 +140,11 @@ impl Covenant {
     /// Compiles the covenant and returns its Commitment Merkle Root as lowercase hex.
     #[wasm_bindgen(js_name = commitmentMerkleRoot)]
     #[must_use]
-    pub fn commitment_merkle_root(&self) -> String {
+    pub fn commitment_merkle_root(&self) -> Result<String, JsError> {
+        self.validate()?;
         let cmr = self.program.get_cmr();
 
-        hex::encode(cmr)
+        Ok(hex::encode(cmr))
     }
 
     /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
@@ -160,6 +161,7 @@ impl Covenant {
     #[wasm_bindgen(js_name = scriptPubKeyHex)]
     pub fn script_pubkey_hex(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
+        self.validate()?;
 
         Ok(hex::encode(self.program.get_script_pubkey(&network).as_bytes()))
     }
@@ -171,6 +173,7 @@ impl Covenant {
     #[wasm_bindgen(js_name = scriptHash)]
     pub fn script_hash(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
+        self.validate()?;
 
         Ok(hex::encode(self.program.get_script_hash(&network)))
     }
@@ -182,8 +185,16 @@ impl Covenant {
     #[wasm_bindgen(js_name = address)]
     pub fn address(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
+        self.validate()?;
 
         Ok(self.program.get_tr_address(&network).to_string())
+    }
+
+    fn validate(&self) -> Result<(), JsError> {
+        self.program
+            .get_argument_types()
+            .map(|_| ())
+            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))
     }
 
     fn from_source(
