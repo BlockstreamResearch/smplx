@@ -23,11 +23,41 @@ pub enum CommandError {
     #[error(transparent)]
     Install(#[from] InstallError),
 
+    #[error(transparent)]
+    Fmt(#[from] FmtError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("Verbosity level should be either -v or -vv, got: -v x {0}")]
     BadVersbosityMode(u8),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FmtError {
+    #[error("Quiet mode and verbose mode are not compatible")]
+    ConflictingVerbosity,
+
+    #[error("Failed to find manifest in current and parent directories")]
+    FailedToFindManifest,
+
+    #[error("The manifest-path must be a path to a Simplex.toml file, got: '{}'", .0.display())]
+    InvalidManifestPath(PathBuf),
+
+    #[error("Invalid --message-format value: {0}. Allowed values are: short|human")]
+    InvalidMessageFormat(String),
+
+    #[error("no files matched the configured simf_files patterns under '{}'", .0.display())]
+    NoFiles(PathBuf),
+
+    #[error("Failed to determine the current directory: {0}")]
+    CurrentDir(std::io::Error),
+
+    #[error("Failed to determine the simplex executable path: {0}")]
+    CurrentExecutable(std::io::Error),
+
+    #[error("could not run simfmt at '{}': {source}", binary.display())]
+    RunSimfmt { binary: PathBuf, source: std::io::Error },
 }
 
 #[derive(thiserror::Error, Debug)]

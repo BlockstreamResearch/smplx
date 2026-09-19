@@ -2,6 +2,7 @@ pub mod build;
 pub mod clean;
 pub mod core;
 pub mod error;
+pub mod fmt;
 pub mod init;
 pub mod install;
 pub mod regtest;

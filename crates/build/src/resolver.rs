@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -18,25 +19,49 @@ use super::error::BuildError;
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    pub fn resolve_files_to_build(src_dir: &String, simfs: &[String]) -> Result<Vec<PathBuf>, BuildError> {
+    pub fn resolve_files_to_build(
+        src_dir: impl AsRef<str>,
+        simfs: &[impl AsRef<str>],
+    ) -> Result<Vec<PathBuf>, BuildError> {
         let cwd = env::current_dir()?;
-        let base = cwd.join(src_dir);
-
+        let files = Self::resolve_simf_files(&cwd, src_dir, simfs)?;
         let mut paths = Vec::new();
 
-        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, simfs)
-            .follow_links(true)
-            .file_type(FileType::FILE)
-            .build()?
-            .filter_map(Result::ok);
-
-        for img in walker {
-            let path = img.path().to_path_buf().canonicalize()?;
-            let content = std::fs::read_to_string(&path)?;
+        for path in files {
+            let content = fs::read_to_string(&path)?;
 
             if Self::contains_main(&content) {
                 paths.push(path);
             }
+        }
+
+        Ok(paths)
+    }
+
+    /// Resolves every source file matched by `simfs` beneath `src_dir` relative
+    /// to `project_root`.
+    ///
+    /// Returned paths are canonicalized, sorted, and deduplicated. Unlike
+    /// [`Self::resolve_files_to_build`], this does not require a source file to
+    /// contain a `main` function.
+    ///
+    /// # Errors
+    /// Returns a [`BuildError`] if a glob cannot be constructed, the directory
+    /// walk fails, or a matching path cannot be canonicalized.
+    pub fn resolve_simf_files(
+        project_root: impl AsRef<Path>,
+        src_dir: impl AsRef<str>,
+        simfs: &[impl AsRef<str>],
+    ) -> Result<BTreeSet<PathBuf>, BuildError> {
+        let base = project_root.as_ref().join(src_dir.as_ref());
+        let walker = globwalk::GlobWalkerBuilder::from_patterns(base, simfs)
+            .follow_links(true)
+            .file_type(FileType::FILE)
+            .build()?;
+        let mut paths = BTreeSet::new();
+
+        for entry in walker {
+            paths.insert(entry?.path().canonicalize()?);
         }
 
         Ok(paths)

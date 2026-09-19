@@ -68,6 +68,9 @@ pub enum BuildError {
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
 
+    #[error("Failed to resolve globpaths, directory walk error: {0}")]
+    Walk(#[from] globwalk::WalkError),
+
     #[error("Failed to deserialize config: '{0}'")]
     ConfigDeserialize(#[from] toml::de::Error),
 
