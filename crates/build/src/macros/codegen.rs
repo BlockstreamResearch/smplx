@@ -123,11 +123,11 @@ impl WitnessStruct {
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity Arguments.
+                    /// Build struct from Simplicity `Arguments`.
                     ///
                     /// # Errors
                     ///
-                    /// Returns error if any required witness is missing, has wrong type, or has invalid value.
+                    /// Returns error if any required witness is missing, has the wrong type, or has an invalid value.
                     pub fn from_arguments(args: &Arguments) -> Result<Self, String> {
                         #arguments_conversion_from_args_map
 
@@ -138,7 +138,6 @@ impl WitnessStruct {
 
                 impl simplex::program::ArgumentsTrait for #struct_name {
                     /// Build Simplicity arguments for contract instantiation.
-                    #[must_use]
                     fn build_arguments(&self) -> simplex::simplicityhl::Arguments {
                         simplex::simplicityhl::Arguments::from(HashMap::from([
                             #(#tuples),*
@@ -168,6 +167,12 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for simplex::simplicityhl::Arguments {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::Arguments {
+                        val.build_arguments()
                     }
                 }
             },
@@ -204,7 +209,7 @@ impl WitnessStruct {
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity WitnessValues.
+                    /// Build struct from Simplicity `WitnessValues`.
                     ///
                     /// # Errors
                     ///
@@ -218,7 +223,6 @@ impl WitnessStruct {
 
                 impl simplex::program::WitnessTrait for #struct_name {
                      /// Build Simplicity witness values for contract execution.
-                    #[must_use]
                     fn build_witness(&self) -> simplex::simplicityhl::WitnessValues {
                         simplex::simplicityhl::WitnessValues::from(HashMap::from([
                             #(#tuples),*
@@ -248,6 +252,12 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for simplex::simplicityhl::WitnessValues {
+                    fn from(val: #struct_name) -> simplex::simplicityhl::WitnessValues {
+                        val.build_witness()
                     }
                 }
             },
@@ -365,6 +375,11 @@ impl WitnessStruct {
 
         (extractions, struct_init)
     }
+}
+
+pub fn construct_program_name(contract_name: &str) -> proc_macro2::Ident {
+    let base_name = convert_contract_name_to_struct_name(contract_name);
+    format_ident!("{base_name}Program")
 }
 
 pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
