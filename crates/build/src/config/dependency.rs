@@ -175,3 +175,63 @@ impl<'de> Deserialize<'de> for DependencyConfig {
         Ok(Self { inner })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_and_git_references_are_loaded() {
+        let config = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                local = { path = "../local" }
+                revision = { git = "https://example.com/revision.git", rev = "abc" }
+                release = { git = "https://example.com/release.git", tag = "v1" }
+                branch = { git = "https://example.com/branch.git", branch = "main" }
+            "#,
+        )
+        .expect("dependency config should parse");
+
+        assert!(matches!(config.inner.get("local"), Some(Dependency::Path(path)) if path == "../local"));
+        assert!(
+            matches!(config.inner.get("revision"), Some(Dependency::Git { reference: Some(GitRef::Rev(value)), .. }) if value == "abc")
+        );
+        assert!(
+            matches!(config.inner.get("release"), Some(Dependency::Git { reference: Some(GitRef::Tag(value)), .. }) if value == "v1")
+        );
+        assert!(
+            matches!(config.inner.get("branch"), Some(Dependency::Git { reference: Some(GitRef::Branch(value)), .. }) if value == "main")
+        );
+    }
+
+    #[test]
+    fn conflicting_dependency_sources_are_rejected() {
+        let result = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                broken = { path = "../local", git = "https://example.com/broken.git" }
+            "#,
+        );
+
+        assert!(
+            matches!(result, Err(BuildError::ConfigDeserialize(ref error)) if error.to_string().contains("cannot specify both 'path' and 'git'"))
+        );
+    }
+
+    #[test]
+    fn dependency_edit_preserves_existing_toml() {
+        let path = std::env::temp_dir().join(format!("smplx-dependency-edit-{}.toml", std::process::id()));
+        std::fs::write(&path, "# keep this comment\n[package]\nname = \"fixture\"\n")
+            .expect("fixture should be writable");
+
+        DependencyConfig::add_dependency_to(&path, &["local=../local".to_string()])
+            .expect("dependency should be added");
+        let content = std::fs::read_to_string(&path).expect("fixture should be readable");
+
+        assert!(content.contains("# keep this comment"));
+        assert!(content.contains("local = { path = \"../local\" }"));
+
+        let _ = std::fs::remove_file(path);
+    }
+}

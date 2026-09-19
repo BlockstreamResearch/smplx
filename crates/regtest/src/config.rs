@@ -47,3 +47,38 @@ impl Default for RegtestConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_config_is_loaded_and_defaults_are_safe() {
+        let path = std::env::temp_dir().join(format!("smplx-regtest-config-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            r#"
+                mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+                bitcoins = 42
+                rpc_port = 18443
+                esplora_port = 3000
+                rpc_user = "user"
+                rpc_password = "password"
+            "#,
+        )
+        .expect("regtest config should be writable");
+
+        let loaded = RegtestConfig::from_file(&path).expect("regtest config should load");
+        let defaults = RegtestConfig::default();
+
+        assert_eq!(loaded.bitcoins, 42);
+        assert_eq!(loaded.rpc_port, Some(18443));
+        assert_eq!(loaded.esplora_port, Some(3000));
+        assert_eq!(loaded.rpc_user.as_deref(), Some("user"));
+        assert_eq!(loaded.rpc_password.as_deref(), Some("password"));
+        assert!(defaults.rpc_port.is_none());
+        assert!(defaults.esplora_port.is_none());
+
+        let _ = std::fs::remove_file(path);
+    }
+}

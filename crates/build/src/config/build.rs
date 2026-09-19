@@ -42,3 +42,25 @@ impl Default for BuildConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_build_values_are_loaded() {
+        let config = BuildConfig::from_source(
+            r#"
+                [build]
+                src_dir = "contracts"
+                simf_files = ["one.simf", "nested/*.simf"]
+                out_dir = "generated"
+            "#,
+        )
+        .expect("explicit build config should parse");
+
+        assert_eq!(config.src_dir, "contracts");
+        assert_eq!(config.simf_files, ["one.simf", "nested/*.simf"]);
+        assert_eq!(config.out_dir, "generated");
+    }
+}

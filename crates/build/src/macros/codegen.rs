@@ -368,6 +368,7 @@ impl WitnessStruct {
 }
 
 pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
+    let starts_with_underscore = contract_name.starts_with('_');
     let words: Vec<String> = contract_name
         .split('_')
         .filter(|w| !w.is_empty())
@@ -381,7 +382,13 @@ pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
         })
         .collect();
 
-    words.join("")
+    let joined = words.join("");
+
+    if starts_with_underscore {
+        format!("_{joined}")
+    } else {
+        joined
+    }
 }
 
 pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
@@ -390,4 +397,14 @@ pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> pr
 
 pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
     format_ident!("derived_{}", contract_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::convert_contract_name_to_struct_name;
+
+    #[test]
+    fn struct_names_preserve_a_leading_identifier_underscore() {
+        assert_eq!(convert_contract_name_to_struct_name("_9_lives"), "_9Lives");
+    }
 }
