@@ -28,6 +28,12 @@ pub enum CommandError {
 
     #[error("Verbosity level should be either -v or -vv, got: -v x {0}")]
     BadVersbosityMode(u8),
+
+    #[error("test command failed with exit status {0}")]
+    TestFailed(i32),
+
+    #[error("test process terminated without an exit status")]
+    TestProcessTerminated,
 }
 
 #[derive(thiserror::Error, Debug)]

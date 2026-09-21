@@ -49,7 +49,15 @@ impl Test {
             }
         }
 
-        Ok(())
+        Self::result_from_status(output.status)
+    }
+
+    fn result_from_status(status: std::process::ExitStatus) -> Result<(), CommandError> {
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(CommandError::TestFailed(code)),
+            None => Err(CommandError::TestProcessTerminated),
+        }
     }
 
     fn build_cargo_nextest_command(
