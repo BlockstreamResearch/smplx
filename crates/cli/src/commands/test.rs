@@ -169,6 +169,13 @@ mod tests {
     use crate::commands::error::CommandError;
 
     #[test]
+    fn successful_test_process_returns_ok() {
+        let status = std::process::ExitStatus::from_raw(0);
+
+        assert!(Test::result_from_status(status).is_ok());
+    }
+
+    #[test]
     fn failed_test_process_returns_a_command_error() {
         let status = std::process::ExitStatus::from_raw(7 << 8);
 
