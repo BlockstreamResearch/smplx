@@ -160,3 +160,21 @@ impl Test {
             .join(SIMPLEX_TEST_CONFIG_NAME))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::Test;
+    use crate::commands::error::CommandError;
+
+    #[test]
+    fn failed_test_process_returns_a_command_error() {
+        let status = std::process::ExitStatus::from_raw(7 << 8);
+
+        assert!(matches!(
+            Test::result_from_status(status),
+            Err(CommandError::TestFailed(7))
+        ));
+    }
+}
