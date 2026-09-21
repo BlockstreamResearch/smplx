@@ -192,4 +192,14 @@ mod tests {
             Err(CommandError::TestFailed(7))
         ));
     }
+
+    #[test]
+    fn terminated_test_process_returns_a_command_error() {
+        let status = std::process::ExitStatus::from_raw(15);
+
+        assert!(matches!(
+            Test::result_from_status(status),
+            Err(CommandError::TestProcessTerminated)
+        ));
+    }
 }
