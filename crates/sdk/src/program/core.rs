@@ -438,7 +438,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::program::ArgumentsTrait;
 
     // simplicityhl/examples/cat.simf
     const DUMMY_PROGRAM: &str = r"
@@ -495,15 +494,15 @@ mod tests {
     #[derive(Clone)]
     struct EmptyArguments;
 
-    impl ArgumentsTrait for EmptyArguments {
-        fn build_arguments(&self) -> Arguments {
+    impl From<EmptyArguments> for Arguments {
+        fn from(_val: EmptyArguments) -> Self {
             Arguments::default()
         }
     }
 
-    impl From<EmptyArguments> for Arguments {
-        fn from(val: EmptyArguments) -> Self {
-            val.build_arguments()
+    impl From<&EmptyArguments> for Arguments {
+        fn from(_val: &EmptyArguments) -> Self {
+            Arguments::default()
         }
     }
 

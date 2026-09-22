@@ -1,9 +1,9 @@
 use simplex::include_simf;
 use simplex::program::Program;
-use simplex::program::{ArgumentsTrait, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
 use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::Arguments;
 
 #[derive(Clone)]
 pub struct Bytes32TrStorageProgram {
@@ -12,7 +12,7 @@ pub struct Bytes32TrStorageProgram {
 impl Bytes32TrStorageProgram {
     pub const SOURCE: &'static str = derived_bytes32_tr_storage::BYTES32_TR_STORAGE_CONTRACT_SOURCE;
     #[must_use]
-    pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+    pub fn new(arguments: impl Into<Arguments>) -> Self {
         Self {
             program: Program::new(Self::SOURCE, arguments.into()),
         }
@@ -74,13 +74,13 @@ fn main() -> Result<(), String> {
 fn test_e2e_behaviour() -> Result<(), String> {
     let original_witness = derived_bytes32_tr_storage::Bytes32TrStorageWitness::default();
 
-    let witness_values = original_witness.build_witness();
+    let witness_values = (&original_witness).into();
     let recovered_witness = derived_bytes32_tr_storage::Bytes32TrStorageWitness::from_witness(&witness_values)?;
     assert_eq!(original_witness, recovered_witness);
 
     let original_arguments = derived_bytes32_tr_storage::Bytes32TrStorageArguments::default();
 
-    let arguments_values = original_arguments.build_arguments();
+    let arguments_values = (&original_arguments).into();
     let recovered_arguments = derived_bytes32_tr_storage::Bytes32TrStorageArguments::from_arguments(&arguments_values)?;
     assert_eq!(original_arguments, recovered_arguments);
 

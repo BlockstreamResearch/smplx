@@ -1,9 +1,9 @@
 use simplex::include_simf;
 use simplex::program::Program;
-use simplex::program::{ArgumentsTrait, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
 use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::Arguments;
 
 #[derive(Clone)]
 pub struct DualCurrencyDepositProgram {
@@ -12,7 +12,7 @@ pub struct DualCurrencyDepositProgram {
 impl DualCurrencyDepositProgram {
     pub const SOURCE: &'static str = derived_dual_currency_deposit::DUAL_CURRENCY_DEPOSIT_CONTRACT_SOURCE;
     #[must_use]
-    pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+    pub fn new(arguments: impl Into<Arguments>) -> Self {
         Self {
             program: Program::new(Self::SOURCE, arguments.into()),
         }
@@ -74,13 +74,13 @@ fn main() -> Result<(), String> {
 fn test_e2e_behaviour() -> Result<(), String> {
     let original_witness = derived_dual_currency_deposit::DualCurrencyDepositWitness::default();
 
-    let witness_values = original_witness.build_witness();
+    let witness_values = (&original_witness).into();
     let recovered_witness = derived_dual_currency_deposit::DualCurrencyDepositWitness::from_witness(&witness_values)?;
     assert_eq!(original_witness, recovered_witness);
 
     let original_arguments = derived_dual_currency_deposit::DualCurrencyDepositArguments::default();
 
-    let arguments_values = original_arguments.build_arguments();
+    let arguments_values = (&original_arguments).into();
     let recovered_arguments =
         derived_dual_currency_deposit::DualCurrencyDepositArguments::from_arguments(&arguments_values)?;
     assert_eq!(original_arguments, recovered_arguments);
