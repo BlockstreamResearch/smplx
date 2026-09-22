@@ -18,7 +18,7 @@ use simplicityhl::elements::{self, Sequence};
 use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
-use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
+use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::partial_input::IssuanceInput;
@@ -82,15 +82,9 @@ impl IssuanceReport {
 #[derive(Clone)]
 struct FixedArguments(Arguments);
 
-impl ArgumentsTrait for FixedArguments {
-    fn build_arguments(&self) -> Arguments {
-        self.0.clone()
-    }
-}
-
 impl From<FixedArguments> for Arguments {
     fn from(val: FixedArguments) -> Self {
-        val.build_arguments()
+        val.0.clone()
     }
 }
 
@@ -98,15 +92,9 @@ impl From<FixedArguments> for Arguments {
 #[derive(Clone)]
 struct FixedWitness(WitnessValues);
 
-impl WitnessTrait for FixedWitness {
-    fn build_witness(&self) -> WitnessValues {
-        self.0.clone()
-    }
-}
-
 impl From<FixedWitness> for WitnessValues {
     fn from(val: FixedWitness) -> Self {
-        val.build_witness()
+        val.0.clone()
     }
 }
 

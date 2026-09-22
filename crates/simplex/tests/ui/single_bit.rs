@@ -1,9 +1,9 @@
 use simplex::include_simf;
 use simplex::program::Program;
-use simplex::program::{ArgumentsTrait, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
 use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::Arguments;
 
 #[derive(Clone)]
 pub struct SingleBitProgram {
@@ -12,7 +12,7 @@ pub struct SingleBitProgram {
 impl SingleBitProgram {
     pub const SOURCE: &'static str = derived_single_bit::SINGLE_BIT_CONTRACT_SOURCE;
     #[must_use]
-    pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+    pub fn new(arguments: impl Into<Arguments>) -> Self {
         Self {
             program: Program::new(Self::SOURCE, arguments.into()),
         }
@@ -75,13 +75,13 @@ fn test_e2e_behaviour() -> Result<(), String> {
     for (bit, flag) in [(1, 1), (1, 0), (0, 1), (0, 0)] {
         let original_witness = derived_single_bit::SingleBitWitness { bit };
 
-        let witness_values = original_witness.build_witness();
+        let witness_values = (&original_witness).into();
         let recovered_witness = derived_single_bit::SingleBitWitness::from_witness(&witness_values)?;
         assert_eq!(original_witness, recovered_witness);
 
         let original_arguments = derived_single_bit::SingleBitArguments { flag };
 
-        let arguments_values = original_arguments.build_arguments();
+        let arguments_values = (&original_arguments).into();
         let recovered_arguments = derived_single_bit::SingleBitArguments::from_arguments(&arguments_values)?;
         assert_eq!(original_arguments, recovered_arguments);
     }

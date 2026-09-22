@@ -1,3 +1,4 @@
+use proc_macro2::Ident;
 use quote::{format_ident, quote};
 
 use simplicityhl::str::WitnessName;
@@ -76,12 +77,11 @@ impl WitnessField {
     }
 
     /// Generate the conversion code from Rust value to Simplicity Value
-    fn to_token_stream(&self) -> proc_macro2::TokenStream {
+    fn to_token_stream(&self, struct_name: &Ident) -> proc_macro2::TokenStream {
         let witness_name = &self.witness_simf_name;
         let field_name = &self.struct_rust_field;
-        let conversion = self
-            .rust_type
-            .generate_to_simplicity_conversion(&quote! { self.#field_name });
+        let field_access = quote! { #struct_name.#field_name };
+        let conversion = self.rust_type.generate_to_simplicity_conversion(&field_access);
 
         quote! {
             (
@@ -100,7 +100,8 @@ impl WitnessStruct {
     pub fn generate_arguments_impl(&self) -> syn::Result<GeneratedArgumentTokens> {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples();
+        let struct_param = format_ident!("val");
+        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples(&struct_param);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -116,7 +117,6 @@ impl WitnessStruct {
                     use simplex::simplicityhl::str::WitnessName;
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
-                    use simplex::program::ArgumentsTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -133,16 +133,6 @@ impl WitnessStruct {
 
                         Ok(#struct_to_return)
                     }
-
-                }
-
-                impl simplex::program::ArgumentsTrait for #struct_name {
-                    /// Build Simplicity arguments for contract instantiation.
-                    fn build_arguments(&self) -> simplex::simplicityhl::Arguments {
-                        simplex::simplicityhl::Arguments::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
                 }
 
                 impl simplex::serde::Serialize for #struct_name {
@@ -150,7 +140,8 @@ impl WitnessStruct {
                     where
                     S: simplex::serde::Serializer,
                     {
-                        self.build_arguments().serialize(serializer)
+                        let args: Arguments = self.into();
+                        args.serialize(serializer)
                     }
                 }
 
@@ -159,7 +150,7 @@ impl WitnessStruct {
                     where
                     D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = simplex::simplicityhl::Arguments::deserialize(deserializer)?;
+                        let x = Arguments::deserialize(deserializer)?;
                         Self::from_arguments(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
@@ -170,9 +161,17 @@ impl WitnessStruct {
                     }
                 }
 
-                impl From<#struct_name> for simplex::simplicityhl::Arguments {
-                    fn from(val: #struct_name) -> simplex::simplicityhl::Arguments {
-                        val.build_arguments()
+                impl From<#struct_name> for Arguments {
+                    fn from(#struct_param: #struct_name) -> Arguments {
+                        (&#struct_param).into()
+                    }
+                }
+
+                impl From<&#struct_name> for Arguments {
+                    fn from(#struct_param: &#struct_name) -> Arguments {
+                        Arguments::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
                     }
                 }
             },
@@ -186,7 +185,8 @@ impl WitnessStruct {
     pub fn generate_witness_impl(&self) -> syn::Result<GeneratedWitnessTokens> {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples();
+        let struct_param = format_ident!("val");
+        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples(&struct_param);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -202,7 +202,6 @@ impl WitnessStruct {
                     use simplex::simplicityhl::str::WitnessName;
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
-                    use simplex::program::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
@@ -221,21 +220,13 @@ impl WitnessStruct {
                     }
                 }
 
-                impl simplex::program::WitnessTrait for #struct_name {
-                     /// Build Simplicity witness values for contract execution.
-                    fn build_witness(&self) -> simplex::simplicityhl::WitnessValues {
-                        simplex::simplicityhl::WitnessValues::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-                }
-
                 impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
                         S: simplex::serde::Serializer,
                     {
-                        self.build_witness().serialize(serializer)
+                        let wit: WitnessValues = self.into();
+                        wit.serialize(serializer)
                     }
                 }
 
@@ -244,7 +235,7 @@ impl WitnessStruct {
                     where
                         D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = simplex::simplicityhl::WitnessValues::deserialize(deserializer)?;
+                        let x = WitnessValues::deserialize(deserializer)?;
                         Self::from_witness(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
@@ -255,9 +246,17 @@ impl WitnessStruct {
                     }
                 }
 
-                impl From<#struct_name> for simplex::simplicityhl::WitnessValues {
-                    fn from(val: #struct_name) -> simplex::simplicityhl::WitnessValues {
-                        val.build_witness()
+                impl From<#struct_name> for WitnessValues {
+                    fn from(#struct_param: #struct_name) -> WitnessValues {
+                        (&#struct_param).into()
+                    }
+                }
+
+                impl From<&#struct_name> for WitnessValues {
+                    fn from(#struct_param: &#struct_name) -> WitnessValues {
+                        WitnessValues::from(HashMap::from([
+                            #(#tuples),*
+                        ]))
                     }
                 }
             },
@@ -330,8 +329,11 @@ impl WitnessStruct {
     }
 
     #[inline]
-    fn construct_witness_tuples(&self) -> Vec<proc_macro2::TokenStream> {
-        self.witness_values.iter().map(WitnessField::to_token_stream).collect()
+    fn construct_witness_tuples(&self, struct_name: &Ident) -> Vec<proc_macro2::TokenStream> {
+        self.witness_values
+            .iter()
+            .map(|wit_field| wit_field.to_token_stream(struct_name))
+            .collect()
     }
 
     /// Generate conversion code from Arguments/WitnessValues back to struct fields.

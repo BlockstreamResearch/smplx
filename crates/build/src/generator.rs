@@ -289,6 +289,7 @@ impl ArtifactsGenerator {
             use simplex::provider::SimplicityNetwork;
             use simplex::simplicityhl::elements::Script;
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
+            use simplex::simplicityhl::Arguments;
 
             #[derive(Clone)]
             pub struct #program_name {
@@ -299,7 +300,7 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+                pub fn new(arguments: impl Into<Arguments>) -> Self {
                     Self {
                         program: Program::new(Self::SOURCE, arguments.into()),
                     }

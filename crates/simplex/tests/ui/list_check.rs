@@ -1,9 +1,9 @@
 use simplex::include_simf;
 use simplex::program::Program;
-use simplex::program::{ArgumentsTrait, WitnessTrait};
 use simplex::provider::SimplicityNetwork;
 use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::{Arguments, WitnessValues};
 
 #[derive(Clone)]
 pub struct ListCheckProgram {
@@ -12,7 +12,7 @@ pub struct ListCheckProgram {
 impl ListCheckProgram {
     pub const SOURCE: &'static str = derived_list_check::LIST_CHECK_CONTRACT_SOURCE;
     #[must_use]
-    pub fn new(arguments: impl Into<simplex::simplicityhl::Arguments>) -> Self {
+    pub fn new(arguments: impl Into<Arguments>) -> Self {
         Self {
             program: Program::new(Self::SOURCE, arguments.into()),
         }
@@ -82,13 +82,13 @@ fn test_e2e_behaviour() -> Result<(), String> {
         ]),
     };
 
-    let witness_values = original_witness.build_witness();
+    let witness_values = (&original_witness).into();
     let recovered_witness = derived_list_check::ListCheckWitness::from_witness(&witness_values)?;
     assert_eq!(original_witness, recovered_witness);
 
     let original_arguments = derived_list_check::ListCheckArguments::default();
 
-    let arguments_values = original_arguments.build_arguments();
+    let arguments_values = (&original_arguments).into();
     let recovered_arguments = derived_list_check::ListCheckArguments::from_arguments(&arguments_values)?;
     assert_eq!(original_arguments, recovered_arguments);
 
@@ -110,7 +110,10 @@ fn test_build_panic() -> Result<(), String> {
     // Register panic hook to reduce warnings
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
-    let result = std::panic::catch_unwind(|| original_witness.build_witness());
+    let result = std::panic::catch_unwind(|| {
+        let wit: WitnessValues = (&original_witness).into();
+        wit
+    });
     std::panic::set_hook(default_hook);
 
     assert!(
