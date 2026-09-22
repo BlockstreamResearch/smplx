@@ -49,7 +49,15 @@ impl Test {
             }
         }
 
-        Ok(())
+        Self::result_from_status(output.status)
+    }
+
+    fn result_from_status(status: std::process::ExitStatus) -> Result<(), CommandError> {
+        match status.code() {
+            Some(0) => Ok(()),
+            Some(code) => Err(CommandError::TestFailed(code)),
+            None => Err(CommandError::TestProcessTerminated),
+        }
     }
 
     fn build_cargo_nextest_command(
@@ -158,5 +166,40 @@ impl Test {
             .join(TARGET_DIR_NAME)
             .join(SIMPLEX_CACHE_DIR_NAME)
             .join(SIMPLEX_TEST_CONFIG_NAME))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::Test;
+    use crate::commands::error::CommandError;
+
+    #[test]
+    fn successful_test_process_returns_ok() {
+        let status = std::process::ExitStatus::from_raw(0);
+
+        assert!(Test::result_from_status(status).is_ok());
+    }
+
+    #[test]
+    fn failed_test_process_returns_a_command_error() {
+        let status = std::process::ExitStatus::from_raw(7 << 8);
+
+        assert!(matches!(
+            Test::result_from_status(status),
+            Err(CommandError::TestFailed(7))
+        ));
+    }
+
+    #[test]
+    fn terminated_test_process_returns_a_command_error() {
+        let status = std::process::ExitStatus::from_raw(15);
+
+        assert!(matches!(
+            Test::result_from_status(status),
+            Err(CommandError::TestProcessTerminated)
+        ));
     }
 }
