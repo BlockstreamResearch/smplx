@@ -4,6 +4,26 @@ use crate::provider::ProviderError;
 /// Core error types for the Signer component.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
+    /// A program finalizer produced an invalid or unsupported witness stack.
+    #[error("Invalid finalized Simplicity witness for input {index}: {reason}")]
+    InvalidProgramWitness {
+        /// Index of the failing input.
+        index: usize,
+        /// Description of the invalid serialization or budget.
+        reason: String,
+    },
+
+    /// The fully signed transaction exceeds standard relay weight.
+    #[error("Transaction weight {weight} exceeds the standard limit of 400000")]
+    TransactionTooLarge {
+        /// Actual transaction weight, including padding.
+        weight: usize,
+    },
+
+    /// Output-dependent execution did not settle within the fee estimation limit.
+    #[error("Fee estimation did not converge after 8 signing attempts")]
+    FeeEstimationDidNotConverge,
+
     /// Errors originating from Simplicity program evaluation and state.
     #[error(transparent)]
     Program(#[from] ProgramError),

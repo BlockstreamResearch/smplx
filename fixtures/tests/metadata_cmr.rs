@@ -80,3 +80,18 @@ fn metadata_content_matches_included_source() {
         assert_eq!(recorded, program_source, "metadata.json content is stale for {source}");
     }
 }
+
+#[test]
+fn generated_binding_prepares_padding_without_changing_default_metadata() {
+    let arguments = P2pkArguments::default();
+    let original = P2pkProgram::new(&arguments);
+    let padded = P2pkProgram::new(&arguments).with_automatic_padding().unwrap();
+
+    assert_ne!(original.get_cmr(), padded.get_cmr());
+    assert_eq!(padded.get_cmr(), padded.as_ref().get_cmr());
+    assert_eq!(
+        original.as_ref().get_witness_types().unwrap().iter().count(),
+        padded.as_ref().get_witness_types().unwrap().iter().count(),
+    );
+    assert_eq!(to_hex(original.get_cmr()), expected_cmr(&metadata(), "p2pk.simf"));
+}
