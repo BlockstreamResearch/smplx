@@ -113,8 +113,8 @@ impl ProgramLogger {
     /// Overwrites any previously buffered cost info.
     ///
     /// # Safety
-    /// Uses `transmute` to extract the inner `u32` from [`Cost`] since no public
-    /// accessor exists. Remove once `as_milliweight()` is upstreamed to rust-simplicity.
+    /// Uses `transmute` to extract the inner `u32` from [`Cost`](simplicityhl::simplicity::Cost) since no public accessor exists.
+    /// Remove once `as_milliweight()` is upstreamed to rust-simplicity.
     pub fn buffer_cost_log(input_index: usize, node: &Node<Redeem>) {
         let bounds = node.bounds();
         // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed

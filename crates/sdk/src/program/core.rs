@@ -8,7 +8,7 @@ use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
+use simplicityhl::simplicity::{BitMachine, CommitNode, RedeemNode, Value, leaf_version};
 use simplicityhl::{Arguments, Parameters, WitnessTypes, WitnessValues};
 use simplicityhl::{CompiledProgram, UnstableFeatures};
 
@@ -17,6 +17,7 @@ use crate::program::logger::ProgramLogger;
 
 use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
+use super::padding::Padding;
 
 use crate::provider::SimplicityNetwork;
 use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
@@ -89,6 +90,7 @@ pub struct Program {
     storage: Vec<Vec<u8>>,
     include_debug_symbols: Option<bool>,
     compiled: Arc<OnceLock<CompiledProgram>>,
+    padding: Option<Arc<OnceLock<Padding>>>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -109,7 +111,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.commitment()?.cmr();
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -166,7 +168,11 @@ impl ProgramTrait for Program {
 
         let env = self.get_env(pst, input_index, network)?;
 
-        let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
+        let redeem = match self.padding()? {
+            Some(padding) => padding.apply(satisfied.redeem()),
+            None => Arc::clone(satisfied.redeem()),
+        };
+        let pruned = redeem.prune_with_tracker(&env, &mut tracker)?;
 
         if GlobalConfig::is_max_verbose() {
             ProgramLogger::buffer_cost_log(input_index, &pruned);
@@ -191,12 +197,16 @@ impl ProgramTrait for Program {
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
         let cmr = pruned.cmr();
 
-        Ok(vec![
+        let stack = vec![
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
-        ])
+        ];
+        if !pruned.bounds().cost.is_budget_valid(&stack) {
+            return Err(ProgramError::InsufficientBudget);
+        }
+        Ok(stack)
     }
 }
 
@@ -214,7 +224,37 @@ impl Program {
             storage: Vec::new(),
             include_debug_symbols: None,
             compiled: Arc::new(OnceLock::new()),
+            padding: None,
         }
+    }
+
+    /// Adds framework-managed witness padding before this program's address is funded.
+    ///
+    /// This changes the CMR and address.
+    /// Application witness types stay unchanged.
+    /// The padding size is fixed from the unpruned execution bound at compilation.
+    /// This builder defers compilation until [`Self::prepare`] or another compilation-dependent operation.
+    /// Call [`Self::prepare`] before address or CMR getters to receive preparation errors instead of panicking.
+    /// Prefer [`Signer::prepare_program`](crate::signer::Signer::prepare_program) to prepare and validate in one call.
+    /// See [`padding`](super::padding) for an example and size limits.
+    #[must_use]
+    pub fn with_automatic_padding(mut self) -> Self {
+        if self.padding.is_none() {
+            self.padding = Some(Arc::new(OnceLock::new()));
+        }
+        self
+    }
+
+    /// Compiles the program and validates its automatic padding bound.
+    ///
+    /// This eagerly checks a program constructed with [`Self::with_automatic_padding`].
+    /// It also supports programs without padding.
+    ///
+    /// # Errors
+    /// Returns a `ProgramError` if compilation or padding preparation fails.
+    pub fn prepare(&self) -> Result<(), ProgramError> {
+        self.commitment()?;
+        Ok(())
     }
 
     /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
@@ -232,6 +272,9 @@ impl Program {
         self.include_debug_symbols = Some(include);
         // This changes the output CMR, so we need to update the cache
         self.compiled = Arc::new(OnceLock::new());
+        if self.padding.is_some() {
+            self.padding = Some(Arc::new(OnceLock::new()));
+        }
 
         self
     }
@@ -320,7 +363,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_cmr(&self) -> [u8; 32] {
-        self.load().unwrap().commit().cmr().to_byte_array()
+        self.commitment().unwrap().cmr().to_byte_array()
     }
 
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
@@ -360,6 +403,22 @@ impl Program {
         Ok(abi_meta.witness_types)
     }
 
+    fn padding(&self) -> Result<Option<&Padding>, ProgramError> {
+        let Some(cache) = &self.padding else { return Ok(None) };
+        if let Some(padding) = cache.get() {
+            return Ok(Some(padding));
+        }
+        let padding = Padding::new(&self.load()?.commit())?;
+        Ok(Some(cache.get_or_init(|| padding)))
+    }
+
+    fn commitment(&self) -> Result<Arc<CommitNode>, ProgramError> {
+        match self.padding()? {
+            Some(padding) => Ok(Arc::clone(&padding.commitment)),
+            None => Ok(self.load()?.commit()),
+        }
+    }
+
     fn load(&self) -> Result<&CompiledProgram, ProgramError> {
         // Check cache first
         if let Some(compiled) = self.compiled.get() {
@@ -381,7 +440,7 @@ impl Program {
     }
 
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.commitment()?.cmr();
         let script = Script::from(cmr.as_ref().to_vec());
 
         Ok((script, leaf_version()))

@@ -309,6 +309,20 @@ impl ArtifactsGenerator {
                     }
                 }
 
+                /// Prepares automatic padding before funding this program's address.
+                ///
+                /// This eagerly compiles and returns a binding with a new CMR and address.
+                /// Typed application witnesses stay unchanged.
+                /// See [`simplex::program::padding`] for size limits and signing behavior.
+                ///
+                /// # Errors
+                /// Returns an error if compilation or padding preparation fails.
+                pub fn with_automatic_padding(mut self) -> Result<Self, simplex::program::ProgramError> {
+                    self.program = self.program.with_automatic_padding();
+                    self.program.prepare()?;
+                    Ok(self)
+                }
+
                 #[must_use]
                 pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
                     self.program = self.program.with_taproot_pubkey(pub_key);

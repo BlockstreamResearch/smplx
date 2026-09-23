@@ -1,6 +1,21 @@
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
+    /// Preparing the fixed padding prefix failed.
+    #[error("Cannot prepare automatic padding: {0}")]
+    Padding(String),
+
+    /// The conservative padding requirement exceeds the framework's limit.
+    #[error("Automatic padding exceeds the {max_bytes}-byte limit")]
+    PaddingLimit {
+        /// Maximum framework-managed padding witness size.
+        max_bytes: usize,
+    },
+
+    /// The serialized input cannot pay for its execution cost.
+    #[error("Program execution exceeds its witness budget; prepare automatic padding before funding its address")]
+    InsufficientBudget,
+
     /// Error thrown when compiling the raw Simplicity program source fails.
     #[error("Failed to compile Simplicity program: {0}")]
     Compilation(String),

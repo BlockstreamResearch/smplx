@@ -13,6 +13,8 @@ use simplicityhl::elements::{Address, LockTime, Script, Sequence, Transaction};
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::simplicity::hashes::Hash;
+use simplicityhl::simplicity::jet::Elements;
+use simplicityhl::simplicity::{BitIter, RedeemNode};
 use simplicityhl::str::WitnessName;
 use simplicityhl::value::ValueConstructible;
 
@@ -33,8 +35,8 @@ use elements_miniscript::{
 };
 
 use crate::constants::MIN_FEE;
-use crate::program::ProgramTrait;
 use crate::program::logger::ProgramLogger;
+use crate::program::{Program, ProgramTrait};
 #[cfg(feature = "provider")]
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
@@ -142,6 +144,21 @@ enum Estimate {
 
 // TODO: refactor descriptors to be a standalone object to specify custom derivation paths.
 impl Signer {
+    /// Prepares automatic witness padding before a new program's address is funded.
+    ///
+    /// This eagerly compiles and returns a program with a new CMR and address.
+    /// Use the returned program for funding, signing and spending.
+    /// Application witnesses need no padding field.
+    /// See [`padding`](crate::program::padding) for an example and size limits.
+    ///
+    /// # Errors
+    /// Returns an error if compilation fails or the fixed padding exceeds its limit.
+    pub fn prepare_program(&self, program: Program) -> Result<Program, SignerError> {
+        let program = program.with_automatic_padding();
+        program.prepare()?;
+        Ok(program)
+    }
+
     /// Creates a new `Signer` instance seeded from the provided mnemonic and paired with the specified provider.
     ///
     /// # Panics
@@ -303,6 +320,9 @@ impl Signer {
     }
 
     /// Reports what an assembled transaction would cost in fees at the given rate.
+    ///
+    /// When change is omitted, this includes the entire remaining policy-asset amount paid as fee.
+    /// When funds are insufficient, this reports the estimated required fee.
     ///
     /// # Errors
     /// Returns a `SignerError` if the transaction cannot be signed.
@@ -552,22 +572,27 @@ impl Signer {
         ));
 
         let final_tx = self.sign_tx(&fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        let mut fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
-        if available_delta > fee && available_delta - fee >= MIN_FEE {
-            // We have enough funds to cover the change UTXO
+        for attempt in 0..8 {
+            if available_delta <= fee || available_delta - fee < MIN_FEE {
+                break;
+            }
             let outputs = fee_tx.outputs_mut();
-
             outputs[outputs.len() - 2].amount = available_delta - fee;
             outputs[outputs.len() - 1].amount = fee;
-
             if !fee_tx.is_balanced() {
                 return Err(SignerError::Unbalanced());
             }
-
             let final_tx = self.sign_tx(&fee_tx)?;
-
-            return Ok(Estimate::Success(final_tx, fee));
+            let required = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+            if required <= fee {
+                return Ok(Estimate::Success(final_tx, fee));
+            }
+            fee = required;
+            if attempt == 7 {
+                return Err(SignerError::FeeEstimationDidNotConverge);
+            }
         }
 
         // Not enough funds for the change, so estimate without it.
@@ -606,7 +631,11 @@ impl Signer {
         // Finalize the tx with fee and without the change
         let final_tx = self.sign_tx(&fee_tx)?;
 
-        Ok(Estimate::Success(final_tx, fee))
+        let required = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        if available_delta < required {
+            return Ok(Estimate::Failure(required));
+        }
+        Ok(Estimate::Success(final_tx, available_delta))
     }
 
     fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
@@ -659,6 +688,7 @@ impl Signer {
                         source,
                     })?;
 
+                Self::validate_program_witness(index, &pruned_witness)?;
                 pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
             } else {
                 // We need to sign the UTXO as is
@@ -670,7 +700,34 @@ impl Signer {
             }
         }
 
-        Ok(pst.extract_tx()?)
+        let transaction = pst.extract_tx()?;
+        if transaction.weight() > 400_000 {
+            return Err(SignerError::TransactionTooLarge {
+                weight: transaction.weight(),
+            });
+        }
+        Ok(transaction)
+    }
+
+    fn validate_program_witness(index: usize, stack: &Vec<Vec<u8>>) -> Result<(), SignerError> {
+        let invalid = |reason: String| SignerError::InvalidProgramWitness { index, reason };
+        if stack.len() != 4 {
+            return Err(invalid(
+                "expected witness, program, CMR and control block without annex".into(),
+            ));
+        }
+        let redeem = RedeemNode::decode::<_, _, Elements>(
+            BitIter::from(stack[1].as_slice()),
+            BitIter::from(stack[0].as_slice()),
+        )
+        .map_err(|err| invalid(err.to_string()))?;
+        if redeem.cmr().as_ref() != stack[2] {
+            return Err(invalid("serialized program does not match its CMR".into()));
+        }
+        if !redeem.bounds().cost.is_budget_valid(stack) {
+            return Err(invalid("execution exceeds the serialized witness budget".into()));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -778,17 +835,21 @@ impl Signer {
 }
 
 #[cfg(test)]
+#[path = "padding_tests.rs"]
+mod padding_tests;
+
+#[cfg(test)]
 mod tests {
-    use crate::provider::EsploraProvider;
+    use crate::transaction::{PartialInput, UTXO};
     use crate::utils::random_mnemonic;
+    use simplicityhl::elements::{OutPoint, Txid};
 
     use super::*;
 
     fn create_signer() -> Signer {
-        let url = "https://blockstream.info/liquidtestnet/api".to_string();
         let network = SimplicityNetwork::Liquid;
 
-        Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
+        Signer::from_mnemonic(random_mnemonic().as_str(), network)
     }
 
     fn confidential_input(signer: &Signer, value: u64) -> PartialInput {
@@ -874,11 +935,7 @@ mod tests {
         let address = signer.get_address();
         let pubkey = signer.get_ecdsa_public_key();
 
-        let derived_addr = Address::p2wpkh(
-            &pubkey,
-            None,
-            signer.get_provider().unwrap().get_network().address_params(),
-        );
+        let derived_addr = Address::p2wpkh(&pubkey, None, signer.network.address_params());
 
         assert_eq!(derived_addr.to_string(), address.to_string());
     }
