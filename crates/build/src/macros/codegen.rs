@@ -5,7 +5,7 @@ use simplicityhl::str::WitnessName;
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
 
 use crate::macros::parse::SimfContent;
-use crate::macros::types::RustType;
+use crate::macros::types::{AllocationType, RustType};
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
@@ -77,11 +77,13 @@ impl WitnessField {
     }
 
     /// Generate the conversion code from Rust value to Simplicity Value
-    fn to_token_stream(&self, struct_name: &Ident) -> proc_macro2::TokenStream {
+    fn to_token_stream(&self, struct_name: &Ident, alloc_type: AllocationType) -> proc_macro2::TokenStream {
         let witness_name = &self.witness_simf_name;
         let field_name = &self.struct_rust_field;
         let field_access = quote! { #struct_name.#field_name };
-        let conversion = self.rust_type.generate_to_simplicity_conversion(&field_access);
+        let conversion = self
+            .rust_type
+            .generate_to_simplicity_conversion(&field_access, alloc_type);
 
         quote! {
             (
@@ -101,7 +103,10 @@ impl WitnessStruct {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples(&struct_param);
+        let copied_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Move);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -163,14 +168,16 @@ impl WitnessStruct {
 
                 impl From<#struct_name> for Arguments {
                     fn from(#struct_param: #struct_name) -> Arguments {
-                        (&#struct_param).into()
+                        Arguments::from(HashMap::from([
+                            #(#moved_tuples),*
+                        ]))
                     }
                 }
 
                 impl From<&#struct_name> for Arguments {
                     fn from(#struct_param: &#struct_name) -> Arguments {
                         Arguments::from(HashMap::from([
-                            #(#tuples),*
+                            #(#copied_tuples),*
                         ]))
                     }
                 }
@@ -186,7 +193,10 @@ impl WitnessStruct {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples(&struct_param);
+        let copied_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Move);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -248,14 +258,16 @@ impl WitnessStruct {
 
                 impl From<#struct_name> for WitnessValues {
                     fn from(#struct_param: #struct_name) -> WitnessValues {
-                        (&#struct_param).into()
+                        WitnessValues::from(HashMap::from([
+                            #(#moved_tuples),*
+                        ]))
                     }
                 }
 
                 impl From<&#struct_name> for WitnessValues {
                     fn from(#struct_param: &#struct_name) -> WitnessValues {
                         WitnessValues::from(HashMap::from([
-                            #(#tuples),*
+                            #(#copied_tuples),*
                         ]))
                     }
                 }
@@ -329,10 +341,14 @@ impl WitnessStruct {
     }
 
     #[inline]
-    fn construct_witness_tuples(&self, struct_name: &Ident) -> Vec<proc_macro2::TokenStream> {
+    fn construct_witness_tuples(
+        &self,
+        struct_name: &Ident,
+        alloc_type: AllocationType,
+    ) -> Vec<proc_macro2::TokenStream> {
         self.witness_values
             .iter()
-            .map(|wit_field| wit_field.to_token_stream(struct_name))
+            .map(|wit_field| wit_field.to_token_stream(struct_name, alloc_type))
             .collect()
     }
 
