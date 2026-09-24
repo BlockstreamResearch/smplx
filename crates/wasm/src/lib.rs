@@ -84,6 +84,12 @@ struct FixedArguments(Arguments);
 
 impl From<FixedArguments> for Arguments {
     fn from(val: FixedArguments) -> Self {
+        val.0
+    }
+}
+
+impl From<&FixedArguments> for Arguments {
+    fn from(val: &FixedArguments) -> Self {
         val.0.clone()
     }
 }
@@ -94,6 +100,12 @@ struct FixedWitness(WitnessValues);
 
 impl From<FixedWitness> for WitnessValues {
     fn from(val: FixedWitness) -> Self {
+        val.0
+    }
+}
+
+impl From<&FixedWitness> for WitnessValues {
+    fn from(val: &FixedWitness) -> Self {
         val.0.clone()
     }
 }

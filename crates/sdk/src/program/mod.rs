@@ -5,6 +5,6 @@ pub mod error;
 /// Program execution's specific logger
 pub mod logger;
 
-pub use core::{Program, ProgramTrait};
+pub use core::{Program, ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
 pub use error::ProgramError;
 pub use simplicityhl::tracker::TrackerLogLevel;

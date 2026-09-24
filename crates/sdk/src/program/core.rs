@@ -76,6 +76,20 @@ pub trait ProgramTrait: DynClone {
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
+/// An interface for the struct capable of generating proper `Arguments` mappings using the provided RNG.
+/// See the ` include_simf!()` macro, which generates an automatic `ArgumentsTrait` implementation.
+pub trait RandomArguments: Into<Arguments> {
+    /// Generates a random `Arguments` instance using the provided RNG.
+    fn generate_arguments(rng: &mut dyn rand_core::RngCore) -> Arguments;
+}
+
+/// An interface for the struct capable of generating proper `WitnessValues` mappings using the provided RNG.
+/// See the ` include_simf!()` macro, which generates an automatic `RandomWitness` implementation.
+pub trait RandomWitness: Into<WitnessValues> {
+    /// Generates a random `WitnessValues` instance using the provided RNG.
+    fn generate_witness(rng: &mut dyn rand_core::RngCore) -> WitnessValues;
+}
+
 /// Represents a program structure containing its public key, compiled program, and associated storage.
 /// A compiled program acts as a cache, instantiated during "loading".
 ///
@@ -196,6 +210,45 @@ impl ProgramTrait for Program {
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
         ])
+    }
+}
+
+impl<T: ProgramTrait + Sized> ProgramTrait for &T {
+    fn get_argument_types(&self) -> Result<Parameters, ProgramError> {
+        (*self).get_argument_types()
+    }
+
+    fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
+        (*self).get_witness_types()
+    }
+
+    fn get_env(
+        &self,
+        pst: &PartiallySignedTransaction,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
+        (*self).get_env(pst, input_index, network)
+    }
+
+    fn execute(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
+        (*self).execute(pst, witness, input_index, network)
+    }
+
+    fn finalize(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        (*self).finalize(pst, witness, input_index, network)
     }
 }
 
@@ -359,7 +412,11 @@ impl Program {
         Ok(abi_meta.witness_types)
     }
 
-    fn load(&self) -> Result<&CompiledProgram, ProgramError> {
+    /// Compiles program by providing saved `Arguments`.
+    ///
+    /// # Errors
+    /// Retruns an error we have problems in a program compilation.
+    pub fn load(&self) -> Result<&CompiledProgram, ProgramError> {
         // Check cache first
         if let Some(compiled) = self.compiled.get() {
             return Ok(compiled);
@@ -428,6 +485,14 @@ impl Program {
 
         Ok(info.control_block(&script_ver).expect("control block should exist"))
     }
+}
+
+/// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
+/// for constructing and returning a program instance of a type that implements `AsRef<Program>`.
+/// Even only by generic struct name we have a possibility to create an instance of a program.
+pub trait ProgramFactory<P: AsRef<Program> + Sized> {
+    /// Instantiates a program instance with the given arguments.
+    fn instantiate_program(args: impl Into<Arguments>) -> Box<P>;
 }
 
 #[cfg(test)]
