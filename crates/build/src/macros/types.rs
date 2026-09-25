@@ -35,6 +35,13 @@ enum RustTypeContext {
     List,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub enum AllocationType {
+    #[default]
+    Copy,
+    Move,
+}
+
 impl Display for RustTypeContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
@@ -174,18 +181,24 @@ impl RustType {
         }
     }
 
-    pub fn generate_to_simplicity_conversion(&self, value_expr: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
-        self.generate_to_simplicity_conversion_inner(value_expr, None)
+    pub fn generate_to_simplicity_conversion(
+        &self,
+        value_expr: &proc_macro2::TokenStream,
+        alloc_type: AllocationType,
+    ) -> proc_macro2::TokenStream {
+        self.generate_to_simplicity_conversion_inner(value_expr, alloc_type, None)
     }
 
     fn generate_to_simplicity_conversion_inner(
         &self,
         value_expr: &proc_macro2::TokenStream,
+        alloc_type: AllocationType,
         prev_type: Option<RustTypeContext>,
     ) -> proc_macro2::TokenStream {
         let deref = {
             if let Some(type_context) = prev_type
                 && type_context.is_deref_needed()
+                && let AllocationType::Copy = alloc_type
             {
                 quote! { * }
             } else {
@@ -229,7 +242,11 @@ impl RustType {
                     .iter()
                     .map(|idx| {
                         let elem_expr = quote! { #value_expr[#idx] };
-                        element.generate_to_simplicity_conversion_inner(&elem_expr, Some(RustTypeContext::Array))
+                        element.generate_to_simplicity_conversion_inner(
+                            &elem_expr,
+                            alloc_type,
+                            Some(RustTypeContext::Array),
+                        )
                     })
                     .collect();
 
@@ -250,7 +267,11 @@ impl RustType {
                         let idx = syn::Index::from(i);
                         let elem_expr = quote! { #value_expr.#idx };
 
-                        elem_ty.generate_to_simplicity_conversion_inner(&elem_expr, Some(RustTypeContext::Tuple))
+                        elem_ty.generate_to_simplicity_conversion_inner(
+                            &elem_expr,
+                            alloc_type,
+                            Some(RustTypeContext::Tuple),
+                        )
                     });
 
                     quote! {
@@ -259,15 +280,25 @@ impl RustType {
                 }
             }
             RustType::Either(left, right) => {
-                let left_conv = left
-                    .generate_to_simplicity_conversion_inner(&quote! { left_val }, Some(RustTypeContext::EitherLeft));
-                let right_conv = right
-                    .generate_to_simplicity_conversion_inner(&quote! { right_val }, Some(RustTypeContext::EitherRight));
+                let left_conv = left.generate_to_simplicity_conversion_inner(
+                    &quote! { left_val },
+                    alloc_type,
+                    Some(RustTypeContext::EitherLeft),
+                );
+                let right_conv = right.generate_to_simplicity_conversion_inner(
+                    &quote! { right_val },
+                    alloc_type,
+                    Some(RustTypeContext::EitherRight),
+                );
                 let left_ty = left.generate_simplicity_type_construction();
                 let right_ty = right.generate_simplicity_type_construction();
+                let access = match alloc_type {
+                    AllocationType::Copy => quote! {&},
+                    AllocationType::Move => quote! {},
+                };
 
                 quote! {
-                    match &#value_expr {
+                    match #access #value_expr {
                         simplex::either::Either::Left(left_val) => {
                             Value::left(
                                 #left_conv,
@@ -284,12 +315,19 @@ impl RustType {
                 }
             }
             RustType::Option(inner) => {
-                let inner_conv =
-                    inner.generate_to_simplicity_conversion_inner(&quote! { inner_val }, Some(RustTypeContext::Option));
+                let inner_conv = inner.generate_to_simplicity_conversion_inner(
+                    &quote! { inner_val },
+                    alloc_type,
+                    Some(RustTypeContext::Option),
+                );
                 let inner_ty = inner.generate_simplicity_type_construction();
+                let access = match alloc_type {
+                    AllocationType::Copy => quote! {&},
+                    AllocationType::Move => quote! {},
+                };
 
                 quote! {
-                    match &#value_expr {
+                    match #access #value_expr {
                         None => {
                             Value::none(#inner_ty)
                         }
@@ -302,13 +340,25 @@ impl RustType {
             RustType::List(element, size) => {
                 let iter_tmp_var_name = quote! { x };
                 let element_conversion = {
-                    element.generate_to_simplicity_conversion_inner(&iter_tmp_var_name, Some(RustTypeContext::List))
+                    element.generate_to_simplicity_conversion_inner(
+                        &iter_tmp_var_name,
+                        alloc_type,
+                        Some(RustTypeContext::List),
+                    )
                 };
                 let elem_ty_generation = element.generate_simplicity_type_construction();
+                let iter_expression = match alloc_type {
+                    AllocationType::Copy => quote! {
+                        #value_expr.iter().map(|& #iter_tmp_var_name| #element_conversion).collect::<Vec<_>>()
+                    },
+                    AllocationType::Move => quote! {
+                        #value_expr.into_iter().map(|#iter_tmp_var_name| #element_conversion).collect::<Vec<_>>()
+                    },
+                };
 
                 quote! {
                     {
-                        let elements = #value_expr.iter().map(|& #iter_tmp_var_name| #element_conversion).collect::<Vec<_>>();
+                        let elements = #iter_expression;
                         let non_zero_pow2_size = NonZeroPow2Usize::new(#size).ok_or_else(|| format!("Failed to create non zero pow2 length, got size: '{}'", #size)).unwrap();
 
                         assert!(elements.len() < non_zero_pow2_size.get(), "There must be fewer list elements than the bound '{}'", non_zero_pow2_size.get());

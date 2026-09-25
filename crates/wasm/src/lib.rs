@@ -18,7 +18,7 @@ use simplicityhl::elements::{self, Sequence};
 use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
 use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
 
-use smplx_sdk::program::{ArgumentsTrait, Program, WitnessTrait};
+use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::partial_input::IssuanceInput;
@@ -82,9 +82,9 @@ impl IssuanceReport {
 #[derive(Clone)]
 struct FixedArguments(Arguments);
 
-impl ArgumentsTrait for FixedArguments {
-    fn build_arguments(&self) -> Arguments {
-        self.0.clone()
+impl From<FixedArguments> for Arguments {
+    fn from(val: FixedArguments) -> Self {
+        val.0.clone()
     }
 }
 
@@ -92,9 +92,9 @@ impl ArgumentsTrait for FixedArguments {
 #[derive(Clone)]
 struct FixedWitness(WitnessValues);
 
-impl WitnessTrait for FixedWitness {
-    fn build_witness(&self) -> WitnessValues {
-        self.0.clone()
+impl From<FixedWitness> for WitnessValues {
+    fn from(val: FixedWitness) -> Self {
+        val.0.clone()
     }
 }
 
@@ -208,7 +208,7 @@ impl Covenant {
             _ => Arguments::default(),
         };
 
-        let mut program = Program::new(Arc::<str>::from(source), &FixedArguments(arguments));
+        let mut program = Program::new(Arc::<str>::from(source), FixedArguments(arguments));
 
         if let Some(include) = include_debug_symbols {
             program = program.with_debug_symbols(include);
@@ -674,7 +674,7 @@ impl TransactionBuilder {
 
         program_input
             .program
-            .execute(&pst, &program_input.witness.build_witness(), input_index, &network)
+            .execute(&pst, &program_input.witness, input_index, &network)
             .map_err(|e| JsError::new(&format!("Input {input_index} did not execute: {e}")))?;
 
         Ok(())
@@ -811,7 +811,7 @@ impl TransactionBuilder {
 
         Ok(ProgramInput {
             program: Box::new(Covenant::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
-            witness: Box::new(FixedWitness(witness)),
+            witness: FixedWitness(witness).into(),
         })
     }
 }

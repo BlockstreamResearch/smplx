@@ -15,7 +15,6 @@ use simplicityhl::{CompiledProgram, UnstableFeatures};
 use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
 
-use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
@@ -206,11 +205,11 @@ impl Program {
 
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
-    pub fn new(source: impl Into<Arc<str>>, arguments: &dyn ArgumentsTrait) -> Self {
+    pub fn new(source: impl Into<Arc<str>>, arguments: impl Into<Arguments>) -> Self {
         Self {
             source: source.into(),
             pub_key: tr_unspendable_key(),
-            arguments: arguments.build_arguments(),
+            arguments: arguments.into(),
             storage: Vec::new(),
             include_debug_symbols: None,
             compiled: Arc::new(OnceLock::new()),
@@ -495,8 +494,14 @@ mod tests {
     #[derive(Clone)]
     struct EmptyArguments;
 
-    impl ArgumentsTrait for EmptyArguments {
-        fn build_arguments(&self) -> Arguments {
+    impl From<EmptyArguments> for Arguments {
+        fn from(_val: EmptyArguments) -> Self {
+            Arguments::default()
+        }
+    }
+
+    impl From<&EmptyArguments> for Arguments {
+        fn from(_val: &EmptyArguments) -> Self {
             Arguments::default()
         }
     }
@@ -506,7 +511,7 @@ mod tests {
     }
 
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, &EmptyArguments)
+        Program::new(DUMMY_PROGRAM, EmptyArguments {})
     }
 
     fn dummy_network() -> SimplicityNetwork {

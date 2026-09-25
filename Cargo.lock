@@ -1365,7 +1365,6 @@ dependencies = [
 name = "smplx-build"
 version = "0.0.12"
 dependencies = [
- "glob",
  "globwalk",
  "pathdiff",
  "prettyplease",
