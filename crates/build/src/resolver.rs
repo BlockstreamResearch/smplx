@@ -108,20 +108,27 @@ impl ArtifactsResolver {
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
     /// - `None` when the URL is empty or malformed such that no repository name
     ///   can be determined.
-    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>) -> Option<PathBuf> {
+    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>, package: Option<&str>) -> Option<PathBuf> {
         let clean_url = url.strip_suffix(".git").unwrap_or(url);
         let repo_name = clean_url.split('/').next_back()?;
 
-        let tag = match reference {
-            Some(GitRef::Rev(rev)) => format!("rev={rev}"),
-            Some(GitRef::Tag(tag)) => format!("tag={tag}"),
-            Some(GitRef::Branch(branch)) => format!("branch={branch}"),
-            None => "HEAD".into(),
-        };
-        let url = format!("{url}@{tag}");
+        // Only fields that are actually set take part in the key, so adding a new
+        // optional field never changes the directory of dependencies that don't use it.
+        let reference = reference.map(|reference| match reference {
+            GitRef::Rev(rev) => format!("rev={rev}"),
+            GitRef::Tag(tag) => format!("tag={tag}"),
+            GitRef::Branch(branch) => format!("branch={branch}"),
+        });
+        let package = package.map(|package| format!("package={package}"));
+
+        let key = std::iter::once(url.to_owned())
+            .chain(reference)
+            .chain(package)
+            .collect::<Vec<_>>()
+            .join("@");
 
         let mut hasher = DefaultHasher::new();
-        url.hash(&mut hasher);
+        key.hash(&mut hasher);
         let hash_value = hasher.finish();
 
         // Do it the Rust way: EXACTLY 16 hex characters
