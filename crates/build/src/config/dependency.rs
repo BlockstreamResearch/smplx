@@ -23,7 +23,11 @@ pub struct DependencyConfig {
 #[derive(Debug, Clone)]
 pub enum Dependency {
     Path(String),
-    Git { url: String, reference: Option<GitRef> },
+    Git {
+        url: String,
+        reference: Option<GitRef>,
+        package: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -51,8 +55,10 @@ struct RawDependency {
     rev: Option<String>,
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
-    /// The specific branch to download (only applicable if `branch` is provided)
+    /// The specific branch to download (only applicable if `branch` is provided).
     branch: Option<String>,
+    /// The specific directory with contracts to download (only applicable if `git` is provided).
+    package: Option<String>,
 }
 
 impl DependencyConfig {
@@ -127,7 +133,7 @@ impl RawDependency {
             (Some(_), Some(_)) => Err(DependencyValidationError::Conflicting(name.into())),
             (None, None) => Err(DependencyValidationError::Missing(name.into())),
             (Some(p), None) => {
-                if self.rev.is_some() || self.tag.is_some() || self.branch.is_some() {
+                if self.rev.is_some() || self.tag.is_some() || self.branch.is_some() || self.package.is_some() {
                     return Err(DependencyValidationError::PathWithGitField(name.into()));
                 }
 
@@ -143,8 +149,13 @@ impl RawDependency {
                 };
 
                 let url = Self::reject_dash_prefix(name, "git", url)?;
+                let package = self.package.map(|p| Self::normalize_package(name, p)).transpose()?;
 
-                Ok(Dependency::Git { url, reference })
+                Ok(Dependency::Git {
+                    url,
+                    reference,
+                    package,
+                })
             }
         }
     }
@@ -159,6 +170,27 @@ impl RawDependency {
         }
 
         Ok(value)
+    }
+
+    /// Normalizes `package` to a plain relative directory path (`a/b`) inside the repository.
+    fn normalize_package(name: &str, value: String) -> Result<String, DependencyValidationError> {
+        let trimmed = value.trim_matches('/');
+
+        let has_bad_segment = trimmed
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..");
+        let has_pattern_chars = trimmed
+            .chars()
+            .any(|c| matches!(c, '*' | '?' | '[' | ']' | '!' | '#' | '\\') || c.is_whitespace());
+
+        if trimmed.is_empty() || has_bad_segment || has_pattern_chars {
+            return Err(DependencyValidationError::InvalidPackage {
+                name: name.into(),
+                value,
+            });
+        }
+
+        Self::reject_dash_prefix(name, "package", trimmed.to_owned())
     }
 }
 
@@ -203,6 +235,52 @@ mod tests {
         assert!(
             matches!(config.inner.get("branch"), Some(Dependency::Git { reference: Some(GitRef::Branch(value)), .. }) if value == "main")
         );
+    }
+
+    #[test]
+    fn git_package_is_normalized() {
+        let config = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                pkg = { git = "https://example.com/mono.git", tag = "v1", package = "/contracts/temp/" }
+            "#,
+        )
+        .expect("dependency config should parse");
+
+        assert!(
+            matches!(config.inner.get("pkg"), Some(Dependency::Git { package: Some(value), .. }) if value == "contracts/temp")
+        );
+    }
+
+    #[test]
+    fn invalid_git_package_is_rejected() {
+        for package in [
+            "",
+            "/",
+            "../outside",
+            "contracts/../..",
+            "contracts//temp",
+            "contracts/*",
+            "-x",
+        ] {
+            let result = DependencyConfig::from_source(&format!(
+                "[dependencies]\npkg = {{ git = \"https://example.com/mono.git\", package = \"{package}\" }}"
+            ));
+
+            assert!(result.is_err(), "package '{package}' should be rejected");
+        }
+    }
+
+    #[test]
+    fn path_with_package_is_rejected() {
+        let result = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                broken = { path = "../local", package = "contracts" }
+            "#,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]
