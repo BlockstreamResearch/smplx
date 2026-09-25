@@ -57,7 +57,7 @@ simf_files = ["*.simf"]
 out_dir = "./src/artifacts"
 
 [dependencies]
-some_dep = { git = "<git url>", path = "<or relative path>", <tag | rev> = "<tag name | commit>" } 
+some_dep = { git = "<git url>", path = "<or relative path>", <tag | rev | branch> = "<tag name | commit | branch name>", package = "<dir path>" } 
 
 [regtest]
 mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
