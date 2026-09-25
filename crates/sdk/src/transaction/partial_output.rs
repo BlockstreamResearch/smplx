@@ -60,3 +60,17 @@ impl PartialOutput {
         output
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_output_is_zero_value_and_unblinded() {
+        let output = PartialOutput::new_metadata(b"hello");
+
+        assert_eq!(output.amount, 0);
+        assert_eq!(output.asset, AssetId::default());
+        assert!(output.blinding_key.is_none());
+    }
+}

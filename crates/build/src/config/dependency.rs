@@ -136,15 +136,29 @@ impl RawDependency {
             (None, Some(url)) => {
                 let reference = match (self.rev, self.tag, self.branch) {
                     (None, None, None) => None,
-                    (Some(v), None, None) => Some(GitRef::Rev(v)),
-                    (None, Some(t), None) => Some(GitRef::Tag(t)),
-                    (None, None, Some(b)) => Some(GitRef::Branch(b)),
+                    (Some(v), None, None) => Some(GitRef::Rev(Self::reject_dash_prefix(name, "rev", v)?)),
+                    (None, Some(t), None) => Some(GitRef::Tag(Self::reject_dash_prefix(name, "tag", t)?)),
+                    (None, None, Some(b)) => Some(GitRef::Branch(Self::reject_dash_prefix(name, "branch", b)?)),
                     _ => return Err(DependencyValidationError::ConflictingGitRef(name.into())),
                 };
+
+                let url = Self::reject_dash_prefix(name, "git", url)?;
 
                 Ok(Dependency::Git { url, reference })
             }
         }
+    }
+
+    fn reject_dash_prefix(name: &str, field: &'static str, value: String) -> Result<String, DependencyValidationError> {
+        if value.starts_with('-') {
+            return Err(DependencyValidationError::DashPrefixed {
+                name: name.into(),
+                field,
+                value,
+            });
+        }
+
+        Ok(value)
     }
 }
 
@@ -159,5 +173,65 @@ impl<'de> Deserialize<'de> for DependencyConfig {
         }
 
         Ok(Self { inner })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_and_git_references_are_loaded() {
+        let config = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                local = { path = "../local" }
+                revision = { git = "https://example.com/revision.git", rev = "abc" }
+                release = { git = "https://example.com/release.git", tag = "v1" }
+                branch = { git = "https://example.com/branch.git", branch = "main" }
+            "#,
+        )
+        .expect("dependency config should parse");
+
+        assert!(matches!(config.inner.get("local"), Some(Dependency::Path(path)) if path == "../local"));
+        assert!(
+            matches!(config.inner.get("revision"), Some(Dependency::Git { reference: Some(GitRef::Rev(value)), .. }) if value == "abc")
+        );
+        assert!(
+            matches!(config.inner.get("release"), Some(Dependency::Git { reference: Some(GitRef::Tag(value)), .. }) if value == "v1")
+        );
+        assert!(
+            matches!(config.inner.get("branch"), Some(Dependency::Git { reference: Some(GitRef::Branch(value)), .. }) if value == "main")
+        );
+    }
+
+    #[test]
+    fn conflicting_dependency_sources_are_rejected() {
+        let result = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                broken = { path = "../local", git = "https://example.com/broken.git" }
+            "#,
+        );
+
+        assert!(
+            matches!(result, Err(BuildError::ConfigDeserialize(ref error)) if error.to_string().contains("cannot specify both 'path' and 'git'"))
+        );
+    }
+
+    #[test]
+    fn dependency_edit_preserves_existing_toml() {
+        let path = std::env::temp_dir().join(format!("smplx-dependency-edit-{}.toml", std::process::id()));
+        std::fs::write(&path, "# keep this comment\n[package]\nname = \"fixture\"\n")
+            .expect("fixture should be writable");
+
+        DependencyConfig::add_dependency_to(&path, &["local=../local".to_string()])
+            .expect("dependency should be added");
+        let content = std::fs::read_to_string(&path).expect("fixture should be readable");
+
+        assert!(content.contains("# keep this comment"));
+        assert!(content.contains("local = { path = \"../local\" }"));
+
+        let _ = std::fs::remove_file(path);
     }
 }

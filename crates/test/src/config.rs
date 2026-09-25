@@ -84,3 +84,50 @@ impl Default for TestConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_round_trips_and_converts_to_regtest() {
+        let path = std::env::temp_dir().join(format!("smplx-test-config-{}.toml", std::process::id()));
+        let config = TestConfig {
+            mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+                .into(),
+            bitcoins: 42,
+            verbosity: Verbosity::Trace,
+            esplora: Some(EsploraConfig {
+                url: "http://localhost:3000".into(),
+                network: "ElementsRegtest".into(),
+            }),
+            rpc: Some(RpcConfig {
+                url: "http://localhost:18443".into(),
+                username: "user".into(),
+                password: "password".into(),
+            }),
+        };
+
+        config.to_file(&path).expect("test config should be written");
+        let loaded = TestConfig::from_file(&path).expect("test config should be loaded");
+        let regtest = loaded.to_regtest_config();
+
+        assert_eq!(loaded.mnemonic, config.mnemonic);
+        assert_eq!(loaded.bitcoins, config.bitcoins);
+        assert_eq!(loaded.verbosity, Verbosity::Trace);
+        let esplora = loaded.esplora.as_ref().unwrap();
+        assert_eq!(esplora.url, "http://localhost:3000");
+        assert_eq!(esplora.network, "ElementsRegtest");
+        let rpc = loaded.rpc.as_ref().unwrap();
+        assert_eq!(rpc.url, "http://localhost:18443");
+        assert_eq!(rpc.username, "user");
+        assert_eq!(rpc.password, "password");
+        assert_eq!(regtest.mnemonic, config.mnemonic);
+        assert_eq!(regtest.bitcoins, config.bitcoins);
+        assert!(regtest.rpc_port.is_none());
+        assert!(regtest.esplora_port.is_none());
+        assert!(regtest.rpc_user.is_none());
+        assert!(regtest.rpc_password.is_none());
+        let _ = std::fs::remove_file(path);
+    }
+}

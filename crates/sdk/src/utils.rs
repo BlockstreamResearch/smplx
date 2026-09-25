@@ -110,4 +110,20 @@ mod tests {
 
         assert_eq!(tap_data_hash(data), tagged_hash("TapData", data));
     }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn asset_entropy_and_unit_conversions_are_deterministic() {
+        // Elements Core 0.17 reference vector (also in rust-elements issuance tests).
+        let outpoint = "05a047c98e82a848dee94efcf32462b065198bebf2404d201ba2e06db30b28f4:0"
+            .parse()
+            .unwrap();
+
+        assert_eq!(
+            asset_entropy(&outpoint, [0; 32]).to_string(),
+            "746f447f691323502cad2ef646f932613d37a83aeaa2133185b316648df4b70a"
+        );
+        assert_eq!(sat2btc(123), 0.000_001_23);
+        assert_eq!(btc2sat(1), 100_000_000);
+    }
 }

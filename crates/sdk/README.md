@@ -8,7 +8,7 @@ It also streamlines building, signing, and broadcasting transactions on Liquid.
 
 - `signer` - Securely parse BIP39 mnemonics, manage keys, sign transactions, and work with confidential addresses.
 - `provider` - Connect to existing Elements nodes via RPC or Esplora APIs to query UTXOs and broadcast transactions.
-- `transaction` - High-level builder abstractions over `FinalTransaction`, `TxReceipt`, `UTXO`, `PartialInput`, and `PartialOutput`.
+- `transaction` - High-level builder abstractions over `FinalTransaction`, `UTXO`, `PartialInput`, and `PartialOutput`.
 - `program` - Load and interact with Simplicity (`.simf`) smart contracts.
 
 The `smplx-sdk` can be used as a standalone SDK, however, check out [Smplx](https://github.com/BlockstreamResearch/smplx) for a complete Simplicity development experience.

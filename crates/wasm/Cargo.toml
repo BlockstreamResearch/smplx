@@ -1,6 +1,6 @@
 [package]
 name = "smplx-wasm"
-version = "0.0.11"
+version = "0.0.12"
 description = "WebAssembly bindings for the Simplex SDK"
 license.workspace = true
 edition.workspace = true

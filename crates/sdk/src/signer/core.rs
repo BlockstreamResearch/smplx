@@ -302,6 +302,21 @@ impl Signer {
         }
     }
 
+    /// Reports what an assembled transaction would cost in fees at the given rate.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if the transaction cannot be signed.
+    pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
+        let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
+        let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
+
+        ProgramLogger::flush_logs();
+
+        Ok(match estimate? {
+            Estimate::Success(_, fee) | Estimate::Failure(fee) => fee,
+        })
+    }
+
     /// Returns a reference to the active configured network provider.
     ///
     /// # Errors
@@ -516,6 +531,12 @@ impl Signer {
             }
         };
 
+        // A confidential input with an explicit change target and no blinded
+        // output cannot be balanced, which the node rejects with `bad-txns-in-ne-out`.
+        if fee_tx.has_confidential_input() && !fee_tx.needs_blinding() && change.blinding_key.is_none() {
+            return Err(SignerError::ConfidentialInputWithoutBlindedOutput);
+        }
+
         let mut change_output = PartialOutput::new(change.script_pubkey, PLACEHOLDER_FEE, self.network.policy_asset());
 
         if let Some(blinding_key) = change.blinding_key {
@@ -540,17 +561,31 @@ impl Signer {
             outputs[outputs.len() - 2].amount = available_delta - fee;
             outputs[outputs.len() - 1].amount = fee;
 
+            if !fee_tx.is_balanced() {
+                return Err(SignerError::Unbalanced());
+            }
+
             let final_tx = self.sign_tx(&fee_tx)?;
 
             return Ok(Estimate::Success(final_tx, fee));
         }
 
-        // Not enough funds, so we need to estimate without the change
-        // TODO: if a UTXO being spent is confidential + there are no
-        // confidential outputs + there is no change, this will fail
-        // with `RPC error -26: bad-txns-in-ne-out, value in != value out`.
-        // Fix this by adding a dummy change or throwing a clear error.
-        fee_tx.remove_output(fee_tx.n_outputs() - 2);
+        // Not enough funds for the change, so estimate without it.
+        // Dropping the change is only safe while something else stays blinded.
+        // When it is the transaction's only blinded output and an input is confidential,
+        // removing it makes the transaction unblindable.
+        let change_index = fee_tx.n_outputs() - 2;
+        let blinded_without_change = fee_tx
+            .outputs()
+            .iter()
+            .enumerate()
+            .any(|(index, output)| index != change_index && output.blinding_key.is_some());
+
+        if fee_tx.has_confidential_input() && !blinded_without_change {
+            return Ok(Estimate::Failure(fee + MIN_FEE));
+        }
+
+        fee_tx.remove_output(change_index);
 
         let final_tx = self.sign_tx(&fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
@@ -563,6 +598,10 @@ impl Signer {
 
         // Change the fee output amount
         outputs[outputs.len() - 1].amount = available_delta;
+
+        if !fee_tx.is_balanced() {
+            return Err(SignerError::Unbalanced());
+        }
 
         // Finalize the tx with fee and without the change
         let final_tx = self.sign_tx(&fee_tx)?;
@@ -750,6 +789,82 @@ mod tests {
         let network = SimplicityNetwork::Liquid;
 
         Signer::new(random_mnemonic().as_str(), Box::new(EsploraProvider::new(url, network)))
+    }
+
+    fn confidential_input(signer: &Signer, value: u64) -> PartialInput {
+        use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
+        use simplicityhl::elements::hashes::Hash;
+        use simplicityhl::elements::{TxOut, TxOutSecrets};
+
+        PartialInput::new(UTXO {
+            outpoint: OutPoint::new(Txid::from_slice(&[0x01; 32]).unwrap(), 0),
+            txout: TxOut::default(),
+            secrets: Some(TxOutSecrets::new(
+                signer.network.policy_asset(),
+                AssetBlindingFactor::zero(),
+                value,
+                ValueBlindingFactor::zero(),
+            )),
+        })
+    }
+
+    #[test]
+    fn explicit_change_target_cannot_balance_a_confidential_input() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            50_000,
+            signer.network.policy_asset(),
+        ));
+        ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
+
+        assert!(matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
+    }
+
+    #[test]
+    fn blinded_output_lets_the_explicit_change_target_stand() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(
+            PartialOutput::new(
+                signer.get_address().script_pubkey(),
+                50_000,
+                signer.network.policy_asset(),
+            )
+            .with_blinding_key(signer.get_blinding_public_key()),
+        );
+        ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
+
+        assert!(!matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
+    }
+
+    #[test]
+    fn default_change_target_balances_it_by_itself() {
+        let signer = create_signer();
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            50_000,
+            signer.network.policy_asset(),
+        ));
+
+        assert!(!matches!(
+            signer.estimate_fee(&ft, 1.0),
+            Err(SignerError::ConfidentialInputWithoutBlindedOutput)
+        ));
     }
 
     #[test]

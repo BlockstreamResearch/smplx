@@ -353,6 +353,19 @@ impl FinalTransaction {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
     }
 
+    /// Checks whether any input being spent is confidential.
+    ///
+    /// Blinding balances the inputs against the outputs, so a transaction spending a confidential input needs
+    /// at least one blinded output to balance against. Left without one it is rejected by the node as `bad-txns-in-ne-out`.
+    #[must_use]
+    pub fn has_confidential_input(&self) -> bool {
+        self.inputs.iter().any(|el| {
+            el.partial_input.witness_utxo.value.is_confidential()
+                || el.partial_input.witness_utxo.asset.is_confidential()
+                || el.partial_input.secrets.is_some()
+        })
+    }
+
     /// Calculates the fee delta for a transaction based on the inputs and outputs.
     ///
     /// The fee delta represents the net difference between the available asset amount
@@ -361,7 +374,7 @@ impl FinalTransaction {
     /// and outputs contribute to the calculation.
     ///
     /// # Panics
-    /// Function will panic if the asset doesn't be unblinded correctly, and PST input asset and amount is confidential.
+    /// Function will panic if the asset isn't unblinded correctly, and if PST input asset and amount is confidential.
     #[must_use]
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
         let mut available_amount = 0;
@@ -390,6 +403,63 @@ impl FinalTransaction {
             .fold(0_u64, |acc, output| acc + output.amount);
 
         available_amount.cast_signed() - consumed_amount.cast_signed()
+    }
+
+    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
+    ///
+    /// Issued and reissued amounts are credited to the input that declares them, so a newly created
+    /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
+    ///
+    /// # Panics
+    /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
+    #[must_use]
+    pub fn is_balanced(&self) -> bool {
+        let mut transfers: HashMap<AssetId, i64> = HashMap::new();
+
+        // Collecting all inputs
+        for input in &self.inputs {
+            let (asset, amount) = match input.partial_input.secrets {
+                Some(secrets) => (secrets.asset, secrets.value),
+                None => (input.partial_input.asset.unwrap(), input.partial_input.amount.unwrap()),
+            };
+
+            let transfer_entry = transfers.entry(asset).or_insert(0);
+            *transfer_entry += amount.cast_signed();
+
+            // Issuance brings new assets into the transaction, so the declared amounts count as inputs.
+            // A reissuance mints no new inflation tokens
+            if let Some(issuance_details) = input.get_issuance_details()
+                && let Some(issuance_input) = &input.issuance_input
+            {
+                let (issuance_amount, inflation_amount) = match issuance_input {
+                    IssuanceInput::Issuance {
+                        issuance_amount,
+                        inflation_amount,
+                        ..
+                    } => (*issuance_amount, *inflation_amount),
+                    IssuanceInput::Reissuance { issuance_amount, .. } => (*issuance_amount, 0),
+                };
+
+                *transfers.entry(issuance_details.asset_id).or_insert(0) += issuance_amount.cast_signed();
+                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += inflation_amount.cast_signed();
+            }
+        }
+
+        for output in &self.outputs {
+            if output.script_pubkey.is_op_return() && output.amount == 0 {
+                continue;
+            }
+
+            match transfers.get_mut(&output.asset) {
+                Some(value) => {
+                    *value -= output.amount.cast_signed();
+                }
+                None => return false,
+            }
+        }
+
+        // All transfers including fee should sum up to 0
+        transfers.values().all(|&value| value == 0)
     }
 
     /// Computes the transaction fee based on the provided weight and fee rate.
@@ -488,6 +558,13 @@ mod tests {
         Txid::from_slice(&[byte; 32]).unwrap()
     }
 
+    fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+        let secret = simplicityhl::elements::secp256k1_zkp::SecretKey::from_slice(&[0x11; 32]).unwrap();
+
+        elements_miniscript::bitcoin::PublicKey::new(secret.public_key(&secp))
+    }
+
     fn explicit_utxo(txid_byte: u8, vout: u32, amount: u64, asset: AssetId) -> UTXO {
         UTXO {
             outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
@@ -507,6 +584,62 @@ mod tests {
                 ValueBlindingFactor::zero(),
             )),
         }
+    }
+
+    #[test]
+    fn explicit_input_is_not_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+
+        assert!(!ft.has_confidential_input());
+    }
+
+    #[test]
+    fn input_carrying_secrets_is_a_confidential_one() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+
+        assert!(ft.has_confidential_input());
+    }
+
+    #[test]
+    fn confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        assert!(ft.has_confidential_input());
+        assert!(!ft.needs_blinding());
+    }
+
+    #[test]
+    fn blinded_output_is_what_balances_the_transaction() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy).with_blinding_key(dummy_blinding_key()));
+
+        assert!(ft.has_confidential_input());
+        assert!(ft.needs_blinding());
     }
 
     // Manually construct PST and check extract_pst correctness based on it
@@ -726,5 +859,163 @@ mod tests {
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
+    }
+
+    #[test]
+    fn balanced_transfer_single_asset() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn output_without_input_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1, dummy_asset_id(0xBB)));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn leftover_input_amount_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn issuance_is_balanced_against_its_declared_amounts() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 1, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn issuing_more_than_declared_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 0, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 1_000_000_000, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn minting_inflation_keys_that_were_never_declared_is_unbalanced() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        let details = ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
+            IssuanceInput::new_issuance(100, 0, [0x07; 32]),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 42, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(!ft.is_balanced());
+    }
+
+    #[test]
+    fn reissuance_alongside_a_transfer_of_the_same_asset_is_balanced() {
+        let policy = dummy_asset_id(0xAA);
+        let entropy = [0x07; 32];
+
+        let mut probe = FinalTransaction::new();
+        let details = probe.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 1, dummy_asset_id(0xBB))),
+            IssuanceInput::new_reissuance(100, entropy),
+            RequiredSignature::None,
+        );
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x02, 0, 1, details.inflation_asset_id)),
+            RequiredSignature::None,
+        );
+        ft.add_issuance_input(
+            PartialInput::new(explicit_utxo(0x03, 0, 50, details.asset_id)),
+            IssuanceInput::new_reissuance(100, entropy),
+            RequiredSignature::None,
+        );
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x04, 0, 1000, policy)),
+            RequiredSignature::None,
+        );
+
+        ft.add_output(PartialOutput::new(Script::new(), 150, details.asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn confidential_input_amounts_are_counted() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+
+        assert!(ft.is_balanced());
+    }
+
+    #[test]
+    fn balanced_transfer_single_asset_with_metadata_output() {
+        let policy = dummy_asset_id(0xAA);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
+        ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
+        ft.add_output(PartialOutput::new_metadata("burn".as_bytes()));
+
+        assert!(ft.is_balanced());
     }
 }

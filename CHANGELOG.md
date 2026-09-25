@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.12]
+
+- Added transaction sanity check to the `Signer` to not sign obviously malformed transactions.
+- Added dependencies validation step that prevents injection of parameters into the `git` command.
+- Made tapleaf "storage" slots exactly 32-byte for onchain compatibility.
+- Improved `wasm` API by supporting more `sdk` functionality.
+  - Added support for confidential inputs.
+  - Added custom derivation path signing (n/m).
+  - Added `tapleaf_hash` function to the covenant.
+- Fixed several minor bugs.
+
 ## [0.0.11]
 
 - Bumped `simplicityhl` dependency to `0.7.2`.

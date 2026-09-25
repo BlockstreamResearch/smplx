@@ -56,6 +56,10 @@ pub enum SignerError {
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 
+    /// Error indicating the transaction is not balanced.
+    #[error("Transaction is not balanced or malformed")]
+    Unbalanced(),
+
     /// Error indicating the transaction inputs cover an amount that is lower than the dust limit.
     #[error("Fee amount is too low: {0}")]
     DustAmount(i64),
@@ -67,6 +71,13 @@ pub enum SignerError {
     /// Error indicating that the available UTXO funds are not enough to cover total costs.
     #[error("Not enough funds on account to cover transaction costs: {0}")]
     NotEnoughFunds(u64),
+
+    /// Error indicating a confidential input was left with no blinded output to balance against.
+    ///
+    /// Raised when the caller pins an explicit change target while spending confidential inputs,
+    /// which the node would reject as `bad-txns-in-ne-out`.
+    #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
+    ConfidentialInputWithoutBlindedOutput,
 
     /// Error indicating an invalid upstream `secp256k1` secret key.
     #[error("Invalid secret key")]

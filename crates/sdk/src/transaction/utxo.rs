@@ -68,3 +68,42 @@ impl UTXO {
             .map_or_else(|| self.explicit_amount(), |secrets| secrets.value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
+
+    #[test]
+    fn explicit_and_unblinded_accessors_select_the_right_values() {
+        let asset = AssetId::from_slice(&[1; 32]).unwrap();
+        let explicit = UTXO {
+            outpoint: OutPoint::default(),
+            txout: TxOut {
+                asset: simplicityhl::elements::confidential::Asset::Explicit(asset),
+                value: simplicityhl::elements::confidential::Value::Explicit(42),
+                ..Default::default()
+            },
+            secrets: None,
+        };
+
+        assert_eq!(explicit.asset(), asset);
+        assert_eq!(explicit.amount(), 42);
+
+        let unblinded = UTXO {
+            outpoint: OutPoint::default(),
+            txout: TxOut::default(),
+            secrets: Some(TxOutSecrets::new(
+                asset,
+                AssetBlindingFactor::zero(),
+                99,
+                ValueBlindingFactor::zero(),
+            )),
+        };
+
+        assert_eq!(unblinded.unblinded_asset(), asset);
+        assert_eq!(unblinded.unblinded_amount(), 99);
+        assert_eq!(unblinded.asset(), asset);
+        assert_eq!(unblinded.amount(), 99);
+    }
+}

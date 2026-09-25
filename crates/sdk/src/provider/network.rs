@@ -127,3 +127,48 @@ impl From<&SimplicityNetwork> for NetworkKind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_networks_expose_policy_and_address_metadata() {
+        let liquid = SimplicityNetwork::Liquid;
+        let testnet = SimplicityNetwork::LiquidTestnet;
+        let regtest = SimplicityNetwork::default_regtest();
+
+        assert!(liquid.is_mainnet());
+        assert!(!testnet.is_mainnet());
+        assert!(!regtest.is_mainnet());
+
+        for (network, asset, genesis, params) in [
+            (
+                liquid,
+                "6f0279e9ed041c3d710a9f57d0c02928416460c4b722ae3457a11eec381c526d",
+                "1466275836220db2944ca059a3a10ef6fd2ea684b0688d2c379296888a206003",
+                &elements::AddressParams::LIQUID,
+            ),
+            (
+                testnet,
+                "144c654344aa716d6f3abcc1ca90e5641e4e2a7f633bc09fe3baf64585819a49",
+                "a771da8e52ee6ad581ed1e9a99825e5b3b7992225534eaa2ae23244fe26ab1c1",
+                &elements::AddressParams::LIQUID_TESTNET,
+            ),
+            (
+                regtest,
+                "5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225",
+                "00902a6b70c2ca83b5d9c815d96a0e2f4202179316970d14ea1847dae5b1ca21",
+                &elements::AddressParams::ELEMENTS,
+            ),
+        ] {
+            assert_eq!(network.policy_asset().to_string(), asset);
+            assert_eq!(network.genesis_block_hash().to_string(), genesis);
+            assert_eq!(network.address_params(), params);
+        }
+
+        assert_eq!(NetworkKind::from(liquid), NetworkKind::Main);
+        assert_eq!(NetworkKind::from(&testnet), NetworkKind::Test);
+        assert_eq!(NetworkKind::from(regtest), NetworkKind::Test);
+    }
+}

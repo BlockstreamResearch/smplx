@@ -20,6 +20,13 @@ pub enum DependencyValidationError {
 
     #[error("Invalid dependency '{0}': only one of `rev`, `tag`, `branch` may be set")]
     ConflictingGitRef(String),
+
+    #[error("Invalid dependency '{name}': `{field}` must not start with '-' (got '{value}')")]
+    DashPrefixed {
+        name: String,
+        field: &'static str,
+        value: String,
+    },
 }
 
 /// Errors produced while editing `Simplex.toml` to add or modify a dependency.

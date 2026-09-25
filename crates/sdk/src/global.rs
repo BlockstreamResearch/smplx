@@ -95,3 +95,19 @@ impl Verbosity {
         matches!(self, Verbosity::Debug | Verbosity::Trace)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verbosity_maps_flags_to_logging_behavior() {
+        assert_eq!(Verbosity::new(0), Verbosity::None);
+        assert_eq!(Verbosity::new(1), Verbosity::Debug);
+        assert_eq!(Verbosity::new(2), Verbosity::Trace);
+        assert_eq!(Verbosity::new(9), Verbosity::Trace);
+        assert!(!Verbosity::None.include_debug_symbols());
+        assert!(Verbosity::Debug.include_debug_symbols());
+        assert_eq!(Verbosity::Trace.tracker_log_level(), TrackerLogLevel::Trace);
+    }
+}

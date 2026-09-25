@@ -31,3 +31,15 @@ impl ChangeOutput {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn change_output_defaults_to_explicit_change() {
+        let change = ChangeOutput::new(Script::new());
+
+        assert!(change.blinding_key.is_none());
+    }
+}
