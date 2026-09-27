@@ -127,7 +127,7 @@ To view the available options, run the help command:
 simplex -h
 ```
 
-### Example
+### Examples
 
 Check out the complete project examples in the `examples` directory to learn more.
 
