@@ -1,0 +1,4 @@
+[build]
+src_dir = "./simf"
+simf_files = ["*.simf"]
+out_dir = "./src/artifacts"
