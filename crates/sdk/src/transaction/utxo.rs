@@ -11,6 +11,16 @@ pub struct UTXO {
     pub secrets: Option<TxOutSecrets>,
 }
 
+impl Default for UTXO {
+    fn default() -> Self {
+        Self {
+            outpoint: OutPoint::default(),
+            txout: TxOut::new_fee(0, AssetId::default()),
+            secrets: None,
+        }
+    }
+}
+
 impl UTXO {
     /// Retrieves the explicit `AssetId` from the transaction output (`txout`).
     ///
