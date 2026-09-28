@@ -103,12 +103,15 @@ impl DepCollector {
     ///
     /// - `path` deps resolve relative to the *parent* package (`context`).
     /// - `git` deps resolve into the flat root install dir (`self.deps_dir`).
-    ///   reusing the exact hashed directory name produced by `install`.
     fn resolve_dep_context(&self, dep: &Dependency, context: &CanonPath) -> Result<CanonPath, BuildError> {
         let raw_path = match dep {
             Dependency::Path(path) => context.as_path().join(path),
-            Dependency::Git { url, reference } => {
-                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref())
+            Dependency::Git {
+                url,
+                reference,
+                package,
+            } => {
+                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref(), package.as_deref())
                     .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;
                 self.deps_dir.join(hashed)
             }

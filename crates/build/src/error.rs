@@ -15,7 +15,7 @@ pub enum DependencyValidationError {
     #[error("Invalid dependency '{0}': cannot specify both 'path' and 'git', choose one")]
     Conflicting(String),
 
-    #[error("Invalid dependency '{0}': `path` cannot be combined with git-only fields (rev/tag/branch)")]
+    #[error("Invalid dependency '{0}': `path` cannot be combined with git-only fields (rev/tag/branch/package)")]
     PathWithGitField(String),
 
     #[error("Invalid dependency '{0}': only one of `rev`, `tag`, `branch` may be set")]
@@ -27,6 +27,11 @@ pub enum DependencyValidationError {
         field: &'static str,
         value: String,
     },
+
+    #[error(
+        "Invalid dependency '{name}': `package` must be a relative directory inside the repository without `.`/`..` segments or glob characters (got '{value}')"
+    )]
+    InvalidPackage { name: String, value: String },
 }
 
 /// Errors produced while editing `Simplex.toml` to add or modify a dependency.

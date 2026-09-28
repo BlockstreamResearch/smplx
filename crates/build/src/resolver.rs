@@ -15,6 +15,11 @@ use crate::{BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
 
+const BASE58_ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/// Base58 digits needed for any `u64`.
+const BASE58_U64_LEN: usize = 11;
+
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
@@ -101,33 +106,51 @@ impl ArtifactsResolver {
     }
 
     /// Converts "https://github.com/smplx/core.git"
-    /// into a Cargo-style path: "core-a1b2c3d4e5f67890"
+    /// into a Cargo-style path: "core-5HueCGU8rMj" (11 base58 characters)
     ///
     /// # Returns
     ///
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
     /// - `None` when the URL is empty or malformed such that no repository name
     ///   can be determined.
-    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>) -> Option<PathBuf> {
+    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>, package: Option<&str>) -> Option<PathBuf> {
         let clean_url = url.strip_suffix(".git").unwrap_or(url);
         let repo_name = clean_url.split('/').next_back()?;
 
-        let tag = match reference {
-            Some(GitRef::Rev(rev)) => format!("rev={rev}"),
-            Some(GitRef::Tag(tag)) => format!("tag={tag}"),
-            Some(GitRef::Branch(branch)) => format!("branch={branch}"),
-            None => "HEAD".into(),
-        };
-        let url = format!("{url}@{tag}");
+        // Only fields that are actually set take part in the key, so adding a new
+        // optional field never changes the directory of dependencies that don't use it.
+        let reference = reference.map(|reference| match reference {
+            GitRef::Rev(rev) => format!("rev={rev}"),
+            GitRef::Tag(tag) => format!("tag={tag}"),
+            GitRef::Branch(branch) => format!("branch={branch}"),
+        });
+        let package = package.map(|package| format!("package={package}"));
+
+        let key = std::iter::once(url.to_owned())
+            .chain(reference)
+            .chain(package)
+            .collect::<Vec<_>>()
+            .join("@");
 
         let mut hasher = DefaultHasher::new();
-        url.hash(&mut hasher);
+        key.hash(&mut hasher);
         let hash_value = hasher.finish();
 
-        // Do it the Rust way: EXACTLY 16 hex characters
-        let dir_name = format!("{}-{:016x}", repo_name, hash_value);
+        let dir_name = format!("{}-{}", repo_name, Self::encode_base58(hash_value));
 
         Some(PathBuf::from(dir_name))
+    }
+
+    /// Encodes `value` in base58, left-padded to a fixed [`BASE58_U64_LEN`] characters.
+    fn encode_base58(mut value: u64) -> String {
+        let mut digits = [BASE58_ALPHABET[0]; BASE58_U64_LEN];
+
+        for digit in digits.iter_mut().rev() {
+            *digit = BASE58_ALPHABET[(value % 58) as usize];
+            value /= 58;
+        }
+
+        digits.iter().map(|&digit| char::from(digit)).collect()
     }
 
     /// Checks whether the source declares a `fn main(...)`,

@@ -94,4 +94,10 @@ pub enum InstallError {
 
     #[error("Git clone command failed for repository: '{0}'")]
     GitCloneFailed(String),
+
+    #[error("Package directory '{0}' not found in repository: '{1}'")]
+    PackageNotFound(String, String),
+
+    #[error("Failed to move package into '{1}': {0}")]
+    MovePackage(std::io::Error, PathBuf),
 }
