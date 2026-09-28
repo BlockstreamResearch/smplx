@@ -1,8 +1,7 @@
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
 
-use simplicityhl::str::WitnessName;
-use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
+use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes};
 
 use crate::macros::parse::SimfContent;
 use crate::macros::types::{AllocationType, RustType};
@@ -31,6 +30,9 @@ pub struct WitnessField {
     witness_simf_name: String,
     struct_rust_field: proc_macro2::Ident,
     rust_type: RustType,
+    /// `TemplateProgramWitness` constructor for this field's key: parameters and witnesses
+    /// with the same name are different keys, so a mismatch makes lookups miss.
+    key_constructor: proc_macro2::Ident,
 }
 
 pub struct WitnessStruct {
@@ -60,7 +62,11 @@ impl SimfContractMeta {
 }
 
 impl WitnessField {
-    fn new(witness_name: &WitnessName, resolved_type: &ResolvedType) -> syn::Result<Self> {
+    fn new(
+        witness_name: &TemplateProgramWitness,
+        resolved_type: &ResolvedType,
+        key_constructor: &proc_macro2::Ident,
+    ) -> syn::Result<Self> {
         let (witness_simf_name, struct_rust_field) = {
             let w_name = witness_name.to_string();
             let r_name = format_ident!("{}", w_name.to_lowercase());
@@ -73,6 +79,7 @@ impl WitnessField {
             witness_simf_name,
             struct_rust_field,
             rust_type,
+            key_constructor: key_constructor.clone(),
         })
     }
 
@@ -80,6 +87,7 @@ impl WitnessField {
     fn to_token_stream(&self, struct_name: &Ident, alloc_type: AllocationType) -> proc_macro2::TokenStream {
         let witness_name = &self.witness_simf_name;
         let field_name = &self.struct_rust_field;
+        let key_constructor = &self.key_constructor;
         let field_access = quote! { #struct_name.#field_name };
         let conversion = self
             .rust_type
@@ -87,7 +95,7 @@ impl WitnessField {
 
         quote! {
             (
-                simplex::simplicityhl::str::WitnessName::from_str_unchecked(#witness_name),
+                simplex::simplicityhl::TemplateProgramWitness::#key_constructor(#witness_name),
                 #conversion
             )
         }
@@ -119,7 +127,7 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{Arguments, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
                     use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
-                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
             },
@@ -168,7 +176,7 @@ impl WitnessStruct {
 
                 impl From<#struct_name> for Arguments {
                     fn from(#struct_param: #struct_name) -> Arguments {
-                        Arguments::from(HashMap::from([
+                        Arguments::from_map(HashMap::from([
                             #(#moved_tuples),*
                         ]))
                     }
@@ -176,7 +184,7 @@ impl WitnessStruct {
 
                 impl From<&#struct_name> for Arguments {
                     fn from(#struct_param: &#struct_name) -> Arguments {
-                        Arguments::from(HashMap::from([
+                        Arguments::from_map(HashMap::from([
                             #(#copied_tuples),*
                         ]))
                     }
@@ -209,7 +217,7 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{WitnessValues, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
                     use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
-                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
             },
@@ -258,7 +266,7 @@ impl WitnessStruct {
 
                 impl From<#struct_name> for WitnessValues {
                     fn from(#struct_param: #struct_name) -> WitnessValues {
-                        WitnessValues::from(HashMap::from([
+                        WitnessValues::from_map(HashMap::from([
                             #(#moved_tuples),*
                         ]))
                     }
@@ -266,7 +274,7 @@ impl WitnessStruct {
 
                 impl From<&#struct_name> for WitnessValues {
                     fn from(#struct_param: &#struct_name) -> WitnessValues {
-                        WitnessValues::from(HashMap::from([
+                        WitnessValues::from_map(HashMap::from([
                             #(#copied_tuples),*
                         ]))
                     }
@@ -280,7 +288,7 @@ impl WitnessStruct {
 
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Arguments", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
+            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("parameter_from_str"))?,
         })
     }
 
@@ -289,14 +297,15 @@ impl WitnessStruct {
 
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Witness", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
+            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("witness_from_str"))?,
         })
     }
 
     fn generate_witness_fields<'a>(
-        iter: impl Iterator<Item = (&'a WitnessName, &'a ResolvedType)>,
+        iter: impl Iterator<Item = (&'a TemplateProgramWitness, &'a ResolvedType)>,
+        key_constructor: &proc_macro2::Ident,
     ) -> syn::Result<Vec<WitnessField>> {
-        iter.map(|(name, resolved_type)| WitnessField::new(name, resolved_type))
+        iter.map(|(name, resolved_type)| WitnessField::new(name, resolved_type, key_constructor))
             .collect()
     }
 
@@ -365,9 +374,10 @@ impl WitnessStruct {
             .map(|field| {
                 let field_name = &field.struct_rust_field;
                 let witness_name = &field.witness_simf_name;
-                let extraction = field
-                    .rust_type
-                    .generate_from_value_extraction(&param_ident, witness_name);
+                let extraction =
+                    field
+                        .rust_type
+                        .generate_from_value_extraction(&param_ident, witness_name, &field.key_constructor);
 
                 quote! {
                     let #field_name = #extraction;

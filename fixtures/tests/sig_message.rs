@@ -3,7 +3,7 @@ use std::sync::Arc;
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::either::Either;
 use simplex::simplicityhl::elements::Script;
-use simplex::simplicityhl::simplicity::hashes::{Hash, sha256};
+use simplex::simplicityhl::simplicity::hashes::sha256;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, SigMessage};
 
 use simplex_fixtures::artifacts::sig_message::SigMessageProgram;

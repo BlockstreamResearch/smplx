@@ -7,8 +7,7 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 use simplicityhl::WitnessValues;
 use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
-use simplicityhl::elements::{AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
-use simplicityhl::simplicity::hashes::Hash;
+use simplicityhl::elements::{AssetEntropy, AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
 
 use crate::program::ProgramTrait;
 use crate::utils::tagged_hash;
@@ -307,7 +306,7 @@ impl IssuanceInput {
 
         Input {
             issuance_value_amount: Some(issuance_amount),
-            issuance_asset_entropy: Some(asset_entropy),
+            issuance_asset_entropy: Some(AssetEntropy::from_byte_array(asset_entropy)),
             issuance_inflation_keys: inflation_amount,
             blinded_issuance: Some(0x00),
             ..Default::default()

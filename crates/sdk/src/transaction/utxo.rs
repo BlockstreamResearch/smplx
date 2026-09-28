@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn explicit_and_unblinded_accessors_select_the_right_values() {
-        let asset = AssetId::from_slice(&[1; 32]).unwrap();
+        let asset = AssetId::from_byte_array([1; 32]);
         let explicit = UTXO {
             outpoint: OutPoint::default(),
             txout: TxOut {

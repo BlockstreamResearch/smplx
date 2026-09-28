@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
-use bitcoin_hashes::sha256;
-
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
-    AssetId, LockTime, Sequence, TxOutSecrets,
+    AssetBlindingNonce, AssetEntropy, AssetId, LockTime, Sequence, TxOutSecrets,
     confidential::{AssetBlindingFactor, ValueBlindingFactor},
 };
 
@@ -25,8 +23,8 @@ pub struct IssuanceDetails {
     pub asset_id: AssetId,
     /// The `AssetId` corresponding to the reissuance (inflation) token, used for minting new tokens.
     pub inflation_asset_id: AssetId,
-    /// The entropy value (`sha256::Midstate`) that was used to derive both the `asset_id` and `inflation_asset_id`.
-    pub asset_entropy: sha256::Midstate,
+    /// The entropy value that was used to derive both the `asset_id` and `inflation_asset_id`.
+    pub asset_entropy: AssetEntropy,
 }
 
 /// Represents the final input structure put into a `FinalTransaction` for processing.
@@ -84,9 +82,7 @@ impl FinalInput {
                     IssuanceInput::Issuance { asset_entropy, .. } => {
                         utils::asset_entropy(&self.partial_input.outpoint(), *asset_entropy)
                     }
-                    IssuanceInput::Reissuance { asset_entropy, .. } => {
-                        sha256::Midstate::from_byte_array(*asset_entropy)
-                    }
+                    IssuanceInput::Reissuance { asset_entropy, .. } => AssetEntropy::from_byte_array(*asset_entropy),
                 };
 
                 let asset_id = AssetId::from_entropy(asset_entropy);
@@ -124,12 +120,12 @@ impl FinalInput {
             pst_input.blinded_issuance = issue.blinded_issuance;
 
             if matches!(issuance_input, IssuanceInput::Reissuance { .. }) {
-                let issuance_blinding_nonce = self
-                    .partial_input
-                    .secrets
-                    .expect("Reissuance input must be confidential")
-                    .asset_bf
-                    .into_inner();
+                let issuance_blinding_nonce = AssetBlindingNonce::from_blinding_factor(
+                    self.partial_input
+                        .secrets
+                        .expect("Reissuance input must be confidential")
+                        .asset_bf,
+                );
 
                 pst_input.issuance_blinding_nonce = Some(issuance_blinding_nonce);
             }
@@ -542,7 +538,6 @@ impl FinalTransaction {
 
 #[cfg(test)]
 mod tests {
-    use bitcoin_hashes::Hash;
 
     use simplicityhl::elements::{LockTime, OutPoint, Script, TxOut, Txid};
 
@@ -551,11 +546,11 @@ mod tests {
     use super::*;
 
     fn dummy_asset_id(byte: u8) -> AssetId {
-        AssetId::from_slice(&[byte; 32]).unwrap()
+        AssetId::from_byte_array([byte; 32])
     }
 
     fn dummy_txid(byte: u8) -> Txid {
-        Txid::from_slice(&[byte; 32]).unwrap()
+        Txid::from_byte_array([byte; 32])
     }
 
     fn dummy_blinding_key() -> elements_miniscript::bitcoin::PublicKey {
@@ -845,7 +840,9 @@ mod tests {
         expected_input.issuance_value_amount = issuance_input.issuance_value_amount;
         expected_input.issuance_asset_entropy = issuance_input.issuance_asset_entropy;
         expected_input.issuance_inflation_keys = None;
-        expected_input.issuance_blinding_nonce = Some(partial_input.secrets.unwrap().asset_bf.into_inner());
+        expected_input.issuance_blinding_nonce = Some(AssetBlindingNonce::from_blinding_factor(
+            partial_input.secrets.unwrap().asset_bf,
+        ));
         expected_input.blinded_issuance = issuance_input.blinded_issuance;
         expected_pst.add_input(expected_input);
         expected_pst.add_output(partial_output.to_output());

@@ -44,9 +44,10 @@ pub enum SignerError {
     #[error("Failed to extract tx from pst: {0}")]
     TxExtraction(#[from] simplicityhl::elements::pset::Error),
 
+    // Boxed because `UnblindError` alone would make every `SignerError` over 128 bytes.
     /// Error indicating failure to unblind a confidential transaction output.
     #[error("Failed to unblind txout: {0}")]
-    Unblind(#[from] simplicityhl::elements::UnblindError),
+    Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
     /// Error thrown when PSET blinding fails.
     #[error("Failed to blind a PST: {0}")]
@@ -134,4 +135,10 @@ pub enum WtnsWrappingError {
     /// Error indicating that a path traversal attempted to reach an undefined or mismatched Either branch.
     #[error("Path reached undefined branch of Either")]
     EitherBranchMismatch,
+}
+
+impl From<simplicityhl::elements::UnblindError> for SignerError {
+    fn from(err: simplicityhl::elements::UnblindError) -> Self {
+        Self::Unblind(Box::new(err))
+    }
 }
