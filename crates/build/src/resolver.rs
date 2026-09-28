@@ -136,7 +136,6 @@ impl ArtifactsResolver {
         key.hash(&mut hasher);
         let hash_value = hasher.finish();
 
-        // Base58 rather than hex, so the name doesn't look like a git commit.
         let dir_name = format!("{}-{}", repo_name, Self::encode_base58(hash_value));
 
         Some(PathBuf::from(dir_name))
