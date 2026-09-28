@@ -66,11 +66,13 @@ rpc_port = 18443
 esplora_port = 3000
 rpc_user = "user"
 rpc_password = "password"
+mock_time = 1_700_000_000
 
 [test]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
 verbosity = 0 # 0 - none, 1 - debug, 2 - trace
+mock_time = 1_700_000_000
 
 [test.esplora]
 url = "<esplora url>"
@@ -97,10 +99,12 @@ Where:
   - `esplora_port` - The port Electrs will listen on.
   - `rpc_user` - Elements regtest RPC username.
   - `rpc_password` - Elements regtest RPC password.
+  - `mock_time` - Optional UNIX timestamp used as the Elements node clock from startup.
 - `test` (`simplex test` config)
   - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
   - `verbosity` - Simplicity pruning log level.
+  - `mock_time` - Optional UNIX timestamp used as the internal Elements node clock from startup.
   - `esplora`
     - `url` - Esplora API endpoint url.
     - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).

@@ -192,10 +192,16 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6712f9c6fd6785b3b270884e57c441c403dc5d7e19ca45368c97c7a1de3000ec"
 dependencies = [
- "bitcoin-internals",
+ "bitcoin-internals 0.6.0",
  "hex-conservative 1.2.0",
  "serde",
 ]
+
+[[package]]
+name = "bitcoin-internals"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a30a22d1f112dde8e16be7b45c63645dc165cef254f835b3e1e9553e485cfa64"
 
 [[package]]
 name = "bitcoin-internals"
@@ -246,7 +252,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5304e53726dbe5f93141535e102ed97b5bf4714fbecefdda8f9fb98d7fdaff0e"
 dependencies = [
  "bitcoin-consensus-encoding",
- "bitcoin-internals",
+ "bitcoin-internals 0.6.0",
  "hex-conservative 1.2.0",
  "serde",
 ]
@@ -406,6 +412,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
+name = "corepc-elements-types"
+version = "0.0.1"
+dependencies = [
+ "corepc-types",
+ "elements 0.26.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "corepc-types"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86c274042a89391a324ab313b5210680969d02a9fa977733c3354aea4d7a4883"
+dependencies = [
+ "bitcoin",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -508,6 +535,20 @@ dependencies = [
 
 [[package]]
 name = "elements"
+version = "0.26.1"
+source = "git+https://github.com/ElementsProject/rust-elements?rev=e9245f1a16784726ad95daa0a8eb1039c36c22cd#e9245f1a16784726ad95daa0a8eb1039c36c22cd"
+dependencies = [
+ "bech32",
+ "bitcoin",
+ "bitcoin-internals 0.5.0",
+ "hex-conservative 1.2.0",
+ "secp256k1-zkp",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "elements"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34e00f7ddcd826d2f4c9bd72d79a6b6991a0ac4286e7e2b2ff8eecd130549073"
@@ -515,7 +556,7 @@ dependencies = [
  "bech32",
  "bitcoin",
  "bitcoin-consensus-encoding",
- "bitcoin-internals",
+ "bitcoin-internals 0.6.0",
  "bitcoin_hashes 1.2.0",
  "hex-conservative 1.2.0",
  "secp256k1-zkp",
@@ -530,7 +571,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c18e931c81e6e7e58d63b6fea1c57f5534717f0e6721741c4fce72a6c547e19"
 dependencies = [
  "bitcoin",
- "elements",
+ "elements 0.27.0",
  "miniscript",
  "serde",
 ]
@@ -1283,7 +1324,7 @@ dependencies = [
  "bitcoin",
  "bitcoin_hashes 1.2.0",
  "byteorder",
- "elements",
+ "elements 0.27.0",
  "getrandom 0.2.17",
  "ghost-cell",
  "hex-conservative 1.2.0",
@@ -1374,6 +1415,7 @@ version = "0.0.12"
 dependencies = [
  "bip39",
  "bitcoincore-rpc",
+ "corepc-elements-types",
  "dyn-clone",
  "elements-miniscript",
  "hex",

@@ -24,6 +24,7 @@ pub struct TestConfig {
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
     pub verbosity: Verbosity,
+    pub mock_time: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -57,6 +58,7 @@ impl TestConfig {
             esplora_port: None,
             rpc_user: None,
             rpc_password: None,
+            mock_time: self.mock_time,
         }
     }
 
@@ -82,6 +84,7 @@ impl Default for TestConfig {
             esplora: None,
             rpc: None,
             verbosity: Verbosity::None,
+            mock_time: None,
         }
     }
 }
@@ -107,6 +110,7 @@ mod tests {
                 username: "user".into(),
                 password: "password".into(),
             }),
+            mock_time: Some(1_700_000_000),
         };
 
         config.to_file(&path).expect("test config should be written");
@@ -123,12 +127,14 @@ mod tests {
         assert_eq!(rpc.url, "http://localhost:18443");
         assert_eq!(rpc.username, "user");
         assert_eq!(rpc.password, "password");
+        assert_eq!(loaded.mock_time, Some(1_700_000_000));
         assert_eq!(regtest.mnemonic, config.mnemonic);
         assert_eq!(regtest.bitcoins, config.bitcoins);
         assert!(regtest.rpc_port.is_none());
         assert!(regtest.esplora_port.is_none());
         assert!(regtest.rpc_user.is_none());
         assert!(regtest.rpc_password.is_none());
+        assert_eq!(regtest.mock_time, Some(1_700_000_000));
         let _ = std::fs::remove_file(path);
     }
 }

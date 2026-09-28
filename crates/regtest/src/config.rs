@@ -19,6 +19,7 @@ pub struct RegtestConfig {
     pub esplora_port: Option<u16>,
     pub rpc_user: Option<String>,
     pub rpc_password: Option<String>,
+    pub mock_time: Option<u64>,
 }
 
 impl RegtestConfig {
@@ -45,6 +46,7 @@ impl Default for RegtestConfig {
             esplora_port: None,
             rpc_user: None,
             rpc_password: None,
+            mock_time: None,
         }
     }
 }
@@ -65,6 +67,7 @@ mod tests {
                 esplora_port = 3000
                 rpc_user = "user"
                 rpc_password = "password"
+                mock_time = 1700000000
             "#,
         )
         .expect("regtest config should be writable");
@@ -77,8 +80,10 @@ mod tests {
         assert_eq!(loaded.esplora_port, Some(3000));
         assert_eq!(loaded.rpc_user.as_deref(), Some("user"));
         assert_eq!(loaded.rpc_password.as_deref(), Some("password"));
+        assert_eq!(loaded.mock_time, Some(1_700_000_000));
         assert!(defaults.rpc_port.is_none());
         assert!(defaults.esplora_port.is_none());
+        assert!(defaults.mock_time.is_none());
 
         let _ = std::fs::remove_file(path);
     }

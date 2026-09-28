@@ -15,11 +15,13 @@
 # esplora_port = 3000
 # rpc_user = "user"
 # rpc_password = "password"
+# mock_time = 0 or time in range 1296688602 < .. < any time which fit in u64
 
 # [test]
 # mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 # bitcoins = 10_000_000
 # verbosity = 0
+# mock_time = 0 or time in range 1296688602 < .. < any time which fit in u64
 
 # [test.esplora]
 # url = "<esplora url>"

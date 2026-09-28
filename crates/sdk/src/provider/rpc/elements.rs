@@ -11,6 +11,8 @@ use super::error::RpcError;
 
 use crate::utils::sat2btc;
 
+pub use corepc_elements_types::v23_3_2::GetBlockchainInfo;
+
 /// A lightweight wrapper around the standard `bitcoincore_rpc` `Client` providing Elements-specific functionality.
 #[derive(Debug)]
 pub struct ElementsRpc {
@@ -157,5 +159,26 @@ impl ElementsRpc {
             .call::<serde_json::Value>(METHOD, &[])?
             .as_u64()
             .ok_or_else(|| RpcError::ElementsRpcUnexpectedReturn(METHOD.into()))
+    }
+
+    /// Retrieves state about the current block chain.
+    ///
+    /// # Errors
+    /// Returns an [`RpcError`] if the node call fails or its response cannot be deserialized.
+    pub fn get_blockchain_info(&self) -> Result<GetBlockchainInfo, RpcError> {
+        const METHOD: &str = "getblockchaininfo";
+
+        Ok(self.inner.call::<GetBlockchainInfo>(METHOD, &[])?)
+    }
+
+    /// Overrides the node's clock with a UNIX timestamp. A value of zero restores the system clock.
+    ///
+    /// # Errors
+    /// Returns an [`RpcError`] if the node rejects the regtest-only `setmocktime` RPC call.
+    #[cfg(feature = "regtest-utils")]
+    pub fn set_mock_time(&self, unix_timestamp: u64) -> Result<(), RpcError> {
+        const METHOD: &str = "setmocktime";
+
+        Ok(self.inner.call(METHOD, &[unix_timestamp.into()])?)
     }
 }
