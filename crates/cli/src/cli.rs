@@ -78,10 +78,15 @@ impl Cli {
                 Ok(Install::run(&loaded_config.dependencies)?)
             }
             Command::Build => {
+                let root_dir = std::env::current_dir()?;
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Build::run(&loaded_config.build, &loaded_config.dependencies)?)
+                Ok(Build::run(
+                    &root_dir,
+                    &loaded_config.build,
+                    &loaded_config.dependencies,
+                )?)
             }
             Command::Clean { flags } => {
                 let config_path = Config::get_default_path()?;

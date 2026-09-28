@@ -84,11 +84,11 @@ impl ArtifactsResolver {
     /// Those are registered with their own directory as the context, so that
     /// `crate::` and sibling imports resolve correctly relative to each package root.
     pub fn resolve_remappings(
+        root_dir: &Path,
         deps_config: &DependencyConfig,
         config_filename: &str,
     ) -> Result<ValidatedDeps, BuildError> {
-        let root_dir = env::current_dir()?;
-        let canon_root = CanonPath::canonicalize(&root_dir).map_err(BuildError::PathCanonicalization)?;
+        let canon_root = CanonPath::canonicalize(root_dir).map_err(BuildError::PathCanonicalization)?;
 
         let config_source = fs::read_to_string(canon_root.as_path().join(config_filename))?;
         let root_src_dir = BuildConfig::from_source(&config_source)?.src_dir;
@@ -98,7 +98,7 @@ impl ArtifactsResolver {
         // Flat install dir shared by every git dependency at any nesting depth,
         // mirroring `install`. Left un-canonicalized so pure-path projects
         // (which never create `deps/`) don't fail here.
-        let deps_dir = PathBuf::from(DEFAULT_DEPENDENCY_DIR);
+        let deps_dir = canon_root.as_path().join(DEFAULT_DEPENDENCY_DIR);
 
         let mut collector = DepCollector::new(config_filename.to_string(), deps_dir);
 
