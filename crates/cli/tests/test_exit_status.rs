@@ -6,11 +6,13 @@ fn simplex_test_propagates_failed_test_runner_status() -> Result<(), Box<dyn std
     use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use smplx_cli::config::CONFIG_FILENAME;
+
     let suffix = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let test_dir = std::env::temp_dir().join(format!("smplx-cli-exit-status-{suffix}"));
     let bin_dir = test_dir.join("bin");
     fs::create_dir_all(&bin_dir)?;
-    fs::write(test_dir.join("Simplex.toml"), "")?;
+    fs::write(test_dir.join(CONFIG_FILENAME), "")?;
 
     let nextest = bin_dir.join("smplx-nextest");
     fs::write(&nextest, "#!/bin/sh\nexit 7\n")?;

@@ -20,7 +20,7 @@ pub enum Command {
         flags: TestFlags,
     },
     /// Install a `SimplicityHL` dependency (requires the dep to be a simplex project)
-    /// If `deps` is empty, install everything from `Simplex.toml`.
+    /// If `deps` is empty, install everything from `CONFIG_FILENAME`.
     Install {
         /// Dependencies to install, as `<source>` or `<alias>=<source>`.
         /// The bare name `std` pins the latest `SimplicityHL` standard library release.

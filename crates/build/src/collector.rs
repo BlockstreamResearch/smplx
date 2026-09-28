@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
-use crate::config::Dependency;
 use crate::{ArtifactsResolver, BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
@@ -17,16 +16,14 @@ pub(crate) struct DepCollector {
     builder: DependencyMapBuilder,
     visited: HashSet<CanonPath>,
     config_filename: String,
-    deps_dir: PathBuf,
 }
 
 impl DepCollector {
-    pub(crate) fn new(config_filename: String, deps_dir: PathBuf) -> Self {
+    pub(crate) fn new(config_filename: String) -> Self {
         Self {
             builder: DependencyMapBuilder::new(),
             visited: HashSet::new(),
             config_filename,
-            deps_dir,
         }
     }
 
@@ -35,9 +32,10 @@ impl DepCollector {
         deps_config: &DependencyConfig,
         root: &CanonPath,
         root_simf_dir: &CanonPath,
+        deps_dir: &Path,
     ) -> Result<ValidatedDeps, BuildError> {
         self.visited.insert(root.clone());
-        self.rec_collect(deps_config, root_simf_dir, root)?;
+        self.rec_collect(deps_config, root_simf_dir, root, deps_dir)?;
 
         self.builder
             .clone()
@@ -73,9 +71,10 @@ impl DepCollector {
         deps_config: &DependencyConfig,
         simf_dir: &CanonPath,
         context: &CanonPath,
+        deps_dir: &Path,
     ) -> Result<(), BuildError> {
         for (dep_name, dep) in &deps_config.inner {
-            let loaded_context = self.resolve_dep_context(dep, context)?;
+            let loaded_context = ArtifactsResolver::resolve_dep_context(dep, context, deps_dir)?;
 
             let config_path = loaded_context.as_path().join(&self.config_filename);
             let config_source = fs::read_to_string(config_path)?;
@@ -93,30 +92,9 @@ impl DepCollector {
 
             let nested_deps = DependencyConfig::from_source(&config_source)?;
 
-            self.rec_collect(&nested_deps, &loaded_simf_dir, &loaded_context)?;
+            self.rec_collect(&nested_deps, &loaded_simf_dir, &loaded_context, deps_dir)?;
         }
 
         Ok(())
-    }
-
-    /// Resolves the on-disk package root for a single dependency.
-    ///
-    /// - `path` deps resolve relative to the *parent* package (`context`).
-    /// - `git` deps resolve into the flat root install dir (`self.deps_dir`).
-    fn resolve_dep_context(&self, dep: &Dependency, context: &CanonPath) -> Result<CanonPath, BuildError> {
-        let raw_path = match dep {
-            Dependency::Path(path) => context.as_path().join(path),
-            Dependency::Git {
-                url,
-                reference,
-                package,
-            } => {
-                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref(), package.as_deref())
-                    .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;
-                self.deps_dir.join(hashed)
-            }
-        };
-
-        CanonPath::canonicalize(&raw_path).map_err(BuildError::PathCanonicalization)
     }
 }

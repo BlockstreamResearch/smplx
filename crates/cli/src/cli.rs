@@ -11,8 +11,8 @@ use crate::commands::init::Init;
 use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
-use crate::config::Config;
 use crate::config::error::ConfigError;
+use crate::config::{CONFIG_FILENAME, Config};
 use crate::error::CliError;
 
 #[derive(Debug, Parser)]
@@ -43,7 +43,7 @@ impl Cli {
                         }
 
                         std::fs::create_dir_all(&dir)?;
-                        dir.join("Simplex.toml")
+                        dir.join(CONFIG_FILENAME)
                     }
                     None => Config::get_default_path()?,
                 };

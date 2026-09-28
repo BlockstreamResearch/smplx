@@ -33,7 +33,7 @@ impl Config {
     }
 
     /// Constructs a complete configuration file path by joining the provided path with the
-    /// predefined configuration file name `CONFIG_FILENAME`.
+    /// predefined configuration file name [`CONFIG_FILENAME`].
     ///
     /// # Errors
     /// This function will return an error if the provided `path` cannot be resolved for any reason

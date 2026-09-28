@@ -10,7 +10,7 @@ use simplicityhl::source::CanonPath;
 use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
-use crate::config::{DEFAULT_DEPENDENCY_DIR, GitRef};
+use crate::config::{DEFAULT_DEPENDENCY_DIR, Dependency, GitRef};
 use crate::{BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
@@ -100,9 +100,33 @@ impl ArtifactsResolver {
         // (which never create `deps/`) don't fail here.
         let deps_dir = canon_root.as_path().join(DEFAULT_DEPENDENCY_DIR);
 
-        let mut collector = DepCollector::new(config_filename.to_string(), deps_dir);
+        DepCollector::new(config_filename.to_string()).collect(deps_config, &canon_root, &root_simf_dir, &deps_dir)
+    }
 
-        collector.collect(deps_config, &canon_root, &root_simf_dir)
+    /// Resolves the on-disk package root for a single dependency.
+    ///
+    /// - `path` dependencies resolve relative to the parent package (`context`).
+    /// - `git` dependencies resolve into the flat install dir (`deps_dir`), using the same
+    ///   hashed directory name `install` creates. `deps` dir is unused for `path` dependencies.
+    pub fn resolve_dep_context(
+        dep: &Dependency,
+        context: &CanonPath,
+        deps_dir: &Path,
+    ) -> Result<CanonPath, BuildError> {
+        let raw_path = match dep {
+            Dependency::Path(path) => context.as_path().join(path),
+            Dependency::Git {
+                url,
+                reference,
+                package,
+            } => {
+                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref(), package.as_deref())
+                    .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;
+                deps_dir.join(hashed)
+            }
+        };
+
+        CanonPath::canonicalize(&raw_path).map_err(BuildError::PathCanonicalization)
     }
 
     /// Converts "https://github.com/smplx/core.git"
