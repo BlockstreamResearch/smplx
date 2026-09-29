@@ -521,6 +521,10 @@ impl Signer {
         fee_rate: f32,
         available_delta: u64,
     ) -> Result<Estimate, SignerError> {
+        let sign_and_extract_tx = |signer: &Signer, tx: &FinalTransaction| -> Result<Transaction, SignerError> {
+            Ok(signer.sign_tx(tx).map(|(pst, _)| pst)?.extract_tx()?)
+        };
+
         // Estimate the tx fee with the change. The caller supplies the change target
         let change = match fee_tx.change() {
             Some(target) => target.clone(),
@@ -549,7 +553,7 @@ impl Signer {
             self.network.policy_asset(),
         ));
 
-        let final_tx = self.sign_and_extract_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
@@ -563,7 +567,7 @@ impl Signer {
                 return Err(SignerError::Unbalanced());
             }
 
-            let final_tx = self.sign_and_extract_tx(&fee_tx)?;
+            let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
             return Ok(Estimate::Success(final_tx, fee));
         }
@@ -585,7 +589,7 @@ impl Signer {
 
         fee_tx.remove_output(change_index);
 
-        let final_tx = self.sign_and_extract_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
@@ -602,7 +606,7 @@ impl Signer {
         }
 
         // Finalize the tx with fee and without the change
-        let final_tx = self.sign_and_extract_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
         Ok(Estimate::Success(final_tx, fee))
     }
@@ -611,15 +615,7 @@ impl Signer {
     ///
     /// # Errors
     /// Returns a `SignerError` if we have an error in singing and constructing program witness.
-    pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
-        self.sign_tx_with_witnesses(tx).map(|(pst, _)| pst)
-    }
-
-    /// Signs a transaction and returns the signed witness used for each program input.
-    ///
-    /// # Errors
-    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
-    pub fn sign_tx_with_witnesses(
+    pub fn sign_tx(
         &self,
         tx: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
@@ -687,10 +683,6 @@ impl Signer {
         }
 
         Ok((pst, signed_witnesses))
-    }
-
-    fn sign_and_extract_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
-        Ok(self.sign_tx(tx)?.extract_tx()?)
     }
 
     /// Signs and inserts a signature into appropriate witness value.

@@ -14,15 +14,15 @@ use smplx_sdk::signer::Signer;
 
 use crate::context::TestContext;
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
-use crate::fuzz::builders::{FinalTransactionBuilder, ProgramTarget};
+use crate::fuzz::builders::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::core::{FuzzContext, FuzzableProgram, SignerOption};
 use crate::fuzz::{ProgramCheck, ProgramExecResult};
 
 pub struct SimplexFuzzEngine<Program, Args, Wit> {
     runner: TestRunner,
     fuzz_context: FuzzContext,
-    strategy_storage: BoxedStrategy<(Arguments, WitnessValues)>,
-    blueprint: FinalTransactionBuilder,
+    strategy: BoxedStrategy<(Arguments, WitnessValues)>,
+    blueprint: FuzzTransaction,
     _phantom: PhantomData<(Program, Args, Wit)>,
 }
 
@@ -108,7 +108,7 @@ where
     pub fn build(
         self,
         strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-        blueprint: FinalTransactionBuilder,
+        blueprint: FuzzTransaction,
     ) -> SimplexFuzzEngine<Program, Args, Wit> {
         SimplexFuzzEngine {
             runner: proptest::test_runner::TestRunner::new(self.proptest_config),
@@ -120,7 +120,7 @@ where
                 signer_option: self.signer_option,
                 network: self.network,
             },
-            strategy_storage: strategy_storage.boxed(),
+            strategy: strategy_storage.boxed(),
             blueprint,
             _phantom: PhantomData,
         }
@@ -218,10 +218,10 @@ where
         let context = self.fuzz_context;
         let blueprint = self.blueprint;
 
-        let strategy = self.strategy_storage.no_shrink();
+        let strategy = self.strategy.no_shrink();
 
         let result = runner.run(&strategy, |(arguments, witness)| {
-            Self::single_fuzz(&context, &blueprint, &program_post_hook, arguments, witness)
+            Self::fuzz(&context, &blueprint, &program_post_hook, arguments, witness)
         });
 
         match result {
@@ -236,9 +236,9 @@ where
     }
 
     /// Extracted helper that performs exactly one isolated test run.
-    fn single_fuzz(
+    fn fuzz(
         fuzz_context: &FuzzContext,
-        initial_tx: &FinalTransactionBuilder,
+        initial_tx: &FuzzTransaction,
         program_post_hook: &impl ProgramCheck,
         arguments: Arguments,
         witness: WitnessValues,

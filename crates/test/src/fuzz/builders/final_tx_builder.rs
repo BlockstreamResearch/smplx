@@ -18,13 +18,13 @@ pub enum ProgramTarget {
 
 /// Object, which builds an initial transaction in a fuzzing step to make it valid after
 /// generating of script hashes after program compiling.
-pub struct FinalTransactionBuilder {
+pub struct FuzzTransaction {
     initial_tx: FinalTransaction,
     targets: Vec<ProgramTarget>,
     post_hook: Option<Box<PostHook>>,
 }
 
-impl FinalTransactionBuilder {
+impl FuzzTransaction {
     /// Creates a reusable fuzz transaction blueprint.
     ///
     /// # Errors
@@ -74,6 +74,7 @@ impl FinalTransactionBuilder {
                     .inputs_mut()
                     .get_mut(index)
                     .ok_or(FuzzError::InputTargetOutOfBounds { index, input_count })?;
+
                 input.partial_input.witness_utxo.script_pubkey = script.clone();
             }
             ProgramTarget::Output(index) => {
@@ -82,6 +83,7 @@ impl FinalTransactionBuilder {
                     .outputs_mut()
                     .get_mut(index)
                     .ok_or(FuzzError::OutputTargetOutOfBounds { index, output_count })?;
+
                 output.script_pubkey = script.clone();
             }
         }
@@ -204,15 +206,15 @@ mod tests {
     #[test]
     fn rejects_empty_duplicate_and_out_of_bounds_targets() {
         assert_eq!(
-            FinalTransactionBuilder::new(initial_transaction(), []).err(),
+            FuzzTransaction::new(initial_transaction(), []).err(),
             Some(FuzzError::NoProgramTargets)
         );
         assert_eq!(
-            FinalTransactionBuilder::new(initial_transaction(), [ProgramTarget::Output(0)]).err(),
+            FuzzTransaction::new(initial_transaction(), [ProgramTarget::Output(0)]).err(),
             Some(FuzzError::NoInputTargets)
         );
         assert_eq!(
-            FinalTransactionBuilder::new(
+            FuzzTransaction::new(
                 initial_transaction(),
                 [ProgramTarget::Input(0), ProgramTarget::Input(0)],
             )
@@ -220,7 +222,7 @@ mod tests {
             Some(FuzzError::DuplicateProgramTarget(ProgramTarget::Input(0)))
         );
         assert_eq!(
-            FinalTransactionBuilder::new(initial_transaction(), [ProgramTarget::Output(2)]).err(),
+            FuzzTransaction::new(initial_transaction(), [ProgramTarget::Output(2)]).err(),
             Some(FuzzError::OutputTargetOutOfBounds {
                 index: 2,
                 output_count: 2,
@@ -230,7 +232,7 @@ mod tests {
 
     #[test]
     fn injects_program_into_all_targets_without_consuming_them() {
-        let builder = FinalTransactionBuilder::new(
+        let builder = FuzzTransaction::new(
             initial_transaction(),
             [ProgramTarget::Input(0), ProgramTarget::Output(1)],
         )
@@ -258,12 +260,12 @@ mod tests {
     fn runs_post_hook_after_program_injection_and_propagates_errors() {
         let hook_ran = Rc::new(Cell::new(false));
         let hook_ran_in_callback = Rc::clone(&hook_ran);
-        let builder = FinalTransactionBuilder::new(initial_transaction(), [ProgramTarget::Input(0)])
+        let builder = FuzzTransaction::new(initial_transaction(), [ProgramTarget::Input(0)])
             .unwrap()
             .with_post_hook(move |tx, script, _, _| {
                 assert_eq!(tx.inputs()[0].partial_input.witness_utxo.script_pubkey, *script);
                 hook_ran_in_callback.set(true);
-                FinalTransactionBuilder::set_program_script(tx, ProgramTarget::Input(0), &Script::new())
+                FuzzTransaction::set_program_script(tx, ProgramTarget::Input(0), &Script::new())
             });
         let (program, script) = prepared_program();
 
@@ -274,7 +276,7 @@ mod tests {
         assert!(hook_ran.get());
         assert!(prepared.inputs()[0].partial_input.witness_utxo.script_pubkey.is_empty());
 
-        let failing_builder = FinalTransactionBuilder::new(initial_transaction(), [ProgramTarget::Input(0)])
+        let failing_builder = FuzzTransaction::new(initial_transaction(), [ProgramTarget::Input(0)])
             .unwrap()
             .with_post_hook(|_, _, _, _| Err(FuzzError::PostHook("hook failed".to_string())));
         let error = failing_builder

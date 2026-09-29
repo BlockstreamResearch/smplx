@@ -5,7 +5,7 @@ use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
 use simplex::simplicityhl::elements::Script;
 use simplex::simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 use simplex::rand::RngCore;
-use simplex::fuzz::{generate_value_by_ty};
+use simplex::fuzz::{generate_random_value_by_ty};
 
 #[derive(Clone)]
 pub struct SimpleStorageProgram {
@@ -160,7 +160,7 @@ fn regenerate_witness_values(wit: &WitnessValues, rng: &mut dyn RngCore) -> Witn
     use std::collections::HashMap;
     let mut map: HashMap<_,_> = Default::default();
     for (name, val) in wit.iter() {
-        map.insert(name.clone(), generate_value_by_ty(val.ty(), rng));
+        map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     WitnessValues::from_map(map)
 }
@@ -170,7 +170,7 @@ fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Argum
 
     let mut map: HashMap<_,_> = Default::default();
     for (name, val) in args.iter() {
-        map.insert(name.clone(), generate_value_by_ty(val.ty(), rng));
+        map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     Arguments::from_map(map)
 }

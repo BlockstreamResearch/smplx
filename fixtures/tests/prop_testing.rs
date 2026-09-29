@@ -1,5 +1,5 @@
 mod failure_test_prop {
-    use simplex::fuzz::builders::{FinalTransactionBuilder, ProgramTarget};
+    use simplex::fuzz::builders::{FuzzTransaction, ProgramTarget};
     use simplex::fuzz::core::FuzzContext;
     use simplex::fuzz::engine::FuzzStrategyBuilder;
     use simplex::fuzz::proptest::strategy::Just;
@@ -29,11 +29,11 @@ mod failure_test_prop {
 
     const FAILURE_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
-    fn failure_transaction_builder() -> Result<FinalTransactionBuilder, FuzzError> {
+    fn failure_transaction_builder() -> Result<FuzzTransaction, FuzzError> {
         let mut transaction = FinalTransaction::new();
         transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
 
-        FinalTransactionBuilder::new(transaction, [FAILURE_PROGRAM_TARGET])
+        FuzzTransaction::new(transaction, [FAILURE_PROGRAM_TARGET])
     }
 
     impl ProgramCheck for FailureTestCheck {
@@ -81,7 +81,7 @@ mod failure_test_prop {
     fn signed_transaction_builder(
         arguments: &P2pkArguments,
         witness: &P2pkWitness,
-    ) -> Result<FinalTransactionBuilder, FuzzError> {
+    ) -> Result<FuzzTransaction, FuzzError> {
         let program = P2pkProgram::new(arguments.clone());
         let mut transaction = FinalTransaction::new();
         transaction.add_program_input(
@@ -90,7 +90,7 @@ mod failure_test_prop {
             RequiredSignature::Witness("SIGNATURE".to_string()),
         );
 
-        FinalTransactionBuilder::new(transaction, [FAILURE_PROGRAM_TARGET])
+        FuzzTransaction::new(transaction, [FAILURE_PROGRAM_TARGET])
     }
 
     #[simplex::fuzz]
