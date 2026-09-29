@@ -1373,7 +1373,6 @@ name = "smplx-sdk"
 version = "0.0.12"
 dependencies = [
  "bip39",
- "bitcoin_hashes 0.14.101",
  "bitcoincore-rpc",
  "dyn-clone",
  "elements-miniscript",

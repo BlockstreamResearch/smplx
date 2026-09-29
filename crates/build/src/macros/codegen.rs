@@ -30,8 +30,6 @@ pub struct WitnessField {
     witness_simf_name: String,
     struct_rust_field: proc_macro2::Ident,
     rust_type: RustType,
-    /// `TemplateProgramWitness` constructor for this field's key: parameters and witnesses
-    /// with the same name are different keys, so a mismatch makes lookups miss.
     key_constructor: proc_macro2::Ident,
 }
 
