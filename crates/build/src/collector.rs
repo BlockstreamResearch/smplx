@@ -5,7 +5,7 @@ use std::path::Path;
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
-use crate::{ArtifactsResolver, BuildConfig, DependencyConfig};
+use crate::{ArtifactsResolver, BuildConfig, CONFIG_FILENAME, DependencyConfig};
 
 use super::error::BuildError;
 
@@ -15,15 +15,13 @@ use super::error::BuildError;
 pub(crate) struct DepCollector {
     builder: DependencyMapBuilder,
     visited: HashSet<CanonPath>,
-    config_filename: String,
 }
 
 impl DepCollector {
-    pub(crate) fn new(config_filename: String) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             builder: DependencyMapBuilder::new(),
             visited: HashSet::new(),
-            config_filename,
         }
     }
 
@@ -76,7 +74,7 @@ impl DepCollector {
         for (dep_name, dep) in &deps_config.inner {
             let loaded_context = ArtifactsResolver::resolve_dep_context(dep, context, deps_dir)?;
 
-            let config_path = loaded_context.as_path().join(&self.config_filename);
+            let config_path = loaded_context.as_path().join(CONFIG_FILENAME);
             let config_source = fs::read_to_string(config_path)?;
 
             let loaded_src_dir = BuildConfig::from_source(&config_source)?.src_dir;

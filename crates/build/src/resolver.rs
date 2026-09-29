@@ -11,7 +11,7 @@ use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
 use crate::config::{DEFAULT_DEPENDENCY_DIR, Dependency, GitRef};
-use crate::{BuildConfig, DependencyConfig};
+use crate::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 
 use super::error::BuildError;
 
@@ -83,14 +83,10 @@ impl ArtifactsResolver {
     /// Each dependency may have its own config file declaring further dependencies.
     /// Those are registered with their own directory as the context, so that
     /// `crate::` and sibling imports resolve correctly relative to each package root.
-    pub fn resolve_remappings(
-        root_dir: &Path,
-        deps_config: &DependencyConfig,
-        config_filename: &str,
-    ) -> Result<ValidatedDeps, BuildError> {
+    pub fn resolve_remappings(root_dir: &Path, deps_config: &DependencyConfig) -> Result<ValidatedDeps, BuildError> {
         let canon_root = CanonPath::canonicalize(root_dir).map_err(BuildError::PathCanonicalization)?;
 
-        let config_source = fs::read_to_string(canon_root.as_path().join(config_filename))?;
+        let config_source = fs::read_to_string(canon_root.as_path().join(CONFIG_FILENAME))?;
         let root_src_dir = BuildConfig::from_source(&config_source)?.src_dir;
         let root_simf_dir = CanonPath::canonicalize(&canon_root.as_path().join(&root_src_dir))
             .map_err(BuildError::PathCanonicalization)?;
@@ -100,7 +96,7 @@ impl ArtifactsResolver {
         // (which never create `deps/`) don't fail here.
         let deps_dir = canon_root.as_path().join(DEFAULT_DEPENDENCY_DIR);
 
-        DepCollector::new(config_filename.to_string()).collect(deps_config, &canon_root, &root_simf_dir, &deps_dir)
+        DepCollector::new().collect(deps_config, &canon_root, &root_simf_dir, &deps_dir)
     }
 
     /// Resolves the on-disk package root for a single dependency.

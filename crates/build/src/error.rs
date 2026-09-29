@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use globwalk::GlobError;
 
+use crate::CONFIG_FILENAME;
+
 /// Neutral validation error for a single dependency declaration.
 ///
 /// Returned by `DependencyConfig::validate` so it stays decoupled from any
@@ -34,7 +36,7 @@ pub enum DependencyValidationError {
     InvalidPackage { name: String, value: String },
 }
 
-/// Errors produced while editing `Simplex.toml` to add or modify a dependency.
+/// Errors produced while editing [`CONFIG_FILENAME`] to add or modify a dependency.
 #[derive(thiserror::Error, Debug)]
 pub enum TomlEditError {
     #[error("IO error: {0}")]
@@ -46,7 +48,7 @@ pub enum TomlEditError {
         source: toml_edit::TomlError,
     },
 
-    #[error("`[dependencies]` in `Simplex.toml` is not a table")]
+    #[error("`[dependencies]` in {CONFIG_FILENAME} is not a table")]
     MalformedDependenciesTable,
 
     #[error("malformed dependency spec `{0}` (expected `<source>` or `<alias>=<source>`)")]

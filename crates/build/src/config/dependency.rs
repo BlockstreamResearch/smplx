@@ -15,6 +15,8 @@ pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
 // TOML section name.
 pub const DEPENDENCIES_SECTION: &str = "dependencies";
 
+pub const CONFIG_FILENAME: &str = "Simplex.toml";
+
 #[derive(Debug, Default, Clone)]
 pub struct DependencyConfig {
     pub inner: HashMap<String, Dependency>,
@@ -47,7 +49,7 @@ struct RawDependencyConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDependency {
-    /// The exact path to the directory containing the `Simplex.toml` file.
+    /// The exact path to the directory containing the [`CONFIG_FILENAME`] file.
     path: Option<String>,
     /// The URL of the Git repository.
     git: Option<String>,

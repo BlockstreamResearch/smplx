@@ -1,7 +1,5 @@
 use smplx_build::{ArtifactsGenerator, ArtifactsResolver, BuildConfig, DependencyConfig};
 
-use crate::config::CONFIG_FILENAME;
-
 use super::error::CommandError;
 
 pub struct Build {}
@@ -16,7 +14,7 @@ impl Build {
         let src_dir = ArtifactsResolver::resolve_local_dir(&config.src_dir)?;
 
         // NOTE: Assumes that remappings are already installed
-        let dependency_builder = ArtifactsResolver::resolve_remappings(root_dir, deps, CONFIG_FILENAME)?;
+        let dependency_builder = ArtifactsResolver::resolve_remappings(root_dir, deps)?;
 
         let files_to_build = ArtifactsResolver::resolve_files_to_build(&config.src_dir, &config.simf_files)?;
 

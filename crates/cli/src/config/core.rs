@@ -1,14 +1,13 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use smplx_build::{BuildConfig, DependencyConfig};
+use smplx_build::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 use smplx_regtest::RegtestConfig;
 use smplx_test::TestConfig;
 
 use super::error::ConfigError;
 
 pub const INIT_CONFIG: &str = include_str!("../../assets/Simplex.default.toml");
-pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
