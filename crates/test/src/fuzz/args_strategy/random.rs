@@ -31,12 +31,15 @@ pub struct RandomValueTree<T>(T);
 
 impl<T: Clone + std::fmt::Debug> ValueTree for RandomValueTree<T> {
     type Value = T;
+
     fn current(&self) -> T {
         self.0.clone()
     }
+
     fn simplify(&mut self) -> bool {
         false
     }
+
     fn complicate(&mut self) -> bool {
         false
     }

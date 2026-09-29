@@ -38,6 +38,7 @@ impl<P: AsRef<Program> + ProgramFactory<P>> FuzzableProgram<P> for P {
     fn build_program(args: impl Into<Arguments>, network: &SimplicityNetwork) -> (Box<P>, Script) {
         let prog = P::instantiate_program(args);
         let script = prog.as_ref().as_ref().get_script_pubkey(network);
+
         (prog, script)
     }
 }
@@ -81,7 +82,8 @@ impl FuzzContext {
         match &self.signer_option {
             SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
                 let signer = self.get_signer();
-                Ok(signer.unwrap().sign_tx_with_witnesses(ft)?)
+
+                Ok(signer.unwrap().sign_tx(ft)?)
             }
             SignerOption::NoSigning => {
                 let witnesses = ft
@@ -95,6 +97,7 @@ impl FuzzContext {
                             .map(|program_input| (index, program_input.witness.shallow_clone()))
                     })
                     .collect();
+
                 Ok((ft.extract_pst().0, witnesses))
             }
         }

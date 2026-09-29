@@ -48,9 +48,11 @@ impl<T> ValuePoolValueTree<T> {
 
 impl ValueTree for ValuePoolValueTree<(Arguments, WitnessValues)> {
     type Value = (Arguments, WitnessValues);
+
     fn current(&self) -> Self::Value {
         self.current.clone()
     }
+
     fn simplify(&mut self) -> bool {
         let modified_witness = self
             .value_pool
@@ -59,6 +61,7 @@ impl ValueTree for ValuePoolValueTree<(Arguments, WitnessValues)> {
         self.cnt += 1;
         self.check_utilization()
     }
+
     fn complicate(&mut self) -> bool {
         self.simplify()
     }
@@ -129,18 +132,22 @@ impl ValuePool {
 
     pub fn generate_witness(&self, rng: &mut TestRng) -> WitnessValues {
         let mut map = HashMap::new();
+
         for (name, ty) in &self.witness_structure {
             if let Some(val) = self.sample(ty, rng) {
                 map.insert(name.clone(), val);
             }
         }
+
         WitnessValues::from(map)
     }
 
     pub fn probabilistically_replace(&self, wit: WitnessValues, rng: &mut TestRng) -> WitnessValues {
         let mut map = HashMap::new();
+
         for (name, val) in wit.iter() {
             let should_replace: bool = rng.random();
+
             if should_replace {
                 let sampled = self.sample(val.ty(), rng).unwrap_or_else(|| val.clone());
                 map.insert(name.clone(), sampled);
@@ -148,6 +155,7 @@ impl ValuePool {
                 map.insert(name.clone(), val.clone());
             }
         }
+
         WitnessValues::from(map)
     }
 }

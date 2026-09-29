@@ -115,6 +115,7 @@ fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<p
                 }
             };
             let fuzz_context_builder = ::simplex::fuzz::FuzzEngineBuilder::from_context(config, test_context);
+
             #name(fuzz_context_builder)
         }
     };
