@@ -13,10 +13,9 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
-use simplicityhl::elements::hashes::Hash;
 use simplicityhl::elements::{self, Sequence};
 use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
-use simplicityhl::{Arguments, TemplateProgram, UnstableFeatures, WitnessValues};
+use simplicityhl::{Arguments, TemplateAst, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
@@ -266,7 +265,7 @@ impl Covenant {
 /// Returns an error if the source does not parse or does not type-check.
 #[wasm_bindgen(js_name = covenantParameterTypes)]
 pub fn covenant_parameter_types(source: &str) -> Result<String, JsError> {
-    let template = TemplateProgram::new_with_unstable(
+    let template = TemplateAst::new_with_unstable(
         Arc::<str>::from(source),
         &UnstableFeatures::all(),
         Box::new(ElementsJetHinter),
@@ -863,12 +862,12 @@ pub fn sdk_version() -> String {
 
 #[cfg(test)]
 mod tests {
-    use simplicityhl::elements::hashes::sha256::Midstate;
+    use simplicityhl::elements::AssetEntropy;
     use simplicityhl::elements::{AssetId, OutPoint, TxOut, Txid};
 
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{ContractHash, Covenant, FromStr, Hash, IssuanceDetails, IssuanceReport, TransactionBuilder};
+    use super::{ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, TransactionBuilder};
 
     const TRIVIAL: &str = "fn main() { }";
 
@@ -980,7 +979,7 @@ mod tests {
     fn reports_an_entropy_its_own_asset_can_be_rederived_from() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
             let reported = report_for(txid, vout, contract).entropy;
-            let read_back = Midstate::from_str(&reported).expect("a reported entropy");
+            let read_back = AssetEntropy::from_str(&reported).expect("a reported entropy");
 
             assert_eq!(AssetId::from_entropy(read_back).to_string(), asset);
         }

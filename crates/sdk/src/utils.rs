@@ -1,12 +1,11 @@
-use bitcoin_hashes::HashEngine;
 use sha2::{Digest, Sha256};
 
 use bip39::Mnemonic;
 
-use simplicityhl::elements::{AssetId, ContractHash, OutPoint, Script};
+use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script};
 use simplicityhl::simplicity::bitcoin;
 use simplicityhl::simplicity::bitcoin::secp256k1;
-use simplicityhl::simplicity::hashes::{Hash, sha256};
+use simplicityhl::simplicity::hashes::{HashEngine, sha256};
 
 /// Generates a radom menemonic with 12 words.
 ///
@@ -34,7 +33,7 @@ pub fn tr_unspendable_key() -> secp256k1::XOnlyPublicKey {
 
 /// Calculates new sha256 midstate and binds generated entropy to the specific outpoint.
 #[must_use]
-pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> sha256::Midstate {
+pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> AssetEntropy {
     let contract_hash = ContractHash::from_byte_array(entropy);
     AssetId::generate_asset_entropy(*outpoint, contract_hash)
 }

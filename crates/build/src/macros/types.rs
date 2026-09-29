@@ -434,10 +434,11 @@ impl RustType {
         &self,
         args_expr: &proc_macro2::Ident,
         witness_name: &str,
+        key_constructor: &proc_macro2::Ident,
     ) -> proc_macro2::TokenStream {
         let initial_arg_name = quote! { value };
         let get_witness_expr_tokens = quote! {
-            let witness_name = WitnessName::from_str_unchecked(#witness_name);
+            let witness_name = TemplateProgramWitness::#key_constructor(#witness_name);
             let #initial_arg_name = #args_expr
                 .get(&witness_name)
                 .ok_or_else(|| format!("Missing witness: {}", #witness_name))?;

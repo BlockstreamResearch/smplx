@@ -1,6 +1,5 @@
 use std::sync::{Arc, OnceLock};
 
-use bitcoin_hashes::Hash;
 use dyn_clone::DynClone;
 
 use simplicityhl::ast::ElementsJetHinter;
@@ -413,7 +412,10 @@ impl Program {
 
         for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
             builder = builder
-                .add_hidden(depth, tap_data_hash(slot))
+                .add_hidden(
+                    depth,
+                    taproot::TapNodeHash::from_byte_array(tap_data_hash(slot).to_byte_array()),
+                )
                 .expect("tap tree should be valid");
         }
 
@@ -507,7 +509,7 @@ mod tests {
     }
 
     fn dummy_asset_id(byte: u8) -> AssetId {
-        AssetId::from_slice(&[byte; 32]).unwrap()
+        AssetId::from_byte_array([byte; 32])
     }
 
     fn dummy_program() -> Program {

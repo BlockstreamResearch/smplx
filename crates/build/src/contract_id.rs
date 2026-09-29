@@ -6,7 +6,7 @@ use simplicityhl::num::U256;
 use simplicityhl::simplicity::Cmr;
 use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::{UIntValue, ValueConstructible};
-use simplicityhl::{Arguments, Parameters, ResolvedType, TemplateProgram, Value};
+use simplicityhl::{Arguments, Parameters, ResolvedType, TemplateAst, Value, WitnessNameToValueMap};
 
 use crate::error::BuildError;
 
@@ -16,7 +16,7 @@ pub(crate) struct ContractId(Cmr);
 impl ContractId {
     /// # Errors
     /// Returns a `BuildError` if a parameter type is unsupported, or if the program does not compile.
-    pub(crate) fn from_template(template: &TemplateProgram) -> Result<Self, BuildError> {
+    pub(crate) fn from_template(template: &TemplateAst) -> Result<Self, BuildError> {
         let arguments = Self::default_arguments(template.parameters())?;
         let compiled = template.instantiate(arguments, false).map_err(BuildError::DryRun)?;
 
@@ -30,7 +30,7 @@ impl ContractId {
             .iter()
             .map(|(name, ty)| Ok((name.clone(), Self::default_value(ty)?)))
             .collect::<Result<HashMap<_, _>, _>>()
-            .map(Arguments::from)
+            .map(Arguments::from_map)
     }
 
     fn default_value(ty: &ResolvedType) -> Result<Value, BuildError> {

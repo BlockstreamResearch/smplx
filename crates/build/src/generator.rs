@@ -8,7 +8,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Serialize;
 
-use simplicityhl::TemplateProgram;
+use simplicityhl::TemplateAst;
 use simplicityhl::UnstableFeatures;
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::resolution::DependencyMap;
@@ -161,14 +161,14 @@ impl ArtifactsGenerator {
         let canon_source_file = CanonSourceFile::new(canon_source, Arc::from(content));
         let dependency_map = Self::build_dependency_map(validated_deps, project_root)?;
 
-        let template = TemplateProgram::new_with_dep(
+        let template = TemplateAst::new_with_dep(
             canon_source_file.clone(),
             &dependency_map,
             &UnstableFeatures::all(),
             Box::new(ElementsJetHinter),
         )
         .map_err(|diags| BuildError::DryRun(diags.to_string()))?;
-        let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
+        let flattened = TemplateAst::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
             .map_err(|diags| BuildError::Flattening(diags.to_string()))?;
 
         Ok(SourceEntry {
