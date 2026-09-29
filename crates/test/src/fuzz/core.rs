@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::simplicity::{RedeemNode, Value};
-use simplicityhl::{Arguments, WitnessValues};
+use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
@@ -73,13 +74,29 @@ impl FuzzContext {
     }
 
     #[inline]
-    pub fn sign_or_extract(&self, ft: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
+    pub fn sign_or_extract(
+        &self,
+        ft: &FinalTransaction,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
         match &self.signer_option {
             SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
                 let signer = self.get_signer();
-                Ok(signer.unwrap().sign_tx(ft)?)
+                Ok(signer.unwrap().sign_tx_with_witnesses(ft)?)
             }
-            SignerOption::NoSigning => Ok(ft.extract_pst().0),
+            SignerOption::NoSigning => {
+                let witnesses = ft
+                    .inputs()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, input)| {
+                        input
+                            .program_input
+                            .as_ref()
+                            .map(|program_input| (index, program_input.witness.shallow_clone()))
+                    })
+                    .collect();
+                Ok((ft.extract_pst().0, witnesses))
+            }
         }
     }
 }

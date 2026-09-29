@@ -612,8 +612,20 @@ impl Signer {
     /// # Errors
     /// Returns a `SignerError` if we have an error in singing and constructing program witness.
     pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
+        self.sign_tx_with_witnesses(tx).map(|(pst, _)| pst)
+    }
+
+    /// Signs a transaction and returns the signed witness used for each program input.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
+    pub fn sign_tx_with_witnesses(
+        &self,
+        tx: &FinalTransaction,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
+        let mut signed_witnesses = HashMap::new();
 
         if tx.needs_blinding() {
             pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
@@ -661,6 +673,7 @@ impl Signer {
                         source,
                     })?;
 
+                signed_witnesses.insert(index, signed_witness);
                 pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
             } else {
                 // We need to sign the UTXO as is
@@ -673,7 +686,7 @@ impl Signer {
             }
         }
 
-        Ok(pst)
+        Ok((pst, signed_witnesses))
     }
 
     fn sign_and_extract_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
