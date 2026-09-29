@@ -90,7 +90,7 @@ fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<p
                 #body
             }
 
-            let config = fuzz::proptest::test_runner::Config {
+            let config = ::simplex::fuzz::proptest::test_runner::Config {
                 test_name: ::core::option::Option::Some(::core::concat!(
                     ::core::module_path!(),
                     "::",
@@ -114,7 +114,7 @@ fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<p
                     TestContext::new(PathBuf::from(path)).unwrap()
                 }
             };
-            let fuzz_context_builder = FuzzEngineBuilder::from_context(config, test_context);
+            let fuzz_context_builder = ::simplex::fuzz::FuzzEngineBuilder::from_context(config, test_context);
             #name(fuzz_context_builder)
         }
     };
