@@ -9,7 +9,7 @@ use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
 
 use smplx_sdk::program::{ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
-use smplx_sdk::provider::{EsploraProvider, ProviderTrait, SimplicityNetwork};
+use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 
 use crate::context::TestContext;
@@ -31,17 +31,11 @@ pub struct FuzzEngineBuilder<Program, Args, Wit> {
     pub(crate) signer_option: SignerOption,
     pub(crate) signer: Option<Signer>,
     test_context: Option<TestContext>,
-    mock_provider: Arc<dyn ProviderTrait>,
     network: SimplicityNetwork,
     _phantom: PhantomData<(Program, Args, Wit)>,
 }
 
-impl<Program, Args, Wit> FuzzEngineBuilder<Program, Args, Wit>
-where
-    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-    Args: Into<Arguments> + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: Into<WitnessValues> + RandomWitness + std::fmt::Debug + Clone + 'static,
-{
+impl<Program, Args, Wit> FuzzEngineBuilder<Program, Args, Wit> {
     pub fn new(config: proptest::test_runner::Config) -> Self {
         let default_network = SimplicityNetwork::default_regtest();
 
@@ -50,14 +44,13 @@ where
             test_context: None,
             signer_option: SignerOption::NoSigning,
             signer: None,
-            mock_provider: Arc::new(Self::get_default_provider(default_network)),
             network: default_network,
             _phantom: PhantomData,
         }
     }
 
     pub fn from_context(mut config: proptest::test_runner::Config, test_context: TestContext) -> Self {
-        let default_network = SimplicityNetwork::default_regtest();
+        let network = *test_context.get_network();
         let smplx_test_context = test_context.get_config();
         if let Some(proptest_conf) = smplx_test_context.fuzz.as_ref() {
             if let Some(cases) = proptest_conf.cases {
@@ -80,14 +73,9 @@ where
             test_context: Some(test_context),
             signer_option: SignerOption::NoSigning,
             signer: None,
-            mock_provider: Arc::new(Self::get_default_provider(default_network)),
-            network: default_network,
+            network,
             _phantom: PhantomData,
         }
-    }
-
-    fn get_default_provider(default_network: SimplicityNetwork) -> EsploraProvider {
-        EsploraProvider::new("default_web_page.com".into(), default_network)
     }
 }
 
@@ -98,8 +86,17 @@ where
     Wit: Into<WitnessValues> + RandomWitness + std::fmt::Debug + Clone + 'static,
 {
     pub fn with_signer(mut self, signer: Signer) -> Self {
+        if let Ok(provider) = signer.get_provider() {
+            self.network = *provider.get_network();
+        }
         self.signer_option = SignerOption::CustomSigner;
         self.signer = Some(signer);
+        self
+    }
+
+    /// Overrides the network used to build and execute fuzzed programs.
+    pub fn with_network(mut self, network: SimplicityNetwork) -> Self {
+        self.network = network;
         self
     }
 
@@ -118,7 +115,6 @@ where
             fuzz_context: FuzzContext {
                 #[allow(clippy::arc_with_non_send_sync)]
                 signer: Arc::new(self.signer),
-                mock_provider: self.mock_provider,
                 #[allow(clippy::arc_with_non_send_sync)]
                 test_context: Arc::new(self.test_context),
                 signer_option: self.signer_option,
@@ -279,5 +275,41 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::{EsploraConfig, TestConfig};
+
+    use super::*;
+
+    #[test]
+    fn context_preserve_network_and_provider() {
+        let config = TestConfig {
+            esplora: Some(EsploraConfig {
+                url: "http://localhost:3000".to_string(),
+                network: "Liquid".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let test_context = TestContext::from_config(config).unwrap();
+        let builder =
+            FuzzEngineBuilder::<(), (), ()>::from_context(proptest::test_runner::Config::default(), test_context);
+        let fuzz_context = FuzzContext {
+            #[allow(clippy::arc_with_non_send_sync)]
+            signer: Arc::new(None),
+            #[allow(clippy::arc_with_non_send_sync)]
+            test_context: Arc::new(builder.test_context),
+            signer_option: SignerOption::NoSigning,
+            network: builder.network,
+        };
+
+        assert_eq!(fuzz_context.network, SimplicityNetwork::Liquid);
+        assert_eq!(
+            fuzz_context.get_provider().unwrap().get_network(),
+            &SimplicityNetwork::Liquid
+        );
     }
 }

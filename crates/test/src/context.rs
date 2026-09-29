@@ -28,7 +28,10 @@ pub struct TestContext {
 impl TestContext {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
+        Self::from_config(config)
+    }
 
+    pub fn from_config(config: TestConfig) -> Result<Self, TestError> {
         // error is ignored because we assume that all tests use the same verbosity
         let _ = GlobalConfig::set_global_config(config.verbosity);
 
