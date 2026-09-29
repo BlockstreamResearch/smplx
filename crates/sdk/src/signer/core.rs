@@ -613,9 +613,6 @@ impl Signer {
     ///
     /// # Errors
     /// Returns a `SignerError` if we have an error in singing and constructing program witness.
-    ///
-    /// # Panics
-    /// Throws a panic if we failed to sign a program witness.
     pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
@@ -638,9 +635,9 @@ impl Signer {
                     _ => None,
                 };
 
-                let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
+                let signed_witness = match signing_info {
                     // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => Ok(self.get_signed_program_witness(
+                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness,
@@ -649,14 +646,14 @@ impl Signer {
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
                         message,
-                    )?),
+                    )?,
                     // Just build the witness
-                    None => Ok(program_input.witness.shallow_clone()),
+                    None => program_input.witness.shallow_clone(),
                 };
 
                 let pruned_witness = program_input
                     .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
+                    .finalize(&pst, &signed_witness, index, &self.network)
                     .map_err(|source| SignerError::CovenantExecution {
                         index,
                         locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),

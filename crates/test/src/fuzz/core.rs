@@ -21,7 +21,6 @@ pub(crate) enum SignerOption {
 #[derive(Clone)]
 pub struct FuzzContext {
     pub(crate) signer: Arc<Option<Signer>>,
-    pub mock_provider: Arc<dyn ProviderTrait>,
     /// Used for inserting signer
     pub(crate) test_context: Arc<Option<TestContext>>,
     pub(crate) signer_option: SignerOption,
@@ -55,6 +54,22 @@ impl FuzzContext {
             SignerOption::CustomSigner => self.signer.as_ref().as_ref(),
             SignerOption::NoSigning => None,
         }
+    }
+
+    /// Returns the provider associated with the active custom signer or test context, if any.
+    pub fn get_provider(&self) -> Option<&dyn ProviderTrait> {
+        if matches!(self.signer_option, SignerOption::CustomSigner)
+            && let Some(signer) = self.signer.as_ref().as_ref()
+            && let Ok(provider) = signer.get_provider()
+        {
+            return Some(provider);
+        }
+
+        if let Some(test_context) = self.test_context.as_ref().as_ref() {
+            return Some(test_context.get_default_provider());
+        }
+
+        None
     }
 
     #[inline]
