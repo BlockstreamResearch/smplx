@@ -28,7 +28,7 @@ impl FinalTransactionBuilder {
     /// Creates a reusable fuzz transaction blueprint.
     ///
     /// # Errors
-    /// Returns an error when there are no targets, a target is duplicated, or a target index is out of bounds.
+    /// Returns an error when there are no input targets, a target is duplicated, or a target index is out of bounds.
     pub fn new(
         initial_tx: FinalTransaction,
         targets: impl IntoIterator<Item = ProgramTarget>,
@@ -124,6 +124,7 @@ impl FinalTransactionBuilder {
         }
 
         let mut unique_targets = HashSet::with_capacity(targets.len());
+        let mut has_input_target = false;
 
         for target in targets.iter().copied() {
             if !unique_targets.insert(target) {
@@ -131,11 +132,15 @@ impl FinalTransactionBuilder {
             }
 
             match target {
-                ProgramTarget::Input(index) if index >= initial_tx.n_inputs() => {
-                    return Err(FuzzError::InputTargetOutOfBounds {
-                        index,
-                        input_count: initial_tx.n_inputs(),
-                    });
+                ProgramTarget::Input(index) => {
+                    if index >= initial_tx.n_inputs() {
+                        return Err(FuzzError::InputTargetOutOfBounds {
+                            index,
+                            input_count: initial_tx.n_inputs(),
+                        });
+                    }
+
+                    has_input_target = true;
                 }
                 ProgramTarget::Output(index) if index >= initial_tx.n_outputs() => {
                     return Err(FuzzError::OutputTargetOutOfBounds {
@@ -143,8 +148,12 @@ impl FinalTransactionBuilder {
                         output_count: initial_tx.n_outputs(),
                     });
                 }
-                ProgramTarget::Input(_) | ProgramTarget::Output(_) => {}
+                ProgramTarget::Output(_) => {}
             }
+        }
+
+        if !has_input_target {
+            return Err(FuzzError::NoInputTargets);
         }
 
         Ok(())
@@ -198,6 +207,10 @@ mod tests {
         assert_eq!(
             FinalTransactionBuilder::new(initial_transaction(), []).err(),
             Some(FuzzError::NoProgramTargets)
+        );
+        assert_eq!(
+            FinalTransactionBuilder::new(initial_transaction(), [ProgramTarget::Output(0)]).err(),
+            Some(FuzzError::NoInputTargets)
         );
         assert_eq!(
             FinalTransactionBuilder::new(
