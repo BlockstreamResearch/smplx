@@ -1,4 +1,5 @@
 pub mod build;
+#[cfg(feature = "edit")]
 mod dep_spec;
 pub mod dependency;
 

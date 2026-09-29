@@ -1,13 +1,18 @@
 use std::collections::HashMap;
+#[cfg(feature = "edit")]
 use std::path::Path;
 
+#[cfg(feature = "edit")]
 use toml_edit::{DocumentMut, Item};
 
 use serde::Deserialize;
 
+#[cfg(feature = "edit")]
 use super::dep_spec::DepSpec;
 
-use crate::error::{BuildError, DependencyValidationError, TomlEditError};
+#[cfg(feature = "edit")]
+use crate::error::TomlEditError;
+use crate::error::{BuildError, DependencyValidationError};
 
 /// The default directory name used for Simplex project dependencies.
 pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
@@ -76,6 +81,7 @@ impl DependencyConfig {
         }
     }
 
+    #[cfg(feature = "edit")]
     /// Appends new entries to the `[dependencies]` table of the config file at `path`,
     /// preserving existing formatting and comments.
     ///
@@ -298,6 +304,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "edit")]
     fn dependency_edit_preserves_existing_toml() {
         let path = std::env::temp_dir().join(format!("smplx-dependency-edit-{}.toml", std::process::id()));
         std::fs::write(&path, "# keep this comment\n[package]\nname = \"fixture\"\n")
