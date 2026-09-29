@@ -1,7 +1,11 @@
 use std::io;
 use std::path::PathBuf;
 
+#[cfg(feature = "full")]
 use globwalk::GlobError;
+
+#[cfg(feature = "full")]
+use crate::CONFIG_FILENAME;
 
 /// Neutral validation error for a single dependency declaration.
 ///
@@ -34,7 +38,8 @@ pub enum DependencyValidationError {
     InvalidPackage { name: String, value: String },
 }
 
-/// Errors produced while editing `Simplex.toml` to add or modify a dependency.
+#[cfg(feature = "full")]
+/// Errors produced while editing [`CONFIG_FILENAME`] to add or modify a dependency.
 #[derive(thiserror::Error, Debug)]
 pub enum TomlEditError {
     #[error("IO error: {0}")]
@@ -46,7 +51,7 @@ pub enum TomlEditError {
         source: toml_edit::TomlError,
     },
 
-    #[error("`[dependencies]` in `Simplex.toml` is not a table")]
+    #[error("`[dependencies]` in `{CONFIG_FILENAME}` is not a table")]
     MalformedDependenciesTable,
 
     #[error("malformed dependency spec `{0}` (expected `<source>` or `<alias>=<source>`)")]
@@ -67,9 +72,11 @@ pub enum BuildError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    #[cfg(feature = "full")]
     #[error("failed to serialize metadata: {0}")]
     MetadataSerialization(#[from] serde_json::Error),
 
+    #[cfg(feature = "full")]
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
 
@@ -86,9 +93,9 @@ pub enum BuildError {
     GenerationFailed(String),
 
     #[error(
-        "Failed to resolve correct relative path for include_simf! macro, cwd: '{cwd:?}', simf_file: '{simf_file:?}'"
+        "Failed to resolve correct relative path for include_simf! macro, root_dir: '{root_dir:?}', simf_file: '{simf_file:?}'"
     )]
-    FailedToFindCorrectRelativePath { cwd: PathBuf, simf_file: PathBuf },
+    FailedToFindCorrectRelativePath { root_dir: PathBuf, simf_file: PathBuf },
 
     #[error("Failed to find prefix for a file: {0}")]
     NoBasePathForGeneration(#[from] std::path::StripPrefixError),
@@ -114,6 +121,7 @@ pub enum BuildError {
     #[error("Invalid git repository URL: '{0}'")]
     InvalidGitUrl(String),
 
+    #[cfg(feature = "full")]
     #[error(transparent)]
     TomlEdit(#[from] TomlEditError),
 }
