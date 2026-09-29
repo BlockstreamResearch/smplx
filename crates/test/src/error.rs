@@ -41,6 +41,9 @@ pub enum FuzzError {
     #[error("At least one program target is required")]
     NoProgramTargets,
 
+    #[error("At least one program input target is required")]
+    NoInputTargets,
+
     #[error("Duplicate program target: {0:?}")]
     DuplicateProgramTarget(ProgramTarget),
 
