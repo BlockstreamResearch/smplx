@@ -109,7 +109,6 @@ impl ValuePool {
                 .and_modify(|counter| counter.push(val.clone()))
                 .or_insert(vec![val.clone()]);
         }
-        // TODO: add possibility in simplex to generate any kind of type
 
         Self {
             pool,

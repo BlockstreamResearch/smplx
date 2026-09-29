@@ -108,14 +108,11 @@ where
         self
     }
 
-    // ONLY for testing purposes (TODO: remove)
     pub fn build(
         self,
         strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
         blueprint: FinalTransactionBuilder,
     ) -> SimplexFuzzEngine<Program, Args, Wit> {
-        // TODO: add fetching of failure values to feed correct seed into TestRunner on creation
-
         SimplexFuzzEngine {
             runner: proptest::test_runner::TestRunner::new(self.proptest_config),
             fuzz_context: FuzzContext {
@@ -198,8 +195,6 @@ where
         base.boxed()
     }
 }
-
-// TODO: create a shared state with Atomic counter (for multiple runners)
 
 #[derive(Debug)]
 pub struct CaseOutcome {}
