@@ -249,7 +249,7 @@ where
             .prepare_transaction(program.as_ref().as_ref(), &script, &arguments, &witness)
             .map_err(|error| TestCaseError::fail(format!("failed to prepare fuzz transaction: {error}")))?;
 
-        let pst = fuzz_context
+        let (pst, signed_witnesses) = fuzz_context
             .sign_or_extract(&final_transaction)
             .map_err(|error| TestCaseError::fail(format!("failed to sign: {error}")))?;
 
@@ -259,17 +259,19 @@ where
                 continue;
             };
 
+            let signed_witness = signed_witnesses.get(&input_index).unwrap_or(&witness);
+
             let exec_result: ProgramExecResult =
                 program
                     .as_ref()
                     .as_ref()
-                    .execute(&pst, &witness, input_index, &fuzz_context.network);
+                    .execute(&pst, signed_witness, input_index, &fuzz_context.network);
 
             if let Err(error) =
-                program_post_hook.call(fuzz_context, &pst, &arguments, &witness, input_index, exec_result)
+                program_post_hook.call(fuzz_context, &pst, &arguments, signed_witness, input_index, exec_result)
             {
                 return Err(TestCaseError::fail(format!(
-                    "{error}, args: {arguments}, wit: {witness}"
+                    "{error}, args: {arguments}, wit: {signed_witness}"
                 )));
             }
         }

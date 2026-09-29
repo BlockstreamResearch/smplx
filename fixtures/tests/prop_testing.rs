@@ -1,15 +1,19 @@
 mod failure_test_prop {
-    use simplex::fuzz;
     use simplex::fuzz::builders::{FinalTransactionBuilder, ProgramTarget};
     use simplex::fuzz::core::FuzzContext;
     use simplex::fuzz::engine::FuzzStrategyBuilder;
+    use simplex::fuzz::proptest::strategy::Just;
     use simplex::fuzz::{FuzzEngineBuilder, FuzzError, ProgramCheck, ProgramExecResult};
+    use simplex::provider::SimplicityNetwork;
+    use simplex::signer::Signer;
     use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
     use simplex::simplicityhl::{Arguments, WitnessValues};
-    use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
+    use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
     use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
     use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
+    use simplex_fixtures::artifacts::p2pk::P2pkProgram;
+    use simplex_fixtures::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
     #[derive(Clone, Copy, Eq, PartialEq)]
     pub enum Expect {
@@ -20,6 +24,8 @@ mod failure_test_prop {
     struct FailureTestCheck {
         expect: Expect,
     }
+
+    struct SuccessfulProgramCheck;
 
     const FAILURE_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
@@ -51,6 +57,42 @@ mod failure_test_prop {
         }
     }
 
+    impl ProgramCheck for SuccessfulProgramCheck {
+        fn call(
+            &self,
+            _ctx: &FuzzContext,
+            _tx: &PartiallySignedTransaction,
+            _arguments: &Arguments,
+            witness: &WitnessValues,
+            _input_index: usize,
+            program_exec_result: ProgramExecResult,
+        ) -> Result<(), String> {
+            let signed_witness = P2pkWitness::from_witness(witness)?;
+            if signed_witness == P2pkWitness::default() {
+                return Err("fuzz check received the original unsigned witness".to_string());
+            }
+
+            program_exec_result
+                .map(|_| ())
+                .map_err(|error| format!("signed program failed: {error}"))
+        }
+    }
+
+    fn signed_transaction_builder(
+        arguments: &P2pkArguments,
+        witness: &P2pkWitness,
+    ) -> Result<FinalTransactionBuilder, FuzzError> {
+        let program = P2pkProgram::new(arguments.clone());
+        let mut transaction = FinalTransaction::new();
+        transaction.add_program_input(
+            PartialInput::new(UTXO::default()),
+            ProgramInput::new(Box::new(program.as_ref().clone()), witness),
+            RequiredSignature::Witness("SIGNATURE".to_string()),
+        );
+
+        FinalTransactionBuilder::new(transaction, [FAILURE_PROGRAM_TARGET])
+    }
+
     #[simplex::fuzz]
     fn test_failure_catching_after_fuzzing(
         fuzz_engine_builder: FuzzEngineBuilder<FailureTestProgram, FailureTestArguments, FailureTestWitness>,
@@ -74,5 +116,26 @@ mod failure_test_prop {
         let transaction_builder = failure_transaction_builder().unwrap();
         let runner = fuzz_engine_builder.build(strategy_storage, transaction_builder);
         runner.run_with_check(FailureTestCheck { expect: Expect::Ok });
+    }
+
+    #[simplex::fuzz]
+    fn test_signed_witness_with_program_checks(
+        fuzz_engine_builder: FuzzEngineBuilder<P2pkProgram, P2pkArguments, P2pkWitness>,
+    ) -> anyhow::Result<()> {
+        const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+
+        let signer = Signer::from_mnemonic(TEST_MNEMONIC, SimplicityNetwork::default_regtest());
+        let arguments = P2pkArguments {
+            public_key: signer.get_schnorr_public_key().serialize(),
+        };
+        let witness = P2pkWitness::default();
+        let strategy_storage = Just(((&arguments).into(), (&witness).into()));
+        let transaction_builder = signed_transaction_builder(&arguments, &witness)?;
+        let runner = fuzz_engine_builder
+            .with_signer(signer)
+            .build(strategy_storage, transaction_builder);
+        runner.run_with_check(SuccessfulProgramCheck);
+
+        Ok(())
     }
 }
