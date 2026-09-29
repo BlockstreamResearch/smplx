@@ -2,5 +2,5 @@ pub mod build;
 mod dep_spec;
 pub mod dependency;
 
-pub use build::BuildConfig;
+pub use build::{BuildConfig, CONFIG_FILENAME};
 pub use dependency::{DEFAULT_DEPENDENCY_DIR, Dependency, DependencyConfig, GitRef};

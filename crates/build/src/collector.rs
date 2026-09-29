@@ -5,12 +5,13 @@ use std::path::Path;
 use simplicityhl::resolution::{DependencyMapBuilder, ValidatedDeps};
 use simplicityhl::source::CanonPath;
 
-use crate::{ArtifactsResolver, BuildConfig, CONFIG_FILENAME, DependencyConfig};
+use crate::CONFIG_FILENAME;
+use crate::{ArtifactsResolver, BuildConfig, DependencyConfig};
 
 use super::error::BuildError;
 
 /// A temporary context struct to hold global state during recursion.
-/// This eliminates the need to pass `builder`, `visited`, and `config_filename`
+/// This eliminates the need to pass `builder` and `visited`
 /// into every single recursive call.
 pub(crate) struct DepCollector {
     builder: DependencyMapBuilder,

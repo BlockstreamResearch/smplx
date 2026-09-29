@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::env;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
@@ -63,21 +62,22 @@ struct SourceEntry {
 
 impl ArtifactsGenerator {
     pub fn generate_artifacts(
+        root_dir: &Path,
         out_dir: impl AsRef<Path>,
         base_dir: impl AsRef<Path>,
         simfs: &[impl AsRef<Path>],
         validated_deps: &ValidatedDeps,
     ) -> Result<(), BuildError> {
-        let cwd = env::current_dir()?;
         let out_dir = out_dir.as_ref();
         let base_dir = base_dir.as_ref();
 
         let json_metadata_file = out_dir.join(METADATA_FILENAME);
 
-        let pathdiff = pathdiff::diff_paths(base_dir, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
-            cwd,
-            simf_file: base_dir.to_path_buf(),
-        })?;
+        let pathdiff =
+            pathdiff::diff_paths(base_dir, root_dir).ok_or_else(|| BuildError::FailedToFindCorrectRelativePath {
+                root_dir: root_dir.to_path_buf(),
+                simf_file: base_dir.to_path_buf(),
+            })?;
 
         let simf_out_dir = out_dir.join(pathdiff);
         let mut metadata = Metadata::default();
@@ -92,7 +92,7 @@ impl ArtifactsGenerator {
 
         let tree = Self::build_tree(artifacts)?;
 
-        Self::generate_bindings(out_dir, tree)?;
+        Self::generate_bindings(root_dir, out_dir, tree)?;
 
         Ok(())
     }
@@ -207,18 +207,18 @@ impl ArtifactsGenerator {
     }
 
     /// Recursively generates bindings for every node in the tree.
-    fn generate_bindings(out_dir: &Path, tree: TreeNode) -> Result<(), BuildError> {
+    fn generate_bindings(root_dir: &Path, out_dir: &Path, tree: TreeNode) -> Result<(), BuildError> {
         fs::create_dir_all(out_dir)?;
 
         let mut mod_names = Vec::new();
 
         for artifact in tree.files {
-            let mod_name = Self::generate_simf_binding(out_dir, artifact)?;
+            let mod_name = Self::generate_simf_binding(root_dir, out_dir, artifact)?;
             mod_names.push(mod_name);
         }
 
         for (dir_name, subtree) in tree.dirs {
-            Self::generate_bindings(&out_dir.join(&dir_name), subtree)?;
+            Self::generate_bindings(root_dir, &out_dir.join(&dir_name), subtree)?;
             mod_names.push(dir_name);
         }
 
@@ -228,7 +228,7 @@ impl ArtifactsGenerator {
     }
 
     /// Generates a single `.rs` binding file for one simf artifact.
-    fn generate_simf_binding(out_dir: &Path, artifact: SimfArtifact) -> Result<String, BuildError> {
+    fn generate_simf_binding(root_dir: &Path, out_dir: &Path, artifact: SimfArtifact) -> Result<String, BuildError> {
         let output_file = out_dir.join(format!("{}.rs", artifact.contract_name));
 
         let mut file = fs::OpenOptions::new()
@@ -237,12 +237,12 @@ impl ArtifactsGenerator {
             .truncate(true)
             .open(&output_file)?;
 
-        let cwd = env::current_dir()?;
-        let pathdiff =
-            pathdiff::diff_paths(&artifact.mirrored_path, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
-                cwd,
+        let pathdiff = pathdiff::diff_paths(&artifact.mirrored_path, root_dir).ok_or_else(|| {
+            BuildError::FailedToFindCorrectRelativePath {
+                root_dir: root_dir.to_path_buf(),
                 simf_file: artifact.mirrored_path.clone(),
-            })?;
+            }
+        })?;
 
         let code = Self::generate_simf_binding_code(&artifact.contract_name, &pathdiff)?;
 

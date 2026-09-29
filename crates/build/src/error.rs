@@ -48,7 +48,7 @@ pub enum TomlEditError {
         source: toml_edit::TomlError,
     },
 
-    #[error("`[dependencies]` in {CONFIG_FILENAME} is not a table")]
+    #[error("`[dependencies]` in `{CONFIG_FILENAME}` is not a table")]
     MalformedDependenciesTable,
 
     #[error("malformed dependency spec `{0}` (expected `<source>` or `<alias>=<source>`)")]
@@ -88,9 +88,9 @@ pub enum BuildError {
     GenerationFailed(String),
 
     #[error(
-        "Failed to resolve correct relative path for include_simf! macro, cwd: '{cwd:?}', simf_file: '{simf_file:?}'"
+        "Failed to resolve correct relative path for include_simf! macro, root_dir: '{root_dir:?}', simf_file: '{simf_file:?}'"
     )]
-    FailedToFindCorrectRelativePath { cwd: PathBuf, simf_file: PathBuf },
+    FailedToFindCorrectRelativePath { root_dir: PathBuf, simf_file: PathBuf },
 
     #[error("Failed to find prefix for a file: {0}")]
     NoBasePathForGeneration(#[from] std::path::StripPrefixError),

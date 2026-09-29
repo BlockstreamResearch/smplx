@@ -6,7 +6,6 @@ pub mod generator;
 pub mod macros;
 pub mod resolver;
 
-pub use config::dependency::CONFIG_FILENAME;
-pub use config::{BuildConfig, DependencyConfig};
+pub use config::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 pub use generator::ArtifactsGenerator;
 pub use resolver::ArtifactsResolver;

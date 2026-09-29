@@ -1,6 +1,6 @@
+use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
-use std::{env, fs};
 
 use globwalk::FileType;
 
@@ -23,9 +23,12 @@ const BASE58_U64_LEN: usize = 11;
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    pub fn resolve_files_to_build(src_dir: &String, simfs: &[String]) -> Result<Vec<PathBuf>, BuildError> {
-        let cwd = env::current_dir()?;
-        let base = cwd.join(src_dir);
+    pub fn resolve_files_to_build(
+        root_dir: &Path,
+        src_dir: &String,
+        simfs: &[String],
+    ) -> Result<Vec<PathBuf>, BuildError> {
+        let base = root_dir.join(src_dir);
 
         let mut paths = Vec::new();
 
@@ -47,17 +50,9 @@ impl ArtifactsResolver {
         Ok(paths)
     }
 
-    pub fn resolve_local_dir(path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
-        let mut path_outer = PathBuf::from(path.as_ref());
-
-        if !path_outer.is_absolute() {
-            let manifest_dir = env::current_dir()?;
-
-            let mut path_local = manifest_dir;
-            path_local.push(path_outer);
-
-            path_outer = path_local;
-        }
+    pub fn resolve_local_dir(root_dir: &Path, path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
+        // `join` keeps `path` as is when it is already absolute
+        let path_outer = root_dir.join(path);
 
         if path_outer.extension().is_some() {
             return Err(BuildError::GenerationPath(format!(

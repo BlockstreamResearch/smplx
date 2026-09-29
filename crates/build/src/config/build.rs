@@ -10,6 +10,8 @@ pub const DEFAULT_SRC_DIR_NAME: &str = "simf";
 // TOML section name.
 pub const BUILD_SECTION: &str = "build";
 
+pub const CONFIG_FILENAME: &str = "Simplex.toml";
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct BuildConfig {
