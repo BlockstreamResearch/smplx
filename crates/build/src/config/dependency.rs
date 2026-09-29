@@ -1,16 +1,16 @@
 use std::collections::HashMap;
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use std::path::Path;
 
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use toml_edit::{DocumentMut, Item};
 
 use serde::Deserialize;
 
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use super::dep_spec::DepSpec;
 
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use crate::error::TomlEditError;
 use crate::error::{BuildError, DependencyValidationError};
 
@@ -81,7 +81,7 @@ impl DependencyConfig {
         }
     }
 
-    #[cfg(feature = "tooling")]
+    #[cfg(feature = "full")]
     /// Appends new entries to the `[dependencies]` table of the config file at `path`,
     /// preserving existing formatting and comments.
     ///
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "tooling")]
+    #[cfg(feature = "full")]
     fn dependency_edit_preserves_existing_toml() {
         let path = std::env::temp_dir().join(format!("smplx-dependency-edit-{}.toml", std::process::id()));
         std::fs::write(&path, "# keep this comment\n[package]\nname = \"fixture\"\n")

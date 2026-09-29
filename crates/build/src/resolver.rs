@@ -2,14 +2,14 @@ use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use globwalk::FileType;
 
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use simplicityhl::parse::{self, ParseFromStr};
 use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
@@ -26,7 +26,7 @@ const BASE58_U64_LEN: usize = 11;
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    #[cfg(feature = "tooling")]
+    #[cfg(feature = "full")]
     pub fn resolve_files_to_build(
         root_dir: &Path,
         src_dir: &String,
@@ -172,7 +172,7 @@ impl ArtifactsResolver {
         digits.iter().map(|&digit| char::from(digit)).collect()
     }
 
-    #[cfg(feature = "tooling")]
+    #[cfg(feature = "full")]
     /// Checks whether the source declares a `fn main(...)`,
     /// finding it even when nested inside `mod { ... }` blocks.
     fn contains_main(source: &str) -> bool {
@@ -183,7 +183,7 @@ impl ArtifactsResolver {
         Self::rec_main_checker(parsed_program.items(), &FunctionName::main())
     }
 
-    #[cfg(feature = "tooling")]
+    #[cfg(feature = "full")]
     /// Recursively searches `items` (descending into nested modules) for a
     /// function named `main`.
     fn rec_main_checker(items: &[parse::Item], main_name: &FunctionName) -> bool {

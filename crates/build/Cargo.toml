@@ -11,8 +11,8 @@ workspace = true
 # On by default for the `simplex` CLI and macros. Crates that only read `Simplex.toml`
 # and resolve dependencies (e.g. simplicityhl-lsp) use `default-features = false`.
 [features]
-default = ["tooling"]
-tooling = ["dep:syn", "dep:proc-macro2", "dep:quote", "dep:pathdiff", "dep:prettyplease", "dep:globwalk", "dep:serde_json", "dep:toml_edit"]
+default = ["full"]
+full = ["dep:syn", "dep:proc-macro2", "dep:quote", "dep:pathdiff", "dep:prettyplease", "dep:globwalk", "dep:serde_json", "dep:toml_edit"]
 
 [dependencies]
 thiserror = { workspace = true }

@@ -1,5 +1,5 @@
 pub mod build;
-#[cfg(feature = "tooling")]
+#[cfg(feature = "full")]
 mod dep_spec;
 pub mod dependency;
 
