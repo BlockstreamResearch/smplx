@@ -1,10 +1,10 @@
 use std::io;
 use std::path::PathBuf;
 
-#[cfg(feature = "codegen")]
+#[cfg(feature = "tooling")]
 use globwalk::GlobError;
 
-#[cfg(feature = "edit")]
+#[cfg(feature = "tooling")]
 use crate::CONFIG_FILENAME;
 
 /// Neutral validation error for a single dependency declaration.
@@ -38,7 +38,7 @@ pub enum DependencyValidationError {
     InvalidPackage { name: String, value: String },
 }
 
-#[cfg(feature = "edit")]
+#[cfg(feature = "tooling")]
 /// Errors produced while editing [`CONFIG_FILENAME`] to add or modify a dependency.
 #[derive(thiserror::Error, Debug)]
 pub enum TomlEditError {
@@ -72,11 +72,11 @@ pub enum BuildError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
-    #[cfg(feature = "codegen")]
+    #[cfg(feature = "tooling")]
     #[error("failed to serialize metadata: {0}")]
     MetadataSerialization(#[from] serde_json::Error),
 
-    #[cfg(feature = "codegen")]
+    #[cfg(feature = "tooling")]
     #[error("Glob error: {0}")]
     Glob(#[from] GlobError),
 
@@ -121,7 +121,7 @@ pub enum BuildError {
     #[error("Invalid git repository URL: '{0}'")]
     InvalidGitUrl(String),
 
-    #[cfg(feature = "edit")]
+    #[cfg(feature = "tooling")]
     #[error(transparent)]
     TomlEdit(#[from] TomlEditError),
 }

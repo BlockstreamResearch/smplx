@@ -8,14 +8,11 @@ edition.workspace = true
 [lints]
 workspace = true
 
-# Crates that only read `Simplex.toml` and resolve
-# dependencies (e.g. simplicityhl-lsp) can use `default-features = false` to skip them.
+# On by default for the `simplex` CLI and macros. Crates that only read `Simplex.toml`
+# and resolve dependencies (e.g. simplicityhl-lsp) use `default-features = false`.
 [features]
-default = ["codegen", "edit"]
-# For `simplex build`
-codegen = ["dep:syn", "dep:proc-macro2", "dep:quote", "dep:pathdiff", "dep:prettyplease", "dep:globwalk", "dep:serde_json"]
-# For `simplex install`
-edit = ["dep:toml_edit"]
+default = ["tooling"]
+tooling = ["dep:syn", "dep:proc-macro2", "dep:quote", "dep:pathdiff", "dep:prettyplease", "dep:globwalk", "dep:serde_json", "dep:toml_edit"]
 
 [dependencies]
 thiserror = { workspace = true }
