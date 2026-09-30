@@ -14,8 +14,8 @@ use smplx_sdk::signer::Signer;
 
 use crate::context::TestContext;
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
-use crate::fuzz::builders::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::core::{FuzzContext, FuzzableProgram, SignerOption};
+use crate::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::{ProgramCheck, ProgramExecResult};
 
 pub struct SimplexFuzzEngine<Program, Args, Wit> {

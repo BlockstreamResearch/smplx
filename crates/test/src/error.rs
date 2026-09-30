@@ -4,7 +4,7 @@ use smplx_sdk::provider::ProviderError;
 
 use smplx_regtest::error::RegtestError;
 
-use crate::fuzz::builders::ProgramTarget;
+use crate::fuzz::transaction::ProgramTarget;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {
