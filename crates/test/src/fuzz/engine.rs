@@ -128,7 +128,7 @@ where
 }
 
 pub struct FuzzStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
-    base_strat: Option<BaseStrat>,
+    base_strat: BaseStrat,
     _placeholder: PhantomData<(Args, Wit)>,
 }
 
@@ -141,7 +141,7 @@ impl<Args, Wit> FuzzStrategyBuilder<Args, Wit> {
 impl<Args, Wit> Default for FuzzStrategyBuilder<Args, Wit> {
     fn default() -> Self {
         Self {
-            base_strat: Some(InterestingRandom::default()),
+            base_strat: InterestingRandom::default(),
             _placeholder: Default::default(),
         }
     }
@@ -150,14 +150,14 @@ impl<Args, Wit> Default for FuzzStrategyBuilder<Args, Wit> {
 impl<Args, Wit, BaseStrat> FuzzStrategyBuilder<Args, Wit, BaseStrat> {
     pub fn with_random(self) -> FuzzStrategyBuilder<Args, Wit, Random<Args, Wit>> {
         FuzzStrategyBuilder {
-            base_strat: Some(Random::<Args, Wit>::default()),
+            base_strat: Random::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
 
     pub fn with_random_pool(self) -> FuzzStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
         FuzzStrategyBuilder {
-            base_strat: Some(RandomValuePool::<Args, Wit>::default()),
+            base_strat: RandomValuePool::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
@@ -167,14 +167,14 @@ impl<Args, Wit, BaseStrat> FuzzStrategyBuilder<Args, Wit, BaseStrat> {
         NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
     {
         FuzzStrategyBuilder {
-            base_strat: Some(custom_strat),
+            base_strat: custom_strat,
             _placeholder: Default::default(),
         }
     }
 
     pub fn with_random_interesting_values(self) -> FuzzStrategyBuilder<Args, Wit, InterestingRandom<Args, Wit>> {
         FuzzStrategyBuilder {
-            base_strat: Some(InterestingRandom::<Args, Wit>::default()),
+            base_strat: InterestingRandom::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
@@ -185,10 +185,7 @@ where
     BaseStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
 {
     pub fn build(self) -> BoxedStrategy<(Arguments, WitnessValues)> {
-        let base = self
-            .base_strat
-            .expect("Base strategy is mandatory. Call with_random() or similar.");
-        base.boxed()
+        self.base_strat.boxed()
     }
 }
 
