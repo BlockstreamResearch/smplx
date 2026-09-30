@@ -1,8 +1,8 @@
 mod failure_test_prop {
-    use simplex::fuzz::builders::{FuzzTransaction, ProgramTarget};
     use simplex::fuzz::core::FuzzContext;
     use simplex::fuzz::engine::FuzzStrategyBuilder;
     use simplex::fuzz::proptest::strategy::Just;
+    use simplex::fuzz::transaction::{FuzzTransaction, ProgramTarget};
     use simplex::fuzz::{FuzzEngineBuilder, FuzzError, ProgramCheck, ProgramExecResult};
     use simplex::provider::SimplicityNetwork;
     use simplex::signer::Signer;
