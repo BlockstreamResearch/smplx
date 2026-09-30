@@ -112,9 +112,11 @@ impl RustType {
 
                         let random_size: u32 = rng.random_range(0..#size as u32);
                         let mut res = Vec::with_capacity(random_size as usize);
+
                         for s in 0..random_size {
                             res.push(#generated_fn_name(rng));
                         }
+
                         res
                     }
                 }
