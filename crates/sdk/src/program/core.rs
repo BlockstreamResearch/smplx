@@ -64,8 +64,12 @@ pub trait ProgramTrait: DynClone {
 
     /// Finalizes and returns `pruned_witness` as output after executing the program on certain parameters.
     ///
+    /// Implementations must compare the pruned program's static cost with the budget from the
+    /// exact serialized witness stack they return. Use [`check_budget`] for this check,
+    /// as the built-in `Program` does.
+    ///
     /// # Errors
-    /// Returns a `ProgramError` if program execution or constructing the control block fails.
+    /// Returns a `ProgramError` if execution, control block construction or budget validation fails.
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,

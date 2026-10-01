@@ -5,12 +5,12 @@ pub enum ProgramError {
     ///
     /// Consensus requires `cost <= 1000 * (serialized witness stack size + 50)` milli weight units.
     /// The 50 is Elements' `VALIDATION_WEIGHT_OFFSET`
-    /// ([script.h L61](https://github.com/ElementsProject/elements/blob/1af7a4d9bea93b4d7f29a77f9751a0e6e03a4390/src/script/script.h#L61));
-    /// the 1000 converts the weight-unit budget to libSimplicity's milli-weight-unit cost
+    /// ([script.h L61](https://github.com/ElementsProject/elements/blob/1af7a4d9bea93b4d7f29a77f9751a0e6e03a4390/src/script/script.h#L61)).
+    /// The 1000 converts the weight-unit budget to libSimplicity's milli-weight-unit cost
     /// ([eval.c L790](https://github.com/BlockstreamResearch/simplicity/blob/91d89bac54e9411281ee3b6e766a0ea20eb0a3d3/C/eval.c#L790)).
     #[error(
-        "Program cost {cost_wu} WU exceeds the witness budget of {budget_wu} WU ({stack_bytes}-byte witness stack + 50): \
-         add at least {deficit_wu} bytes of witness padding (more if the program executes the padding)"
+        "Program cost {cost_wu} WU exceeds the witness budget of {budget_wu} WU ({stack_bytes}-byte witness stack + 50). \
+         The serialized witness stack needs {deficit_wu} more bytes if the program cost stays the same"
     )]
     InsufficientBudget {
         /// Static execution cost of the pruned program, rounded up to whole weight units.
@@ -19,7 +19,7 @@ pub enum ProgramError {
         budget_wu: u64,
         /// Serialized size of the witness stack in bytes.
         stack_bytes: usize,
-        /// `cost_wu - budget_wu`, a lower bound on the missing witness bytes.
+        /// `cost_wu - budget_wu`, the shortfall in serialized witness size for an unchanged program cost.
         deficit_wu: u64,
     },
 
