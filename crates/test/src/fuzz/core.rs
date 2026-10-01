@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use simplicityhl::elements::Script;
@@ -7,26 +6,9 @@ use simplicityhl::simplicity::{RedeemNode, Value};
 use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
-use smplx_sdk::provider::{ProviderTrait, SimplicityNetwork};
-use smplx_sdk::signer::{Signer, SignerError};
-use smplx_sdk::transaction::FinalTransaction;
+use smplx_sdk::provider::SimplicityNetwork;
 
-use crate::context::TestContext;
-#[derive(Clone, Debug)]
-pub(crate) enum SignerOption {
-    DefaultTestConfigSigner,
-    CustomSigner,
-    NoSigning,
-}
-
-#[derive(Clone)]
-pub struct FuzzContext {
-    pub(crate) signer: Arc<Option<Signer>>,
-    /// Used for inserting signer
-    pub(crate) test_context: Arc<Option<TestContext>>,
-    pub(crate) signer_option: SignerOption,
-    pub network: SimplicityNetwork,
-}
+use crate::fuzz::engine::Context;
 
 pub type ProgramExecResult = Result<(Arc<RedeemNode>, Value), ProgramError>;
 
@@ -43,71 +25,10 @@ impl<P: AsRef<Program> + ProgramFactory<P>> FuzzableProgram<P> for P {
     }
 }
 
-impl FuzzContext {
-    pub fn get_signer(&self) -> Option<&Signer> {
-        match self.signer_option {
-            SignerOption::DefaultTestConfigSigner => Some(
-                self.test_context
-                    .as_ref()
-                    .as_ref()
-                    .expect("TestContext has to be unempty in order to get a default signer")
-                    .get_default_signer(),
-            ),
-            SignerOption::CustomSigner => self.signer.as_ref().as_ref(),
-            SignerOption::NoSigning => None,
-        }
-    }
-
-    /// Returns the provider associated with the active custom signer or test context, if any.
-    pub fn get_provider(&self) -> Option<&dyn ProviderTrait> {
-        if matches!(self.signer_option, SignerOption::CustomSigner)
-            && let Some(signer) = self.signer.as_ref().as_ref()
-            && let Ok(provider) = signer.get_provider()
-        {
-            return Some(provider);
-        }
-
-        if let Some(test_context) = self.test_context.as_ref().as_ref() {
-            return Some(test_context.get_default_provider());
-        }
-
-        None
-    }
-
-    #[inline]
-    pub fn sign_or_extract(
-        &self,
-        ft: &FinalTransaction,
-    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        match &self.signer_option {
-            SignerOption::DefaultTestConfigSigner | SignerOption::CustomSigner => {
-                let signer = self.get_signer();
-
-                Ok(signer.unwrap().sign_tx(ft)?)
-            }
-            SignerOption::NoSigning => {
-                let witnesses = ft
-                    .inputs()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, input)| {
-                        input
-                            .program_input
-                            .as_ref()
-                            .map(|program_input| (index, program_input.witness.shallow_clone()))
-                    })
-                    .collect();
-
-                Ok((ft.extract_pst().0, witnesses))
-            }
-        }
-    }
-}
-
-pub trait ProgramCheck {
+pub trait ProgramCheck<Program, Args, Wit> {
     fn call(
         &self,
-        ctx: &FuzzContext,
+        ctx: &Context,
         tx: &PartiallySignedTransaction,
         arguments: &Arguments,
         witness: &WitnessValues,

@@ -1,6 +1,6 @@
 use std::io;
 
-use smplx_sdk::provider::ProviderError;
+use smplx_sdk::provider::{NetworkConvertError, ProviderError};
 
 use smplx_regtest::error::RegtestError;
 
@@ -20,8 +20,8 @@ pub enum TestError {
     #[error("io error occurred: '{0}'")]
     Io(#[from] io::Error),
 
-    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
-    BadNetworkName(String),
+    #[error(transparent)]
+    BadNetworkName(#[from] NetworkConvertError),
 
     #[error("Occurred a network utils execution error: '{0}'")]
     NetworkUtilsExecution(#[from] NetworkUtilsError),

@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use smplx_build::error::{DependencyValidationError, TomlEditError};
+use smplx_sdk::provider::NetworkConvertError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConfigError {
@@ -16,8 +17,8 @@ pub enum ConfigError {
     #[error(transparent)]
     Dependency(#[from] DependencyValidationError),
 
-    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
-    BadNetworkName(String),
+    #[error(transparent)]
+    BadNetworkName(#[from] NetworkConvertError),
 
     #[error("Network name should be `ElementsRegtest` when RPC is specified, got: {0}")]
     NetworkNameUnmatched(String),

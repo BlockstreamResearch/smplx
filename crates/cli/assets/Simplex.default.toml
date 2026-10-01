@@ -29,6 +29,7 @@
 # cases = 10000
 # max_global_rejects = 100
 # max_local_rejects = 100
+# network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
 # [test.rpc]
 # url = "<rpc url>"

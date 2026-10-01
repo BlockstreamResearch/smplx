@@ -1,130 +1,33 @@
-use std::fmt::Debug;
+use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
+use simplicityhl::elements::pset::PartiallySignedTransaction;
 
-use smplx_sdk::program::{ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
+use smplx_sdk::program::{ProgramFactory, ProgramTrait};
 use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::{Signer, SignerError};
+use smplx_sdk::transaction::FinalTransaction;
 
-use crate::context::TestContext;
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
-use crate::fuzz::core::{FuzzContext, FuzzableProgram, SignerOption};
 use crate::fuzz::transaction::{FuzzTransaction, ProgramTarget};
-use crate::fuzz::{ProgramCheck, ProgramExecResult};
+use crate::fuzz::{FuzzableProgram, ProgramCheck, ProgramExecResult};
+
+pub struct Context {
+    pub signer: Option<Signer>,
+    pub network: SimplicityNetwork,
+}
 
 pub struct SimplexFuzzEngine<Program, Args, Wit> {
-    runner: TestRunner,
-    fuzz_context: FuzzContext,
-    strategy: BoxedStrategy<(Arguments, WitnessValues)>,
-    blueprint: FuzzTransaction,
-    _phantom: PhantomData<(Program, Args, Wit)>,
-}
-
-pub struct FuzzEngineBuilder<Program, Args, Wit> {
-    proptest_config: proptest::test_runner::Config,
-    pub(crate) signer_option: SignerOption,
-    pub(crate) signer: Option<Signer>,
-    test_context: Option<TestContext>,
-    network: SimplicityNetwork,
-    _phantom: PhantomData<(Program, Args, Wit)>,
-}
-
-impl<Program, Args, Wit> FuzzEngineBuilder<Program, Args, Wit> {
-    pub fn new(config: proptest::test_runner::Config) -> Self {
-        let default_network = SimplicityNetwork::default_regtest();
-
-        Self {
-            proptest_config: config,
-            test_context: None,
-            signer_option: SignerOption::NoSigning,
-            signer: None,
-            network: default_network,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn from_context(mut config: proptest::test_runner::Config, test_context: TestContext) -> Self {
-        let network = *test_context.get_network();
-        let smplx_test_context = test_context.get_config();
-        if let Some(proptest_conf) = smplx_test_context.fuzz.as_ref() {
-            if let Some(cases) = proptest_conf.cases {
-                config.cases = cases;
-            }
-
-            if let Some(max_global_rejects) = proptest_conf.max_global_rejects {
-                config.max_global_rejects = max_global_rejects;
-            }
-
-            if let Some(max_local_rejects) = proptest_conf.max_local_rejects {
-                config.max_local_rejects = max_local_rejects;
-            }
-
-            config.verbose = smplx_test_context.verbosity as u32;
-        }
-
-        Self {
-            proptest_config: config,
-            test_context: Some(test_context),
-            signer_option: SignerOption::NoSigning,
-            signer: None,
-            network,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<Program, Args, Wit> FuzzEngineBuilder<Program, Args, Wit>
-where
-    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-    Args: Into<Arguments> + RandomArguments + std::fmt::Debug + Clone + 'static,
-    Wit: Into<WitnessValues> + RandomWitness + std::fmt::Debug + Clone + 'static,
-{
-    pub fn with_signer(mut self, signer: Signer) -> Self {
-        if let Ok(provider) = signer.get_provider() {
-            self.network = *provider.get_network();
-        }
-        self.signer_option = SignerOption::CustomSigner;
-        self.signer = Some(signer);
-        self
-    }
-
-    /// Overrides the network used to build and execute fuzzed programs.
-    pub fn with_network(mut self, network: SimplicityNetwork) -> Self {
-        self.network = network;
-        self
-    }
-
-    pub fn with_default_signer(mut self) -> Self {
-        self.signer_option = SignerOption::DefaultTestConfigSigner;
-        self
-    }
-
-    pub fn build(
-        self,
-        strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-        blueprint: FuzzTransaction,
-    ) -> SimplexFuzzEngine<Program, Args, Wit> {
-        SimplexFuzzEngine {
-            runner: proptest::test_runner::TestRunner::new(self.proptest_config),
-            fuzz_context: FuzzContext {
-                #[allow(clippy::arc_with_non_send_sync)]
-                signer: Arc::new(self.signer),
-                #[allow(clippy::arc_with_non_send_sync)]
-                test_context: Arc::new(self.test_context),
-                signer_option: self.signer_option,
-                network: self.network,
-            },
-            strategy: strategy_storage.boxed(),
-            blueprint,
-            _phantom: PhantomData,
-        }
-    }
+    pub(crate) runner: TestRunner,
+    pub(crate) context: Context,
+    pub(crate) strategy: BoxedStrategy<(Arguments, WitnessValues)>,
+    pub(crate) blueprint: FuzzTransaction,
+    pub(crate) _placeholder: PhantomData<(Program, Args, Wit)>,
 }
 
 pub struct FuzzStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
@@ -206,13 +109,40 @@ pub enum FuzzOutcome {
     CounterExample(CounterExampleOutcome),
 }
 
+impl Context {
+    #[inline]
+    pub fn sign_or_extract(
+        &self,
+        ft: &FinalTransaction,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
+        match self.signer.as_ref() {
+            Some(signer) => Ok(signer.sign_tx(ft)?),
+            None => {
+                let witnesses = ft
+                    .inputs()
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, input)| {
+                        input
+                            .program_input
+                            .as_ref()
+                            .map(|program_input| (index, program_input.witness.shallow_clone()))
+                    })
+                    .collect();
+
+                Ok((ft.extract_pst().0, witnesses))
+            }
+        }
+    }
+}
+
 impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
 {
-    pub fn run_with_check(self, program_post_hook: impl ProgramCheck) {
+    pub fn run_with_check(self, program_post_hook: impl ProgramCheck<Program, Args, Wit>) {
         let mut runner = self.runner;
-        let context = self.fuzz_context;
+        let context = self.context;
         let blueprint = self.blueprint;
 
         let strategy = self.strategy.no_shrink();
@@ -234,9 +164,9 @@ where
 
     /// Extracted helper that performs exactly one isolated test run.
     fn fuzz(
-        fuzz_context: &FuzzContext,
+        fuzz_context: &Context,
         initial_tx: &FuzzTransaction,
-        program_post_hook: &impl ProgramCheck,
+        program_post_hook: &impl ProgramCheck<Program, Args, Wit>,
         arguments: Arguments,
         witness: WitnessValues,
     ) -> Result<(), TestCaseError> {
@@ -279,36 +209,202 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{EsploraConfig, TestConfig};
+    use proptest::strategy::Just;
+
+    use smplx_sdk::global::Verbosity;
+    use smplx_sdk::program::{Program, RandomArguments, RandomWitness};
+    use smplx_sdk::provider::EsploraProvider;
+    use smplx_sdk::transaction::{PartialInput, ProgramInput, RequiredSignature, UTXO};
+
+    use crate::config::{DEFAULT_TEST_MNEMONIC, EsploraConfig, FuzzConfig, TestConfig};
+    use crate::context::{FuzzMode, TestContext};
 
     use super::*;
 
+    #[derive(Clone)]
+    struct DummyProgram(Program);
+
+    impl AsRef<Program> for DummyProgram {
+        fn as_ref(&self) -> &Program {
+            &self.0
+        }
+    }
+
+    impl ProgramFactory<DummyProgram> for DummyProgram {
+        fn instantiate_program(args: impl Into<Arguments>) -> Box<DummyProgram> {
+            Box::new(DummyProgram(Program::new("fn main() { assert!(true); }", args)))
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct EmptyArgs;
+
+    impl From<EmptyArgs> for Arguments {
+        fn from(_: EmptyArgs) -> Self {
+            Self::default()
+        }
+    }
+
+    impl From<EmptyArgs> for WitnessValues {
+        fn from(_: EmptyArgs) -> Self {
+            Self::default()
+        }
+    }
+
+    impl RandomArguments for EmptyArgs {
+        fn generate_arguments(_: &mut dyn rand::RngCore) -> Arguments {
+            Arguments::default()
+        }
+    }
+
+    impl RandomWitness for EmptyArgs {
+        fn generate_witness(_: &mut dyn rand::RngCore) -> WitnessValues {
+            WitnessValues::default()
+        }
+    }
+
+    fn build_test_engine(context: TestContext<FuzzMode>) -> SimplexFuzzEngine<DummyProgram, EmptyArgs, EmptyArgs> {
+        let mut final_tx = FinalTransaction::new();
+        final_tx.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+
+        let fuzz_tx = FuzzTransaction::new(final_tx, [ProgramTarget::Input(0)]).unwrap();
+        context.build(Just((Arguments::default(), WitnessValues::default())), fuzz_tx)
+    }
+
     #[test]
-    fn context_preserve_network_and_provider() {
+    fn context_preserves_fuzz_network_signer_and_config() {
         let config = TestConfig {
             esplora: Some(EsploraConfig {
                 url: "http://localhost:3000".to_string(),
-                network: "Liquid".to_string(),
+                network: "LiquidTestnet".to_string(),
+            }),
+            fuzz: Some(FuzzConfig {
+                cases: Some(17),
+                max_global_rejects: Some(23),
+                max_local_rejects: Some(29),
+                network: Some("Liquid".to_string()),
+            }),
+            verbosity: Verbosity::Trace,
+            ..Default::default()
+        };
+
+        let test_name = "crate::fuzz_test";
+        let source_file = "src/fuzz_test.any";
+        let context = TestContext::from_config(config)
+            .unwrap()
+            .fuzz(test_name, source_file)
+            .unwrap();
+
+        let engine = build_test_engine(context);
+        let runner_config = engine.runner.config();
+
+        assert_eq!(engine.context.network, SimplicityNetwork::Liquid);
+
+        let signer = engine.context.signer.as_ref().unwrap();
+        assert_eq!(signer.get_address().params, SimplicityNetwork::Liquid.address_params());
+        assert!(signer.get_provider().is_err());
+        assert_eq!(runner_config.cases, 17);
+        assert_eq!(runner_config.max_global_rejects, 23);
+        assert_eq!(runner_config.max_local_rejects, 29);
+        assert_eq!(runner_config.verbose, 2);
+        assert_eq!(runner_config.test_name, Some(test_name));
+        assert!(!runner_config.fork);
+        assert_eq!(runner_config.max_shrink_iters, 0);
+        assert_eq!(runner_config.source_file, Some(source_file));
+    }
+
+    #[test]
+    fn explicit_network_without_signer_builds_unsigned_engine() {
+        let mut context = TestContext::from_config(TestConfig::default())
+            .unwrap()
+            .fuzz("crate::unsigned_fuzz_test", file!())
+            .unwrap();
+        assert!(context.get_default_signer().is_none());
+        assert!(context.random_signer().is_none());
+        context.set_network(SimplicityNetwork::default_regtest());
+
+        let engine = build_test_engine(context);
+        assert_eq!(engine.context.network, SimplicityNetwork::default_regtest());
+        assert!(engine.context.signer.is_none());
+
+        let (_, witnesses) = engine.context.sign_or_extract(&FinalTransaction::new()).unwrap();
+        assert!(witnesses.is_empty());
+    }
+
+    #[test]
+    fn setters_override_fuzz_configuration_and_preserve_custom_signer() {
+        let config = TestConfig {
+            fuzz: Some(FuzzConfig {
+                cases: Some(17),
+                max_global_rejects: Some(23),
+                max_local_rejects: Some(29),
+                network: Some("Liquid".to_string()),
             }),
             ..Default::default()
         };
 
-        let test_context = TestContext::from_config(config).unwrap();
-        let builder =
-            FuzzEngineBuilder::<(), (), ()>::from_context(proptest::test_runner::Config::default(), test_context);
-        let fuzz_context = FuzzContext {
-            #[allow(clippy::arc_with_non_send_sync)]
-            signer: Arc::new(None),
-            #[allow(clippy::arc_with_non_send_sync)]
-            test_context: Arc::new(builder.test_context),
-            signer_option: SignerOption::NoSigning,
-            network: builder.network,
-        };
+        let mut context = TestContext::from_config(config)
+            .unwrap()
+            .fuzz("crate::custom_fuzz_test", file!())
+            .unwrap();
 
-        assert_eq!(fuzz_context.network, SimplicityNetwork::Liquid);
-        assert_eq!(
-            fuzz_context.get_provider().unwrap().get_network(),
-            &SimplicityNetwork::Liquid
+        let custom_signer = Signer::new(
+            DEFAULT_TEST_MNEMONIC,
+            Box::new(EsploraProvider::new(
+                "http://localhost:3001".to_string(),
+                SimplicityNetwork::LiquidTestnet,
+            )),
         );
+
+        let public_key = custom_signer.get_schnorr_public_key();
+
+        context.set_custom_signer(custom_signer);
+        context.set_network(SimplicityNetwork::LiquidTestnet);
+        context.set_cases(31);
+        context.set_max_global_rejects(37);
+        context.set_max_local_rejects(41);
+
+        let engine = build_test_engine(context);
+
+        assert_eq!(engine.context.network, SimplicityNetwork::LiquidTestnet);
+
+        let signer = engine.context.signer.as_ref().unwrap();
+        assert_eq!(signer.get_schnorr_public_key(), public_key);
+        assert_eq!(
+            signer.get_provider().unwrap().get_network(),
+            &SimplicityNetwork::LiquidTestnet
+        );
+
+        assert_eq!(engine.runner.config().cases, 31);
+        assert_eq!(engine.runner.config().max_global_rejects, 37);
+        assert_eq!(engine.runner.config().max_local_rejects, 41);
+    }
+
+    #[test]
+    fn unsigned_extraction_preserves_program_witnesses_at_their_input_indices() {
+        use simplicityhl::str::WitnessName;
+        use simplicityhl::value::{Value, ValueConstructible};
+
+        let context = Context {
+            signer: None,
+            network: SimplicityNetwork::default_regtest(),
+        };
+        let name = WitnessName::from_str_unchecked("VALUE");
+        let witness = WitnessValues::from(HashMap::from([(name.clone(), Value::u8(42))]));
+        let program = Program::new("fn main() { assert!(true); }", Arguments::default());
+        let mut transaction = FinalTransaction::new();
+        transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+        transaction.add_program_input(
+            PartialInput::new(UTXO::default()),
+            ProgramInput::new(Box::new(program), witness.clone()),
+            RequiredSignature::None,
+        );
+
+        let (pst, witnesses) = context.sign_or_extract(&transaction).unwrap();
+
+        assert_eq!(pst.inputs().len(), 2);
+        assert_eq!(witnesses.len(), 1);
+        assert_eq!(witnesses[&1].get(&name), witness.get(&name));
+        assert!(pst.inputs()[1].final_script_witness.is_none());
     }
 }

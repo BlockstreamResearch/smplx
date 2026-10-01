@@ -1,11 +1,15 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
+use proptest::prelude::Strategy;
+use proptest::test_runner::Config as ProptestConfig;
+use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
-
 use smplx_sdk::global::GlobalConfig;
+use smplx_sdk::program::{ProgramFactory, RandomArguments, RandomWitness};
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
@@ -16,100 +20,40 @@ use crate::config::TestConfig;
 use crate::error::TestError;
 use crate::network_utils::NetworkUtils;
 
-#[allow(dead_code)]
-pub struct TestContext {
-    _client: Option<RegtestClient>,
-    // since providers can't be cloned, we need this variable to create new signers
-    _provider_info: ProviderInfo,
-    config: TestConfig,
-    signer: Signer,
+pub use crate::context::sealed::ContextMode;
+use crate::fuzz::engine::Context;
+use crate::fuzz::transaction::FuzzTransaction;
+use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
+
+#[allow(unreachable_pub)]
+mod sealed {
+    pub trait ContextMode {}
 }
 
-impl TestContext {
-    pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
-        let config = TestConfig::from_file(&config_path)?;
-        Self::from_config(config)
-    }
+pub struct InitMode;
 
-    pub fn from_config(config: TestConfig) -> Result<Self, TestError> {
-        // error is ignored because we assume that all tests use the same verbosity
-        let _ = GlobalConfig::set_global_config(config.verbosity);
+pub struct RegularMode {
+    signer: Signer,
+    _provider_info: ProviderInfo,
+    _client: Option<RegtestClient>,
+}
 
-        let (signer, provider_info, client) = Self::setup(&config)?;
+pub struct FuzzMode {
+    proptest_config: proptest::test_runner::Config,
+    signer: Option<Signer>,
+    network: Option<SimplicityNetwork>,
+}
 
-        Ok(Self {
-            _client: client,
-            _provider_info: provider_info,
-            config,
-            signer,
-        })
-    }
+impl ContextMode for InitMode {}
+impl ContextMode for RegularMode {}
+impl ContextMode for FuzzMode {}
 
-    pub fn create_signer(&self, mnemonic: &str) -> Signer {
-        let provider: Box<dyn ProviderTrait> = if self._provider_info.elements_url.is_some() {
-            // local regtest or external regtest
-            Box::new(SimplexProvider::new(
-                self._provider_info.esplora_url.clone(),
-                self._provider_info.elements_url.clone().unwrap(),
-                self._provider_info.auth.clone().unwrap(),
-                *self.get_network(),
-            ))
-        } else {
-            // external esplora
-            Box::new(EsploraProvider::new(
-                self._provider_info.esplora_url.clone(),
-                *self.get_network(),
-            ))
-        };
+struct TestContextInner {
+    config: TestConfig,
+}
 
-        Signer::new(mnemonic, provider)
-    }
-
-    pub fn random_signer(&self) -> Signer {
-        self.create_signer(random_mnemonic().as_str())
-    }
-
-    pub fn get_default_signer(&self) -> &Signer {
-        &self.signer
-    }
-
-    /// # Panics
-    /// Panics when the signer was built without a provider, which a test context never is.
-    pub fn get_default_provider(&self) -> &dyn ProviderTrait {
-        self.signer
-            .get_provider()
-            .expect("a test context always has a provider")
-    }
-
-    pub fn get_config(&self) -> &TestConfig {
-        &self.config
-    }
-
-    /// # Panics
-    /// Panics when the signer was built without a provider, which a test context never is.
-    pub fn get_network(&self) -> &SimplicityNetwork {
-        self.get_default_provider().get_network()
-    }
-
-    pub fn get_network_utils(&self) -> NetworkUtils {
-        assert!(
-            self._client.is_some(),
-            "Network utils only available in Regtest network"
-        );
-
-        let regtest_rpc = ElementsRpc::new(
-            self._provider_info.elements_url.clone().unwrap(),
-            self._provider_info.auth.clone().unwrap(),
-        )
-        .expect("Failed to create rpc client for network utils");
-
-        let network = self.get_network();
-        let esplora = EsploraProvider::new(self._provider_info.esplora_url.clone(), *network);
-
-        NetworkUtils::new(regtest_rpc, esplora)
-    }
-
-    fn setup(config: &TestConfig) -> Result<(Signer, ProviderInfo, Option<RegtestClient>), TestError> {
+impl RegularMode {
+    fn setup(config: &TestConfig) -> Result<RegularMode, TestError> {
         let client: Option<RegtestClient>;
         let provider_info: ProviderInfo;
         let signer: Signer;
@@ -136,12 +80,7 @@ impl TestContext {
                 }
                 None => {
                     // external esplora network
-                    let network = match esplora.network.as_str() {
-                        "Liquid" => SimplicityNetwork::Liquid,
-                        "LiquidTestnet" => SimplicityNetwork::LiquidTestnet,
-                        "ElementsRegtest" => SimplicityNetwork::default_regtest(),
-                        other => return Err(TestError::BadNetworkName(other.to_string())),
-                    };
+                    let network = SimplicityNetwork::from_str(esplora.network.as_str())?;
                     let provider = Box::new(EsploraProvider::new(esplora.url.clone(), network));
 
                     provider_info = ProviderInfo {
@@ -167,11 +106,225 @@ impl TestContext {
             }
         }
 
-        Ok((signer, provider_info, client))
+        Ok(RegularMode {
+            signer,
+            _provider_info: provider_info,
+            _client: client,
+        })
     }
 }
 
-impl Drop for TestContext {
+pub struct TestContext<Mode: ContextMode = RegularMode> {
+    inner: TestContextInner,
+    pub(crate) mode: Mode,
+}
+
+impl FuzzMode {
+    fn setup(config: &TestConfig, test_name: &'static str, source_file: &'static str) -> Result<FuzzMode, TestError> {
+        let mut proptest_config = ProptestConfig {
+            verbose: config.verbosity as u32,
+            test_name: Some(test_name),
+            fork: false,
+            max_shrink_iters: 0,
+            source_file: Some(source_file),
+            ..ProptestConfig::default()
+        };
+
+        let (mut network, mut signer) = (None, None);
+
+        if let Some(fuzz_config) = config.fuzz.as_ref() {
+            if let Some(cases) = fuzz_config.cases {
+                proptest_config.cases = cases;
+            }
+
+            if let Some(max_global_rejects) = fuzz_config.max_global_rejects {
+                proptest_config.max_global_rejects = max_global_rejects;
+            }
+
+            if let Some(max_local_rejects) = fuzz_config.max_local_rejects {
+                proptest_config.max_local_rejects = max_local_rejects;
+            }
+
+            if let Some(n) = fuzz_config.network.as_ref() {
+                let _ = network.insert(SimplicityNetwork::from_str(n.as_str())?);
+                let _ = signer.insert(Signer::from_mnemonic(&config.mnemonic, *network.as_ref().unwrap()));
+            }
+        }
+
+        Ok(FuzzMode {
+            proptest_config,
+            signer,
+            network,
+        })
+    }
+
+    fn create_signer(&self, mnemonic: &str) -> Option<Signer> {
+        self.network.map(|n| Signer::from_mnemonic(mnemonic, n))
+    }
+}
+
+impl TestContext<FuzzMode> {
+    pub fn random_signer(&self) -> Option<Signer> {
+        self.mode.create_signer(random_mnemonic().as_str())
+    }
+
+    pub fn set_custom_signer(&mut self, signer: Signer) {
+        let _ = self.mode.signer.insert(signer);
+    }
+
+    pub fn set_network(&mut self, network: SimplicityNetwork) {
+        let _ = self.mode.network.insert(network);
+    }
+
+    pub fn get_default_signer(&self) -> &Option<Signer> {
+        &self.mode.signer
+    }
+
+    pub fn set_max_global_rejects(&mut self, max_global_rejects: u32) {
+        self.mode.proptest_config.max_global_rejects = max_global_rejects;
+    }
+
+    pub fn set_cases(&mut self, cases: u32) {
+        self.mode.proptest_config.cases = cases;
+    }
+
+    pub fn set_max_local_rejects(&mut self, max_local_rejects: u32) {
+        self.mode.proptest_config.max_local_rejects = max_local_rejects;
+    }
+}
+
+impl TestContext<FuzzMode> {
+    /// Builds a fuzz engine using the configured signer and network.
+    ///
+    /// Sets network to regtest, when it's absent.
+    pub fn build<Program, Args, Wit>(
+        self,
+        strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
+        blueprint: FuzzTransaction,
+    ) -> SimplexFuzzEngine<Program, Args, Wit>
+    where
+        Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+        Args: Into<Arguments> + RandomArguments + std::fmt::Debug + Clone + 'static,
+        Wit: Into<WitnessValues> + RandomWitness + std::fmt::Debug + Clone + 'static,
+    {
+        let network = self.mode.network.unwrap_or(SimplicityNetwork::default_regtest());
+
+        SimplexFuzzEngine {
+            runner: proptest::test_runner::TestRunner::new(self.mode.proptest_config),
+            context: Context {
+                signer: self.mode.signer,
+                network,
+            },
+            strategy: strategy_storage.boxed(),
+            blueprint,
+            _placeholder: Default::default(),
+        }
+    }
+}
+
+impl TestContext<RegularMode> {
+    pub fn get_network_utils(&self) -> NetworkUtils {
+        assert!(
+            self.mode._client.is_some(),
+            "Network utils only available in Regtest network"
+        );
+
+        let regtest_rpc = ElementsRpc::new(
+            self.mode._provider_info.elements_url.clone().unwrap(),
+            self.mode._provider_info.auth.clone().unwrap(),
+        )
+        .expect("Failed to create rpc client for network utils");
+
+        let network = self.get_network();
+        let esplora = EsploraProvider::new(self.mode._provider_info.esplora_url.clone(), *network);
+
+        NetworkUtils::new(regtest_rpc, esplora)
+    }
+
+    pub fn create_signer(&self, mnemonic: &str) -> Signer {
+        let provider: Box<dyn ProviderTrait> = if self.mode._provider_info.elements_url.is_some() {
+            // local regtest or external regtest
+            Box::new(SimplexProvider::new(
+                self.mode._provider_info.esplora_url.clone(),
+                self.mode._provider_info.elements_url.clone().unwrap(),
+                self.mode._provider_info.auth.clone().unwrap(),
+                *self.get_network(),
+            ))
+        } else {
+            // external esplora
+            Box::new(EsploraProvider::new(
+                self.mode._provider_info.esplora_url.clone(),
+                *self.get_network(),
+            ))
+        };
+
+        Signer::new(mnemonic, provider)
+    }
+
+    pub fn random_signer(&self) -> Signer {
+        self.create_signer(random_mnemonic().as_str())
+    }
+
+    pub fn get_default_signer(&self) -> &Signer {
+        &self.mode.signer
+    }
+
+    /// # Panics
+    /// Panics when the signer was built without a provider, which a test context never is.
+    pub fn get_default_provider(&self) -> &dyn ProviderTrait {
+        self.mode
+            .signer
+            .get_provider()
+            .expect("a test context always has a provider")
+    }
+
+    /// # Panics
+    /// Panics when the signer was built without a provider, which a test context never is.
+    pub fn get_network(&self) -> &SimplicityNetwork {
+        self.get_default_provider().get_network()
+    }
+}
+
+impl<T: ContextMode> TestContext<T> {
+    pub fn get_config(&self) -> &TestConfig {
+        &self.inner.config
+    }
+}
+
+impl TestContext<InitMode> {
+    pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
+        let config = TestConfig::from_file(&config_path)?;
+        Self::from_config(config)
+    }
+
+    pub fn from_config(config: TestConfig) -> Result<Self, TestError> {
+        // error is ignored because we assume that all tests use the same verbosity
+        let _ = GlobalConfig::set_global_config(config.verbosity);
+
+        Ok(Self {
+            inner: TestContextInner { config },
+            mode: InitMode {},
+        })
+    }
+
+    pub fn regular(self) -> Result<TestContext<RegularMode>, TestError> {
+        let mode = RegularMode::setup(self.get_config())?;
+        Ok(TestContext::<RegularMode> {
+            inner: self.inner,
+            mode,
+        })
+    }
+
+    pub fn fuzz(self, test_name: &'static str, source_file: &'static str) -> Result<TestContext<FuzzMode>, TestError> {
+        let mode = FuzzMode::setup(self.get_config(), test_name, source_file)?;
+        Ok(TestContext::<FuzzMode> {
+            inner: self.inner,
+            mode,
+        })
+    }
+}
+
+impl Drop for RegularMode {
     fn drop(&mut self) {
         if let Some(x) = &mut self._client {
             let _ = x.kill();
@@ -181,9 +334,9 @@ impl Drop for TestContext {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
+    use smplx_sdk::provider::NetworkConvertError;
+    use std::fs;
 
     #[test]
     fn invalid_network_returns_error() {
@@ -199,12 +352,35 @@ mod tests {
         let path = std::env::temp_dir().join("smplx_test_invalid_network.toml");
         fs::write(&path, config).unwrap();
 
-        let result = TestContext::new(path);
+        let result = TestContext::new(path.clone()).and_then(TestContext::regular);
+        fs::remove_file(path).unwrap();
         let Err(e) = result else {
             panic!("expected BadNetworkName error")
         };
         assert!(
-            matches!(e, TestError::BadNetworkName(ref s) if s == "InvalidNetwork"),
+            matches!(e, TestError::BadNetworkName(NetworkConvertError::BadNetworkName(ref s)) if s == "InvalidNetwork"),
+            "expected BadNetworkName, got: {e}"
+        );
+    }
+
+    #[test]
+    fn invalid_fuzz_network_returns_error() {
+        let config = TestConfig {
+            fuzz: Some(crate::config::FuzzConfig {
+                network: Some("InvalidNetwork".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let result = TestContext::from_config(config)
+            .unwrap()
+            .fuzz("invalid_fuzz_network_returns_error", file!());
+        let Err(e) = result else {
+            panic!("expected BadNetworkName error")
+        };
+        assert!(
+            matches!(e, TestError::BadNetworkName(NetworkConvertError::BadNetworkName(ref s)) if s == "InvalidNetwork"),
             "expected BadNetworkName, got: {e}"
         );
     }
