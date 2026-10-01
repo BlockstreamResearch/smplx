@@ -14,7 +14,9 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::{self, Sequence};
-use simplicityhl::elements::{AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid};
+use simplicityhl::elements::{
+    AssetEntropy, AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid,
+};
 use simplicityhl::{Arguments, TemplateAst, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::Program;
@@ -464,6 +466,10 @@ impl TransactionBuilder {
     /// `tx_out_hex` is the consensus encoding of the output being spent, which is what the
     /// wallet already has from its own snapshot or a chain read.
     ///
+    /// `blinding_secrets_json` contains the unblinded details of a confidential output.
+    /// Write its `value` as a JSON number up to 2^53 - 1. Larger amounts must be
+    /// decimal strings because JavaScript may serialize a number with different digits.
+    ///
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
     #[wasm_bindgen(js_name = addWalletInput)]
@@ -492,7 +498,8 @@ impl TransactionBuilder {
     /// Adds an ordinary wallet input that also creates a new asset.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed.
+    /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed,
+    /// or if either issuance amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addWalletIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_wallet_issuance_input(
@@ -506,6 +513,13 @@ impl TransactionBuilder {
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
@@ -522,6 +536,72 @@ impl TransactionBuilder {
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
             RequiredSignature::NativeEcdsa,
         );
+
+        Ok(IssuanceReport::from_details(&details))
+    }
+
+    /// Spends a wallet output holding the reissuance token and mints
+    /// `asset_amount_sats` more units of the asset.
+    ///
+    /// Pass the entropy returned by `IssuanceReport.entropy` for the first issuance.
+    /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
+    /// that the claimed asset ID matches the token derived from the entropy. The caller
+    /// must ensure the secrets open the output. Write `value` as a decimal string if it
+    /// exceeds 2^53 - 1.
+    ///
+    /// The token's asset must be confidential. Elements uses its asset blinding
+    /// factor as the reissuance nonce. An explicit asset has a zero nonce, which
+    /// creates a different asset.
+    ///
+    /// This method supports tokens from explicit-amount issuances, including
+    /// those created by `addWalletIssuanceInput`.
+    ///
+    /// # Errors
+    /// Returns an error for invalid input data, an amount outside 1..=`i64::MAX`,
+    /// or a claimed token asset that does not match the entropy.
+    #[wasm_bindgen(js_name = addWalletReissuanceInput)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn add_wallet_reissuance_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        asset_amount_sats: u64,
+        asset_entropy: &str,
+        blinding_secrets_json: &str,
+        derivation_path: Option<String>,
+    ) -> Result<IssuanceReport, JsError> {
+        let input = Self::input_at(
+            txid,
+            vout,
+            tx_out_hex,
+            Some(blinding_secrets_json),
+            derivation_path.as_deref(),
+        )?;
+
+        if asset_amount_sats == 0 || i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("reissuance amount must be between 1 and i64::MAX"));
+        }
+
+        let entropy = AssetEntropy::from_str(asset_entropy)
+            .map_err(|e| JsError::new(&format!("the entropy is not 32 bytes of hex: {e}")))?;
+        let secrets = input
+            .secrets
+            .ok_or_else(|| JsError::new("the token output has no blinding secrets"))?;
+        let token = AssetId::reissuance_token_from_entropy(entropy, false);
+
+        if secrets.asset != token {
+            return Err(JsError::new(&format!(
+                "the output holds {}, not the reissuance token {token}",
+                secrets.asset
+            )));
+        }
+
+        let reissuance = IssuanceInput::new_reissuance(asset_amount_sats, entropy.to_byte_array());
+
+        let details = self
+            .transaction
+            .add_issuance_input(input, reissuance, RequiredSignature::NativeEcdsa);
 
         Ok(IssuanceReport::from_details(&details))
     }
@@ -578,7 +658,8 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
-    /// issuer contract or the derivation path cannot be parsed.
+    /// issuer contract or the derivation path cannot be parsed, or if either issuance amount
+    /// exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_issuance_input(
@@ -597,6 +678,13 @@ impl TransactionBuilder {
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
@@ -621,7 +709,8 @@ impl TransactionBuilder {
     /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
     ///
     /// # Errors
-    /// Returns an error if the script, asset id or blinding key cannot be parsed.
+    /// Returns an error if the script, asset id or blinding key cannot be parsed,
+    /// or if the amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addOutput)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_output(
@@ -631,6 +720,10 @@ impl TransactionBuilder {
         asset_hex: &str,
         blinding_key_hex: Option<String>,
     ) -> Result<(), JsError> {
+        if i64::try_from(amount_sats).is_err() {
+            return Err(JsError::new("output amount must not exceed i64::MAX"));
+        }
+
         let script =
             Script::from(hex::decode(script_pubkey_hex).map_err(|e| JsError::new(&format!("Invalid script: {e}")))?);
         let asset = AssetId::from_str(asset_hex).map_err(|e| JsError::new(&format!("Invalid asset id: {e}")))?;
@@ -777,10 +870,7 @@ impl TransactionBuilder {
                 .ok_or_else(|| format!("no \"{name}\""))
         };
 
-        let value = parsed
-            .get("value")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| "no \"value\"".to_string())?;
+        let value = Self::exact_amount(parsed.get("value").ok_or_else(|| "no \"value\"".to_string())?)?;
 
         Ok(TxOutSecrets::new(
             AssetId::from_str(&field("asset")?).map_err(|e| e.to_string())?,
@@ -788,6 +878,41 @@ impl TransactionBuilder {
             value,
             ValueBlindingFactor::from_str(&field("valueBlindingFactor")?).map_err(|e| e.to_string())?,
         ))
+    }
+
+    /// Reads a safe JSON integer or a decimal string.
+    ///
+    /// JavaScript may change the decimal digits of numbers above 2^53 - 1 when it
+    /// serializes them to JSON. Write larger values as strings containing only
+    /// decimal digits with no sign, spaces or leading zeroes.
+    fn exact_amount(value: &serde_json::Value) -> Result<u64, String> {
+        match value {
+            serde_json::Value::Number(number) => {
+                let amount = number
+                    .as_u64()
+                    .ok_or_else(|| format!("{number} is not a whole number of satoshis"))?;
+
+                if amount > 9_007_199_254_740_991 {
+                    return Err(format!(
+                        "{number} exceeds JavaScript's safe integer limit. Use a decimal string"
+                    ));
+                }
+
+                Ok(amount)
+            }
+            serde_json::Value::String(digits) => {
+                let canonical = !digits.is_empty()
+                    && digits.bytes().all(|byte| byte.is_ascii_digit())
+                    && (digits == "0" || !digits.starts_with('0'));
+
+                if !canonical {
+                    return Err(format!("\"{digits}\" is not a decimal amount"));
+                }
+
+                digits.parse().map_err(|e| format!("\"{digits}\": {e}"))
+            }
+            other => Err(format!("{other} is not an amount")),
+        }
     }
 
     /// Reads a derivation path relative to the account path, e.g. `0/7`.
@@ -863,11 +988,16 @@ pub fn sdk_version() -> String {
 #[cfg(test)]
 mod tests {
     use simplicityhl::elements::AssetEntropy;
-    use simplicityhl::elements::{AssetId, OutPoint, TxOut, Txid};
+    use simplicityhl::elements::confidential::{Asset, Value};
+    use simplicityhl::elements::secp256k1_zkp::SECP256K1;
+    use simplicityhl::elements::{AssetBlindingNonce, AssetId, OutPoint, TxOut, Txid};
 
     use smplx_sdk::utils::asset_entropy;
 
-    use super::{ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, TransactionBuilder};
+    use super::{
+        AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput,
+        TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor,
+    };
 
     const TRIVIAL: &str = "fn main() { }";
 
@@ -1045,6 +1175,148 @@ mod tests {
     fn refuses_secrets_that_are_not_a_reading_at_all() {
         assert!(TransactionBuilder::blinding_secrets("not json").is_err());
         assert!(TransactionBuilder::blinding_secrets("{}").is_err());
+    }
+
+    #[test]
+    fn reads_a_value_written_as_a_decimal_string_exactly() {
+        for (written, exact) in [
+            ("0", 0),
+            ("9007199254740993", 9_007_199_254_740_993),
+            ("288230376151711744", 1_u64 << 58),
+            ("18446744073709551615", u64::MAX),
+        ] {
+            let secrets = TransactionBuilder::blinding_secrets(&SECRETS.replace("100000", &format!("\"{written}\"")))
+                .expect("a value written as a string");
+
+            assert_eq!(secrets.value, exact, "{written}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_json_number_above_javascripts_safe_integer_limit() {
+        let safe = serde_json::json!(9_007_199_254_740_991_u64);
+        let unsafe_number = serde_json::from_str::<serde_json::Value>("288230376151711740")
+            .expect("the decimal digits emitted by JSON.stringify(2 ** 58)");
+
+        assert_eq!(TransactionBuilder::exact_amount(&safe), Ok(9_007_199_254_740_991));
+        assert!(TransactionBuilder::exact_amount(&unsafe_number).is_err());
+        assert_eq!(
+            TransactionBuilder::exact_amount(&serde_json::json!("288230376151711744")),
+            Ok(1_u64 << 58)
+        );
+    }
+
+    #[test]
+    fn refuses_an_amount_that_is_not_plain_decimal_digits() {
+        for written in [
+            serde_json::json!(""),
+            serde_json::json!("+1"),
+            serde_json::json!("01"),
+            serde_json::json!("1.0"),
+            serde_json::json!("18446744073709551616"),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+        ] {
+            assert!(TransactionBuilder::exact_amount(&written).is_err(), "{written}");
+        }
+    }
+
+    const TOKEN_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+    const VALUE_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000003";
+
+    /// The entropy of the first chain vector, as `IssuanceReport` writes it.
+    fn first_entropy() -> String {
+        let (txid, vout, contract, _, _) = ON_CHAIN[0];
+
+        report_for(txid, vout, contract).entropy
+    }
+
+    fn token_of(entropy: &str, confidential_issuance: bool) -> AssetId {
+        AssetId::reissuance_token_from_entropy(
+            AssetEntropy::from_str(entropy).expect("an entropy"),
+            confidential_issuance,
+        )
+    }
+
+    fn blinder(written: &str) -> AssetBlindingFactor {
+        AssetBlindingFactor::from_str(written).expect("a blinder")
+    }
+
+    /// An output holding one unit of `asset`, committed with `committed_bf` or left explicit,
+    /// paired with the opening the wallet claims for it.
+    fn holding(
+        asset: AssetId,
+        committed_bf: Option<AssetBlindingFactor>,
+        claimed_bf: AssetBlindingFactor,
+    ) -> PartialInput {
+        let value_bf = ValueBlindingFactor::from_str(VALUE_BLINDER).expect("a blinder");
+
+        let txout = match committed_bf {
+            Some(asset_bf) => TxOut {
+                asset: Asset::new_confidential(SECP256K1, asset, asset_bf),
+                value: Value::new_confidential_from_assetid(SECP256K1, 1, asset, value_bf, asset_bf),
+                ..TxOut::default()
+            },
+            None => TxOut {
+                asset: Asset::Explicit(asset),
+                value: Value::Explicit(1),
+                ..TxOut::default()
+            },
+        };
+
+        PartialInput::new(UTXO {
+            outpoint: OutPoint {
+                txid: Txid::from_str(ON_CHAIN[0].0).expect("a chain vector's txid"),
+                vout: 0,
+            },
+            txout,
+            secrets: Some(TxOutSecrets::new(asset, claimed_bf, 1, value_bf)),
+        })
+    }
+
+    #[test]
+    fn reissuance_mints_the_asset_its_entropy_first_issued() {
+        let entropy = first_entropy();
+        let token = token_of(&entropy, false);
+        let spent = holding(token, Some(blinder(TOKEN_BLINDER)), blinder(TOKEN_BLINDER));
+        let secrets = serde_json::json!({
+            "asset": token.to_string(),
+            "assetBlindingFactor": TOKEN_BLINDER,
+            "value": "1",
+            "valueBlindingFactor": VALUE_BLINDER,
+        });
+
+        let mut builder = TransactionBuilder::new();
+        let report = builder
+            .add_wallet_reissuance_input(
+                ON_CHAIN[0].0,
+                0,
+                &hex::encode(simplicityhl::elements::encode::serialize(&spent.witness_utxo)),
+                5_000,
+                &entropy,
+                &secrets.to_string(),
+                None,
+            )
+            .expect("a confidential token and its opening");
+
+        assert_eq!(report.asset_id, ON_CHAIN[0].3);
+        assert_eq!(report.reissuance_token_id, ON_CHAIN[0].4);
+        assert_eq!(report.entropy, entropy);
+
+        // Read the issuance back the way Elements does. A null blinding nonce would make
+        // this a new issuance of another asset.
+        let (pst, _) = builder.transaction.extract_pst();
+        let input = &pst.inputs()[0];
+        let (asset, minted_token) = input.issuance_ids();
+
+        assert_eq!(
+            input.issuance_blinding_nonce,
+            Some(AssetBlindingNonce::from_blinding_factor(blinder(TOKEN_BLINDER)))
+        );
+        assert_eq!(asset.to_string(), ON_CHAIN[0].3);
+        assert_eq!(minted_token.to_string(), ON_CHAIN[0].4);
+        assert_eq!(input.issuance_value_amount, Some(5_000));
+        assert_eq!(input.issuance_inflation_keys, None);
     }
 
     #[test]
