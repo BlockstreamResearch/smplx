@@ -315,6 +315,12 @@ impl Signer {
         })
     }
 
+    /// Returns the network used to derive keys and finalize transactions.
+    #[must_use]
+    pub const fn get_network(&self) -> &SimplicityNetwork {
+        &self.network
+    }
+
     /// Returns a reference to the active configured network provider.
     ///
     /// # Errors

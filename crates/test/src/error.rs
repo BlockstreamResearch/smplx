@@ -38,6 +38,9 @@ pub enum NetworkUtilsError {
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum FuzzError {
+    #[error("Fuzz network {network:?} does not match signer network {signer_network:?}")]
+    SignerNetworkMismatch { network: String, signer_network: String },
+
     #[error("At least one program target is required")]
     NoProgramTargets,
 

@@ -17,7 +17,7 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
-use crate::error::TestError;
+use crate::error::{FuzzError, TestError};
 use crate::network_utils::NetworkUtils;
 
 pub use crate::context::sealed::ContextMode;
@@ -164,30 +164,53 @@ impl FuzzMode {
 }
 
 impl TestContext<FuzzMode> {
+    /// Creates a random signer from a random mnemonic
     pub fn random_signer(&self) -> Option<Signer> {
         self.mode.create_signer(random_mnemonic().as_str())
     }
 
+    /// Replaces the fuzz signer and synchronizes the fuzz network with it.
     pub fn set_custom_signer(&mut self, signer: Signer) {
+        let _ = self.mode.network.insert(*signer.get_network());
         let _ = self.mode.signer.insert(signer);
     }
 
-    pub fn set_network(&mut self, network: SimplicityNetwork) {
+    /// Sets the fuzz network when it is compatible with the configured signer.
+    ///
+    /// # Errors
+    /// Returns [`FuzzError::SignerNetworkMismatch`] when the signer uses a different network.
+    pub fn set_network(&mut self, network: SimplicityNetwork) -> Result<(), FuzzError> {
+        if let Some(signer) = self.mode.signer.as_ref() {
+            let signer_network = *signer.get_network();
+
+            if network != signer_network {
+                return Err(FuzzError::SignerNetworkMismatch {
+                    network: format!("{:?}", network),
+                    signer_network: format!("{:?}", signer_network),
+                });
+            }
+        }
+
         let _ = self.mode.network.insert(network);
+        Ok(())
     }
 
+    /// Returns internal signer which is already derived or reassigned by a user.
     pub fn get_default_signer(&self) -> &Option<Signer> {
         &self.mode.signer
     }
 
+    /// Sets the maximum number of combined inputs that may be rejected before the test as a whole aborts.
     pub fn set_max_global_rejects(&mut self, max_global_rejects: u32) {
         self.mode.proptest_config.max_global_rejects = max_global_rejects;
     }
 
+    /// Sets the number of successful test cases that must execute for the test as a whole to pass.
     pub fn set_cases(&mut self, cases: u32) {
         self.mode.proptest_config.cases = cases;
     }
 
+    /// Sets the maximum number of individual inputs that may be rejected before the test as a whole aborts.
     pub fn set_max_local_rejects(&mut self, max_local_rejects: u32) {
         self.mode.proptest_config.max_local_rejects = max_local_rejects;
     }

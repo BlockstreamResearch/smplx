@@ -91,7 +91,7 @@ fn signed_transaction_builder(arguments: &P2pkArguments, witness: &P2pkWitness) 
 
 #[simplex::fuzz]
 fn test_failure_catching_after_fuzzing(mut test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
-    test_context.set_network(SimplicityNetwork::default_regtest());
+    test_context.set_network(SimplicityNetwork::default_regtest())?;
 
     let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
     let transaction_builder = failure_transaction_builder()?;
@@ -107,7 +107,7 @@ fn test_failure_catching_after_fuzzing(mut test_context: TestContext<FuzzMode>) 
 #[should_panic(expected = "Program failed with these arguments")]
 #[simplex::fuzz]
 fn test_panic_after_fuzzing(mut test_context: TestContext<FuzzMode>) {
-    test_context.set_network(SimplicityNetwork::default_regtest());
+    test_context.set_network(SimplicityNetwork::default_regtest()).unwrap();
 
     let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
     let transaction_builder = failure_transaction_builder().unwrap();
@@ -126,7 +126,7 @@ fn test_signed_witness_with_program_checks(mut test_context: TestContext<FuzzMod
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    test_context.set_network(network);
+    test_context.set_network(network)?;
     test_context.set_custom_signer(signer);
 
     let witness = P2pkWitness::default();
