@@ -6,7 +6,8 @@ use serde::Deserialize;
 
 use super::error::RegtestError;
 
-pub const DEFAULT_REGTEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+pub const DEFAULT_REGTEST_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 pub const DEFAULT_BITCOINS: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Deserialize)]
