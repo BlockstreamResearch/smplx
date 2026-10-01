@@ -3,6 +3,7 @@ use std::{cell::RefCell, fmt::Write};
 
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::debug::DebugSymbols;
+use simplicityhl::simplicity::bitcoin::Weight;
 use simplicityhl::simplicity::node::{Node, Redeem};
 use simplicityhl::tracker::{DefaultTracker, TrackerLogLevel};
 
@@ -14,7 +15,7 @@ thread_local! {
 pub struct CostInfo {
     /// truncated cmr
     pub cmr: [u8; 8],
-    /// inner value of `Cost`
+    /// execution cost in weight units, rounded up
     pub cost: u32,
     /// program size in bytes
     pub program_size: usize,
@@ -111,14 +112,10 @@ impl ProgramLogger {
     /// Extracts and buffers cost metrics from the given redeem node.
     ///
     /// Overwrites any previously buffered cost info.
-    ///
-    /// # Safety
-    /// Uses `transmute` to extract the inner `u32` from [`Cost`] since no public
-    /// accessor exists. Remove once `as_milliweight()` is upstreamed to rust-simplicity.
     pub fn buffer_cost_log(input_index: usize, node: &Node<Redeem>) {
         let bounds = node.bounds();
-        // FIXME: Cost has no public accessor; remove once as_milliweight() is upstreamed
-        let mw: u32 = unsafe { std::mem::transmute(bounds.cost) };
+        // Rounds up, like the consensus budget comparison. A `Cost` fits in `u32` milli weight units.
+        let cost = u32::try_from(Weight::from(bounds.cost).to_wu()).unwrap_or(u32::MAX);
         let encoded = node.to_vec_with_witness();
         let (program_size, witness_size) = (encoded.0.len(), encoded.1.len());
         let cmr_bytes = node.cmr().to_byte_array();
@@ -129,7 +126,7 @@ impl ProgramLogger {
 
             program_log.cost_info = Some(CostInfo {
                 cmr: std::array::from_fn(|i| cmr_bytes[i]),
-                cost: mw / 1000,
+                cost,
                 program_size,
                 witness_size,
             });
