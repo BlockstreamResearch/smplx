@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- WASM blinding secrets now accept `value` as a decimal string. JSON numbers above 2^53 - 1 are rejected because JavaScript may serialize them with different digits.
+
 ## [0.0.12]
 
 - Added transaction sanity check to the `Signer` to not sign obviously malformed transactions.

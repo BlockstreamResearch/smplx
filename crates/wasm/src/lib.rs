@@ -464,6 +464,10 @@ impl TransactionBuilder {
     /// `tx_out_hex` is the consensus encoding of the output being spent, which is what the
     /// wallet already has from its own snapshot or a chain read.
     ///
+    /// `blinding_secrets_json` contains the unblinded details of a confidential output.
+    /// Write its `value` as a JSON number up to 2^53 - 1. Larger amounts must be
+    /// decimal strings because JavaScript may serialize a number with different digits.
+    ///
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
     #[wasm_bindgen(js_name = addWalletInput)]
@@ -777,10 +781,7 @@ impl TransactionBuilder {
                 .ok_or_else(|| format!("no \"{name}\""))
         };
 
-        let value = parsed
-            .get("value")
-            .and_then(serde_json::Value::as_u64)
-            .ok_or_else(|| "no \"value\"".to_string())?;
+        let value = Self::exact_amount(parsed.get("value").ok_or_else(|| "no \"value\"".to_string())?)?;
 
         Ok(TxOutSecrets::new(
             AssetId::from_str(&field("asset")?).map_err(|e| e.to_string())?,
@@ -788,6 +789,41 @@ impl TransactionBuilder {
             value,
             ValueBlindingFactor::from_str(&field("valueBlindingFactor")?).map_err(|e| e.to_string())?,
         ))
+    }
+
+    /// Reads a safe JSON integer or a decimal string.
+    ///
+    /// JavaScript may change the decimal digits of numbers above 2^53 - 1 when it
+    /// serializes them to JSON. Write larger values as strings containing only
+    /// decimal digits with no sign, spaces or leading zeroes.
+    fn exact_amount(value: &serde_json::Value) -> Result<u64, String> {
+        match value {
+            serde_json::Value::Number(number) => {
+                let amount = number
+                    .as_u64()
+                    .ok_or_else(|| format!("{number} is not a whole number of satoshis"))?;
+
+                if amount > 9_007_199_254_740_991 {
+                    return Err(format!(
+                        "{number} exceeds JavaScript's safe integer limit. Use a decimal string"
+                    ));
+                }
+
+                Ok(amount)
+            }
+            serde_json::Value::String(digits) => {
+                let canonical = !digits.is_empty()
+                    && digits.bytes().all(|byte| byte.is_ascii_digit())
+                    && (digits == "0" || !digits.starts_with('0'));
+
+                if !canonical {
+                    return Err(format!("\"{digits}\" is not a decimal amount"));
+                }
+
+                digits.parse().map_err(|e| format!("\"{digits}\": {e}"))
+            }
+            other => Err(format!("{other} is not an amount")),
+        }
     }
 
     /// Reads a derivation path relative to the account path, e.g. `0/7`.
@@ -1045,6 +1081,50 @@ mod tests {
     fn refuses_secrets_that_are_not_a_reading_at_all() {
         assert!(TransactionBuilder::blinding_secrets("not json").is_err());
         assert!(TransactionBuilder::blinding_secrets("{}").is_err());
+    }
+
+    #[test]
+    fn reads_a_value_written_as_a_decimal_string_exactly() {
+        for (written, exact) in [
+            ("0", 0),
+            ("9007199254740993", 9_007_199_254_740_993),
+            ("288230376151711744", 1_u64 << 58),
+            ("18446744073709551615", u64::MAX),
+        ] {
+            let secrets = TransactionBuilder::blinding_secrets(&SECRETS.replace("100000", &format!("\"{written}\"")))
+                .expect("a value written as a string");
+
+            assert_eq!(secrets.value, exact, "{written}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_json_number_above_javascripts_safe_integer_limit() {
+        let safe = serde_json::json!(9_007_199_254_740_991_u64);
+        let unsafe_number = serde_json::from_str::<serde_json::Value>("288230376151711740")
+            .expect("the decimal digits emitted by JSON.stringify(2 ** 58)");
+
+        assert_eq!(TransactionBuilder::exact_amount(&safe), Ok(9_007_199_254_740_991));
+        assert!(TransactionBuilder::exact_amount(&unsafe_number).is_err());
+        assert_eq!(
+            TransactionBuilder::exact_amount(&serde_json::json!("288230376151711744")),
+            Ok(1_u64 << 58)
+        );
+    }
+
+    #[test]
+    fn refuses_an_amount_that_is_not_plain_decimal_digits() {
+        for written in [
+            serde_json::json!(""),
+            serde_json::json!("+1"),
+            serde_json::json!("01"),
+            serde_json::json!("1.0"),
+            serde_json::json!("18446744073709551616"),
+            serde_json::json!(-1),
+            serde_json::json!(1.5),
+        ] {
+            assert!(TransactionBuilder::exact_amount(&written).is_err(), "{written}");
+        }
     }
 
     #[test]
