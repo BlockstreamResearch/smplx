@@ -39,8 +39,8 @@ pub enum NetworkUtilsError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TimeShiftError {
-    #[error("Invalid mock time '{timestamp}': expected 0 or a timestamp at least '{minimum}'")]
-    InvalidMockTime { timestamp: u64, minimum: u64 },
+    #[error(transparent)]
+    InvalidMockTime(#[from] ValidateTimeShiftError),
 
     #[error(
         "Mock time can only move forward: timestamp '{timestamp}' must be greater than current MTP '{current_mtp}'"
@@ -58,4 +58,10 @@ pub enum TimeShiftError {
 
     #[error("Failed to get the system time for verification: '{0}'")]
     SystemTimeError(#[from] std::time::SystemTimeError),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ValidateTimeShiftError {
+    #[error("Invalid mock time '{timestamp}': expected 0 or a timestamp at least '{minimum}'")]
+    InvalidMockTime { timestamp: u64, minimum: u64 },
 }

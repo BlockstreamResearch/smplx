@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use smplx_sdk::provider::{ElementsRpc, EsploraProvider, GetBlockchainInfo, ProviderError, ProviderTrait};
 
-use crate::error::{NetworkUtilsError, TimeShiftError};
+use crate::error::{NetworkUtilsError, TimeShiftError, ValidateTimeShiftError};
 
 pub struct NetworkUtils {
     rpc: ElementsRpc,
@@ -115,7 +115,7 @@ impl NetworkUtils {
     /// Returns an error if validation, an RPC or mining operation, synchronization,
     /// or final MTP verification fails.
     pub fn set_mock_time(&self, timestamp: u64) -> Result<(), NetworkUtilsError> {
-        Self::validate_mock_time(timestamp)?;
+        Self::validate_mock_time(timestamp).map_err(TimeShiftError::from)?;
 
         if timestamp == 0 {
             return self.reset_mock_time();
@@ -190,12 +190,12 @@ impl NetworkUtils {
     /// to prevent the mocked clock from starting before the default Liquid regtest
     /// genesis timestamp. Elements' `setmocktime` RPC itself accepts any non-negative
     /// signed integer.
-    fn validate_mock_time(timestamp: u64) -> Result<(), TimeShiftError> {
+    pub(crate) fn validate_mock_time(timestamp: u64) -> Result<(), ValidateTimeShiftError> {
         if timestamp == 0 || timestamp >= Self::MIN_MINEABLE_MOCK_TIME {
             return Ok(());
         }
 
-        Err(TimeShiftError::InvalidMockTime {
+        Err(ValidateTimeShiftError::InvalidMockTime {
             timestamp,
             minimum: Self::MIN_MINEABLE_MOCK_TIME,
         })
