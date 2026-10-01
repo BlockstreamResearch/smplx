@@ -158,4 +158,48 @@ mod tests {
         assert_eq!(sat2btc(123), 0.000_001_23);
         assert_eq!(btc2sat(1), 100_000_000);
     }
+
+    /// A four-item stack shaped like `[witness, program, cmr, control_block]`.
+    /// It serializes to 472 bytes.
+    fn sample_stack() -> Vec<Vec<u8>> {
+        vec![vec![0x00; 100], vec![0x01; 300], vec![0x02; 32], vec![0x03; 33]]
+    }
+
+    #[test]
+    fn budget_is_the_serialized_stack_plus_fifty() {
+        let stack = sample_stack();
+        assert_eq!(encode::serialize(&stack).len(), 472);
+
+        assert!(check_budget(Cost::from_milliweight(522_000), &stack).is_ok());
+    }
+
+    #[test]
+    fn one_milliweight_over_the_budget_is_rejected_with_its_deficit() {
+        let err = check_budget(Cost::from_milliweight(522_001), &sample_stack()).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                ProgramError::InsufficientBudget {
+                    cost_wu: 523,
+                    budget_wu: 522,
+                    stack_bytes: 472,
+                    deficit_wu: 1,
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn budget_check_agrees_with_weight_rounding() {
+        let stack = sample_stack();
+
+        for milliweight in [0, 1, 521_999, 522_000, 522_001, 522_999, 523_000, 523_001, u32::MAX] {
+            let cost = Cost::from_milliweight(milliweight);
+            let fits = bitcoin::Weight::from(cost).to_wu() <= 522;
+
+            assert_eq!(check_budget(cost, &stack).is_ok(), fits, "{milliweight} mWU");
+        }
+    }
 }
