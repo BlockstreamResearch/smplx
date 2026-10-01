@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::path::Path;
 use std::process::Command;
@@ -43,9 +44,39 @@ impl Install {
         Ok(())
     }
 
+    /// Installs `deps` and, transitively, the dependencies declared by each installed repository.
     fn install_repos(
         deps: &DependencyConfig,
         deps_dir: &Path,
+        installed_repos: &mut Vec<PathBuf>,
+    ) -> Result<(), InstallError> {
+        let mut visited = HashSet::<PathBuf>::new();
+        let mut pending = VecDeque::<PathBuf>::new();
+
+        Self::install_direct_deps(deps, deps_dir, &mut visited, &mut pending, installed_repos)?;
+
+        while let Some(repo_dir) = pending.pop_front() {
+            let config_path = Config::get_path(&repo_dir)?;
+            let loaded_config = Config::load(config_path)?;
+
+            Self::install_direct_deps(
+                &loaded_config.dependencies,
+                deps_dir,
+                &mut visited,
+                &mut pending,
+                installed_repos,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Installs the git dependencies listed directly in `deps` that are not yet `visited`.
+    fn install_direct_deps(
+        deps: &DependencyConfig,
+        deps_dir: &Path,
+        visited: &mut HashSet<PathBuf>,
+        pending: &mut VecDeque<PathBuf>,
         installed_repos: &mut Vec<PathBuf>,
     ) -> Result<(), InstallError> {
         for dependency in deps.inner.values() {
@@ -64,6 +95,10 @@ impl Install {
 
             let target_dir = deps_dir.join(hashed_dir);
 
+            if !visited.insert(target_dir.clone()) {
+                continue;
+            }
+
             if !target_dir.exists() {
                 fs::create_dir_all(&target_dir).map_err(|e| InstallError::CreateDir(e, target_dir.clone()))?;
             }
@@ -76,10 +111,7 @@ impl Install {
                 installed_repos,
             )?;
 
-            let config_path = Config::get_path(&target_dir)?;
-            let loaded_config = Config::load(config_path)?;
-
-            Self::install_repos(&loaded_config.dependencies, deps_dir, installed_repos)?;
+            pending.push_back(target_dir);
         }
 
         Ok(())
@@ -215,5 +247,60 @@ impl Display for InstalledRepos {
         }
 
         write!(f, "]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    fn init_repo(dir: &Path, simplex_toml: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join(smplx_build::CONFIG_FILENAME), simplex_toml).unwrap();
+
+        git(dir, &["init", "--quiet"]);
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "--quiet", "-m", "init"]);
+    }
+
+    #[test]
+    fn cyclic_git_dependencies_terminate() {
+        let root = std::env::temp_dir().join(format!("smplx-install-cycle-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let url_a = format!("file://{}", root.join("a").display());
+        let url_b = format!("file://{}", root.join("b").display());
+
+        // `a` depends on itself and on `b`, which depends back on `a`.
+        init_repo(
+            &root.join("a"),
+            &format!("[dependencies]\na = {{ git = \"{url_a}\" }}\nb = {{ git = \"{url_b}\" }}\n"),
+        );
+        init_repo(
+            &root.join("b"),
+            &format!("[dependencies]\na = {{ git = \"{url_a}\" }}\n"),
+        );
+
+        let deps = DependencyConfig::from_source(&format!("[dependencies]\na = {{ git = \"{url_a}\" }}\n")).unwrap();
+        let deps_dir = root.join("deps");
+        fs::create_dir_all(&deps_dir).unwrap();
+
+        let mut installed_repos = Vec::new();
+        Install::install_repos(&deps, &deps_dir, &mut installed_repos).unwrap();
+
+        assert_eq!(installed_repos.len(), 2);
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
