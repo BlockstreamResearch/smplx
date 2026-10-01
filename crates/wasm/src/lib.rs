@@ -498,7 +498,8 @@ impl TransactionBuilder {
     /// Adds an ordinary wallet input that also creates a new asset.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed.
+    /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed,
+    /// or if either issuance amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addWalletIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_wallet_issuance_input(
@@ -512,6 +513,13 @@ impl TransactionBuilder {
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
@@ -650,7 +658,8 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
-    /// issuer contract or the derivation path cannot be parsed.
+    /// issuer contract or the derivation path cannot be parsed, or if either issuance amount
+    /// exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_issuance_input(
@@ -669,6 +678,13 @@ impl TransactionBuilder {
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
 
@@ -693,7 +709,8 @@ impl TransactionBuilder {
     /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
     ///
     /// # Errors
-    /// Returns an error if the script, asset id or blinding key cannot be parsed.
+    /// Returns an error if the script, asset id or blinding key cannot be parsed,
+    /// or if the amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addOutput)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_output(
@@ -703,6 +720,10 @@ impl TransactionBuilder {
         asset_hex: &str,
         blinding_key_hex: Option<String>,
     ) -> Result<(), JsError> {
+        if i64::try_from(amount_sats).is_err() {
+            return Err(JsError::new("output amount must not exceed i64::MAX"));
+        }
+
         let script =
             Script::from(hex::decode(script_pubkey_hex).map_err(|e| JsError::new(&format!("Invalid script: {e}")))?);
         let asset = AssetId::from_str(asset_hex).map_err(|e| JsError::new(&format!("Invalid asset id: {e}")))?;
