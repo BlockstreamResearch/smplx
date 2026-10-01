@@ -215,6 +215,7 @@ mod tests {
 
     use crate::config::{DEFAULT_TEST_MNEMONIC, EsploraConfig, FuzzConfig, TestConfig};
     use crate::context::{FuzzMode, TestContext};
+    use crate::error::FuzzError;
 
     use super::*;
 
@@ -321,7 +322,7 @@ mod tests {
         assert!(test_context.random_signer().is_none());
 
         let network = SimplicityNetwork::default_regtest();
-        test_context.set_network(network);
+        test_context.set_network(network).unwrap();
 
         let engine = build_test_engine(test_context);
         assert_eq!(engine.context.network, network);
@@ -363,7 +364,7 @@ mod tests {
         let public_key = custom_signer.get_schnorr_public_key();
 
         context.set_custom_signer(custom_signer);
-        context.set_network(network);
+        context.set_network(network).unwrap();
         context.set_cases(31);
         context.set_max_global_rejects(37);
         context.set_max_local_rejects(41);
@@ -379,6 +380,30 @@ mod tests {
         assert_eq!(engine.runner.config().cases, 31);
         assert_eq!(engine.runner.config().max_global_rejects, 37);
         assert_eq!(engine.runner.config().max_local_rejects, 41);
+    }
+
+    #[test]
+    fn signer_network_mismatch_error() {
+        let mut context = TestContext::from_config(TestConfig::default())
+            .unwrap()
+            .fuzz("crate::mismatched_fuzz_network", file!())
+            .unwrap();
+
+        let signer_network = SimplicityNetwork::Liquid;
+        context.set_custom_signer(Signer::from_mnemonic(DEFAULT_TEST_MNEMONIC, signer_network));
+
+        let network = SimplicityNetwork::LiquidTestnet;
+        assert_eq!(
+            context.set_network(network),
+            Err(FuzzError::SignerNetworkMismatch {
+                network: format!("{:?}", network),
+                signer_network: format!("{:?}", signer_network),
+            })
+        );
+
+        let engine = build_test_engine(context);
+        assert_eq!(engine.context.network, signer_network);
+        assert_eq!(*engine.context.signer.unwrap().get_network(), signer_network);
     }
 
     #[test]
