@@ -109,13 +109,16 @@ pub enum FuzzOutcome {
     CounterExample(CounterExampleOutcome),
 }
 
-impl Context {
+impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
+where
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+{
     #[inline]
     pub fn sign_or_extract(
-        &self,
+        context: &Context,
         ft: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        match self.signer.as_ref() {
+        match context.signer.as_ref() {
             Some(signer) => Ok(signer.sign_tx(ft)?),
             None => {
                 let witnesses = ft
@@ -134,12 +137,7 @@ impl Context {
             }
         }
     }
-}
 
-impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
-where
-    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-{
     pub fn run_with_check(self, program_post_hook: impl ProgramCheck<Program, Args, Wit>) {
         let mut runner = self.runner;
         let context = self.context;
@@ -176,8 +174,7 @@ where
             .prepare_transaction(program.as_ref().as_ref(), &script, &arguments, &witness)
             .map_err(|error| TestCaseError::fail(format!("failed to prepare fuzz transaction: {error}")))?;
 
-        let (pst, signed_witnesses) = fuzz_context
-            .sign_or_extract(&final_transaction)
+        let (pst, signed_witnesses) = Self::sign_or_extract(fuzz_context, &final_transaction)
             .map_err(|error| TestCaseError::fail(format!("failed to sign: {error}")))?;
 
         // Iterate over program inputs to check contract execution
@@ -297,11 +294,12 @@ mod tests {
 
         let engine = build_test_engine(context);
         let runner_config = engine.runner.config();
+        let network = SimplicityNetwork::Liquid;
 
-        assert_eq!(engine.context.network, SimplicityNetwork::Liquid);
+        assert_eq!(engine.context.network, network);
 
         let signer = engine.context.signer.as_ref().unwrap();
-        assert_eq!(signer.get_address().params, SimplicityNetwork::Liquid.address_params());
+        assert_eq!(signer.get_address().params, network.address_params());
         assert!(signer.get_provider().is_err());
         assert_eq!(runner_config.cases, 17);
         assert_eq!(runner_config.max_global_rejects, 23);
@@ -315,19 +313,27 @@ mod tests {
 
     #[test]
     fn explicit_network_without_signer_builds_unsigned_engine() {
-        let mut context = TestContext::from_config(TestConfig::default())
+        let mut test_context = TestContext::from_config(TestConfig::default())
             .unwrap()
             .fuzz("crate::unsigned_fuzz_test", file!())
             .unwrap();
-        assert!(context.get_default_signer().is_none());
-        assert!(context.random_signer().is_none());
-        context.set_network(SimplicityNetwork::default_regtest());
+        assert!(test_context.get_default_signer().is_none());
+        assert!(test_context.random_signer().is_none());
 
-        let engine = build_test_engine(context);
-        assert_eq!(engine.context.network, SimplicityNetwork::default_regtest());
+        let network = SimplicityNetwork::default_regtest();
+        test_context.set_network(network);
+
+        let engine = build_test_engine(test_context);
+        assert_eq!(engine.context.network, network);
         assert!(engine.context.signer.is_none());
 
-        let (_, witnesses) = engine.context.sign_or_extract(&FinalTransaction::new()).unwrap();
+        let context = Context { signer: None, network };
+
+        let (_, witnesses) = SimplexFuzzEngine::<DummyProgram, EmptyArgs, EmptyArgs>::sign_or_extract(
+            &context,
+            &FinalTransaction::new(),
+        )
+        .unwrap();
         assert!(witnesses.is_empty());
     }
 
@@ -348,32 +354,27 @@ mod tests {
             .fuzz("crate::custom_fuzz_test", file!())
             .unwrap();
 
+        let network = SimplicityNetwork::LiquidTestnet;
         let custom_signer = Signer::new(
             DEFAULT_TEST_MNEMONIC,
-            Box::new(EsploraProvider::new(
-                "http://localhost:3001".to_string(),
-                SimplicityNetwork::LiquidTestnet,
-            )),
+            Box::new(EsploraProvider::new("http://localhost:3001".to_string(), network)),
         );
 
         let public_key = custom_signer.get_schnorr_public_key();
 
         context.set_custom_signer(custom_signer);
-        context.set_network(SimplicityNetwork::LiquidTestnet);
+        context.set_network(network);
         context.set_cases(31);
         context.set_max_global_rejects(37);
         context.set_max_local_rejects(41);
 
         let engine = build_test_engine(context);
 
-        assert_eq!(engine.context.network, SimplicityNetwork::LiquidTestnet);
+        assert_eq!(engine.context.network, network);
 
         let signer = engine.context.signer.as_ref().unwrap();
         assert_eq!(signer.get_schnorr_public_key(), public_key);
-        assert_eq!(
-            signer.get_provider().unwrap().get_network(),
-            &SimplicityNetwork::LiquidTestnet
-        );
+        assert_eq!(signer.get_provider().unwrap().get_network(), &network);
 
         assert_eq!(engine.runner.config().cases, 31);
         assert_eq!(engine.runner.config().max_global_rejects, 37);
@@ -400,7 +401,8 @@ mod tests {
             RequiredSignature::None,
         );
 
-        let (pst, witnesses) = context.sign_or_extract(&transaction).unwrap();
+        let (pst, witnesses) =
+            SimplexFuzzEngine::<DummyProgram, EmptyArgs, EmptyArgs>::sign_or_extract(&context, &transaction).unwrap();
 
         assert_eq!(pst.inputs().len(), 2);
         assert_eq!(witnesses.len(), 1);
