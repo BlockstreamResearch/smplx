@@ -17,7 +17,7 @@ use crate::program::logger::ProgramLogger;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
-use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
+use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key};
 
 /// Executes `simplicity` programs at runtime.
 ///
@@ -189,12 +189,16 @@ impl ProgramTrait for Program {
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
         let cmr = pruned.cmr();
 
-        Ok(vec![
+        let stack = vec![
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
-        ])
+        ];
+
+        check_budget(pruned.bounds().cost, &stack)?;
+
+        Ok(stack)
     }
 }
 

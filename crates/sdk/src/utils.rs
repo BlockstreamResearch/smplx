@@ -2,10 +2,13 @@ use sha2::{Digest, Sha256};
 
 use bip39::Mnemonic;
 
-use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script};
+use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script, encode};
+use simplicityhl::simplicity::Cost;
 use simplicityhl::simplicity::bitcoin;
 use simplicityhl::simplicity::bitcoin::secp256k1;
 use simplicityhl::simplicity::hashes::{HashEngine, sha256};
+
+use crate::program::ProgramError;
 
 /// Generates a radom menemonic with 12 words.
 ///
@@ -76,6 +79,36 @@ pub fn sat2btc(sat: u64) -> f64 {
 #[must_use]
 pub fn btc2sat(btc: u64) -> u64 {
     bitcoin::Amount::from_int_btc(btc).to_sat()
+}
+
+/// Checks that a Simplicity input's witness stack pays for the program's execution cost.
+///
+/// Consensus accepts the spend only if the static cost of the pruned program, in milli weight units,
+/// is at most 1000 times the serialized witness stack size plus 50.
+///
+/// Pass the pruned program's `bounds().cost` and the exact witness stack the input will carry.
+///
+/// # Errors
+/// Returns `ProgramError::InsufficientBudget` if the cost exceeds the budget the stack buys.
+#[allow(clippy::ptr_arg)] // `Cost::is_budget_valid` takes `&Vec<Vec<u8>>` to reuse its consensus encoding
+pub fn check_budget(cost: Cost, stack: &Vec<Vec<u8>>) -> Result<(), ProgramError> {
+    if cost.is_budget_valid(stack) {
+        return Ok(());
+    }
+
+    let stack_bytes = encode::serialize(stack).len();
+    // `VALIDATION_WEIGHT_OFFSET` in Elements. See `ProgramError::InsufficientBudget`.
+    let budget_wu = stack_bytes as u64 + 50;
+    // Rounds up, so the cost exceeds the budget whenever `is_budget_valid` fails.
+    let cost_wu = bitcoin::Weight::from(cost).to_wu();
+    debug_assert!(cost_wu > budget_wu, "budget check and weight rounding disagree");
+
+    Err(ProgramError::InsufficientBudget {
+        cost_wu,
+        budget_wu,
+        stack_bytes,
+        deficit_wu: cost_wu.saturating_sub(budget_wu),
+    })
 }
 
 #[cfg(test)]
