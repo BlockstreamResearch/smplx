@@ -9,6 +9,9 @@
  * Adapted from `last_will.simf` in BlockstreamResearch/SimplicityHL.
  * Changes:
  *
+ *   - The three public keys are `param::` arguments rather than constants
+ *     written into the source, so each deployment is bound to its own keys
+ *     and the test suite can sign with ordinary Simplex wallets.
  *   - The older Left/Right mechanism for selecting the spending action,
  *     instead of an `enum`, is restored because Simplex currently does
  *     not support contracts using `enum`.
@@ -36,20 +39,17 @@ fn recursive_covenant() {
 }
 
 fn inherit_spend(inheritor_sig: Signature) {
-    let blocks_1440: Distance = 1440;
-    enforce_relative_distance(blocks_1440);
-    let inheritor_pk: Pubkey = 0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798; // 1 * G
-    checksig(inheritor_pk, inheritor_sig);
+    let inheritance_distance: Distance = 1440;
+    enforce_relative_distance(inheritance_distance);
+    checksig(param::INHERITOR_PK, inheritor_sig);
 }
 
 fn cold_spend(cold_sig: Signature) {
-    let cold_pk: Pubkey = 0xc6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5; // 2 * G
-    checksig(cold_pk, cold_sig);
+    checksig(param::COLD_PK, cold_sig);
 }
 
 fn refresh_spend(hot_sig: Signature) {
-    let hot_pk: Pubkey = 0xf9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9; // 3 * G
-    checksig(hot_pk, hot_sig);
+    checksig(param::HOT_PK, hot_sig);
     recursive_covenant();
 }
 
