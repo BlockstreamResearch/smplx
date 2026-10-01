@@ -1,0 +1,64 @@
+/*
+ * LAST WILL
+ *
+ * The inheritor can spend the coins if the owner doesn't move them for
+ * 1440 blocks. The owner has to repeat the covenant when he moves the
+ * coins with his hot key. The owner can break out of the covenant with
+ * his cold key.
+ *
+ * Adapted from `last_will.simf` in BlockstreamResearch/SimplicityHL.
+ * Changes:
+ *
+ *   - The three public keys are `param::` arguments rather than constants
+ *     written into the source, so each deployment is bound to its own keys
+ *     and the test suite can sign with ordinary Simplex wallets.
+ *   - The older Left/Right mechanism for selecting the spending action,
+ *     instead of an `enum`, is restored because Simplex currently does
+ *     not support contracts using `enum`.
+ *   - The inheritance distance is reduced to 1440 blocks (1 day on Liquid)
+ *     to reduce CPU requirements for mining these blocks rapidly during the
+ *     demo.
+ */
+use crate::timelocks::enforce_relative_distance;
+
+fn checksig(pk: Pubkey, sig: Signature) {
+    let msg: u256 = jet::sig_all_hash();
+    jet::bip_0340_verify((pk, msg), sig);
+}
+
+// Enforce the covenant to repeat in the first output.
+//
+// Elements has explicit fee outputs, so enforce a fee output in the second output.
+// Disallow further outputs.
+fn recursive_covenant() {
+    assert!(jet::eq_32(jet::num_outputs(), 2));
+    let this_script_hash: u256 = jet::current_script_hash();
+    let output_script_hash: u256 = unwrap(jet::output_script_hash(0));
+    assert!(jet::eq_256(this_script_hash, output_script_hash));
+    assert!(unwrap(jet::output_is_fee(1)));
+}
+
+fn inherit_spend(inheritor_sig: Signature) {
+    let inheritance_distance: Distance = 1440;
+    enforce_relative_distance(inheritance_distance);
+    checksig(param::INHERITOR_PK, inheritor_sig);
+}
+
+fn cold_spend(cold_sig: Signature) {
+    checksig(param::COLD_PK, cold_sig);
+}
+
+fn refresh_spend(hot_sig: Signature) {
+    checksig(param::HOT_PK, hot_sig);
+    recursive_covenant();
+}
+
+fn main() {
+    match witness::INHERIT_OR_NOT {
+        Left(inheritor_sig: Signature) => inherit_spend(inheritor_sig),
+        Right(cold_or_hot: Either<Signature, Signature>) => match cold_or_hot {
+            Left(cold_sig: Signature) => cold_spend(cold_sig),
+            Right(hot_sig: Signature) => refresh_spend(hot_sig),
+        },
+    }
+}
