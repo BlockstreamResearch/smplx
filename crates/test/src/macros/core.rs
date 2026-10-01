@@ -41,26 +41,18 @@ fn expand_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<proc_m
     let attrs = &input.attrs;
 
     let simplex_test_env = TEST_ENV_NAME;
+    let test_context = test_context_tokens(simplex_test_env);
 
     let expansion = quote::quote! {
         #[::core::prelude::v1::test]
         #(#attrs)*
         fn #name() #ret {
-            use std::path::PathBuf;
-            use simplex::TestContext;
-
             fn #name(#inputs) #ret {
                 #body
             }
 
-            let test_context = match std::env::var(#simplex_test_env) {
-                Err(_) => {
-                    panic!("Failed to run this test, required to use `simplex test`");
-                },
-                Ok(path) => {
-                    TestContext::new(PathBuf::from(path)).unwrap()
-                }
-            };
+            let test_context = #test_context;
+            let test_context = test_context.regular().unwrap();
 
             #name(test_context)
         }
@@ -78,47 +70,47 @@ fn expand_fuzz_inner(input: &syn::ItemFn, _args: AttributeArgs) -> syn::Result<p
     let attrs = &input.attrs;
 
     let simplex_test_env = TEST_ENV_NAME;
+    let test_context = test_context_tokens(simplex_test_env);
 
     let expansion = quote::quote! {
         #[::core::prelude::v1::test]
         #(#attrs)*
         fn #name() #ret {
-            use std::path::PathBuf;
-            use simplex::TestContext;
-
             fn #name(#inputs) #ret {
                 #body
             }
 
-            let config = ::simplex::fuzz::proptest::test_runner::Config {
-                test_name: ::core::option::Option::Some(::core::concat!(
-                    ::core::module_path!(),
-                    "::",
-                    ::core::stringify!(#name)
-                )),
-                fork: false,
-                max_shrink_iters: 0,
-                source_file: Some(concat!(
-                  env!("CARGO_MANIFEST_DIR"),
-                  "/src/",
-                  stringify!(#name),
-                  ".any"
-                )),
-                ..Default::default()
-            };
-            let test_context = match std::env::var(#simplex_test_env) {
-                Err(_) => {
-                    panic!("Failed to run this test, required to use `simplex test`");
-                },
-                Ok(path) => {
-                    TestContext::new(PathBuf::from(path)).unwrap()
-                }
-            };
-            let fuzz_context_builder = ::simplex::fuzz::FuzzEngineBuilder::from_context(config, test_context);
+            let test_context = #test_context;
 
-            #name(fuzz_context_builder)
+            let test_name = ::core::concat!(
+                ::core::module_path!(),
+                "::",
+                ::core::stringify!(#name)
+            );
+            let source_file = ::core::concat!(
+                ::core::env!("CARGO_MANIFEST_DIR"),
+                "/src/",
+                ::core::stringify!(#name),
+                ".any"
+            );
+            let test_context = test_context.fuzz(test_name, source_file).unwrap();
+
+            #name(test_context)
         }
     };
 
     Ok(expansion)
+}
+
+fn test_context_tokens(simplex_test_env: &str) -> TokenStream {
+    quote::quote! {
+        match ::std::env::var(#simplex_test_env) {
+            ::core::result::Result::Err(_) => {
+                ::core::panic!("Failed to run this test, required to use `simplex test`");
+            },
+            ::core::result::Result::Ok(path) => {
+                ::simplex::TestContext::new(::std::path::PathBuf::from(path)).unwrap()
+            }
+        }
+    }
 }

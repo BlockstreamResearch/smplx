@@ -128,6 +128,27 @@ impl From<&SimplicityNetwork> for NetworkKind {
     }
 }
 
+impl FromStr for SimplicityNetwork {
+    type Err = NetworkConvertError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Liquid" => Ok(SimplicityNetwork::Liquid),
+            "LiquidTestnet" => Ok(SimplicityNetwork::LiquidTestnet),
+            "ElementsRegtest" => Ok(SimplicityNetwork::default_regtest()),
+            other => Err(NetworkConvertError::BadNetworkName(other.to_string())),
+        }
+    }
+}
+
+/// Network conversion error.
+#[derive(thiserror::Error, Debug)]
+pub enum NetworkConvertError {
+    /// The provided network name is not supported.
+    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
+    BadNetworkName(String),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use smplx_build::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 use smplx_regtest::RegtestConfig;
+use smplx_sdk::provider::NetworkConvertError;
 use smplx_test::TestConfig;
 
 use super::error::ConfigError;
@@ -81,7 +82,9 @@ impl Config {
 
     fn validate_network(network: &String) -> Result<(), ConfigError> {
         if network != "Liquid" && network != "LiquidTestnet" && network != "ElementsRegtest" {
-            return Err(ConfigError::BadNetworkName(network.clone()));
+            return Err(ConfigError::BadNetworkName(NetworkConvertError::BadNetworkName(
+                network.clone(),
+            )));
         }
 
         Ok(())

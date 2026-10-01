@@ -7,7 +7,7 @@ pub use simplicityhl;
 pub use smplx_sdk::*;
 
 pub use smplx_test::config::TestConfig;
-pub use smplx_test::context::TestContext;
+pub use smplx_test::context::{ContextMode, FuzzMode, InitMode, RegularMode, TestContext};
 pub use smplx_test::fuzz;
 
 pub use smplx_macros;
