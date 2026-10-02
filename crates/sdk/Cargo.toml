@@ -13,6 +13,7 @@ workspace = true
 [features]
 default = ["provider"]
 provider = ["dep:minreq", "dep:bitcoincore-rpc"]
+regtest-utils = ["provider"]
 
 [dependencies]
 thiserror = { workspace = true }

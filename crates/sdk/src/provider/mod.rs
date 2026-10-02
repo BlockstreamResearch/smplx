@@ -21,6 +21,8 @@ pub use core::ProviderTrait;
 pub use esplora::EsploraProvider;
 #[cfg(feature = "provider")]
 pub use rpc::elements::ElementsRpc;
+#[cfg(feature = "regtest-utils")]
+pub use rpc::elements::GetBlockchainInfo;
 #[cfg(feature = "provider")]
 pub use simplex::SimplexProvider;
 

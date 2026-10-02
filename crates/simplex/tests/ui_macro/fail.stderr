@@ -1,0 +1,37 @@
+error: unexpected end of input, expected an expression
+ --> tests/ui_macro/fail.rs:4:1
+  |
+4 | #[simplex::test(mock_time =)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `simplex::test` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: expected `mock_time = 1_234_567`
+ --> tests/ui_macro/fail.rs:7:17
+  |
+7 | #[simplex::test(unknown)]
+  |                 ^^^^^^^
+
+error: cannot have more than one `mock_time` arg
+  --> tests/ui_macro/fail.rs:10:32
+   |
+10 | #[simplex::test(mock_time = 0, mock_time = 1_296_688_602)]
+   |                                ^^^^^^^^^
+
+error: expected unsigned integer
+  --> tests/ui_macro/fail.rs:13:17
+   |
+13 | #[simplex::test(mock_time = "now")]
+   |                 ^^^^^^^^^
+
+error: number too large to fit in target type
+  --> tests/ui_macro/fail.rs:16:29
+   |
+16 | #[simplex::test(mock_time = 18_446_744_073_709_551_616)]
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Invalid mock time '1': expected 0 or a timestamp at least '1296688602'
+  --> tests/ui_macro/fail.rs:19:29
+   |
+19 | #[simplex::test(mock_time = 1)]
+   |                             ^

@@ -23,6 +23,10 @@ pub(super) fn get_elementsd_bin_args(config: &RegtestConfig) -> Vec<String> {
         "-multi_data_permitted".to_string(),
     ];
 
+    if let Some(mock_time) = config.mock_time {
+        args.push(format!("-mocktime={mock_time}"));
+    }
+
     if let Some(port) = config.rpc_port {
         // A lib works with autoassigned rpcport, so we are required to do this woodoo
         args.push("-rpcbind=127.0.0.1".to_string());
@@ -58,4 +62,22 @@ fn generate_rpcauth(user: &str, password: &str) -> String {
     let hash = hex::encode(mac.finalize().into_bytes());
 
     format!("{user}:{salt}${hash}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mock_time_is_only_passed_when_configured() {
+        let mut config = RegtestConfig::default();
+        assert!(
+            !get_elementsd_bin_args(&config)
+                .iter()
+                .any(|arg| arg.starts_with("-mocktime="))
+        );
+
+        config.mock_time = Some(1_700_000_000);
+        assert!(get_elementsd_bin_args(&config).contains(&"-mocktime=1700000000".to_string()));
+    }
 }

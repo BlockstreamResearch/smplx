@@ -11,7 +11,7 @@ readme = "../../README.md"
 workspace = true
 
 [dependencies]
-smplx-sdk = { workspace = true, features = ["provider"] }
+smplx-sdk = { workspace = true, features = ["provider", "regtest-utils"] }
 smplx-regtest = { workspace = true }
 
 thiserror = { workspace = true }
