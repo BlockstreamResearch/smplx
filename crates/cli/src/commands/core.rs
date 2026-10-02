@@ -34,6 +34,11 @@ pub enum Command {
         #[command(flatten)]
         flags: CleanFlags,
     },
+    /// Formats the configured Simplex source files using simfmt
+    Fmt {
+        #[command(flatten)]
+        opts: FormatOpts,
+    },
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -79,4 +84,45 @@ pub struct CleanFlags {
     /// Remove all files created by Simplex, including installed dependencies
     #[arg(long = "all")]
     pub remove_all: bool,
+}
+
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Args)]
+pub struct FormatOpts {
+    /// Path to the file.
+    #[arg(value_hint = clap::ValueHint::FilePath, value_name = "PATH", num_args(1..))]
+    pub files: Vec<std::path::PathBuf>,
+
+    /// No output printed to stdout
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+
+    /// Use verbose output
+    #[arg(short = 'v', long = "verbose")]
+    pub verbose: bool,
+
+    /// Print simfmt version and exit
+    #[arg(long = "version")]
+    pub version: bool,
+
+    /// Specify path to Simplex.toml
+    #[arg(long = "manifest-path", value_name = "manifest-path")]
+    pub manifest_path: Option<String>,
+
+    #[arg(
+        short = 'f',
+        long = "message-format",
+        value_name = "message-format",
+        help = format!("Specify message-format: {}", crate::commands::fmt::MessageFormat::OPTIONS)
+    )]
+    pub message_format: Option<String>,
+
+    /// Options passed to simfmt
+    // `raw = true` makes the `--` separator explicit.
+    #[arg(id = "simfmt_options", raw = true)]
+    pub simfmt_options: Vec<String>,
+
+    /// Run simfmt in check mode
+    #[arg(long = "check")]
+    pub check: bool,
 }
