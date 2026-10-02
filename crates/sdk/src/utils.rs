@@ -2,10 +2,13 @@ use sha2::{Digest, Sha256};
 
 use bip39::Mnemonic;
 
-use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script};
+use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script, encode};
+use simplicityhl::simplicity::Cost;
 use simplicityhl::simplicity::bitcoin;
 use simplicityhl::simplicity::bitcoin::secp256k1;
 use simplicityhl::simplicity::hashes::{HashEngine, sha256};
+
+use crate::program::ProgramError;
 
 /// Generates a radom menemonic with 12 words.
 ///
@@ -78,6 +81,36 @@ pub fn btc2sat(btc: u64) -> u64 {
     bitcoin::Amount::from_int_btc(btc).to_sat()
 }
 
+/// Checks that a Simplicity input's witness stack pays for the program's execution cost.
+///
+/// Consensus accepts the spend only if the static cost of the pruned program, in milli weight units,
+/// is at most 1000 times the serialized witness stack size plus 50.
+///
+/// Pass the pruned program's `bounds().cost` and the exact witness stack the input will carry.
+///
+/// # Errors
+/// Returns `ProgramError::InsufficientBudget` if the cost exceeds the budget the stack buys.
+#[allow(clippy::ptr_arg)] // `Cost::is_budget_valid` takes `&Vec<Vec<u8>>` to reuse its consensus encoding
+pub fn check_budget(cost: Cost, stack: &Vec<Vec<u8>>) -> Result<(), ProgramError> {
+    if cost.is_budget_valid(stack) {
+        return Ok(());
+    }
+
+    let stack_bytes = encode::serialize(stack).len();
+    // `VALIDATION_WEIGHT_OFFSET` in Elements. See `ProgramError::InsufficientBudget`.
+    let budget_wu = stack_bytes as u64 + 50;
+    // Rounds up, so the cost exceeds the budget whenever `is_budget_valid` fails.
+    let cost_wu = bitcoin::Weight::from(cost).to_wu();
+    debug_assert!(cost_wu > budget_wu, "budget check and weight rounding disagree");
+
+    Err(ProgramError::InsufficientBudget {
+        cost_wu,
+        budget_wu,
+        stack_bytes,
+        deficit_wu: cost_wu.saturating_sub(budget_wu),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +157,49 @@ mod tests {
         );
         assert_eq!(sat2btc(123), 0.000_001_23);
         assert_eq!(btc2sat(1), 100_000_000);
+    }
+
+    /// A four-item stack shaped like `[witness, program, cmr, control_block]`.
+    /// It serializes to 472 bytes.
+    fn sample_stack() -> Vec<Vec<u8>> {
+        vec![vec![0x00; 100], vec![0x01; 300], vec![0x02; 32], vec![0x03; 33]]
+    }
+
+    #[test]
+    fn budget_is_the_serialized_stack_plus_fifty() {
+        let stack = sample_stack();
+        assert_eq!(encode::serialize(&stack).len(), 472);
+
+        assert!(check_budget(Cost::from_milliweight(522_000), &stack).is_ok());
+    }
+
+    #[test]
+    fn one_milliweight_over_the_budget_is_rejected_with_its_deficit() {
+        let err = check_budget(Cost::from_milliweight(522_001), &sample_stack()).unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                ProgramError::InsufficientBudget {
+                    cost_wu: 523,
+                    budget_wu: 522,
+                    stack_bytes: 472,
+                    deficit_wu: 1,
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn budget_check_agrees_with_weight_rounding() {
+        let stack = sample_stack();
+
+        for milliweight in [0, 1, 521_999, 522_000, 522_001, 522_999, 523_000, 523_001, u32::MAX] {
+            let cost = Cost::from_milliweight(milliweight);
+            let fits = bitcoin::Weight::from(cost).to_wu() <= 522;
+
+            assert_eq!(check_budget(cost, &stack).is_ok(), fits, "{milliweight} mWU");
+        }
     }
 }

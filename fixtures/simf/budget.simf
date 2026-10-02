@@ -1,0 +1,23 @@
+/// Each `bip_0340_verify` adds execution cost but almost no witness bytes.
+fn checksig(sig: Signature) {
+    jet::bip_0340_verify((param::PUBLIC_KEY, jet::sig_all_hash()), sig);
+}
+
+/// Pruning drops the branch that is not taken, so each branch is costed on its own.
+fn main() {
+    match witness::SIGNATURE {
+        // One check fits the budget the witness stack buys.
+        Left(light: Signature) => checksig(light),
+        // Eight checks of the same signature exceed it.
+        Right(heavy: Signature) => {
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+            checksig(heavy);
+        },
+    }
+}
