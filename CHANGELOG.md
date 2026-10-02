@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- The built-in `Program` now checks the pruned program's execution cost against its witness budget during finalization.
+- `utils::check_budget` runs the same budget check for custom `ProgramTrait` implementations.
+- The WASM `TransactionBuilder` can now reissue an asset by spending a confidential output that holds its reissuance token.
+- WASM issuance and output methods now reject amounts above `i64::MAX` before adding them to a transaction.
+- WASM blinding secrets now accept `value` as a decimal string. JSON numbers above 2^53 - 1 are rejected because JavaScript may serialize them with different digits.
+
 ## [0.0.12]
 
 - Added transaction sanity check to the `Signer` to not sign obviously malformed transactions.

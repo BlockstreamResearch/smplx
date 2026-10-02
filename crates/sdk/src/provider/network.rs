@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use simplicityhl::simplicity::elements;
-use simplicityhl::simplicity::hashes::{Hash, sha256};
 
 use elements_miniscript::bitcoin::NetworkKind;
 
@@ -9,10 +8,10 @@ use crate::constants::{LIQUID_DEFAULT_REGTEST_ASSET_STR, LIQUID_POLICY_ASSET_STR
 
 /// The default Bitcoin `AssetId` used on Liquid testnet.
 pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> = std::sync::LazyLock::new(|| {
-    elements::AssetId::from_inner(sha256::Midstate([
+    elements::AssetId::from_byte_array([
         0x49, 0x9a, 0x81, 0x85, 0x45, 0xf6, 0xba, 0xe3, 0x9f, 0xc0, 0x3b, 0x63, 0x7f, 0x2a, 0x4e, 0x1e, 0x64, 0xe5,
         0x90, 0xca, 0xc1, 0xbc, 0x3a, 0x6f, 0x6d, 0x71, 0xaa, 0x44, 0x43, 0x65, 0x4c, 0x14,
-    ]))
+    ])
 });
 
 /// The genesis block hash for Liquid mainnet.

@@ -12,7 +12,8 @@ use smplx_sdk::global::Verbosity;
 use super::error::TestError;
 
 pub const TEST_ENV_NAME: &str = "SIMPLEX_TEST_ENV";
-pub const DEFAULT_TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
+pub const DEFAULT_TEST_MNEMONIC: &str =
+    "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 pub const DEFAULT_BITCOINS: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

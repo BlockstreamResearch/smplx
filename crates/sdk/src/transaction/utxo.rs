@@ -11,6 +11,16 @@ pub struct UTXO {
     pub secrets: Option<TxOutSecrets>,
 }
 
+impl Default for UTXO {
+    fn default() -> Self {
+        Self {
+            outpoint: OutPoint::default(),
+            txout: TxOut::new_fee(0, AssetId::default()),
+            secrets: None,
+        }
+    }
+}
+
 impl UTXO {
     /// Retrieves the explicit `AssetId` from the transaction output (`txout`).
     ///
@@ -76,7 +86,7 @@ mod tests {
 
     #[test]
     fn explicit_and_unblinded_accessors_select_the_right_values() {
-        let asset = AssetId::from_slice(&[1; 32]).unwrap();
+        let asset = AssetId::from_byte_array([1; 32]);
         let explicit = UTXO {
             outpoint: OutPoint::default(),
             txout: TxOut {

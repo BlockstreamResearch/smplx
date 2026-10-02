@@ -1,6 +1,5 @@
 use std::sync::{Arc, OnceLock};
 
-use bitcoin_hashes::Hash;
 use dyn_clone::DynClone;
 
 use simplicityhl::ast::ElementsJetHinter;
@@ -15,11 +14,10 @@ use simplicityhl::{CompiledProgram, UnstableFeatures};
 use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
 
-use super::arguments::ArgumentsTrait;
 use super::error::ProgramError;
 
 use crate::provider::SimplicityNetwork;
-use crate::utils::{hash_script, tap_data_hash, tr_unspendable_key};
+use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key};
 
 /// Executes `simplicity` programs at runtime.
 ///
@@ -66,8 +64,12 @@ pub trait ProgramTrait: DynClone {
 
     /// Finalizes and returns `pruned_witness` as output after executing the program on certain parameters.
     ///
+    /// Implementations must compare the pruned program's static cost with the budget from the
+    /// exact serialized witness stack they return. Use [`check_budget`] for this check,
+    /// as the built-in `Program` does.
+    ///
     /// # Errors
-    /// Returns a `ProgramError` if program execution or constructing the control block fails.
+    /// Returns a `ProgramError` if execution, control block construction or budget validation fails.
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,
@@ -191,12 +193,16 @@ impl ProgramTrait for Program {
         let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
         let cmr = pruned.cmr();
 
-        Ok(vec![
+        let stack = vec![
             simplicity_witness_bytes,
             simplicity_program_bytes,
             cmr.as_ref().to_vec(),
             self.control_block()?.serialize(),
-        ])
+        ];
+
+        check_budget(pruned.bounds().cost, &stack)?;
+
+        Ok(stack)
     }
 }
 
@@ -206,11 +212,11 @@ impl Program {
 
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
-    pub fn new(source: impl Into<Arc<str>>, arguments: &dyn ArgumentsTrait) -> Self {
+    pub fn new(source: impl Into<Arc<str>>, arguments: impl Into<Arguments>) -> Self {
         Self {
             source: source.into(),
             pub_key: tr_unspendable_key(),
-            arguments: arguments.build_arguments(),
+            arguments: arguments.into(),
             storage: Vec::new(),
             include_debug_symbols: None,
             compiled: Arc::new(OnceLock::new()),
@@ -414,7 +420,10 @@ impl Program {
 
         for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
             builder = builder
-                .add_hidden(depth, tap_data_hash(slot))
+                .add_hidden(
+                    depth,
+                    taproot::TapNodeHash::from_byte_array(tap_data_hash(slot).to_byte_array()),
+                )
                 .expect("tap tree should be valid");
         }
 
@@ -495,18 +504,24 @@ mod tests {
     #[derive(Clone)]
     struct EmptyArguments;
 
-    impl ArgumentsTrait for EmptyArguments {
-        fn build_arguments(&self) -> Arguments {
+    impl From<EmptyArguments> for Arguments {
+        fn from(_val: EmptyArguments) -> Self {
+            Arguments::default()
+        }
+    }
+
+    impl From<&EmptyArguments> for Arguments {
+        fn from(_val: &EmptyArguments) -> Self {
             Arguments::default()
         }
     }
 
     fn dummy_asset_id(byte: u8) -> AssetId {
-        AssetId::from_slice(&[byte; 32]).unwrap()
+        AssetId::from_byte_array([byte; 32])
     }
 
     fn dummy_program() -> Program {
-        Program::new(DUMMY_PROGRAM, &EmptyArguments)
+        Program::new(DUMMY_PROGRAM, EmptyArguments {})
     }
 
     fn dummy_network() -> SimplicityNetwork {

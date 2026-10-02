@@ -74,7 +74,7 @@ fn reissue_tokens_to_bob<'a>(
 
     ft.add_issuance_input(
         PartialInput::new(reissuance_token_utxo),
-        IssuanceInput::new_reissuance(reissuance_amount, issuance_details.asset_entropy.0),
+        IssuanceInput::new_reissuance(reissuance_amount, issuance_details.asset_entropy.to_byte_array()),
         RequiredSignature::NativeEcdsa,
     );
 

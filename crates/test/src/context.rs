@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn invalid_network_returns_error() {
         let config = r#"
-            mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+            mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
             bitcoins = 10000
 
             [esplora]

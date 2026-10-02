@@ -1,14 +1,13 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use smplx_build::{BuildConfig, DependencyConfig};
+use smplx_build::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 use smplx_regtest::RegtestConfig;
 use smplx_test::TestConfig;
 
 use super::error::ConfigError;
 
 pub const INIT_CONFIG: &str = include_str!("../../assets/Simplex.default.toml");
-pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
@@ -33,7 +32,7 @@ impl Config {
     }
 
     /// Constructs a complete configuration file path by joining the provided path with the
-    /// predefined configuration file name `CONFIG_FILENAME`.
+    /// predefined configuration file name [`CONFIG_FILENAME`].
     ///
     /// # Errors
     /// This function will return an error if the provided `path` cannot be resolved for any reason

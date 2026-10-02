@@ -1,26 +1,38 @@
+use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::path::{Path, PathBuf};
-use std::{env, fs};
 
+#[cfg(feature = "full")]
 use globwalk::FileType;
 
+#[cfg(feature = "full")]
 use simplicityhl::parse::{self, ParseFromStr};
 use simplicityhl::resolution::ValidatedDeps;
 use simplicityhl::source::CanonPath;
+#[cfg(feature = "full")]
 use simplicityhl::str::FunctionName;
 
 use crate::collector::DepCollector;
-use crate::config::{DEFAULT_DEPENDENCY_DIR, GitRef};
-use crate::{BuildConfig, DependencyConfig};
+use crate::config::{DEFAULT_DEPENDENCY_DIR, Dependency, GitRef};
+use crate::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 
 use super::error::BuildError;
+
+const BASE58_ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/// Base58 digits needed for any `u64`.
+const BASE58_U64_LEN: usize = 11;
 
 pub struct ArtifactsResolver {}
 
 impl ArtifactsResolver {
-    pub fn resolve_files_to_build(src_dir: &String, simfs: &[String]) -> Result<Vec<PathBuf>, BuildError> {
-        let cwd = env::current_dir()?;
-        let base = cwd.join(src_dir);
+    #[cfg(feature = "full")]
+    pub fn resolve_files_to_build(
+        root_dir: &Path,
+        src_dir: &String,
+        simfs: &[String],
+    ) -> Result<Vec<PathBuf>, BuildError> {
+        let base = root_dir.join(src_dir);
 
         let mut paths = Vec::new();
 
@@ -42,17 +54,9 @@ impl ArtifactsResolver {
         Ok(paths)
     }
 
-    pub fn resolve_local_dir(path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
-        let mut path_outer = PathBuf::from(path.as_ref());
-
-        if !path_outer.is_absolute() {
-            let manifest_dir = env::current_dir()?;
-
-            let mut path_local = manifest_dir;
-            path_local.push(path_outer);
-
-            path_outer = path_local;
-        }
+    pub fn resolve_local_dir(root_dir: &Path, path: &impl AsRef<Path>) -> Result<PathBuf, BuildError> {
+        // `join` keeps `path` as is when it is already absolute
+        let path_outer = root_dir.join(path);
 
         if path_outer.extension().is_some() {
             return Err(BuildError::GenerationPath(format!(
@@ -78,14 +82,10 @@ impl ArtifactsResolver {
     /// Each dependency may have its own config file declaring further dependencies.
     /// Those are registered with their own directory as the context, so that
     /// `crate::` and sibling imports resolve correctly relative to each package root.
-    pub fn resolve_remappings(
-        deps_config: &DependencyConfig,
-        config_filename: &str,
-    ) -> Result<ValidatedDeps, BuildError> {
-        let root_dir = env::current_dir()?;
-        let canon_root = CanonPath::canonicalize(&root_dir).map_err(BuildError::PathCanonicalization)?;
+    pub fn resolve_remappings(root_dir: &Path, deps_config: &DependencyConfig) -> Result<ValidatedDeps, BuildError> {
+        let canon_root = CanonPath::canonicalize(root_dir).map_err(BuildError::PathCanonicalization)?;
 
-        let config_source = fs::read_to_string(canon_root.as_path().join(config_filename))?;
+        let config_source = fs::read_to_string(canon_root.as_path().join(CONFIG_FILENAME))?;
         let root_src_dir = BuildConfig::from_source(&config_source)?.src_dir;
         let root_simf_dir = CanonPath::canonicalize(&canon_root.as_path().join(&root_src_dir))
             .map_err(BuildError::PathCanonicalization)?;
@@ -93,43 +93,86 @@ impl ArtifactsResolver {
         // Flat install dir shared by every git dependency at any nesting depth,
         // mirroring `install`. Left un-canonicalized so pure-path projects
         // (which never create `deps/`) don't fail here.
-        let deps_dir = PathBuf::from(DEFAULT_DEPENDENCY_DIR);
+        let deps_dir = canon_root.as_path().join(DEFAULT_DEPENDENCY_DIR);
 
-        let mut collector = DepCollector::new(config_filename.to_string(), deps_dir);
+        DepCollector::new().collect(deps_config, &canon_root, &root_simf_dir, &deps_dir)
+    }
 
-        collector.collect(deps_config, &canon_root, &root_simf_dir)
+    /// Resolves the on-disk package root for a single dependency.
+    ///
+    /// - `path` dependencies resolve relative to the parent package (`context`).
+    /// - `git` dependencies resolve into the flat install dir (`deps_dir`), using the same
+    ///   hashed directory name `install` creates. `deps` dir is unused for `path` dependencies.
+    pub fn resolve_dep_context(
+        dep: &Dependency,
+        context: &CanonPath,
+        deps_dir: &Path,
+    ) -> Result<CanonPath, BuildError> {
+        let raw_path = match dep {
+            Dependency::Path(path) => context.as_path().join(path),
+            Dependency::Git {
+                url,
+                reference,
+                package,
+            } => {
+                let hashed = ArtifactsResolver::generate_hashed_repo_path(url, reference.as_ref(), package.as_deref())
+                    .ok_or_else(|| BuildError::InvalidGitUrl(url.clone()))?;
+                deps_dir.join(hashed)
+            }
+        };
+
+        CanonPath::canonicalize(&raw_path).map_err(BuildError::PathCanonicalization)
     }
 
     /// Converts "https://github.com/smplx/core.git"
-    /// into a Cargo-style path: "core-a1b2c3d4e5f67890"
+    /// into a Cargo-style path: "core-5HueCGU8rMj" (11 base58 characters)
     ///
     /// # Returns
     ///
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
     /// - `None` when the URL is empty or malformed such that no repository name
     ///   can be determined.
-    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>) -> Option<PathBuf> {
+    pub fn generate_hashed_repo_path(url: &str, reference: Option<&GitRef>, package: Option<&str>) -> Option<PathBuf> {
         let clean_url = url.strip_suffix(".git").unwrap_or(url);
         let repo_name = clean_url.split('/').next_back()?;
 
-        let tag = match reference {
-            Some(GitRef::Rev(rev)) => format!("rev={rev}"),
-            Some(GitRef::Tag(tag)) => format!("tag={tag}"),
-            Some(GitRef::Branch(branch)) => format!("branch={branch}"),
-            None => "HEAD".into(),
-        };
-        let url = format!("{url}@{tag}");
+        // Only fields that are actually set take part in the key, so adding a new
+        // optional field never changes the directory of dependencies that don't use it.
+        let reference = reference.map(|reference| match reference {
+            GitRef::Rev(rev) => format!("rev={rev}"),
+            GitRef::Tag(tag) => format!("tag={tag}"),
+            GitRef::Branch(branch) => format!("branch={branch}"),
+        });
+        let package = package.map(|package| format!("package={package}"));
+
+        let key = std::iter::once(url.to_owned())
+            .chain(reference)
+            .chain(package)
+            .collect::<Vec<_>>()
+            .join("@");
 
         let mut hasher = DefaultHasher::new();
-        url.hash(&mut hasher);
+        key.hash(&mut hasher);
         let hash_value = hasher.finish();
 
-        // Do it the Rust way: EXACTLY 16 hex characters
-        let dir_name = format!("{}-{:016x}", repo_name, hash_value);
+        let dir_name = format!("{}-{}", repo_name, Self::encode_base58(hash_value));
 
         Some(PathBuf::from(dir_name))
     }
 
+    /// Encodes `value` in base58, left-padded to a fixed [`BASE58_U64_LEN`] characters.
+    fn encode_base58(mut value: u64) -> String {
+        let mut digits = [BASE58_ALPHABET[0]; BASE58_U64_LEN];
+
+        for digit in digits.iter_mut().rev() {
+            *digit = BASE58_ALPHABET[(value % 58) as usize];
+            value /= 58;
+        }
+
+        digits.iter().map(|&digit| char::from(digit)).collect()
+    }
+
+    #[cfg(feature = "full")]
     /// Checks whether the source declares a `fn main(...)`,
     /// finding it even when nested inside `mod { ... }` blocks.
     fn contains_main(source: &str) -> bool {
@@ -140,6 +183,7 @@ impl ArtifactsResolver {
         Self::rec_main_checker(parsed_program.items(), &FunctionName::main())
     }
 
+    #[cfg(feature = "full")]
     /// Recursively searches `items` (descending into nested modules) for a
     /// function named `main`.
     fn rec_main_checker(items: &[parse::Item], main_name: &FunctionName) -> bool {

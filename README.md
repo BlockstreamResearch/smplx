@@ -57,10 +57,10 @@ simf_files = ["*.simf"]
 out_dir = "./src/artifacts"
 
 [dependencies]
-some_dep = { git = "<git url>", path = "<or relative path>", <tag | rev> = "<tag name | commit>" } 
+some_dep = { git = "<git url>", path = "<or relative path>", <tag | rev | branch> = "<tag name | commit | branch name>", package = "<dir path>" } 
 
 [regtest]
-mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
 rpc_port = 18443
 esplora_port = 3000
@@ -68,7 +68,7 @@ rpc_user = "user"
 rpc_password = "password"
 
 [test]
-mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
 verbosity = 0 # 0 - none, 1 - debug, 2 - trace
 

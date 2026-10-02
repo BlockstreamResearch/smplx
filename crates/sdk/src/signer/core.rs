@@ -5,16 +5,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use simplicityhl::Value;
-use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, LockTime, Script, Sequence, Transaction};
+use simplicityhl::elements::{Address, LockTime, Script, Sequence, Transaction, Witness};
 #[cfg(feature = "provider")]
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
-use simplicityhl::simplicity::hashes::Hash;
-use simplicityhl::str::WitnessName;
 use simplicityhl::value::ValueConstructible;
+use simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap, WitnessValues};
 
 use bip39::Mnemonic;
 use bip39::rand::thread_rng;
@@ -120,7 +118,7 @@ impl SignerTrait for Signer {
         let tx = pst.extract_tx()?;
 
         let mut sighash_cache = SighashCache::new(&tx);
-        let genesis_hash = elements_miniscript::elements::BlockHash::all_zeros();
+        let genesis_hash = elements_miniscript::elements::BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
 
         let message = pst
             .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
@@ -636,7 +634,7 @@ impl Signer {
                     Some((witness_name, sig_path, message)) => Ok(self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
-                        &program_input.witness.build_witness(),
+                        &program_input.witness,
                         witness_name,
                         sig_path,
                         index,
@@ -644,7 +642,7 @@ impl Signer {
                         message,
                     )?),
                     // Just build the witness
-                    None => Ok(program_input.witness.build_witness()),
+                    None => Ok(program_input.witness.shallow_clone()),
                 };
 
                 let pruned_witness = program_input
@@ -659,14 +657,15 @@ impl Signer {
                         source,
                     })?;
 
-                pst.inputs_mut()[index].final_script_witness = Some(pruned_witness);
+                pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
             } else {
                 // We need to sign the UTXO as is
                 // TODO: do we always sign?
                 let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
 
-                pst.inputs_mut()[index].final_script_witness = Some(vec![raw_sig, signed_witness.0.to_bytes()]);
+                pst.inputs_mut()[index].final_script_witness =
+                    Some(Witness::from(vec![raw_sig, signed_witness.0.to_bytes()]));
             }
         }
 
@@ -693,12 +692,12 @@ impl Signer {
         } else {
             let witness_types = program.get_witness_types()?;
             let witness_type = witness_types
-                .get(&WitnessName::from_str_unchecked(witness_name))
+                .get(&TemplateProgramWitness::witness_from_str(witness_name))
                 .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
 
             let local_wtns = Arc::new(
                 witness
-                    .get(&WitnessName::from_str_unchecked(witness_name))
+                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
                     .expect("checked above")
                     .clone(),
             );
@@ -717,9 +716,9 @@ impl Signer {
             hm.insert(el.0.clone(), el.1.clone());
         });
 
-        hm.insert(WitnessName::from_str_unchecked(witness_name), sig_val);
+        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
 
-        Ok(WitnessValues::from(hm))
+        Ok(WitnessValues::from_map(hm))
     }
 
     #[allow(clippy::unnecessary_wraps)]
@@ -793,11 +792,10 @@ mod tests {
 
     fn confidential_input(signer: &Signer, value: u64) -> PartialInput {
         use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
-        use simplicityhl::elements::hashes::Hash;
         use simplicityhl::elements::{TxOut, TxOutSecrets};
 
         PartialInput::new(UTXO {
-            outpoint: OutPoint::new(Txid::from_slice(&[0x01; 32]).unwrap(), 0),
+            outpoint: OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
             txout: TxOut::default(),
             secrets: Some(TxOutSecrets::new(
                 signer.network.policy_asset(),
