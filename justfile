@@ -1,222 +1,160 @@
-# Format code
-fmt: fmt_crate fmt_basic_example fmt_fixtures
+set minimum-version := '1.55.0'
 
-# Format Rust files in a project directory
-fmt_inner project_dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
+root := justfile_directory()
+basic_example := root / 'examples/basic'
+fixtures := root / 'fixtures'
 
-    cd "{{project_dir}}"
-    cargo fmt --all
+# Run reusable Rust operations in a selected workspace.
+mod rust 'scripts/just/rust.just'
 
-# Format workspace crates
-fmt_crate: (fmt_inner ".")
+# Run Simplex CLI operations in a selected project.
+mod simplex 'scripts/just/simplex.just'
 
-# Format the basic example
-fmt_basic_example: (fmt_inner "examples/basic")
+# Format all Rust projects.
+fmt: (rust::fmt root) (rust::fmt basic_example) (rust::fmt fixtures)
 
-# Format fixtures
-fmt_fixtures: (fmt_inner "fixtures")
+# Check formatting for all Rust projects.
+fmtcheck: (rust::fmtcheck root) (rust::fmtcheck basic_example) (rust::fmtcheck fixtures)
 
-# Check Rust formatting in a project directory
-fmtcheck_inner project_dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
+# Run Clippy for all Rust projects.
+lint: (rust::lint root) (rust::lint basic_example) (rust::lint fixtures)
 
-    cd "{{project_dir}}"
-    cargo fmt --all -- --check
+# Run workspace unit tests.
+test: (rust::test root)
 
-# Check formatting for workspace crates
-fmtcheck_crate: (fmtcheck_inner ".")
+# Run workspace unit tests and long UI tests.
+test_ui: (rust::test_ui root)
 
-# Check formatting for the basic example
-fmtcheck_basic_example: (fmtcheck_inner "examples/basic")
+# Build all Rust projects with all features.
+build: (rust::build root) (rust::build basic_example) (rust::build fixtures)
 
-# Check formatting for fixtures
-fmtcheck_fixtures: (fmtcheck_inner "fixtures")
+# Build `smplx-wasm` for the WASM target.
+build_wasm: (rust::build_wasm root)
 
-# Check if code is formatted
-fmtcheck: fmtcheck_crate fmtcheck_basic_example fmtcheck_fixtures
+# Install and build Simplex dependencies for all projects.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+build_simplex_deps simplex_bin='test_simplex': (simplex::build basic_example simplex_bin) (simplex::build fixtures simplex_bin)
 
-# Run Clippy in a project directory
-lint_inner project_dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
+# Run Simplex tests in the fixtures project.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+check_fixtures simplex_bin='test_simplex': (simplex::build fixtures simplex_bin) (simplex::test fixtures simplex_bin)
 
-    cd "{{project_dir}}"
-    cargo clippy --workspace --all-targets --all-features -- --deny warnings
+# Run Simplex fuzz tests in the fixtures project.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+check_fuzz simplex_bin='test_simplex': (simplex::build fixtures simplex_bin) (simplex::test_fuzz fixtures simplex_bin)
 
-# Run Clippy for workspace crates
-lint_crate: (lint_inner ".")
+# Run Simplex tests in the basic example.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+check_basic_example simplex_bin='test_simplex': (simplex::build basic_example simplex_bin) (simplex::test basic_example simplex_bin)
 
-# Run Clippy for the basic example
-lint_basic_example: (lint_inner "examples/basic")
+# Build code with all feature combinations.
+build_features: (rust::build_features root)
 
-# Run Clippy for fixtures
-lint_fixtures: (lint_inner "fixtures")
+# Run the standard cargo-hack check used in CI.
+check_hack: (rust::check_hack root)
 
-# Run code linter
-lint: lint_crate lint_basic_example lint_fixtures
+# Check dependency bans, licenses, and sources.
+check_deny: (rust::check_deny root)
 
-# Run unit tests
-test:
-    cargo test --workspace --all-features --no-fail-fast --verbose
-
-# Run unit tests and long UI ones
-test_ui:
-    RUN_UI_TESTS=true cargo test --workspace --all-features --no-fail-fast --verbose
-
-# Build all workspace crates with all features in a project directory
-build_inner project_dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    cd "{{project_dir}}"
-    cargo build --workspace --all-features
-
-# Build workspace crates
-build_crate: (build_inner ".")
-
-# Build the basic example
-build_basic_example: (build_inner "examples/basic")
-
-# Build fixtures
-build_fixtures: (build_inner "fixtures")
-
-# Build all workspace crates with all features
-build: build_crate build_basic_example build_fixtures
-
-# Build `smplx-wasm` for the WASM target
-build_wasm:
-    cargo check --package smplx-wasm --target wasm32-unknown-unknown
-
-# Install and build Simplex dependencies for a project directory
-build_simplex_deps_inner project_dir:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    cd "{{project_dir}}"
-    test_simplex install
-    test_simplex build
-
-# Install and build Simplex dependencies for the basic example
-build_simplex_deps_basic_example: (build_simplex_deps_inner "examples/basic")
-
-# Install and build Simplex dependencies for fixtures
-build_simplex_deps_fixtures: (build_simplex_deps_inner "fixtures")
-
-# Install and build Simplex dependencies for all projects
-build_simplex_deps: build_simplex_deps_basic_example build_simplex_deps_fixtures
-
-# Runs simplex tests in `fixtures` directory
-[working-directory: 'fixtures']
-check_fixtures: build_simplex_deps_fixtures
-    test_simplex test
-
-# Runs simplex tests in `examples/basic` directory
-[working-directory: 'examples/basic']
-check_basic_example: build_simplex_deps_basic_example
-    test_simplex test
-
-# Build code with all feature combinations
-build_features:
-    cargo hack check --feature-powerset --no-dev-deps
-
-# Run the standard cargo-hack check used in CI
-check_hack:
-    cargo hack check
-
-# Check for `cargo deny`
-check_deny:
-    cargo deny check bans licenses sources
-
-# Check code (CI)
-check:
-    cargo --version
-    rustc --version
-    just build_simplex_deps
+# Run all local checks.
+[arg('fuzz', long, value='true', help='Run Simplex fuzz tests in fixtures')]
+[arg('real', long, value='--real', help='Use the installed simplex binary')]
+check real='' fuzz='false':
+    just rust::versions "{{ root }}"
+    just build_simplex_deps {{ real }}
     just build
     just fmtcheck
     just lint
     just build_features
     just check_hack
     just check_deny
-    just test
     just test_ui
     just build_wasm
-    just check_fixtures
-    just check_basic_example
+    just check_fixtures {{ real }}
+    just check_basic_example {{ real }}
+    {{ if fuzz == 'true' { 'just check_fuzz ' + real } else { "" } }}
 
-# Installs simplex from local crate and moves it to the default `~/.cargo/bin` dir
-#  with name `test_simplex`
+# Install Rust tools used by local checks.
+[private]
+install_rust_tools:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cargo install cargo-hack
+    cargo install cargo-deny
+
+# Install the local Simplex CLI as `test_simplex`.
+[private]
 install_local_simplex:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    install_root="$(mktemp -d)" || exit 1
+    install_root="$(mktemp -d)"
     cargo_bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin"
     trap 'rm -rf "$install_root"' EXIT
 
-    cargo install \
+    cargo +stable install \
         --path ./crates/cli \
         --bin simplex \
-        --root "$install_root" && mkdir -p "$cargo_bin_dir" && install -m 755 \
-        "$install_root/bin/simplex" \
-        "$cargo_bin_dir/test_simplex"
+        --root "$install_root"
+    mkdir -p "$cargo_bin_dir"
+    install -m 755 "$install_root/bin/simplex" "$cargo_bin_dir/test_simplex"
 
-# Install simplex helper binaries
-[working-directory: 'simplexup']
+# Install the Simplex helper binaries.
+[private]
+[working-directory('simplexup')]
 install_simplex:
     #!/usr/bin/env bash
     set -euo pipefail
 
     ./simplexup
 
-# Install helper binaries, which are used in our check
-install:
-    cargo install cargo-hack
-    cargo install cargo-deny
-    just install_local_simplex
-    just install_simplex
+# Install all tools used by local checks.
+install: install_rust_tools install_local_simplex install_simplex
 
-# Format Rust files in a project directory
-clean_simplex_deps_inner project_dir:
+# Remove all temporary build and generated files.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+clean simplex_bin='test_simplex': (clean_simplex simplex_bin) clean_cargo clean_test_bin
+
+# Clean Simplex-generated artifacts from all projects.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+clean_simplex simplex_bin='test_simplex': (simplex::clean fixtures simplex_bin) (simplex::clean basic_example simplex_bin)
+
+# Clean generated artifacts and build output from fixtures.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+clean_fixtures simplex_bin='test_simplex': (simplex::clean fixtures simplex_bin)
     #!/usr/bin/env bash
     set -euo pipefail
 
-    cd "{{project_dir}}"
-    test_simplex clean
+    rm -rf -- "{{ fixtures }}/target"
 
-clean_simplex: clean_simplex_deps_fixtures clean_simplex_deps_basic_example
+# Clean generated artifacts and build output from the basic example.
+[arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
+clean_examples_basic simplex_bin='test_simplex': (simplex::clean basic_example simplex_bin)
+    #!/usr/bin/env bash
+    set -euo pipefail
 
-# Clean `fixtures` directory from temporary files
-clean_simplex_deps_fixtures: (clean_simplex_deps_inner "fixtures")
+    rm -rf -- "{{ basic_example }}/target"
 
-# Clean `examples/basic` directory from temporary files
-clean_simplex_deps_basic_example: (clean_simplex_deps_inner "examples/basic")
-
-# Clean `fixtures` directory from temporary files
-[working-directory: 'fixtures']
-clean_fixtures: (clean_simplex_deps_inner "fixtures")
-    rm -rf target
-
-# Clean `examples/basic` directory from temporary files
-[working-directory: 'examples/basic']
-clean_examples_basic: (clean_simplex_deps_inner "fixtures")
-    rm -rf target
-
-# Remove temporary `test_simplex` binary
+# Remove the temporary `test_simplex` binary.
 clean_test_bin:
     #!/usr/bin/env bash
     set -euo pipefail
 
     cargo_bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin"
-    rm -f "$cargo_bin_dir/test_simplex"
+    rm -f -- "$cargo_bin_dir/test_simplex"
 
-# Remove all temporary files
-clean:
-    rm -rf target
+# Clean Cargo build output from all projects.
+clean_cargo: clean_cargo_fixtures clean_cargo_examples_basic clean_cargo_root
 
-    just clean_fixtures
-    just clean_examples_basic
-    just clean_test_bin
+# Clean Cargo build output from fixtures.
+[private]
+clean_cargo_fixtures: (rust::clean fixtures)
+
+# Clean Cargo build output from the basic example.
+[private]
+clean_cargo_examples_basic: (rust::clean basic_example)
+
+# Clean Cargo build output from the root workspace.
+[private]
+clean_cargo_root: (rust::clean root)
