@@ -54,12 +54,11 @@ impl Format {
     /// need a Simplex project to be loaded first.
     #[must_use]
     pub fn is_info_request(opts: &FormatOpts) -> bool {
-        opts.version
-            || opts.simfmt_options.iter().any(|arg| {
-                ["--print-config", "-h", "--help", "-V", "--version"].contains(&arg.as_str())
-                    || arg.starts_with("--help=")
-                    || arg.starts_with("--print-config=")
-            })
+        opts.simfmt_options.iter().any(|arg| {
+            ["--print-config", "-h", "--help", "-V"].contains(&arg.as_str())
+                || arg.starts_with("--help=")
+                || arg.starts_with("--print-config=")
+        })
     }
 
     /// Resolves the selected manifest to an absolute path.
@@ -108,19 +107,15 @@ impl Format {
         }
     }
 
-    /// Runs an informational `simfmt` request such as `--version` or a raw
-    /// `--help`, without loading a Simplex manifest.
+    /// Runs an informational `simfmt` request such as `--help`,
+    /// without loading a Simplex manifest.
     ///
     /// # Errors
     /// Returns a [`CommandError`] if the options conflict or `simfmt` cannot be
     /// executed.
     pub fn run_info(opts: &FormatOpts) -> Result<i32, CommandError> {
         let verbosity = Self::verbosity(opts)?;
-        let args = if opts.version {
-            vec![OsString::from("--version")]
-        } else {
-            opts.simfmt_options.iter().map(OsString::from).collect()
-        };
+        let args = opts.simfmt_options.iter().map(OsString::from).collect::<Vec<_>>();
 
         Ok(Self::run_simfmt(&args, verbosity)?)
     }
@@ -283,11 +278,10 @@ mod tests {
 
         assert!(!opts.quiet);
         assert!(!opts.verbose);
-        assert!(!opts.version);
         assert!(!opts.check);
         assert_eq!(opts.manifest_path, None);
         assert_eq!(opts.message_format, None);
-        assert!(opts.simfmt_options.is_empty());
+        assert_eq!(opts.simfmt_options, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -296,7 +290,6 @@ mod tests {
             "simplex",
             "fmt",
             "--quiet",
-            "--version",
             "--manifest-path",
             "project/Simplex.toml",
             "--message-format",
@@ -309,7 +302,6 @@ mod tests {
 
         assert!(opts.quiet);
         assert!(!opts.verbose);
-        assert!(opts.version);
         assert!(opts.check);
         assert_eq!(opts.manifest_path.as_deref(), Some("project/Simplex.toml"));
         assert_eq!(opts.message_format.as_deref(), Some("short"));
@@ -321,8 +313,8 @@ mod tests {
         assert!(Cli::try_parse_from(["simplex", "fmt", "--emit", "stdout"]).is_err());
         assert!(Cli::try_parse_from(["simplex", "fmt", "--", "--emit", "stdout"]).is_ok());
 
-        assert!(Cli::try_parse_from(["simplex", "fmt", "--color", "auto", "--version"]).is_err());
-        assert!(Cli::try_parse_from(["simplex", "fmt", "--", "--color", "auto", "--version"]).is_ok());
+        assert!(Cli::try_parse_from(["simplex", "fmt", "--color", "auto"]).is_err());
+        assert!(Cli::try_parse_from(["simplex", "fmt", "--", "--color", "auto"]).is_ok());
     }
 
     #[test]
