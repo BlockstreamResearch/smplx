@@ -69,13 +69,13 @@ jobs:
 
       - name: Download nextest, simfmt, elementsd and electrs
         env:
-          SIMFMT_VERSION: ${{ vars.SIFMMT_VERSION }}
-          SIMFMT_TARGET: ${{ matrix.target }}
           NEXTEST_VERSION: "0.9.137"
           ELEMENTSD_VERSION: "23.3.1"
+          SIMFMT_VERSION: "0.0.2"
           ELEMENTSD_TARGET: ${{ matrix.elementsd_target }}
           ELECTRS_TARGET: ${{ matrix.electrs_target }}
           NEXTEST_TARGET: ${{ matrix.nextest_target }}
+          SIMFMT_TARGET: ${{ matrix.target }}
         run: |
           #!/usr/bin/env bash
           set -eo pipefail
