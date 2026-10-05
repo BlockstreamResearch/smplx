@@ -66,28 +66,18 @@ impl Format {
     /// # Errors
     /// Returns a [`FmtError`] when the current directory cannot be read or the
     /// supplied path does not name a `Simplex.toml` file.
-    pub fn manifest_path(opts: &FormatOpts) -> Result<PathBuf, FmtError> {
+    pub fn manifest_path() -> Result<PathBuf, FmtError> {
         let current_dir = env::current_dir().map_err(FmtError::CurrentDir)?;
-        Self::resolve_manifest_path(opts, &current_dir)
+        Self::resolve_manifest_path(&current_dir)
     }
 
-    fn resolve_manifest_path(opts: &FormatOpts, current_dir: impl AsRef<Path>) -> Result<PathBuf, FmtError> {
+    fn resolve_manifest_path(current_dir: impl AsRef<Path>) -> Result<PathBuf, FmtError> {
         let current_dir = current_dir.as_ref();
         let manifest_path = {
-            let path = match opts.manifest_path.as_deref() {
-                None => current_dir
-                    .ancestors()
-                    .map(|directory| directory.join(CONFIG_FILENAME))
-                    .find(|candidate| candidate.is_file()),
-                Some(x) => {
-                    let path: PathBuf = x.into();
-                    if path.is_file() {
-                        Some(path)
-                    } else {
-                        return Err(FmtError::InvalidManifestPath(path));
-                    }
-                }
-            };
+            let path = current_dir
+                .ancestors()
+                .map(|directory| directory.join(CONFIG_FILENAME))
+                .find(|candidate| candidate.is_file());
 
             if path.is_none() {
                 return Err(FmtError::FailedToFindManifest);
@@ -279,7 +269,6 @@ mod tests {
         assert!(!opts.quiet);
         assert!(!opts.verbose);
         assert!(!opts.check);
-        assert_eq!(opts.manifest_path, None);
         assert_eq!(opts.message_format, None);
         assert_eq!(opts.simfmt_options, [] as [std::string::String; 0]);
     }
@@ -290,8 +279,6 @@ mod tests {
             "simplex",
             "fmt",
             "--quiet",
-            "--manifest-path",
-            "project/Simplex.toml",
             "--message-format",
             "short",
             "--check",
@@ -303,7 +290,6 @@ mod tests {
         assert!(opts.quiet);
         assert!(!opts.verbose);
         assert!(opts.check);
-        assert_eq!(opts.manifest_path.as_deref(), Some("project/Simplex.toml"));
         assert_eq!(opts.message_format.as_deref(), Some("short"));
         assert_eq!(opts.simfmt_options, ["--emit", "stdout"]);
     }
@@ -325,63 +311,32 @@ mod tests {
 
     #[test]
     fn discovers_manifest_in_current_directory() {
-        let opts = fmt_opts(["simplex", "fmt"]);
         let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
 
-        let manifest_path = Format::resolve_manifest_path(&opts, &project_root).expect("manifest should be discovered");
+        let manifest_path = Format::resolve_manifest_path(&project_root).expect("manifest should be discovered");
 
         assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
     }
 
     #[test]
     fn discovers_manifest_from_nested_directory() {
-        let opts = fmt_opts(["simplex", "fmt"]);
         let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let nested_directory = project_root.join("simf/nested/nested_2/imp2");
 
-        let manifest_path =
-            Format::resolve_manifest_path(&opts, &nested_directory).expect("manifest should be discovered");
+        let manifest_path = Format::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
 
         assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
     }
 
     #[test]
     fn discovers_nearest_manifest() {
-        let opts = fmt_opts(["simplex", "fmt"]);
         let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let project_root = fixtures_root.join("deps/math");
         let nested_directory = project_root.join("simf");
 
-        let manifest_path =
-            Format::resolve_manifest_path(&opts, &nested_directory).expect("manifest should be discovered");
+        let manifest_path = Format::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
 
         assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
-    }
-
-    #[test]
-    fn explicit_manifest_path_overrides_discovery() {
-        let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-        let nested_directory = fixtures_root.join("deps/math/simf");
-        let explicit_manifest = fixtures_root.join(CONFIG_FILENAME);
-        let mut opts = fmt_opts(["simplex", "fmt"]);
-        opts.manifest_path = Some(explicit_manifest.to_string_lossy().into_owned());
-
-        let manifest_path =
-            Format::resolve_manifest_path(&opts, &nested_directory).expect("explicit manifest should be used");
-
-        assert_eq!(manifest_path, explicit_manifest);
-    }
-
-    #[test]
-    fn rejects_explicit_manifest_with_wrong_filename() {
-        let opts = fmt_opts(["simplex", "fmt", "--manifest-path", "project/simplex.toml"]);
-        let current_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-
-        assert!(matches!(
-            Format::resolve_manifest_path(&opts, current_dir),
-            Err(crate::commands::error::FmtError::InvalidManifestPath(path))
-                if path == *"project/simplex.toml"
-        ));
     }
 
     #[test]
