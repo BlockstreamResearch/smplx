@@ -120,6 +120,7 @@ Simplex CLI provides the following commands:
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests.
 - `simplex clean` - Cleans up generated artifacts.
+- `simplex fmt` - Formats project files according to the specified `simfmt.toml` or default [configuration](https://github.com/BlockstreamResearch/simfmt/blob/master/simfmt.toml).  
 
 To view the available options, run the help command:
 
