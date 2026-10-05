@@ -1,10 +1,8 @@
 use std::collections::BTreeSet;
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::str::FromStr;
 
 use smplx_build::{ArtifactsResolver, BuildConfig};
 
@@ -20,31 +18,6 @@ enum Verbosity {
     Verbose,
     Normal,
     Quiet,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum MessageFormat {
-    #[default]
-    Short,
-    Human,
-}
-
-impl MessageFormat {
-    pub(crate) const OPTIONS: &str = "short|human";
-}
-
-impl FromStr for MessageFormat {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if "short".eq_ignore_ascii_case(s) {
-            Ok(MessageFormat::Short)
-        } else if "human".eq_ignore_ascii_case(s) {
-            Ok(MessageFormat::Human)
-        } else {
-            Err("invalid message format")
-        }
-    }
 }
 
 pub struct Format;
@@ -117,7 +90,7 @@ impl Format {
     /// fails, no source files match, or `simfmt` cannot be executed.
     pub fn run(opts: &FormatOpts, files: &[PathBuf]) -> Result<i32, CommandError> {
         let verbosity = Self::verbosity(opts)?;
-        let args = Self::build_simfmt_args(opts, files)?;
+        let args = Self::build_simfmt_args(opts, files);
 
         Ok(Self::run_simfmt(&args, verbosity)?)
     }
@@ -145,7 +118,7 @@ impl Format {
         Ok(files)
     }
 
-    fn build_simfmt_args(opts: &FormatOpts, files: &[PathBuf]) -> Result<Vec<OsString>, FmtError> {
+    fn build_simfmt_args(opts: &FormatOpts, files: &[PathBuf]) -> Vec<OsString> {
         let mut simfmt_args = Vec::with_capacity(opts.simfmt_options.len() + 3);
 
         if opts.quiet {
@@ -159,8 +132,13 @@ impl Format {
         }
         simfmt_args.extend(opts.simfmt_options.iter().map(OsString::from));
 
-        if let Some(message_format) = &opts.message_format {
-            Self::convert_message_format_to_simfmt_args(message_format, &mut simfmt_args)?;
+        if opts.short
+            && !opts
+                .simfmt_options
+                .iter()
+                .any(|arg| arg == "-l" || arg == "--files-with-diff")
+        {
+            simfmt_args.push(OsString::from("-l"));
         }
 
         let mut args = Vec::with_capacity(files.len() + simfmt_args.len());
@@ -170,25 +148,7 @@ impl Format {
         }
 
         args.extend(simfmt_args);
-        Ok(args)
-    }
-
-    fn convert_message_format_to_simfmt_args(
-        message_format: &str,
-        simfmt_args: &mut Vec<OsString>,
-    ) -> Result<(), FmtError> {
-        match MessageFormat::from_str(message_format)
-            .map_err(|_| FmtError::InvalidMessageFormat(message_format.to_owned()))?
-        {
-            MessageFormat::Short => {
-                let contains_list_files = simfmt_args.iter().any(|arg| arg == "-l" || arg == "--files-with-diff");
-                if contains_list_files.not() {
-                    simfmt_args.push(OsString::from("-l"));
-                }
-                Ok(())
-            }
-            MessageFormat::Human => Ok(()),
-        }
+        args
     }
 
     fn run_simfmt(args: &[OsString], verbosity: Verbosity) -> Result<i32, FmtError> {
@@ -269,28 +229,20 @@ mod tests {
         assert!(!opts.quiet);
         assert!(!opts.verbose);
         assert!(!opts.check);
-        assert_eq!(opts.message_format, None);
+        assert!(!opts.short);
         assert_eq!(opts.simfmt_options, [] as [std::string::String; 0]);
     }
 
     #[test]
     fn parses_all_options_and_raw_simfmt_arguments() {
         let opts = fmt_opts([
-            "simplex",
-            "fmt",
-            "--quiet",
-            "--message-format",
-            "short",
-            "--check",
-            "--",
-            "--emit",
-            "stdout",
+            "simplex", "fmt", "--quiet", "--short", "--check", "--", "--emit", "stdout",
         ]);
 
         assert!(opts.quiet);
         assert!(!opts.verbose);
         assert!(opts.check);
-        assert_eq!(opts.message_format.as_deref(), Some("short"));
+        assert!(opts.short);
         assert_eq!(opts.simfmt_options, ["--emit", "stdout"]);
     }
 
@@ -341,20 +293,10 @@ mod tests {
 
     #[test]
     fn builds_deterministic_simfmt_arguments() {
-        let opts = fmt_opts([
-            "simplex",
-            "fmt",
-            "--verbose",
-            "--check",
-            "--message-format",
-            "human",
-            "--",
-            "--emit",
-            "files",
-        ]);
+        let opts = fmt_opts(["simplex", "fmt", "--verbose", "--check", "--", "--emit", "files"]);
         let files = [PathBuf::from("/tmp/a.simf"), PathBuf::from("/tmp/path/spaces/b.simf")];
 
-        let args = Format::build_simfmt_args(&opts, &files).expect("arguments should build");
+        let args = Format::build_simfmt_args(&opts, &files);
 
         assert_eq!(
             args,
@@ -377,8 +319,6 @@ mod tests {
             "/tmp/a.simf",
             "--verbose",
             "--check",
-            "--message-format",
-            "human",
             "/tmp/b.simf",
             "/tmp/path/spaces/b.simf",
             "--",
@@ -386,7 +326,7 @@ mod tests {
             "files",
         ]);
 
-        let args = Format::build_simfmt_args(&opts, &opts.files).expect("arguments should build");
+        let args = Format::build_simfmt_args(&opts, &opts.files);
 
         assert_eq!(
             args,
@@ -404,16 +344,16 @@ mod tests {
 
     #[test]
     fn converts_short_message_format_to_list_files() {
-        let opts = fmt_opts(["simplex", "fmt", "--message-format", "short"]);
-        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]).expect("arguments should build");
+        let opts = fmt_opts(["simplex", "fmt", "--short"]);
+        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]);
 
         assert_eq!(args.last(), Some(&OsString::from("-l")));
     }
 
     #[test]
     fn does_not_duplicate_existing_list_files_flag() {
-        let opts = fmt_opts(["simplex", "fmt", "--message-format", "short", "--", "--files-with-diff"]);
-        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]).expect("arguments should build");
+        let opts = fmt_opts(["simplex", "fmt", "--short", "--", "--files-with-diff"]);
+        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]);
 
         assert_eq!(args.iter().filter(|arg| *arg == "--files-with-diff").count(), 1);
         assert!(!args.iter().any(|arg| arg == "-l"));
@@ -422,7 +362,7 @@ mod tests {
     #[test]
     fn does_not_duplicate_raw_check_flag() {
         let opts = fmt_opts(["simplex", "fmt", "--check", "--", "--check"]);
-        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]).expect("arguments should build");
+        let args = Format::build_simfmt_args(&opts, &["/tmp/a.simf".into()]);
 
         assert_eq!(args.iter().filter(|arg| *arg == "--check").count(), 1);
     }
