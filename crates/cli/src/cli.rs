@@ -98,7 +98,7 @@ impl Cli {
                     Format::run_info(opts)?
                 } else {
                     let files = if opts.files.is_empty() {
-                        let config_path = Format::manifest_path(opts).map_err(CommandError::from)?;
+                        let config_path = Format::manifest_path().map_err(CommandError::from)?;
                         let project_root = config_path
                             .parent()
                             .ok_or_else(|| FmtError::InvalidManifestPath(config_path.clone()))

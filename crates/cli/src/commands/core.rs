@@ -101,10 +101,6 @@ pub struct FormatOpts {
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 
-    /// Specify path to Simplex.toml
-    #[arg(long = "manifest-path", value_name = "manifest-path")]
-    pub manifest_path: Option<String>,
-
     #[arg(
         short = 'f',
         long = "message-format",
