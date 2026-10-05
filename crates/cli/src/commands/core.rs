@@ -105,13 +105,9 @@ pub struct FormatOpts {
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 
-    #[arg(
-        short = 'f',
-        long = "message-format",
-        value_name = "message-format",
-        help = format!("Specify message-format: {}", crate::commands::fmt::MessageFormat::OPTIONS)
-    )]
-    pub message_format: Option<String>,
+    /// List files with differences instead of showing the diff
+    #[arg(long = "short")]
+    pub short: bool,
 
     /// Options passed to simfmt
     // `raw = true` makes the `--` separator explicit.
