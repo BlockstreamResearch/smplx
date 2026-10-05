@@ -93,6 +93,10 @@ pub struct FormatOpts {
     #[arg(value_hint = clap::ValueHint::FilePath, value_name = "PATH", num_args(1..))]
     pub files: Vec<std::path::PathBuf>,
 
+    /// Run simfmt in check mode
+    #[arg(long = "check")]
+    pub check: bool,
+
     /// No output printed to stdout
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
@@ -113,8 +117,4 @@ pub struct FormatOpts {
     // `raw = true` makes the `--` separator explicit.
     #[arg(id = "simfmt_options", raw = true)]
     pub simfmt_options: Vec<String>,
-
-    /// Run simfmt in check mode
-    #[arg(long = "check")]
-    pub check: bool,
 }
