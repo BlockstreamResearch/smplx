@@ -7,6 +7,7 @@
 - The WASM `TransactionBuilder` can now reissue an asset by spending a confidential output that holds its reissuance token.
 - WASM issuance and output methods now reject amounts above `i64::MAX` before adding them to a transaction.
 - WASM blinding secrets now accept `value` as a decimal string. JSON numbers above 2^53 - 1 are rejected because JavaScript may serialize them with different digits.
+- Programs and generated bindings can commit executable sibling hashes before storage leaves.
 
 ## [0.0.12]
 
