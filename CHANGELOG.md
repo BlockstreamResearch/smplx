@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Programs and generated bindings can commit executable sibling hashes before storage leaves.
+
 ## [0.1.1]
 
 - Fixed broken dependencies.
