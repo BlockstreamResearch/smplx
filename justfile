@@ -16,6 +16,9 @@ fmt: (rust::fmt root) (rust::fmt basic_example) (rust::fmt fixtures)
 # Check formatting for all Rust projects.
 fmtcheck: (rust::fmtcheck root) (rust::fmtcheck basic_example) (rust::fmtcheck fixtures)
 
+# Check rust version compatibility for all Rust projects.
+check_rust_compatibility: (rust::check_rust_compatibility root) (rust::check_rust_compatibility basic_example) (rust::check_rust_compatibility fixtures)
+
 # Run Clippy for all Rust projects.
 lint: (rust::lint root) (rust::lint basic_example) (rust::lint fixtures)
 
@@ -64,6 +67,7 @@ check real='' fuzz='false':
     just build_simplex_deps {{ real }}
     just build
     just fmtcheck
+    just check_rust_compatibility
     just lint
     just build_features
     just check_hack

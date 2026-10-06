@@ -30,6 +30,14 @@ build working_directory:
     cd -- "{{ working_directory }}"
     cargo build --workspace --all-features
 
+# Check all workspace crates and features in a working directory for compatibility with pinned Rust version in a project.
+check_rust_compatibility working_directory:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    cd -- "{{ working_directory }}"
+    cargo +1.91.0 check --workspace --all-targets --all-features --locked
+
 # Clean Cargo build output in a working directory.
 clean working_directory:
     #!/usr/bin/env bash
