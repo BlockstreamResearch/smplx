@@ -26,6 +26,6 @@ pub use simplex::SimplexProvider;
 
 pub use network::*;
 
-pub use error::ProviderError;
+pub use error::{NetworkConvertError, ProviderError};
 #[cfg(feature = "provider")]
 pub use rpc::error::RpcError;
