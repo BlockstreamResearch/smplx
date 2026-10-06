@@ -60,14 +60,14 @@ Fuzz tests exercise contracts with generated arguments and witness values.
 They are marked with `#[simplex::fuzz]` and run locally without broadcasting transactions.
 For each generated case, the engine compiles and executes the contract, then checks the result against the test's expectations.
 
-This project includes two examples. The `test_panic` test in [`tests/fuzz_panic_test.rs`](tests/fuzz_panic_test.rs) demonstrates finding a contract failure.
+This project includes two examples. The `test_panic` test in [`tests/basic_fuzz.rs`](tests/basic_fuzz.rs) demonstrates finding a contract failure.
 It uses `#[should_panic]`, so the test passes when the expected failure is found:
 
 ```bash
 simplex test --fuzz test_panic -v
 ```
 
-The `p2pk_fuzz_test` test in [`tests/basic_test.rs`](tests/basic_test.rs) demonstrates signing a witness during fuzzing.
+The `p2pk_fuzz_test` test in [`tests/basic_fuzz.rs`](tests/basic_test.rs) demonstrates signing a witness during fuzzing.
 It keeps the signer's public key fixed, fuzzes the initial witness, and inserts a valid `SIGNATURE` before checking that the contract executes successfully:
 
 ```bash
