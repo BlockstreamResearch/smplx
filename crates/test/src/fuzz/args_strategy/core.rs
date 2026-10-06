@@ -1,7 +1,10 @@
-use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
-use proptest::prelude::{BoxedStrategy, Strategy};
-use simplicityhl::{Arguments, WitnessValues};
 use std::marker::PhantomData;
+
+use proptest::prelude::{BoxedStrategy, Strategy};
+
+use simplicityhl::{Arguments, WitnessValues};
+
+use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 
 pub struct ArgsStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
     base_strat: BaseStrat,
