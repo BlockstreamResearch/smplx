@@ -48,12 +48,8 @@ impl ContextMode for InitMode {}
 impl ContextMode for RegularMode {}
 impl ContextMode for FuzzMode {}
 
-struct TestContextInner {
-    config: TestConfig,
-}
-
 pub struct TestContext<Mode: ContextMode = RegularMode> {
-    inner: TestContextInner,
+    config: TestConfig,
     pub(crate) mode: Mode,
 }
 
@@ -68,7 +64,7 @@ impl TestContext<InitMode> {
         let _ = GlobalConfig::set_global_config(config.verbosity);
 
         Ok(Self {
-            inner: TestContextInner { config },
+            config,
             mode: InitMode {},
         })
     }
@@ -77,7 +73,7 @@ impl TestContext<InitMode> {
         let mode = RegularMode::setup(self.get_config())?;
 
         Ok(TestContext::<RegularMode> {
-            inner: self.inner,
+            config: self.config,
             mode,
         })
     }
@@ -86,7 +82,7 @@ impl TestContext<InitMode> {
         let mode = FuzzMode::setup(self.get_config(), test_name, source_file)?;
 
         Ok(TestContext::<FuzzMode> {
-            inner: self.inner,
+            config: self.config,
             mode,
         })
     }
@@ -343,7 +339,7 @@ impl TestContext<FuzzMode> {
 
 impl<T: ContextMode> TestContext<T> {
     pub fn get_config(&self) -> &TestConfig {
-        &self.inner.config
+        &self.config
     }
 }
 
