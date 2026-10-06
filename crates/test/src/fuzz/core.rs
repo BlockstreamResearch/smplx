@@ -8,7 +8,7 @@ use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::SimplicityNetwork;
 
-use crate::fuzz::engine::Context;
+use crate::fuzz::engine::FuzzContext;
 
 pub type ProgramExecResult = Result<(Arc<RedeemNode>, Value), ProgramError>;
 
@@ -28,7 +28,7 @@ impl<P: AsRef<Program> + ProgramFactory<P>> FuzzableProgram<P> for P {
 pub trait ProgramCheck<Program, Args, Wit> {
     fn call(
         &self,
-        ctx: &Context,
+        ctx: &FuzzContext,
         tx: &PartiallySignedTransaction,
         arguments: &Arguments,
         witness: &WitnessValues,

@@ -17,14 +17,14 @@ use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 use crate::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::{FuzzableProgram, ProgramCheck, ProgramExecResult};
 
-pub struct Context {
+pub struct FuzzContext {
     pub signer: Option<Signer>,
     pub network: SimplicityNetwork,
 }
 
 pub struct SimplexFuzzEngine<Program, Args, Wit> {
     pub(crate) runner: TestRunner,
-    pub(crate) context: Context,
+    pub(crate) context: FuzzContext,
     pub(crate) strategy: BoxedStrategy<(Arguments, WitnessValues)>,
     pub(crate) blueprint: FuzzTransaction,
     pub(crate) _placeholder: PhantomData<(Program, Args, Wit)>,
@@ -115,7 +115,7 @@ where
 {
     #[inline]
     pub fn sign_or_extract(
-        context: &Context,
+        context: &FuzzContext,
         ft: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
         match context.signer.as_ref() {
@@ -162,7 +162,7 @@ where
 
     /// Extracted helper that performs exactly one isolated test run.
     fn fuzz(
-        fuzz_context: &Context,
+        fuzz_context: &FuzzContext,
         initial_tx: &FuzzTransaction,
         program_post_hook: &impl ProgramCheck<Program, Args, Wit>,
         arguments: Arguments,
@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(engine.context.network, network);
         assert!(engine.context.signer.is_none());
 
-        let context = Context { signer: None, network };
+        let context = FuzzContext { signer: None, network };
 
         let (_, witnesses) = SimplexFuzzEngine::<DummyProgram, EmptyArgs, EmptyArgs>::sign_or_extract(
             &context,
@@ -411,7 +411,7 @@ mod tests {
         use simplicityhl::str::WitnessName;
         use simplicityhl::value::{Value, ValueConstructible};
 
-        let context = Context {
+        let context = FuzzContext {
             signer: None,
             network: SimplicityNetwork::default_regtest(),
         };

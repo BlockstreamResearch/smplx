@@ -1,4 +1,4 @@
-use simplex::fuzz::engine::{Context, FuzzStrategyBuilder};
+use simplex::fuzz::engine::{FuzzContext, FuzzStrategyBuilder};
 use simplex::fuzz::proptest::strategy::Just;
 use simplex::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use simplex::fuzz::{FuzzError, ProgramCheck, ProgramExecResult};
@@ -38,7 +38,7 @@ fn failure_transaction_builder() -> Result<FuzzTransaction, FuzzError> {
 impl ProgramCheck<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureTestCheck {
     fn call(
         &self,
-        _ctx: &Context,
+        _ctx: &FuzzContext,
         _tx: &PartiallySignedTransaction,
         _arguments: &Arguments,
         _witness: &WitnessValues,
@@ -59,7 +59,7 @@ impl ProgramCheck<FailureTestProgram, FailureTestArguments, FailureTestWitness> 
 impl ProgramCheck<P2pkProgram, P2pkArguments, P2pkWitness> for SuccessfulProgramCheck {
     fn call(
         &self,
-        _ctx: &Context,
+        _ctx: &FuzzContext,
         _tx: &PartiallySignedTransaction,
         _arguments: &Arguments,
         witness: &WitnessValues,

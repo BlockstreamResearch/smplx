@@ -86,6 +86,7 @@ impl Config {
 
     fn validate_network(network: &str) -> Result<(), ConfigError> {
         let _ = network.parse::<SimplicityNetwork>()?;
+
         Ok(())
     }
 }
