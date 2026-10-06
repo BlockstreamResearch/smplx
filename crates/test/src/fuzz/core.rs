@@ -3,7 +3,7 @@ use std::sync::Arc;
 use simplicityhl::elements::Script;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::simplicity::{RedeemNode, Value};
-use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
+use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::program::{Program, ProgramError, ProgramFactory};
 use smplx_sdk::provider::SimplicityNetwork;

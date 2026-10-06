@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use simplicityhl::{Arguments, WitnessValues};
+use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
@@ -408,15 +408,15 @@ mod tests {
 
     #[test]
     fn unsigned_extraction_preserves_program_witnesses_at_their_input_indices() {
-        use simplicityhl::str::WitnessName;
+        use simplicityhl::TemplateProgramWitness;
         use simplicityhl::value::{Value, ValueConstructible};
 
         let context = FuzzContext {
             signer: None,
             network: SimplicityNetwork::default_regtest(),
         };
-        let name = WitnessName::from_str_unchecked("VALUE");
-        let witness = WitnessValues::from(HashMap::from([(name.clone(), Value::u8(42))]));
+        let name = TemplateProgramWitness::parameter_from_str("VALUE");
+        let witness = WitnessValues::from_map(HashMap::from([(name.clone(), Value::u8(42))]));
         let program = Program::new("fn main() { assert!(true); }", Arguments::default());
         let mut transaction = FinalTransaction::new();
         transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
