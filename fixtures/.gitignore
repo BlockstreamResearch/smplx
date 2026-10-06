@@ -1,6 +1,6 @@
 src/artifacts
 
-proptest-regressions/
+fuzz-failures/
 deps/*
 !deps/math
 !deps/merkle

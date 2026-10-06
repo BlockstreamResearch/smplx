@@ -140,7 +140,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 - [x] SimplicityHL storage compatibility.
 - [x] SimplicityHL dependencies management.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
-- [ ] SimplicityHL contracts fuzz testing.
+- [x] Fuzz testing for SimplicityHL contracts.
 - [ ] SimplicityHL contracts static analyzer.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.

@@ -14,6 +14,7 @@ use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
 
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
+use crate::fuzz::core::{Expect, FuzzExecutionCheck};
 use crate::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::{FuzzableProgram, ProgramCheck, ProgramExecResult};
 
@@ -136,6 +137,12 @@ where
                 Ok((ft.extract_pst().0, witnesses))
             }
         }
+    }
+
+    pub fn run_with_default_check(self, expect: Expect) {
+        let program_check = FuzzExecutionCheck::new(self.runner.config().test_name.unwrap_or("fuzz_test_name"), expect);
+
+        self.run_with_check(program_check)
     }
 
     pub fn run_with_check(self, program_post_hook: impl ProgramCheck<Program, Args, Wit>) {

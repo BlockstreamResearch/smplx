@@ -4,7 +4,7 @@ use simplicityhl::elements::Script;
 use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::program::Program;
-use smplx_sdk::transaction::{FinalTransaction, ProgramInput};
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
 use crate::error::FuzzError;
 
@@ -42,6 +42,19 @@ impl FuzzTransaction {
             targets,
             post_hook: None,
         })
+    }
+
+    /// Creates a fuzz transaction with a default UTXO at input 0 as its only program target.
+    ///
+    /// No signature is requested, and no post hook is configured. Use [`Self::new`]
+    /// for a custom transaction or [`FuzzTransaction::with_post_hook`] to modify each fuzz case.
+    pub fn try_default() -> Result<FuzzTransaction, FuzzError> {
+        const PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
+
+        let mut transaction = FinalTransaction::new();
+        transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+
+        FuzzTransaction::new(transaction, [PROGRAM_TARGET])
     }
 
     #[must_use]
