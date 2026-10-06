@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use proptest::prelude::Strategy;
 use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence};
+
+use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_regtest::Regtest;
@@ -20,10 +21,11 @@ use crate::config::TestConfig;
 use crate::error::{FuzzError, TestError};
 use crate::network_utils::NetworkUtils;
 
-pub use crate::context::sealed::ContextMode;
-use crate::fuzz::engine::FuzzContext;
-use crate::fuzz::transaction::FuzzTransaction;
+use crate::fuzz::core::FuzzContext;
+use crate::fuzz::fuzz_transaction::FuzzTransaction;
 use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
+
+pub use crate::context::sealed::ContextMode;
 
 #[allow(unreachable_pub)]
 mod sealed {
@@ -215,7 +217,7 @@ impl TestContext<RegularMode> {
 
 impl FuzzMode {
     fn setup(config: &TestConfig, test_name: &'static str, source_file: &'static str) -> Result<FuzzMode, TestError> {
-        const FUZZ_FAILURES_FOLDER_NAME: &str = "fuzz-failures";
+        const FUZZ_FAILURES_DIRECTORY_NAME: &str = "fuzz-failures";
 
         let mut proptest_config = ProptestConfig {
             verbose: config.verbosity as u32,
@@ -227,7 +229,7 @@ impl FuzzMode {
         };
 
         if let Some(persistence) = proptest_config.failure_persistence.as_mut() {
-            *persistence = Box::new(FileFailurePersistence::SourceParallel(FUZZ_FAILURES_FOLDER_NAME));
+            *persistence = Box::new(FileFailurePersistence::SourceParallel(FUZZ_FAILURES_DIRECTORY_NAME));
         }
 
         let (mut network, mut signer) = (None, None);

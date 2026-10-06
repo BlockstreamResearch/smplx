@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use proptest::prelude::{BoxedStrategy, Strategy};
-
 use simplicityhl::{Arguments, WitnessValues};
+
+use proptest::prelude::{BoxedStrategy, Strategy};
 
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 

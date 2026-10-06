@@ -4,7 +4,7 @@ use smplx_sdk::provider::{NetworkConvertError, ProviderError};
 
 use smplx_regtest::error::RegtestError;
 
-use crate::fuzz::transaction::ProgramTarget;
+use crate::fuzz::fuzz_transaction::ProgramTarget;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TestError {

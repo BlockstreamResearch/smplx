@@ -1,5 +1,6 @@
 use simplex::simplicityhl::Arguments;
 use simplex::simplicityhl::elements::Script;
+use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
 use simplex::fuzz::core::Expect;
@@ -8,7 +9,6 @@ use simplex::fuzz::transaction::FuzzTransaction;
 use simplex::provider::SimplicityNetwork;
 use simplex::signer::Signer;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, TxReceipt};
-use simplex::{FuzzMode, TestContext};
 
 use simplex_example::artifacts::p2pk::P2pkProgram;
 use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};

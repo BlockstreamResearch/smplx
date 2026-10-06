@@ -1,7 +1,8 @@
-use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
-use simplex::fuzz::core::Expect;
-use simplex::fuzz::transaction::FuzzTransaction;
 use simplex::{FuzzMode, TestContext};
+
+use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
+use simplex::fuzz::fuzz_program::Expect;
+use simplex::fuzz::fuzz_transaction::FuzzTransaction;
 
 use simplex_example::artifacts::exceptional_contract::ExceptionalContractProgram;
 use simplex_example::artifacts::exceptional_contract::derived_exceptional_contract::{

@@ -1,15 +1,16 @@
+use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
+use simplex::simplicityhl::{Arguments, WitnessValues};
+use simplex::{FuzzMode, TestContext};
+
 use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
-use simplex::fuzz::engine::FuzzContext;
+use simplex::fuzz::core::FuzzContext;
+use simplex::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
 use simplex::fuzz::proptest::strategy::Just;
-use simplex::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use simplex::fuzz::{FuzzError, ProgramCheck, ProgramExecResult};
 use simplex::provider::SimplicityNetwork;
 use simplex::signer::Signer;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
-use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplex::simplicityhl::{Arguments, WitnessValues};
-use simplex::{FuzzMode, TestContext};
 use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
 use simplex_fixtures::artifacts::failure_test::derived_failure_test::{FailureTestArguments, FailureTestWitness};
 use simplex_fixtures::artifacts::p2pk::P2pkProgram;

@@ -1,11 +1,11 @@
-use proptest::test_runner::TestRng;
-use rand::Rng;
-use rand::prelude::*;
-
 use simplicityhl::num::U256;
 use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{ResolvedType, Value};
+
+use proptest::test_runner::TestRng;
+use rand::Rng;
+use rand::prelude::*;
 
 static INTERESTING_U4: &[u8] = &[0, 1, 2, 7, 8, 14, 15];
 
