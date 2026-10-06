@@ -315,6 +315,136 @@ impl Signer {
         })
     }
 
+    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
+    pub fn sign_tx(
+        &self,
+        tx: &FinalTransaction,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
+        let (mut pst, secrets) = tx.extract_pst();
+        let inputs = tx.inputs();
+        let mut signed_witnesses = HashMap::new();
+
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        }
+
+        for (index, input_i) in inputs.iter().enumerate() {
+            // We need to prune the program
+            if let Some(program_input) = &input_i.program_input {
+                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
+                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
+                        Some((wtns_name, sig_path, &SigMessage::Sighash))
+                    }
+                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
+                        Some((wtns_name, sig_path, message))
+                    }
+                    _ => None,
+                };
+
+                let signed_witness = match signing_info {
+                    // Sign the program and inject the signature into the witness
+                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
+                        &pst,
+                        program_input.program.as_ref(),
+                        &program_input.witness,
+                        witness_name,
+                        sig_path,
+                        index,
+                        input_i.partial_input.derivation_path.as_ref(),
+                        message,
+                    )?,
+                    // Just build the witness
+                    None => program_input.witness.shallow_clone(),
+                };
+
+                let pruned_witness = program_input
+                    .program
+                    .finalize(&pst, &signed_witness, index, &self.network)
+                    .map_err(|source| SignerError::CovenantExecution {
+                        index,
+                        locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+                        sequence: pst.inputs()[index]
+                            .sequence
+                            .map_or(u32::MAX, Sequence::to_consensus_u32),
+                        source,
+                    })?;
+
+                signed_witnesses.insert(index, signed_witness);
+                pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
+            } else {
+                // We need to sign the UTXO as is
+                // TODO: do we always sign?
+                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
+                let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
+
+                pst.inputs_mut()[index].final_script_witness =
+                    Some(Witness::from(vec![raw_sig, signed_witness.0.to_bytes()]));
+            }
+        }
+
+        Ok((pst, signed_witnesses))
+    }
+
+    /// Signs and inserts a signature into appropriate witness value.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
+    /// retrieved from the program, if `witness_name` is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_signed_program_witness(
+        &self,
+        pst: &PartiallySignedTransaction,
+        program: &dyn ProgramTrait,
+        witness: &WitnessValues,
+        witness_name: &str,
+        sig_path: &[String],
+        index: usize,
+        derivation_path: Option<&DerivationPath>,
+        message: &SigMessage,
+    ) -> Result<WitnessValues, SignerError> {
+        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
+
+        // Inject the signature into the wtns name directly if the path is not provided
+        let sig_val = if sig_path.is_empty() {
+            Value::byte_array(signature.serialize())
+        } else {
+            let witness_types = program.get_witness_types()?;
+            let witness_type = witness_types
+                .get(&TemplateProgramWitness::witness_from_str(witness_name))
+                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+            #[allow(clippy::missing_panics_doc)]
+            let local_wtns = Arc::new(
+                witness
+                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
+                    .expect("checked above")
+                    .clone(),
+            );
+
+            WtnsInjector::inject_value(
+                &local_wtns,
+                witness_type,
+                sig_path,
+                Value::byte_array(signature.serialize()),
+            )?
+        };
+
+        let mut hm = HashMap::new();
+
+        witness.iter().for_each(|el| {
+            hm.insert(el.0.clone(), el.1.clone());
+        });
+
+        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
+
+        Ok(WitnessValues::from_map(hm))
+    }
+
     /// Returns the network used to derive keys and finalize transactions.
     #[must_use]
     pub const fn get_network(&self) -> &SimplicityNetwork {
@@ -615,136 +745,6 @@ impl Signer {
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
         Ok(Estimate::Success(final_tx, fee))
-    }
-
-    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
-    ///
-    /// # Errors
-    /// Returns a `SignerError` if we have an error in singing and constructing program witness.
-    pub fn sign_tx(
-        &self,
-        tx: &FinalTransaction,
-    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        let (mut pst, secrets) = tx.extract_pst();
-        let inputs = tx.inputs();
-        let mut signed_witnesses = HashMap::new();
-
-        if tx.needs_blinding() {
-            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
-        }
-
-        for (index, input_i) in inputs.iter().enumerate() {
-            // We need to prune the program
-            if let Some(program_input) = &input_i.program_input {
-                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
-                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
-                        Some((wtns_name, sig_path, &SigMessage::Sighash))
-                    }
-                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
-                        Some((wtns_name, sig_path, message))
-                    }
-                    _ => None,
-                };
-
-                let signed_witness = match signing_info {
-                    // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
-                        &pst,
-                        program_input.program.as_ref(),
-                        &program_input.witness,
-                        witness_name,
-                        sig_path,
-                        index,
-                        input_i.partial_input.derivation_path.as_ref(),
-                        message,
-                    )?,
-                    // Just build the witness
-                    None => program_input.witness.shallow_clone(),
-                };
-
-                let pruned_witness = program_input
-                    .program
-                    .finalize(&pst, &signed_witness, index, &self.network)
-                    .map_err(|source| SignerError::CovenantExecution {
-                        index,
-                        locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
-                        sequence: pst.inputs()[index]
-                            .sequence
-                            .map_or(u32::MAX, Sequence::to_consensus_u32),
-                        source,
-                    })?;
-
-                signed_witnesses.insert(index, signed_witness);
-                pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
-            } else {
-                // We need to sign the UTXO as is
-                // TODO: do we always sign?
-                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
-                let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
-
-                pst.inputs_mut()[index].final_script_witness =
-                    Some(Witness::from(vec![raw_sig, signed_witness.0.to_bytes()]));
-            }
-        }
-
-        Ok((pst, signed_witnesses))
-    }
-
-    /// Signs and inserts a signature into appropriate witness value.
-    ///
-    /// # Errors
-    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
-    /// retrieved from the program, if `witness_name` is not present among the program's
-    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
-    #[allow(clippy::too_many_arguments)]
-    pub fn get_signed_program_witness(
-        &self,
-        pst: &PartiallySignedTransaction,
-        program: &dyn ProgramTrait,
-        witness: &WitnessValues,
-        witness_name: &str,
-        sig_path: &[String],
-        index: usize,
-        derivation_path: Option<&DerivationPath>,
-        message: &SigMessage,
-    ) -> Result<WitnessValues, SignerError> {
-        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
-
-        // Inject the signature into the wtns name directly if the path is not provided
-        let sig_val = if sig_path.is_empty() {
-            Value::byte_array(signature.serialize())
-        } else {
-            let witness_types = program.get_witness_types()?;
-            let witness_type = witness_types
-                .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
-
-            #[allow(clippy::missing_panics_doc)]
-            let local_wtns = Arc::new(
-                witness
-                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                    .expect("checked above")
-                    .clone(),
-            );
-
-            WtnsInjector::inject_value(
-                &local_wtns,
-                witness_type,
-                sig_path,
-                Value::byte_array(signature.serialize()),
-            )?
-        };
-
-        let mut hm = HashMap::new();
-
-        witness.iter().for_each(|el| {
-            hm.insert(el.0.clone(), el.1.clone());
-        });
-
-        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
-
-        Ok(WitnessValues::from_map(hm))
     }
 
     #[allow(clippy::unnecessary_wraps)]

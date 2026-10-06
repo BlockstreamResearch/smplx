@@ -1,8 +1,8 @@
 use simplex::simplicityhl::Arguments;
 use simplex::simplicityhl::elements::Script;
 
+use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
 use simplex::fuzz::core::Expect;
-use simplex::fuzz::engine::FuzzStrategyBuilder;
 use simplex::fuzz::proptest::strategy::Strategy;
 use simplex::fuzz::transaction::FuzzTransaction;
 use simplex::provider::SimplicityNetwork;
@@ -88,17 +88,17 @@ fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
 
     // Keep the signer's public key fixed while fuzzing the initial witness.
     let fixed_arguments: Arguments = (&arguments).into();
-    let strategy = FuzzStrategyBuilder::<P2pkArguments, P2pkWitness>::new()
+    let strategy = ArgsStrategyBuilder::<P2pkArguments, P2pkWitness>::new()
         .build()
         .prop_map(move |(_, witness)| (fixed_arguments.clone(), witness));
 
-    let blueprint = FuzzTransaction::try_default()?.with_post_hook(|transaction, _, _, _| {
+    let initial_transaction = FuzzTransaction::try_default()?.with_post_hook(|transaction, _, _, _| {
         // Ask the signer to replace each fuzzed `SIGNATURE` with a valid signature.
         transaction.inputs_mut()[0].required_sig = RequiredSignature::Witness("SIGNATURE".to_string());
         Ok(())
     });
 
-    let runner = context.build::<P2pkProgram, P2pkArguments, P2pkWitness>(strategy, blueprint);
+    let runner = context.build::<P2pkProgram, P2pkArguments, P2pkWitness>(strategy, initial_transaction);
 
     runner.run_with_default_check(Expect::Ok);
 

@@ -1,19 +1,18 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
 use proptest::test_runner::TestRunner;
-use simplicityhl::elements::pset::PartiallySignedTransaction;
 
 use smplx_sdk::program::{ProgramFactory, ProgramTrait};
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::{Signer, SignerError};
 use smplx_sdk::transaction::FinalTransaction;
 
-use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 use crate::fuzz::core::{Expect, FuzzExecutionCheck};
 use crate::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::{FuzzableProgram, ProgramCheck, ProgramExecResult};
@@ -29,68 +28,6 @@ pub struct SimplexFuzzEngine<Program, Args, Wit> {
     pub(crate) strategy: BoxedStrategy<(Arguments, WitnessValues)>,
     pub(crate) blueprint: FuzzTransaction,
     pub(crate) _placeholder: PhantomData<(Program, Args, Wit)>,
-}
-
-pub struct FuzzStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
-    base_strat: BaseStrat,
-    _placeholder: PhantomData<(Args, Wit)>,
-}
-
-impl<Args, Wit> FuzzStrategyBuilder<Args, Wit> {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl<Args, Wit> Default for FuzzStrategyBuilder<Args, Wit> {
-    fn default() -> Self {
-        Self {
-            base_strat: InterestingRandom::default(),
-            _placeholder: Default::default(),
-        }
-    }
-}
-
-impl<Args, Wit, BaseStrat> FuzzStrategyBuilder<Args, Wit, BaseStrat> {
-    pub fn with_random(self) -> FuzzStrategyBuilder<Args, Wit, Random<Args, Wit>> {
-        FuzzStrategyBuilder {
-            base_strat: Random::<Args, Wit>::default(),
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_random_pool(self) -> FuzzStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
-        FuzzStrategyBuilder {
-            base_strat: RandomValuePool::<Args, Wit>::default(),
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_custom_strategy<NewStrat>(self, custom_strat: NewStrat) -> FuzzStrategyBuilder<Args, Wit, NewStrat>
-    where
-        NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
-    {
-        FuzzStrategyBuilder {
-            base_strat: custom_strat,
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_random_interesting_values(self) -> FuzzStrategyBuilder<Args, Wit, InterestingRandom<Args, Wit>> {
-        FuzzStrategyBuilder {
-            base_strat: InterestingRandom::<Args, Wit>::default(),
-            _placeholder: Default::default(),
-        }
-    }
-}
-
-impl<Args, Wit, BaseStrat> FuzzStrategyBuilder<Args, Wit, BaseStrat>
-where
-    BaseStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
-{
-    pub fn build(self) -> BoxedStrategy<(Arguments, WitnessValues)> {
-        self.base_strat.boxed()
-    }
 }
 
 #[derive(Debug)]

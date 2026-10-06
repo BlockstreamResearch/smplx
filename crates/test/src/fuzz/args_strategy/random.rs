@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
 use simplicityhl::{Arguments, WitnessValues};
@@ -22,14 +22,14 @@ impl<Args, Wit> Default for Random<Args, Wit> {
 }
 
 impl<T, E> Debug for Random<T, E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "Random trees...")
     }
 }
 
 pub struct RandomValueTree<T>(T);
 
-impl<T: Clone + std::fmt::Debug> ValueTree for RandomValueTree<T> {
+impl<T: Clone + Debug> ValueTree for RandomValueTree<T> {
     type Value = T;
 
     fn current(&self) -> T {
@@ -45,7 +45,7 @@ impl<T: Clone + std::fmt::Debug> ValueTree for RandomValueTree<T> {
     }
 }
 
-impl<Args: RandomArguments + std::fmt::Debug, Wit: RandomWitness + std::fmt::Debug> Strategy for Random<Args, Wit> {
+impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Random<Args, Wit> {
     type Tree = RandomValueTree<(Arguments, WitnessValues)>;
     type Value = (Arguments, WitnessValues);
 

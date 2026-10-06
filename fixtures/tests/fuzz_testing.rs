@@ -1,4 +1,5 @@
-use simplex::fuzz::engine::{FuzzContext, FuzzStrategyBuilder};
+use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
+use simplex::fuzz::engine::FuzzContext;
 use simplex::fuzz::proptest::strategy::Just;
 use simplex::fuzz::transaction::{FuzzTransaction, ProgramTarget};
 use simplex::fuzz::{FuzzError, ProgramCheck, ProgramExecResult};
@@ -20,22 +21,22 @@ pub enum Expect {
     Failure,
 }
 
-struct FailureTestCheck {
+struct FailureProgramCheck {
     expect: Expect,
 }
 
 struct SuccessfulProgramCheck;
 
-const FAILURE_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
+const FUZZ_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
-fn failure_transaction_builder() -> Result<FuzzTransaction, FuzzError> {
+fn failure_fuzz_transaction() -> Result<FuzzTransaction, FuzzError> {
     let mut transaction = FinalTransaction::new();
     transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
 
-    FuzzTransaction::new(transaction, [FAILURE_PROGRAM_TARGET])
+    FuzzTransaction::new(transaction, [FUZZ_PROGRAM_TARGET])
 }
 
-impl ProgramCheck<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureTestCheck {
+impl ProgramCheck<FailureTestProgram, FailureTestArguments, FailureTestWitness> for FailureProgramCheck {
     fn call(
         &self,
         _ctx: &FuzzContext,
@@ -47,11 +48,13 @@ impl ProgramCheck<FailureTestProgram, FailureTestArguments, FailureTestWitness> 
     ) -> Result<(), String> {
         let args = FailureTestArguments::from_arguments(_arguments)?;
         let witness = FailureTestWitness::from_witness(_witness)?;
+
         if (args.failure_value == witness.cmp_value || program_exec_result.is_err()) && self.expect == Expect::Ok {
             return Err(format!(
                 "Failed contract, failure_value == cmp_value , {program_exec_result:?}"
             ));
         }
+
         Ok(())
     }
 }
@@ -67,6 +70,7 @@ impl ProgramCheck<P2pkProgram, P2pkArguments, P2pkWitness> for SuccessfulProgram
         program_exec_result: ProgramExecResult,
     ) -> Result<(), String> {
         let signed_witness = P2pkWitness::from_witness(witness)?;
+
         if signed_witness == P2pkWitness::default() {
             return Err("fuzz check received the original unsigned witness".to_string());
         }
@@ -77,27 +81,29 @@ impl ProgramCheck<P2pkProgram, P2pkArguments, P2pkWitness> for SuccessfulProgram
     }
 }
 
-fn signed_transaction_builder(arguments: &P2pkArguments, witness: &P2pkWitness) -> Result<FuzzTransaction, FuzzError> {
+fn signed_fuzz_transaction(arguments: &P2pkArguments, witness: &P2pkWitness) -> Result<FuzzTransaction, FuzzError> {
     let program = P2pkProgram::new(arguments.clone());
     let mut transaction = FinalTransaction::new();
+
     transaction.add_program_input(
         PartialInput::new(UTXO::default()),
         ProgramInput::new(Box::new(program.as_ref().clone()), witness),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 
-    FuzzTransaction::new(transaction, [FAILURE_PROGRAM_TARGET])
+    FuzzTransaction::new(transaction, [FUZZ_PROGRAM_TARGET])
 }
 
 #[simplex::fuzz]
 fn test_failure_catching_after_fuzzing(mut test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     test_context.set_network(SimplicityNetwork::default_regtest())?;
 
-    let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
-    let transaction_builder = failure_transaction_builder()?;
+    let strategy = ArgsStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
+    let initial_transaction = FuzzTransaction::try_default()?;
 
-    let runner = test_context.build(strategy_storage, transaction_builder);
-    runner.run_with_check(FailureTestCheck {
+    let runner = test_context.build(strategy, initial_transaction);
+
+    runner.run_with_check(FailureProgramCheck {
         expect: Expect::Failure,
     });
 
@@ -109,11 +115,11 @@ fn test_failure_catching_after_fuzzing(mut test_context: TestContext<FuzzMode>) 
 fn test_panic_after_fuzzing(mut test_context: TestContext<FuzzMode>) {
     test_context.set_network(SimplicityNetwork::default_regtest()).unwrap();
 
-    let strategy_storage = FuzzStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
-    let transaction_builder = failure_transaction_builder().unwrap();
-    let runner = test_context.build(strategy_storage, transaction_builder);
+    let strategy = ArgsStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
+    let initial_transaction = failure_fuzz_transaction().unwrap();
+    let runner = test_context.build(strategy, initial_transaction);
 
-    runner.run_with_check(FailureTestCheck { expect: Expect::Ok });
+    runner.run_with_check(FailureProgramCheck { expect: Expect::Ok });
 }
 
 #[simplex::fuzz]
@@ -130,10 +136,11 @@ fn test_signed_witness_with_program_checks(mut test_context: TestContext<FuzzMod
     test_context.set_custom_signer(signer);
 
     let witness = P2pkWitness::default();
-    let strategy_storage = Just(((&arguments).into(), (&witness).into()));
+    let strategy = Just(((&arguments).into(), (&witness).into()));
 
-    let transaction_builder = signed_transaction_builder(&arguments, &witness)?;
-    let runner = test_context.build(strategy_storage, transaction_builder);
+    let initial_transaction = signed_fuzz_transaction(&arguments, &witness)?;
+    let runner = test_context.build(strategy, initial_transaction);
+
     runner.run_with_check(SuccessfulProgramCheck);
 
     Ok(())

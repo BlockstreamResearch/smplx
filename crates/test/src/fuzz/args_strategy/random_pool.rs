@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
@@ -26,7 +26,7 @@ impl<Args, Wit> Default for RandomValuePool<Args, Wit> {
 }
 
 impl<T, E> Debug for RandomValuePool<T, E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "RandomValuePool trees...")
     }
 }
@@ -56,6 +56,7 @@ impl ValueTree for ValuePoolValueTree<(Arguments, WitnessValues)> {
         let modified_witness = self
             .value_pool
             .probabilistically_replace(self.current.1.clone(), &mut self.rng);
+
         self.current.1 = modified_witness;
         self.cnt += 1;
         self.check_utilization()
@@ -66,9 +67,7 @@ impl ValueTree for ValuePoolValueTree<(Arguments, WitnessValues)> {
     }
 }
 
-impl<Args: RandomArguments + std::fmt::Debug, Wit: RandomWitness + std::fmt::Debug> Strategy
-    for RandomValuePool<Args, Wit>
-{
+impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for RandomValuePool<Args, Wit> {
     type Tree = ValuePoolValueTree<(Arguments, WitnessValues)>;
     type Value = (Arguments, WitnessValues);
 
