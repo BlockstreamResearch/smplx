@@ -2,22 +2,23 @@
  * LAST WILL
  *
  * The inheritor can spend the coins if the owner doesn't move them for
- * 1440 blocks. The owner has to repeat the covenant when he moves the
- * coins with his hot key. The owner can break out of the covenant with
- * his cold key.
+ * `param::INHERITANCE_DISTANCE` blocks. The owner has to repeat the
+ * covenant when he moves the coins with his hot key. The owner can break
+ * out of the covenant with his cold key.
  *
  * Adapted from `last_will.simf` in BlockstreamResearch/SimplicityHL.
  * Changes:
  *
- *   - The three public keys are `param::` arguments rather than constants
- *     written into the source, so each deployment is bound to its own keys
- *     and the test suite can sign with ordinary Simplex wallets.
+ *   - The three public keys and the inheritance distance are `param::`
+ *     arguments rather than constants written into the source, so each
+ *     deployment is bound to its own keys and picks its own wait, and the
+ *     test suite can sign with ordinary Simplex wallets.
  *   - The older Left/Right mechanism for selecting the spending action,
  *     instead of an `enum`, is restored because Simplex currently does
  *     not support contracts using `enum`.
- *   - The inheritance distance is reduced to 1440 blocks (1 day on Liquid)
- *     to reduce CPU requirements for mining these blocks rapidly during the
- *     demo.
+ *   - The demo passes 1440 blocks (1 day on Liquid) as the inheritance
+ *     distance instead of the original 25920, so the tests can mine the
+ *     wait quickly.
  */
 use crate::timelocks::enforce_relative_distance;
 
@@ -39,8 +40,7 @@ fn recursive_covenant() {
 }
 
 fn inherit_spend(inheritor_sig: Signature) {
-    let inheritance_distance: Distance = 1440;
-    enforce_relative_distance(inheritance_distance);
+    enforce_relative_distance(param::INHERITANCE_DISTANCE);
     checksig(param::INHERITOR_PK, inheritor_sig);
 }
 
