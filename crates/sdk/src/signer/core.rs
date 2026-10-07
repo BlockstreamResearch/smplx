@@ -609,7 +609,15 @@ impl Signer {
         Ok(Estimate::Success(final_tx, fee))
     }
 
-    fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
+    /// Signs an assembled `FinalTransaction` exactly as given, appending no change or fee output.
+    /// Unlike `finalize` and `finalize_strict`, it selects no coins and reads no fee rate, so the caller
+    /// balances the transaction and supplies its own fee output. Each program input is still executed
+    /// locally, so a contract that rejects the spend fails here rather than at the node.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if blinding fails, if an input cannot be signed, if a witness signature
+    /// cannot be injected at the requested path, or if a program fails to execute.
+    pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
 
@@ -631,9 +639,9 @@ impl Signer {
                     _ => None,
                 };
 
-                let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
+                let signed_witness: WitnessValues = match signing_info {
                     // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => Ok(self.get_signed_program_witness(
+                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness.build_witness(),
@@ -642,14 +650,14 @@ impl Signer {
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
                         message,
-                    )?),
+                    )?,
                     // Just build the witness
-                    None => Ok(program_input.witness.build_witness()),
+                    None => program_input.witness.build_witness(),
                 };
 
                 let pruned_witness = program_input
                     .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
+                    .finalize(&pst, &signed_witness, index, &self.network)
                     .map_err(|source| SignerError::CovenantExecution {
                         index,
                         locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
