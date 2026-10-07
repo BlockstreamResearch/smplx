@@ -44,7 +44,7 @@ check_fixtures simplex_bin='test_simplex': (simplex::build fixtures simplex_bin)
 
 # Run Simplex fuzz tests in the fixtures project.
 [arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
-check_fuzz simplex_bin='test_simplex': (simplex::build fixtures simplex_bin) (simplex::test_fuzz fixtures simplex_bin)
+check_fuzz simplex_bin='test_simplex': (simplex::build fixtures simplex_bin) (simplex::test_fuzz fixtures simplex_bin) (simplex::build basic_example simplex_bin) (simplex::test_fuzz basic_example simplex_bin)
 
 # Run Simplex tests in the basic example.
 [arg('simplex_bin', long='real', value='simplex', help='Use the installed simplex binary')]
