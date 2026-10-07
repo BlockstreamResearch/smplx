@@ -80,14 +80,14 @@ pub trait ProgramTrait: DynClone {
 }
 
 /// An interface for the struct capable of generating proper `Arguments` mappings using the provided RNG.
-/// See the `include_simf!()` macro, which generates an automatic `ArgumentsTrait` implementation.
+/// See the `include_simf!()` macro, which generates an automatic `Into<Arguments>`, `RandomArguments` implementation.
 pub trait RandomArguments: Into<Arguments> {
     /// Generates a random `Arguments` instance using the provided RNG.
     fn generate_arguments(rng: &mut dyn rand_core::RngCore) -> Arguments;
 }
 
 /// An interface for the struct capable of generating proper `WitnessValues` mappings using the provided RNG.
-/// See the `include_simf!()` macro, which generates an automatic `RandomWitness` implementation.
+/// See the `include_simf!()` macro, which generates an automatic `Into<WitnessValues>`, `RandomWitness` implementation.
 pub trait RandomWitness: Into<WitnessValues> {
     /// Generates a random `WitnessValues` instance using the provided RNG.
     fn generate_witness(rng: &mut dyn rand_core::RngCore) -> WitnessValues;

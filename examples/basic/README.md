@@ -67,7 +67,7 @@ It uses `#[should_panic]`, so the test passes when the expected failure is found
 simplex test --fuzz test_panic -v
 ```
 
-The `p2pk_fuzz_test` test in [`tests/basic_fuzz.rs`](tests/basic_test.rs) demonstrates signing a witness during fuzzing.
+The `p2pk_fuzz_test` test in [`tests/basic_fuzz.rs`](tests/basic_fuzz.rs) demonstrates signing a witness during fuzzing.
 It keeps the signer's public key fixed, fuzzes the initial witness, and inserts a valid `SIGNATURE` before checking that the contract executes successfully:
 
 ```bash

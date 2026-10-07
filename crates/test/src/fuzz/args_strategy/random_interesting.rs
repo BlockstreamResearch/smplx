@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
 use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
@@ -25,14 +25,14 @@ impl<Args, Wit> Default for InterestingRandom<Args, Wit> {
 }
 
 impl<T, E> Debug for InterestingRandom<T, E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         writeln!(f, "InterestingRandom trees...")
     }
 }
 
 pub struct InterestingRandomValueTree<T>(T);
 
-impl<T: Clone + std::fmt::Debug> ValueTree for InterestingRandomValueTree<T> {
+impl<T: Clone + Debug> ValueTree for InterestingRandomValueTree<T> {
     type Value = T;
 
     fn current(&self) -> T {
@@ -48,9 +48,7 @@ impl<T: Clone + std::fmt::Debug> ValueTree for InterestingRandomValueTree<T> {
     }
 }
 
-impl<Args: RandomArguments + std::fmt::Debug, Wit: RandomWitness + std::fmt::Debug> Strategy
-    for InterestingRandom<Args, Wit>
-{
+impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for InterestingRandom<Args, Wit> {
     type Tree = InterestingRandomValueTree<(Arguments, WitnessValues)>;
     type Value = (Arguments, WitnessValues);
 

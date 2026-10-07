@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
-use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
+use simplicityhl::{Arguments, ResolvedType, Value, WitnessNameToValueMap, WitnessValues};
 
 use proptest::prelude::Rng;
 use proptest::prelude::Strategy;
@@ -90,16 +90,13 @@ impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Ran
 #[derive(Default)]
 pub struct ValuePool {
     pool: HashMap<ResolvedType, Vec<Value>>,
-    witness_structure: HashMap<TemplateProgramWitness, ResolvedType>,
 }
 
 impl ValuePool {
     pub fn new(wit: &WitnessValues, args: &Arguments) -> Self {
         let mut pool: HashMap<ResolvedType, Vec<Value>> = HashMap::new();
-        let mut witness_structure: HashMap<TemplateProgramWitness, ResolvedType> = HashMap::new();
 
-        for (name, val) in wit.iter() {
-            witness_structure.insert(name.clone(), val.ty().clone());
+        for (_, val) in wit.iter() {
             pool.entry(val.ty().clone())
                 .and_modify(|counter| counter.push(val.clone()))
                 .or_insert(vec![val.clone()]);
@@ -111,10 +108,7 @@ impl ValuePool {
                 .or_insert(vec![val.clone()]);
         }
 
-        Self {
-            pool,
-            witness_structure,
-        }
+        Self { pool }
     }
 
     pub fn sample(&self, ty: &ResolvedType, rng: &mut TestRng) -> Option<Value> {
@@ -126,18 +120,6 @@ impl ValuePool {
                 Some(values[idx].clone())
             }
         })
-    }
-
-    pub fn generate_witness(&self, rng: &mut TestRng) -> WitnessValues {
-        let mut map = HashMap::new();
-
-        for (name, ty) in &self.witness_structure {
-            if let Some(val) = self.sample(ty, rng) {
-                map.insert(name.clone(), val);
-            }
-        }
-
-        WitnessValues::from_map(map)
     }
 
     pub fn probabilistically_replace(&self, wit: WitnessValues, rng: &mut TestRng) -> WitnessValues {

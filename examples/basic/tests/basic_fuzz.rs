@@ -20,11 +20,12 @@ use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness}
 #[simplex::fuzz]
 fn test_panic(mut test_context: TestContext<FuzzMode>) {
     let strategy = ArgsStrategyBuilder::<ExceptionalContractArguments, ExceptionalContractWitness>::new()
-        .with_random_pool()
+        .with_random()
         .build();
     let initial_transaction = FuzzTransaction::try_default().unwrap();
 
     test_context.set_cases(66_000);
+    test_context.set_seed(0x0001);
 
     let runner = test_context
         .build::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>(

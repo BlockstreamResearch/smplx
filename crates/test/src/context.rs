@@ -1,8 +1,9 @@
+use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use proptest::prelude::Strategy;
-use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence};
+use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::{Arguments, WitnessValues};
@@ -312,6 +313,11 @@ impl TestContext<FuzzMode> {
         self.mode.proptest_config.cases = cases;
     }
 
+    /// Sets the concrete seed in a fuzz test configuration.
+    pub fn set_seed(&mut self, seed: u64) {
+        self.mode.proptest_config.rng_seed = RngSeed::Fixed(seed);
+    }
+
     /// Sets the maximum number of individual inputs that may be rejected before the test as a whole aborts.
     pub fn set_max_local_rejects(&mut self, max_local_rejects: u32) {
         self.mode.proptest_config.max_local_rejects = max_local_rejects;
@@ -327,8 +333,8 @@ impl TestContext<FuzzMode> {
     ) -> SimplexFuzzEngine<Program, Args, Wit>
     where
         Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-        Args: Into<Arguments> + RandomArguments + std::fmt::Debug + Clone + 'static,
-        Wit: Into<WitnessValues> + RandomWitness + std::fmt::Debug + Clone + 'static,
+        Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
+        Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
     {
         let network = self.mode.network.unwrap_or(SimplicityNetwork::default_regtest());
 
