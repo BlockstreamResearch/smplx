@@ -383,10 +383,12 @@ impl WalletSigner {
     }
 
     /// Signs an assembled transaction exactly as written, appending no change or fee output.
-    /// Unlike `finalizeTransaction`, it consults no fee rate: the builder's output list is the one that
-    /// reaches the network, so the caller balances the transaction and writes its own fee output, and
-    /// the reported fee is read back from that output. Covenant inputs are still executed locally, so a
-    /// contract that rejects the spend fails here rather than at broadcast.
+    /// Wraps `Signer::sign_tx` in the SDK.
+    ///
+    /// Unlike `finalizeTransaction`, it consults no fee rate: the builder's output list is the one
+    /// that reaches the network, so the caller balances the transaction and writes its own fee
+    /// output, and the reported fee is read back from that output. Covenant inputs are still
+    /// executed locally, so a contract that rejects the spend fails here rather than at broadcast.
     ///
     /// # Errors
     /// Returns an error if the transaction cannot be blinded or signed, if a witness cannot be injected
