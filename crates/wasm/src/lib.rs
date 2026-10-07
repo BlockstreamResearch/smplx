@@ -381,6 +381,37 @@ impl WalletSigner {
             txid: transaction.txid().to_string(),
         })
     }
+
+    /// Signs an assembled transaction exactly as written, appending no change or fee output.
+    /// Unlike `finalizeTransaction`, it consults no fee rate: the builder's output list is the one that
+    /// reaches the network, so the caller balances the transaction and writes its own fee output, and
+    /// the reported fee is read back from that output. Covenant inputs are still executed locally, so a
+    /// contract that rejects the spend fails here rather than at broadcast.
+    ///
+    /// # Errors
+    /// Returns an error if the transaction cannot be blinded or signed, if a witness cannot be injected
+    /// at the requested path, or if a covenant input does not execute.
+    #[wasm_bindgen(js_name = signTransaction)]
+    pub fn sign_transaction(&self, builder: &TransactionBuilder) -> Result<SignedTransaction, JsError> {
+        let transaction = self
+            .signer
+            .sign_tx(&builder.transaction)
+            .map_err(|e| JsError::new(&format!("Could not sign the transaction: {e}")))?;
+
+        // In Elements the fee is an explicit output with an empty scriptPubKey.
+        let fee_sats: u64 = transaction
+            .output
+            .iter()
+            .filter(|output| output.script_pubkey.as_bytes().is_empty())
+            .filter_map(|output| output.value.explicit())
+            .sum();
+
+        Ok(SignedTransaction {
+            fee_sats,
+            hex: elements::encode::serialize_hex(&transaction),
+            txid: transaction.txid().to_string(),
+        })
+    }
 }
 
 /// A transaction under construction.

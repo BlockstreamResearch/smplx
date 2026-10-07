@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Made `Signer::sign_tx()` public, to sign a transaction exactly as built, with no change or fee output appended.
+  Also exposed this as `sign_transaction` in the wasm API.
+
 ## [0.0.12]
 
 - Added transaction sanity check to the `Signer` to not sign obviously malformed transactions.
