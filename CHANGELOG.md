@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### wasm
+
+- Added `signTransaction`, exposing `Signer::sign_tx` so a transaction can be signed
+  exactly as built, with no change or fee output appended.
+
 ## [0.1.0]
 
 - Added fuzz testing: `#[simplex::fuzz]`, `simplex test --fuzz` and the `[test.fuzz]` config section.
