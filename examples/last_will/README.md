@@ -10,13 +10,15 @@ more context about the actions each test is performing.
 
 ## Overview
 
-`last_will.simf` implements a simple inheritance scheme with three keys,
-supplied to the contract as `param::` arguments:
+`last_will.simf` implements a simple inheritance scheme with three keys
+and an inheritance distance, all supplied to the contract as `param::`
+arguments:
 
-* **Inherit**: after the covenant sits untouched for 1440 blocks
-  (relative timelock), the inheritor's key can withdraw the funds. The
-  upstream contract waits 25920 blocks, about 18 days at Liquid's 1-minute
-  block time; this example shortens the wait so the tests can mine it.
+* **Inherit**: after the covenant sits untouched for
+  `param::INHERITANCE_DISTANCE` blocks (relative timelock), the inheritor's
+  key can withdraw the funds. The upstream contract hardcodes 25920 blocks,
+  about 18 days at Liquid's 1-minute block time; this example passes 1440
+  instead, so the tests can mine it.
 * **ColdSpend**: the owner's cold key can break out of the covenant at any
   time, with no wait required.
 * **HotSpend**: the owner's hot key can spend at any time, which resets
@@ -41,11 +43,17 @@ let inheritor = context.create_signer(INHERITOR_MNEMONIC);
 ```
 
 Their public keys become the contract's `param::INHERITOR_PK`,
-`param::COLD_PK` and `param::HOT_PK`. The covenant's script, and therefore
-its address, follows from these three wallets. Spending uses Simplex's
-signing path: the witness carries a placeholder signature at the branch
-being taken, `RequiredSignature::witness_with_path` names where in the
-witness that signature belongs, and the signer fills it in.
+`param::COLD_PK` and `param::HOT_PK`, alongside
+`param::INHERITANCE_DISTANCE`. The covenant's script, and therefore its
+address, is derived from all four;
+`hot_spend_wrong_continuation_script_fails` relies on that, refreshing into
+a covenant with the same three keys but a doubled inheritance distance,
+which the contract rejects.
+
+Spending uses Simplex's signing path: the witness carries a placeholder
+signature at the branch being taken,
+`RequiredSignature::witness_with_path` says where the signature belongs,
+and the signer fills it in.
 
 The mnemonics in the test file are standard BIP-39 test vectors, so
 their keys are public. Generate your own secrets for any deployment
@@ -70,8 +78,8 @@ Three tests check that the covenant rejects a malformed output set: one
 with a single output, one with a non-fee output at index 1, and one with
 the fee and continuation outputs swapped. A change target cannot produce
 those shapes, because Simplex always appends change first and fee second,
-so those tests build their outputs directly. They sign through
-`SignerTrait::sign_program`.
+so those tests list their outputs directly and sign with `Signer::sign_tx`,
+which appends nothing.
 
 The repository structure is the same shape as `examples/basic`:
 

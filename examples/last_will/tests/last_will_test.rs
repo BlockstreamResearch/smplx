@@ -9,12 +9,11 @@ use last_will_example::artifacts::last_will::derived_last_will::{LastWillArgumen
 
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::either::Either;
-use simplex::program::{ProgramError, ProgramTrait, WitnessTrait};
-use simplex::provider::SimplicityNetwork;
-use simplex::signer::{Signer, SignerError, SignerTrait};
-use simplex::simplicityhl::elements::{Script, Sequence};
+use simplex::provider::{ProviderError, SimplicityNetwork};
+use simplex::signer::{Signer, SignerError};
+use simplex::simplicityhl::elements::{Script, Sequence, Txid};
 use simplex::transaction::{
-    ChangeOutput, FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, SigMessage,
+    ChangeOutput, FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO,
 };
 
 // The three roles each get their own wallet, built from its own BIP-39
@@ -30,12 +29,12 @@ const COLD_MNEMONIC: &str =
     "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
 const HOT_MNEMONIC: &str = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong";
 
-// Must match `inheritance_distance` in `simf/last_will.simf`.
+// Passed to the contract as `param::INHERITANCE_DISTANCE`, so this is the only
+// place the value is defined.
 //
 // The original contract uses 25920 blocks, about 18 days at Liquid's
-// 1-minute block time. This demo uses 1440 (1 day) instead to keep the
-// mining cheap: mining tens of thousands of blocks on regtest may risk a
-// `nextest` timeout.
+// 1-minute block time. This demo uses 1440 (1 day) to keep the mining cheap;
+// mining tens of thousands of blocks on regtest risks a `nextest` timeout.
 const INHERITANCE_DISTANCE: u16 = 1440;
 
 // Every test funds a fresh covenant instance with the same amount, and the
@@ -43,39 +42,58 @@ const INHERITANCE_DISTANCE: u16 = 1440;
 const FUNDING_AMOUNT: u64 = 100_000;
 
 /// The inheritor, the cold key holder and the hot key holder, as three
-/// independent Simplex wallets.
+/// independent Simplex wallets, together with the covenant they are bound to.
 struct Parties {
     inheritor: Signer,
     cold: Signer,
     hot: Signer,
+    arguments: LastWillArguments,
+    program: LastWillProgram,
 }
 
 impl Parties {
     fn new(context: &simplex::TestContext) -> Self {
+        let inheritor = context.create_signer(INHERITOR_MNEMONIC);
+        let cold = context.create_signer(COLD_MNEMONIC);
+        let hot = context.create_signer(HOT_MNEMONIC);
+
+        // Parameters are compiled into the program, so these four values
+        // determine the covenant's script, and therefore its address.
+        let arguments = LastWillArguments {
+            inheritance_distance: INHERITANCE_DISTANCE,
+            inheritor_pk: inheritor.get_schnorr_public_key().serialize(),
+            cold_pk: cold.get_schnorr_public_key().serialize(),
+            hot_pk: hot.get_schnorr_public_key().serialize(),
+        };
+
         Self {
-            inheritor: context.create_signer(INHERITOR_MNEMONIC),
-            cold: context.create_signer(COLD_MNEMONIC),
-            hot: context.create_signer(HOT_MNEMONIC),
+            inheritor,
+            cold,
+            hot,
+            program: LastWillProgram::new(&arguments),
+            arguments,
         }
     }
 
-    /// The contract's three `param::` public keys. Because the parameters are
-    /// baked into the compiled program, these three wallets determine the
-    /// covenant's script, and therefore its address.
-    fn arguments(&self) -> LastWillArguments {
-        LastWillArguments {
-            inheritor_pk: self.inheritor.get_schnorr_public_key().serialize(),
-            cold_pk: self.cold.get_schnorr_public_key().serialize(),
-            hot_pk: self.hot.get_schnorr_public_key().serialize(),
-        }
-    }
-
-    fn program(&self) -> LastWillProgram {
-        LastWillProgram::new(&self.arguments())
+    /// The covenant these three wallets are bound to. `Program` caches its
+    /// compilation, so holding one instance here compiles the contract once per
+    /// test rather than once per spend.
+    fn program(&self) -> &LastWillProgram {
+        &self.program
     }
 
     fn script(&self, context: &simplex::TestContext) -> Script {
-        self.program().get_script_pubkey(context.get_network())
+        self.program.get_script_pubkey(context.get_network())
+    }
+
+    /// The same contract and the same three parties, but with a doubled
+    /// inheritance distance. Changing a `param::` changes the script, so this
+    /// is a valid last will covenant sitting at a different address.
+    fn other_covenant_script(&self, context: &simplex::TestContext) -> Script {
+        let mut arguments = self.arguments.clone();
+        arguments.inheritance_distance = INHERITANCE_DISTANCE * 2;
+
+        LastWillProgram::new(&arguments).get_script_pubkey(context.get_network())
     }
 }
 
@@ -143,14 +161,6 @@ fn fee_output(amount: u64, network: &SimplicityNetwork) -> PartialOutput {
 /// Funds a fresh covenant instance, then spends it via `path`, signed by
 /// `signer`.
 ///
-/// `finalize_strict` appends the `change_to` output, then an Elements fee
-/// output, and sets both amounts, giving the transaction two outputs. For a
-/// `SpendPath::HotSpend` those are the two outputs `recursive_covenant()`
-/// requires: output 0 back into the covenant, output 1 the fee.
-///
-/// `RequiredSignature::witness_with_path` names the witness and the position
-/// within it that the signature goes to.
-///
 /// Returns the local-execution or broadcast error (if any) unexamined, so
 /// callers can assert either success or a specific failure result.
 fn spend_action(
@@ -161,37 +171,80 @@ fn spend_action(
     sequence: Sequence,
     signer: &Signer,
     change_to: ChangeTo,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Txid> {
     let prog = parties.program();
     let script = prog.get_script_pubkey(context.get_network());
 
-    context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
+    let utxo = fund_covenant(context, &script)?;
 
-    let utxos = context.get_default_provider().fetch_scripthash_utxos(&script)?;
-
-    let mut ft = FinalTransaction::new();
-    ft.add_program_input(
-        PartialInput::new(utxos[0].clone()).with_sequence(sequence),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
-    );
-    ft.add_change(ChangeOutput::new(match change_to {
+    let change_to = match change_to {
         ChangeTo::SpenderWallet => signer.get_address().script_pubkey(),
         ChangeTo::Covenant => script,
         ChangeTo::Other(other) => other,
-    }));
+    };
+    let ft = covenant_spend(prog, utxo, path, sequence, change_to);
 
     println!("Submitting {description}...");
 
-    let fee_rate = context.get_default_provider().fetch_fee_rate(1)?;
-    let (tx, _fee) = signer.finalize_strict(&ft, fee_rate)?;
-
-    // `finalize_strict` encapsulates the sign-and-satisfy sequence. The
-    // individual actions involved can be broken out if necessary; see below
-    // in spend_with_exact_outputs() for an example.
-    let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
+    // One call: coin selection, fee rate, the change and fee outputs, local
+    // execution, signing, witness satisfaction and broadcast. A test that needs
+    // to control those steps uses `spend_with_exact_outputs` instead.
+    let receipt = signer.broadcast(&ft)?;
     println!("  -> accepted: {receipt}");
-    Ok(receipt.to_string())
+    Ok(receipt.txid())
+}
+
+/// Builds a spend of `utxo` through `path`, sending the value to `change_to`.
+///
+/// The transaction carries one input and no explicit outputs: `Signer` appends
+/// the change output and then the Elements fee output, and works out both
+/// amounts. For a `SpendPath::HotSpend` with `change_to` set to the covenant's
+/// own script, those two appended outputs are what `recursive_covenant()`
+/// requires: output 0 back into the covenant, output 1 the fee.
+fn covenant_spend(
+    prog: &LastWillProgram,
+    utxo: UTXO,
+    path: SpendPath,
+    sequence: Sequence,
+    change_to: Script,
+) -> FinalTransaction {
+    let mut ft = FinalTransaction::new();
+
+    ft.add_program_input(
+        PartialInput::new(utxo).with_sequence(sequence),
+        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
+        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
+    );
+    ft.add_change(ChangeOutput::new(change_to));
+
+    ft
+}
+
+/// Funds a fresh instance of the covenant at `script` and returns its UTXO,
+/// once the funding transaction has confirmed.
+///
+/// Without the `TxReceipt::wait` the UTXO comes back out of the mempool, which
+/// works, but leaves each test depending on relay timing rather than a block.
+fn fund_covenant(context: &simplex::TestContext, script: &Script) -> anyhow::Result<UTXO> {
+    let receipt = context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
+    let txid = receipt.txid();
+
+    receipt.wait()?;
+
+    covenant_utxo(context, script, txid)
+}
+
+/// The UTXO that transaction `txid` created at `script`.
+///
+/// Selecting by txid avoids picking up whichever other UTXO the covenant's
+/// script happens to hold.
+fn covenant_utxo(context: &simplex::TestContext, script: &Script, txid: Txid) -> anyhow::Result<UTXO> {
+    context
+        .get_default_provider()
+        .fetch_scripthash_utxos(script)?
+        .into_iter()
+        .find(|utxo| utxo.outpoint.txid == txid)
+        .ok_or_else(|| anyhow::anyhow!("transaction {txid} produced no UTXO at the covenant script"))
 }
 
 /// Spends a covenant UTXO with a transaction whose outputs are given exactly
@@ -200,16 +253,13 @@ fn spend_action(
 /// Every caller is a test that expects the spend to be rejected. Spends that
 /// are meant to succeed go through `spend_action`.
 ///
-/// The output-shape tests below build transactions that violate
-/// `recursive_covenant()`: one output instead of two, a non-fee output at
-/// index 1, and the fee and continuation outputs swapped. `spend_action`
-/// cannot express those, because
-/// `finalize_strict` always appends its own change and fee outputs and takes
-/// the amounts from what is left over, so these transactions are balanced by
+/// The output-shape tests below violate `recursive_covenant()` on purpose: one
+/// output instead of two, a non-fee output at index 1, and the fee and
+/// continuation outputs swapped. `spend_action` cannot express those, because
+/// `Signer::broadcast` would append its own change and fee outputs on top and
+/// trip the `num_outputs() == 2` check instead of the one under test.
+/// `Signer::sign_tx` appends nothing, so these transactions are balanced by
 /// hand.
-///
-/// `SignerTrait::sign_program` signs the input, and `LastWillWitness` carries
-/// the signature into the right branch.
 fn spend_with_exact_outputs(
     context: &simplex::TestContext,
     parties: &Parties,
@@ -218,20 +268,17 @@ fn spend_with_exact_outputs(
     sequence: Sequence,
     signer: &Signer,
     outputs: Vec<PartialOutput>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Txid> {
     let prog = parties.program();
-    let network = context.get_network();
-    let script = prog.get_script_pubkey(network);
+    let script = prog.get_script_pubkey(context.get_network());
 
-    context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
-
-    let utxos = context.get_default_provider().fetch_scripthash_utxos(&script)?;
+    let utxo = fund_covenant(context, &script)?;
 
     let mut ft = FinalTransaction::new();
     ft.add_program_input(
-        PartialInput::new(utxos[0].clone()).with_sequence(sequence),
+        PartialInput::new(utxo).with_sequence(sequence),
         ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::None,
+        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
     );
     for output in outputs {
         ft.add_output(output);
@@ -239,31 +286,14 @@ fn spend_with_exact_outputs(
 
     println!("Submitting {description}...");
 
-    // Signing and local execution are kept apart from broadcast deliberately:
-    // `ProgramTrait::finalize` runs the Simplicity program locally, which is
-    // where a failed `assert!` surfaces, before the transaction reaches the
-    // network; only then is it broadcast, where consensus rules such as
-    // relative locktimes apply. Several tests depend on telling those apart.
-    let (mut pst, _secrets) = ft.extract_pst();
-
-    let signature = signer.sign_program(&pst, prog.as_ref(), 0, network, None, &SigMessage::Sighash)?;
-    let witness = path.witness_with(signature.serialize()).build_witness();
-
-    let pruned_witness = prog.as_ref().finalize(&pst, &witness, 0, network)?;
-    pst.inputs_mut()[0].final_script_witness = Some(pruned_witness);
-
-    let tx = pst.extract_tx()?;
+    // Signing and broadcast are kept apart deliberately: `sign_tx` runs the
+    // Simplicity program, where a failed `assert!` surfaces, before the
+    // transaction reaches the network and its consensus rules, such as relative
+    // locktimes. Several tests depend on telling those two apart.
+    let tx = signer.sign_tx(&ft)?;
     let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
     println!("  -> accepted: {receipt}");
-    Ok(receipt.to_string())
-}
-
-/// Whether a `ProgramError` represents the Simplicity program rejecting the
-/// spend, as opposed to any other failure. An `assert!` that fails shows up
-/// while the Bit Machine runs, which is either during execution proper or
-/// during the pruning pass that `finalize` performs.
-fn is_program_execution_failure(error: &ProgramError) -> bool {
-    matches!(error, ProgramError::Execution(_) | ProgramError::Pruning(_))
+    Ok(receipt.txid())
 }
 
 /// Asserts that a spend helper's result failed during local Simplicity
@@ -271,35 +301,25 @@ fn is_program_execution_failure(error: &ProgramError) -> bool {
 /// node. Every test that expects a spend to be rejected outright (wrong
 /// key, or a `recursive_covenant()` violation) fails this way: the
 /// contract's own logic catches it before broadcast is ever attempted.
-fn expect_assert_failure(result: anyhow::Result<String>, what_was_wrong: &str) -> anyhow::Result<()> {
+///
+/// Both spend helpers run the program through the `Signer`, so a failed
+/// `assert!` always arrives as `SignerError::CovenantExecution`. Matching the
+/// type rather than the message text keeps the test independent of a
+/// dependency's wording.
+fn expect_assert_failure(result: anyhow::Result<Txid>, what_was_wrong: &str) -> anyhow::Result<()> {
     match result {
-        Ok(receipt) => {
-            anyhow::bail!("expected local execution to reject this ({what_was_wrong}), but it broadcast: {receipt}")
+        Ok(txid) => {
+            anyhow::bail!("expected local execution to reject this ({what_was_wrong}), but it broadcast: {txid}")
         }
         Err(err) => {
-            // Match the typed error rather than message text from a transitive
-            // dependency. The two spending paths surface it differently:
-            // `finalize_strict` reports a covenant input that did not execute,
-            // while `ProgramTrait::finalize` returns the program error directly.
-            let is_execution_failure = match err.downcast_ref::<SignerError>() {
-                Some(SignerError::CovenantExecution { .. }) => true,
-                Some(SignerError::Program(program_error)) => is_program_execution_failure(program_error),
-                _ => err.downcast_ref::<ProgramError>().is_some_and(is_program_execution_failure),
-            };
-
             anyhow::ensure!(
-                is_execution_failure,
+                matches!(err.downcast_ref::<SignerError>(), Some(SignerError::CovenantExecution { .. })),
                 "expected an assertion failure ({what_was_wrong}), got a different error: {err}"
             );
             println!("  -> rejected locally, as expected: {what_was_wrong}\n");
             Ok(())
         }
     }
-}
-
-/// OP_TRUE: a script that is definitely not this covenant.
-fn unrelated_script() -> Script {
-    Script::from(vec![0x51])
 }
 
 #[simplex::test]
@@ -388,16 +408,26 @@ fn inherit_too_early_is_rejected(context: simplex::TestContext) -> anyhow::Resul
     );
 
     match result {
-        Ok(receipt) => {
-            anyhow::bail!("expected the node to reject this broadcast, but it succeeded: {receipt}")
+        Ok(txid) => {
+            anyhow::bail!("expected the node to reject this broadcast, but it succeeded: {txid}")
         }
         Err(err) => {
-            let msg = err.to_string();
+            // `ProviderError::BroadcastRejected` carries the node's own response
+            // body. Matching that variant, rather than grepping the formatted
+            // error chain, keeps this test specific to a network rejection: a
+            // local `assert!` failure arrives as
+            // `SignerError::CovenantExecution` and must not pass here.
+            let Some(SignerError::Provider(ProviderError::BroadcastRejected { message, .. })) =
+                err.downcast_ref::<SignerError>()
+            else {
+                anyhow::bail!("expected the node to reject this broadcast, got a different error: {err}")
+            };
+
             anyhow::ensure!(
-                msg.contains("non-BIP68-final"),
-                "expected a `non-BIP68-final` rejection specifically, got: {msg}"
+                message.contains("non-BIP68-final"),
+                "expected a `non-BIP68-final` rejection specifically, got: {message}"
             );
-            println!("  -> rejected by the node: {msg}\n");
+            println!("  -> rejected by the node: {message}\n");
             println!(
                 "The `non-BIP68-final` message is triggered by the node's mempool policy,\n\
                  showing how the timelock guarantee is enforced by the network.\n"
@@ -423,28 +453,21 @@ fn inherit_after_wait_succeeds(context: simplex::TestContext) -> anyhow::Result<
 
     let prog = parties.program();
     let script = prog.get_script_pubkey(context.get_network());
-    context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
+
+    // The relative timelock runs from the height the funding output confirmed
+    // at, so the target below has to be measured from a tip that contains it.
+    let utxo = fund_covenant(&context, &script)?;
 
     let target = context.get_default_provider().fetch_tip_height()? as u64 + u64::from(INHERITANCE_DISTANCE);
     context.get_network_utils().mine_until_height(target)?;
     println!("Mined up to height {target}.\n");
 
-    let utxos = context.get_default_provider().fetch_scripthash_utxos(&script)?;
-    let path = SpendPath::Inherit;
-
-    let mut ft = FinalTransaction::new();
-    ft.add_program_input(
-        PartialInput::new(utxos[0].clone()).with_sequence(Sequence::from_height(INHERITANCE_DISTANCE)),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
-    );
-    ft.add_change(ChangeOutput::new(parties.inheritor.get_address().script_pubkey()));
+    let to = parties.inheritor.get_address().script_pubkey();
+    let ft = covenant_spend(prog, utxo, SpendPath::Inherit, Sequence::from_height(INHERITANCE_DISTANCE), to);
 
     println!("Submitting the same Inherit transaction as before, now that the wait is real...");
 
-    let fee_rate = context.get_default_provider().fetch_fee_rate(1)?;
-    let (tx, _fee) = parties.inheritor.finalize_strict(&ft, fee_rate)?;
-    let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
+    let receipt = parties.inheritor.broadcast(&ft)?;
     println!("  -> accepted: {receipt}");
 
     println!(
@@ -619,20 +642,29 @@ fn hot_spend_wrong_continuation_script_fails(context: simplex::TestContext) -> a
 
     println!(
         "\n=== HotSpend recreating the wrong script ===\n\n\
-         Here, output 0 sends the money to a script output different from this exact\n\
-         covenant. `recursive_covenant()` compares the output's script hash against this\n\
-         program's own script hash directly (not by trusting the witness), so a HotSpend\n\
-         can't be used to smuggle the funds anywhere else while disguised as a routine\n\
-         refresh.\n"
+         Output 0 here pays to a real last will covenant over the same three keys,\n\
+         differing only in its inheritance distance. Parameters are compiled into\n\
+         the program, so that alone changes the script. `recursive_covenant()`\n\
+         compares the output's script hash against this program's own (not trusting\n\
+         the witness), so a HotSpend can't move the funds into a covenant on\n\
+         different terms while disguised as a routine refresh.\n"
     );
+
+    // Check the test's premise: a different parameter means a different address.
+    let other = parties.other_covenant_script(&context);
+    anyhow::ensure!(
+        other != parties.script(&context),
+        "changing `inheritance_distance` did not change the covenant's script"
+    );
+
     let result = spend_action(
         &context,
         &parties,
-        "HotSpend transaction recreating an unrelated script, not this covenant",
+        "HotSpend transaction recreating a covenant on different terms, not this one",
         SpendPath::HotSpend,
         Sequence::default(),
         &parties.hot,
-        ChangeTo::Other(unrelated_script()),
+        ChangeTo::Other(other),
     );
     expect_assert_failure(result, "HotSpend output 0 recreates the wrong script")
 }
@@ -648,6 +680,7 @@ fn hot_spend_non_fee_second_output_fails(context: simplex::TestContext) -> anyho
          output, so `jet::output_is_fee(1)` is `false` and the assertion fails.\n"
     );
     let script = parties.script(&context);
+    let not_a_fee = parties.hot.get_address().script_pubkey();
     let result = spend_with_exact_outputs(
         &context,
         &parties,
@@ -657,7 +690,7 @@ fn hot_spend_non_fee_second_output_fails(context: simplex::TestContext) -> anyho
         &parties.hot,
         vec![
             PartialOutput::new(script, 99_000, context.get_network().policy_asset()),
-            PartialOutput::new(unrelated_script(), 1_000, context.get_network().policy_asset()),
+            PartialOutput::new(not_a_fee, 1_000, context.get_network().policy_asset()),
         ],
     );
     expect_assert_failure(result, "HotSpend output 1 isn't a real fee output")
@@ -710,58 +743,42 @@ fn covenant_survives_two_refreshes_then_breaks_out(context: simplex::TestContext
     let prog = parties.program();
     let script = prog.get_script_pubkey(context.get_network());
 
-    context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
+    let funded = fund_covenant(&context, &script)?;
 
-    // Returns what is left in the covenant after the hop, since Simplex works
-    // out the fee rather than the test fixing it in advance.
-    let hot_spend_hop = |amount_in: u64, hop_name: &str| -> anyhow::Result<u64> {
-        let utxos = context.get_default_provider().fetch_scripthash_utxos(&script)?;
-        let path = SpendPath::HotSpend;
+    // Each hop takes the covenant UTXO it is spending and returns the fresh one
+    // it created, so the chain is threaded by outpoint rather than by refetching
+    // the script. The new balance comes from `UTXO::amount` on that output, so
+    // the hop never needs to know the fee.
+    let hot_spend_hop = |utxo: UTXO, hop_name: &str| -> anyhow::Result<UTXO> {
+        println!("Submitting {hop_name} (HotSpend, {} sats in)...", utxo.amount());
 
-        let mut ft = FinalTransaction::new();
-        ft.add_program_input(
-            PartialInput::new(utxos[0].clone()),
-            ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-            RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
-        );
         // Paying the change back into the covenant's own script gives
-        // `recursive_covenant()` the outputs it requires: Simplex emits that
-        // output first and the fee output second, and works out both amounts.
-        ft.add_change(ChangeOutput::new(script.clone()));
+        // `recursive_covenant()` the outputs it requires.
+        let ft = covenant_spend(prog, utxo, SpendPath::HotSpend, Sequence::default(), script.clone());
 
-        println!("Submitting {hop_name} (HotSpend, {amount_in} sats in)...");
+        let receipt = parties.hot.broadcast(&ft)?;
+        let txid = receipt.txid();
 
-        let fee_rate = context.get_default_provider().fetch_fee_rate(1)?;
-        let (tx, fee) = parties.hot.finalize_strict(&ft, fee_rate)?;
-        let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
         // Each hop must confirm before the next one can spend its output.
         receipt.wait()?;
-        println!("  -> accepted and confirmed: {receipt} ({fee} sats fee)\n");
-        Ok(amount_in - fee)
+        println!("  -> accepted and confirmed: {receipt}\n");
+
+        covenant_utxo(&context, &script, txid)
     };
 
-    let after_first = hot_spend_hop(FUNDING_AMOUNT, "first refresh")?;
-    println!("Covenant still alive at {after_first} sats.\n");
+    let after_first = hot_spend_hop(funded, "first refresh")?;
+    println!("Covenant still alive at {} sats.\n", after_first.amount());
     let after_second = hot_spend_hop(after_first, "second refresh")?;
-    println!("Covenant still alive at {after_second} sats.\n");
+    println!("Covenant still alive at {} sats.\n", after_second.amount());
 
-    // Final hop: break out via ColdSpend, spending the real UTXO the second refresh
+    // Final hop: break out via ColdSpend, spending the UTXO the second refresh
     // created.
-    let utxos = context.get_default_provider().fetch_scripthash_utxos(&script)?;
-    let path = SpendPath::ColdSpend;
-    let mut ft = FinalTransaction::new();
-    ft.add_program_input(
-        PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
-    );
-    ft.add_change(ChangeOutput::new(parties.cold.get_address().script_pubkey()));
+    let to = parties.cold.get_address().script_pubkey();
+    let ft = covenant_spend(prog, after_second, SpendPath::ColdSpend, Sequence::default(), to);
 
     println!("Submitting final hop (ColdSpend, breaking out of the covenant for good)...");
 
-    let fee_rate = context.get_default_provider().fetch_fee_rate(1)?;
-    let (tx, _fee) = parties.cold.finalize_strict(&ft, fee_rate)?;
-    let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
+    let receipt = parties.cold.broadcast(&ft)?;
     println!("  -> accepted: {receipt}\n");
 
     println!(
