@@ -1,5 +1,6 @@
 src/artifacts
 
+fuzz-failures/
 deps/*
 !deps/math
 !deps/merkle

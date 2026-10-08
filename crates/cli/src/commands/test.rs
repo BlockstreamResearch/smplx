@@ -9,6 +9,7 @@ use super::error::CommandError;
 
 /// Nextest dsl variable to filter and use only simplex tests
 const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
+const SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(fuzz), "$/)");
 const DEFAULT_THREADS_NUMBER: usize = 1;
 
 pub struct Test {}
@@ -91,7 +92,9 @@ impl Test {
         cargo_nextest_args.push("--filterset".into());
 
         let dsl_marker = if flags.no_simplex {
-            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER}")
+            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER} and not {SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER}")
+        } else if flags.fuzz {
+            SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER.into()
         } else {
             SMPLX_NEXTEST_DSL_TEST_MARKER.into()
         };
@@ -173,8 +176,64 @@ impl Test {
 mod tests {
     use std::os::unix::process::ExitStatusExt;
 
-    use super::Test;
+    use clap::Parser;
+
+    use super::{SMPLX_NEXTEST_DSL_TEST_MARKER, SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER, Test};
+    use crate::Cli;
+    use crate::commands::core::{TestArguments, TestFlags};
     use crate::commands::error::CommandError;
+
+    fn test_arguments() -> TestArguments {
+        TestArguments {
+            filters: Vec::new(),
+            target: None,
+            test_threads: None,
+        }
+    }
+
+    fn test_flags() -> TestFlags {
+        TestFlags {
+            show_output: false,
+            ignored: false,
+            no_fail_fast: false,
+            verbose: 0,
+            quiet: false,
+            no_simplex: false,
+            fuzz: false,
+        }
+    }
+
+    #[test]
+    fn no_simplex_filter_excludes_regular_and_fuzz_tests() {
+        let mut flags = test_flags();
+        flags.no_simplex = true;
+
+        let args = Test::build_cargo_nextest_args(&test_arguments(), &flags);
+        let filter_index = args.iter().position(|arg| arg == "--filterset").unwrap() + 1;
+
+        assert_eq!(
+            args[filter_index],
+            format!("not {SMPLX_NEXTEST_DSL_TEST_MARKER} and not {SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER}")
+        );
+    }
+
+    #[test]
+    fn fuzz_filter_selects_only_fuzz_tests() {
+        let mut flags = test_flags();
+        flags.fuzz = true;
+
+        let args = Test::build_cargo_nextest_args(&test_arguments(), &flags);
+        let filter_index = args.iter().position(|arg| arg == "--filterset").unwrap() + 1;
+
+        assert_eq!(args[filter_index], SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER);
+    }
+
+    #[test]
+    fn no_simplex_conflicts_with_fuzz() {
+        let error = Cli::try_parse_from(["simplex", "test", "--no-simplex", "--fuzz"]).unwrap_err();
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
 
     #[test]
     fn successful_test_process_returns_ok() {

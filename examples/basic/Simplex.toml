@@ -21,6 +21,10 @@
 # bitcoins = 10_000_000
 # verbosity = 0
 
+# [test.fuzz]
+# cases = 10000
+# seed = 12345
+
 # [test.esplora]
 # url = "<esplora url>"
 # network = "<Liquid, LiquidTestnet, ElementsRegtest>"

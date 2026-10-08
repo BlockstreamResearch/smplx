@@ -315,6 +315,110 @@ impl Signer {
         })
     }
 
+    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    ///
+    /// Every program input is executed and finalized with its signed witness.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if we have an error in singing and constructing program witness,
+    /// or if a program fails to execute.
+    pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
+        let (mut pst, signed_witnesses) = self.sign_witnesses(tx)?;
+
+        for (index, input_i) in tx.inputs().iter().enumerate() {
+            let Some(program_input) = &input_i.program_input else {
+                continue;
+            };
+
+            let pruned_witness = program_input
+                .program
+                .finalize(&pst, &signed_witnesses[&index], index, &self.network)
+                .map_err(|source| SignerError::CovenantExecution {
+                    index,
+                    locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+                    sequence: pst.inputs()[index]
+                        .sequence
+                        .map_or(u32::MAX, Sequence::to_consensus_u32),
+                    source,
+                })?;
+
+            pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
+        }
+
+        Ok(pst)
+    }
+
+    /// Blinds the transaction, signs the native inputs and injects signatures into program witnesses,
+    /// without executing or finalizing the programs.
+    ///
+    /// Returns the transaction exactly as it was signed, together with the signed witness of every program
+    /// input keyed by its input index. Programs must be executed against this transaction, not a freshly
+    /// extracted one, because blinding is randomized and the signatures commit to the blinded outputs.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
+    pub fn sign_witnesses(
+        &self,
+        tx: &FinalTransaction,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
+        let (mut pst, secrets) = tx.extract_pst();
+        let inputs = tx.inputs();
+        let mut signed_witnesses = HashMap::new();
+
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
+        }
+
+        for (index, input_i) in inputs.iter().enumerate() {
+            if let Some(program_input) = &input_i.program_input {
+                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
+                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
+                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
+                        Some((wtns_name, sig_path, &SigMessage::Sighash))
+                    }
+                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
+                        Some((wtns_name, sig_path, message))
+                    }
+                    _ => None,
+                };
+
+                let signed_witness = match signing_info {
+                    // Sign the program and inject the signature into the witness
+                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
+                        &pst,
+                        program_input.program.as_ref(),
+                        &program_input.witness,
+                        witness_name,
+                        sig_path,
+                        index,
+                        input_i.partial_input.derivation_path.as_ref(),
+                        message,
+                    )?,
+                    // Just build the witness
+                    None => program_input.witness.shallow_clone(),
+                };
+
+                signed_witnesses.insert(index, signed_witness);
+            } else {
+                // We need to sign the UTXO as is
+                // TODO: do we always sign?
+                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
+                let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
+
+                pst.inputs_mut()[index].final_script_witness =
+                    Some(Witness::from(vec![raw_sig, signed_witness.0.to_bytes()]));
+            }
+        }
+
+        Ok((pst, signed_witnesses))
+    }
+
+    /// Returns the network used to derive keys and finalize transactions.
+    #[must_use]
+    pub const fn get_network(&self) -> &SimplicityNetwork {
+        &self.network
+    }
+
     /// Returns a reference to the active configured network provider.
     ///
     /// # Errors
@@ -521,6 +625,10 @@ impl Signer {
         fee_rate: f32,
         available_delta: u64,
     ) -> Result<Estimate, SignerError> {
+        let sign_and_extract_tx = |signer: &Signer, tx: &FinalTransaction| -> Result<Transaction, SignerError> {
+            Ok(signer.sign_tx(tx)?.extract_tx()?)
+        };
+
         // Estimate the tx fee with the change. The caller supplies the change target
         let change = match fee_tx.change() {
             Some(target) => target.clone(),
@@ -549,7 +657,7 @@ impl Signer {
             self.network.policy_asset(),
         ));
 
-        let final_tx = self.sign_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
@@ -563,7 +671,7 @@ impl Signer {
                 return Err(SignerError::Unbalanced());
             }
 
-            let final_tx = self.sign_tx(&fee_tx)?;
+            let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
             return Ok(Estimate::Success(final_tx, fee));
         }
@@ -585,7 +693,7 @@ impl Signer {
 
         fee_tx.remove_output(change_index);
 
-        let final_tx = self.sign_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
         let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
@@ -602,76 +710,17 @@ impl Signer {
         }
 
         // Finalize the tx with fee and without the change
-        let final_tx = self.sign_tx(&fee_tx)?;
+        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
         Ok(Estimate::Success(final_tx, fee))
     }
 
-    fn sign_tx(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
-        let (mut pst, secrets) = tx.extract_pst();
-        let inputs = tx.inputs();
-
-        if tx.needs_blinding() {
-            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
-        }
-
-        for (index, input_i) in inputs.iter().enumerate() {
-            // We need to prune the program
-            if let Some(program_input) = &input_i.program_input {
-                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
-                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
-                        Some((wtns_name, sig_path, &SigMessage::Sighash))
-                    }
-                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
-                        Some((wtns_name, sig_path, message))
-                    }
-                    _ => None,
-                };
-
-                let signed_witness: Result<WitnessValues, SignerError> = match signing_info {
-                    // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => Ok(self.get_signed_program_witness(
-                        &pst,
-                        program_input.program.as_ref(),
-                        &program_input.witness,
-                        witness_name,
-                        sig_path,
-                        index,
-                        input_i.partial_input.derivation_path.as_ref(),
-                        message,
-                    )?),
-                    // Just build the witness
-                    None => Ok(program_input.witness.shallow_clone()),
-                };
-
-                let pruned_witness = program_input
-                    .program
-                    .finalize(&pst, &signed_witness.unwrap(), index, &self.network)
-                    .map_err(|source| SignerError::CovenantExecution {
-                        index,
-                        locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
-                        sequence: pst.inputs()[index]
-                            .sequence
-                            .map_or(u32::MAX, Sequence::to_consensus_u32),
-                        source,
-                    })?;
-
-                pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
-            } else {
-                // We need to sign the UTXO as is
-                // TODO: do we always sign?
-                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
-                let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
-
-                pst.inputs_mut()[index].final_script_witness =
-                    Some(Witness::from(vec![raw_sig, signed_witness.0.to_bytes()]));
-            }
-        }
-
-        Ok(pst.extract_tx()?)
-    }
-
+    /// Signs and inserts a signature into appropriate witness value.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
+    /// retrieved from the program, if `witness_name` is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
     #[allow(clippy::too_many_arguments)]
     fn get_signed_program_witness(
         &self,
@@ -695,6 +744,7 @@ impl Signer {
                 .get(&TemplateProgramWitness::witness_from_str(witness_name))
                 .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
 
+            #[allow(clippy::missing_panics_doc)]
             let local_wtns = Arc::new(
                 witness
                     .get(&TemplateProgramWitness::witness_from_str(witness_name))
@@ -887,5 +937,60 @@ mod tests {
 
         println!("{}", signer.get_address());
         println!("{}", signer.get_confidential_address());
+    }
+
+    #[test]
+    fn sign_witnesses_leaves_failing_programs_for_the_caller_to_execute() {
+        use simplicityhl::Arguments;
+        use simplicityhl::elements::TxOut;
+
+        use simplicityhl::simplicity::bit_machine::ExecutionError;
+
+        use crate::program::{Program, ProgramError};
+        use crate::transaction::ProgramInput;
+
+        let signer = create_signer();
+        let program = Program::new("fn main() { assert!(false); }", Arguments::default());
+
+        let mut program_txout = TxOut::new_fee(1000, signer.network.policy_asset());
+        program_txout.script_pubkey = program.get_tr_address(&signer.network).script_pubkey();
+
+        let mut ft = FinalTransaction::new();
+        // A native input first, so the program sits at index 1
+        ft.add_input(
+            PartialInput::new(UTXO {
+                outpoint: OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
+                txout: TxOut::new_fee(1000, signer.network.policy_asset()),
+                secrets: None,
+            }),
+            RequiredSignature::NativeEcdsa,
+        );
+        ft.add_program_input(
+            PartialInput::new(UTXO {
+                outpoint: OutPoint::new(Txid::from_byte_array([0x02; 32]), 0),
+                txout: program_txout,
+                secrets: None,
+            }),
+            ProgramInput::new(Box::new(program.clone()), WitnessValues::default()),
+            RequiredSignature::None,
+        );
+
+        let (pst, signed_witnesses) = signer.sign_witnesses(&ft).unwrap();
+
+        assert_eq!(signed_witnesses.len(), 1);
+        assert!(signed_witnesses.contains_key(&1));
+        assert!(pst.inputs()[0].final_script_witness.is_some());
+        assert!(pst.inputs()[1].final_script_witness.is_none());
+
+        // The caller executes against the signed transaction and observes the program's own failure
+        assert!(matches!(
+            program.execute(&pst, &signed_witnesses[&1], 1, &signer.network),
+            Err(ProgramError::Pruning(ExecutionError::JetFailed(_)))
+        ));
+
+        assert!(matches!(
+            signer.sign_tx(&ft),
+            Err(SignerError::CovenantExecution { index: 1, .. })
+        ));
     }
 }

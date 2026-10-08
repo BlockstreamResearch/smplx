@@ -5,6 +5,7 @@ use simplicityhl::simplicity::elements;
 use elements_miniscript::bitcoin::NetworkKind;
 
 use crate::constants::{LIQUID_DEFAULT_REGTEST_ASSET_STR, LIQUID_POLICY_ASSET_STR, LIQUID_TESTNET_POLICY_ASSET_STR};
+use crate::provider::error::NetworkConvertError;
 
 /// The default Bitcoin `AssetId` used on Liquid testnet.
 pub static LIQUID_TESTNET_BITCOIN_ASSET: std::sync::LazyLock<elements::AssetId> = std::sync::LazyLock::new(|| {
@@ -123,6 +124,19 @@ impl From<&SimplicityNetwork> for NetworkKind {
             NetworkKind::Main
         } else {
             NetworkKind::Test
+        }
+    }
+}
+
+impl FromStr for SimplicityNetwork {
+    type Err = NetworkConvertError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Liquid" => Ok(SimplicityNetwork::Liquid),
+            "LiquidTestnet" => Ok(SimplicityNetwork::LiquidTestnet),
+            "ElementsRegtest" => Ok(SimplicityNetwork::default_regtest()),
+            other => Err(NetworkConvertError::BadNetworkName(other.to_string())),
         }
     }
 }

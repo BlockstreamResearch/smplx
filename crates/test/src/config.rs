@@ -23,6 +23,7 @@ pub struct TestConfig {
     pub bitcoins: u64,
     pub esplora: Option<EsploraConfig>,
     pub rpc: Option<RpcConfig>,
+    pub fuzz: Option<FuzzConfig>,
     pub verbosity: Verbosity,
 }
 
@@ -37,6 +38,13 @@ pub struct RpcConfig {
     pub url: String,
     pub username: String,
     pub password: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct FuzzConfig {
+    pub cases: Option<u32>,
+    pub seed: Option<u64>,
+    pub network: Option<String>,
 }
 
 impl TestConfig {
@@ -81,6 +89,7 @@ impl Default for TestConfig {
             bitcoins: DEFAULT_BITCOINS,
             esplora: None,
             rpc: None,
+            fuzz: None,
             verbosity: Verbosity::None,
         }
     }
@@ -107,6 +116,7 @@ mod tests {
                 username: "user".into(),
                 password: "password".into(),
             }),
+            ..Default::default()
         };
 
         config.to_file(&path).expect("test config should be written");

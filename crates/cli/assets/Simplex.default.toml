@@ -25,6 +25,11 @@
 # url = "<esplora url>"
 # network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
+# [test.fuzz]
+# cases = 10000
+# seed = 12345
+# network = "<Liquid, LiquidTestnet, ElementsRegtest>"
+
 # [test.rpc]
 # url = "<rpc url>"
 # username = "<rpc username>"

@@ -11,10 +11,11 @@
 
 ## What
 
-Simplex is a Rust-based, comprehensive development framework for [Simplicity](https://github.com/BlockstreamResearch/SimplicityHL) smart contracts, aiming to provide a rich tooling suite for implementing, testing, and deploying smart contract on [Liquid](https://liquid.net/).
+Simplex is a Rust-based, comprehensive development framework for [SimplicityHL](https://github.com/BlockstreamResearch/SimplicityHL) smart contracts, aiming to provide a rich tooling suite for implementing, testing, fuzz testing, and deploying smart contract on [Liquid](https://liquid.net/).
 
-- CLI for managing simplicity-based projects.
-- SDK with essential simplicity utilities.
+- CLI for managing Simplicity-based projects.
+- SDK with essential SimplicityHL utilities.
+- SimplicityHL contracts unit and fuzz testing suite.
 - Liquid regtest for local integration testing.
 - Extensive framework configuration.
 
@@ -72,6 +73,11 @@ mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon aban
 bitcoins = 10_000_000
 verbosity = 0 # 0 - none, 1 - debug, 2 - trace
 
+[test.fuzz]
+cases = 10000
+seed = 12345 # random by default
+network = "<Liquid, LiquidTestnet, ElementsRegtest>"
+
 [test.esplora]
 url = "<esplora url>"
 network = "<Liquid, LiquidTestnet, ElementsRegtest>"
@@ -101,6 +107,10 @@ Where:
   - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
   - `verbosity` - Simplicity pruning log level.
+  - `fuzz`
+    - `cases` - The number of fuzz iterations to do.
+    - `seed` - The fuzzer random seed.
+    - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
   - `esplora`
     - `url` - Esplora API endpoint url.
     - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
@@ -118,8 +128,8 @@ Simplex CLI provides the following commands:
 - `simplex install <dep>` - Installs SimplicityHL dependencies. Without a `<dep>` provided, installs everything listed in the `[dependencies]` config section. With one or more `<dep>` arguments, appends new entries to the config and then installs everything. The bare name `std` pins the latest `SimplicityHL` [standard library](https://github.com/BlockstreamResearch/simplicityhl-std) release.
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
-- `simplex test` - Runs Simplex tests.
-- `simplex clean` - Cleans up generated artifacts.
+- `simplex test` - Runs Simplex tests. Provide a `--fuzz` flag to run Simplex fuzz tests.
+- `simplex clean` - Cleans up generated artifacts and installed dependencies.
 
 To view the available options, run the help command:
 
@@ -139,8 +149,8 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 
 - [x] SimplicityHL storage compatibility.
 - [x] SimplicityHL dependencies management.
+- [x] Fuzz testing for SimplicityHL contracts.
 - [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
-- [ ] SimplicityHL contracts fuzz testing.
 - [ ] SimplicityHL contracts static analyzer.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.

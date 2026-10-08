@@ -79,6 +79,7 @@ jobs:
         run: |
           cd ${{ matrix.build-dir }}                     
           simplex test -v
+          simplex test -v --fuzz
           simplex test --no-simplex -v metadata_cmr
 
   lint-checks:
