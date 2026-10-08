@@ -2,8 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use proptest::prelude::Strategy;
-use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, TestRunner};
+use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence};
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::{Arguments, WitnessValues};
@@ -22,7 +21,6 @@ use crate::config::TestConfig;
 use crate::error::TestError;
 use crate::network_utils::NetworkUtils;
 
-use crate::fuzz::fuzz_transaction::FuzzTransaction;
 use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
 
 pub use crate::context::sealed::ContextMode;
@@ -305,8 +303,8 @@ impl<T: ContextMode> TestContext<T> {
 
 impl Drop for RegularMode {
     fn drop(&mut self) {
-        if let Some(x) = &mut self._client {
-            let _ = x.kill();
+        if let Some(client) = &mut self._client {
+            let _ = client.kill();
         }
     }
 }

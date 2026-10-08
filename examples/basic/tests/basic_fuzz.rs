@@ -2,9 +2,9 @@ use simplex::simplicityhl::Arguments;
 use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
-use simplex::fuzz::fuzz_program::Expect;
 use simplex::fuzz::fuzz_transaction::FuzzTransaction;
 use simplex::fuzz::proptest::prelude::Strategy;
+use simplex::fuzz::proptest::test_runner::RngSeed;
 use simplex::provider::SimplicityNetwork;
 use simplex::signer::Signer;
 use simplex::transaction::RequiredSignature;
@@ -17,7 +17,7 @@ use simplex_example::artifacts::p2pk::P2pkProgram;
 use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 #[simplex::fuzz]
-fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
+fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
 
     let signer = Signer::from_mnemonic(TEST_MNEMONIC, SimplicityNetwork::default_regtest());
@@ -26,8 +26,6 @@ fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
         public_key: signer.get_schnorr_public_key().serialize(),
     };
     let fixed_arguments: Arguments = (&arguments).into();
-
-    context.set_custom_signer(signer);
 
     // Keep the signer's public key fixed while fuzzing the initial witness.
     let strategy = ArgsStrategyBuilder::<P2pkArguments, P2pkWitness>::new()
@@ -40,29 +38,32 @@ fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
         Ok(())
     });
 
-    let runner = context.build::<P2pkProgram, P2pkArguments, P2pkWitness>(strategy, initial_transaction);
-
-    runner.run(Expect::Ok);
+    context
+        .engine::<P2pkProgram, P2pkArguments, P2pkWitness>()
+        .with_custom_signer(signer)
+        .with_custom_strategy(strategy)
+        .with_custom_transaction(initial_transaction)
+        .run();
 
     Ok(())
 }
 
 #[should_panic(expected = "const CMP_VALUE: u16 = 1337;")]
 #[simplex::fuzz]
-fn test_panic(mut test_context: TestContext<FuzzMode>) {
+fn test_panic(test_context: TestContext<FuzzMode>) {
     let strategy = ArgsStrategyBuilder::<ExceptionalContractArguments, ExceptionalContractWitness>::new()
         .with_random()
         .build();
     let initial_transaction = FuzzTransaction::try_default().unwrap();
 
-    test_context.set_cases(66_000);
-    test_context.set_seed(0x0001);
+    let mut config = test_context.get_fuzz_config().clone();
+    config.cases = 66_000;
+    config.rng_seed = RngSeed::Fixed(0x0001);
 
-    let runner = test_context
-        .build::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>(
-            strategy,
-            initial_transaction,
-        );
-
-    runner.run(Expect::Ok);
+    test_context
+        .engine::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>()
+        .with_custom_config(config)
+        .with_custom_strategy(strategy)
+        .with_custom_transaction(initial_transaction)
+        .run();
 }

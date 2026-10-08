@@ -34,8 +34,8 @@ pub enum Expect {
 
 /// Checks that each fuzzed program execution matches the expected outcome.
 ///
-/// Used by `run`. For custom checks, implement [`ProgramCheck`]
-/// and pass your check to `run_custom`.
+/// Used by `run` by default. For custom checks, implement [`ProgramCheck`]
+/// and pass your check to `with_custom_check`.
 pub struct FuzzExecutionCheck {
     test_name: &'static str,
     expect: Expect,
