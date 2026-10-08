@@ -52,6 +52,10 @@ pub enum SignerError {
     #[error("Failed to unblind txout: {0}")]
     Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
+    /// Error indicating that the amount of an output with an explicit asset could not be opened.
+    #[error("Failed to open the amount of an explicit-asset output: {0}")]
+    AmountRewind(&'static str),
+
     /// Error thrown when PSET blinding fails.
     #[error("Failed to blind a PST: {0}")]
     PsetBlind(#[from] simplicityhl::elements::pset::PsetBlindError),
