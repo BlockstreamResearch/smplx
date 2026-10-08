@@ -42,6 +42,18 @@ Under the hood, Simplex spins up a local Electrs + Elements regtest, establishes
 
 Check out `confidential_test.rs` to learn how to issue and spend confidential UTXOs!
 
+### Fuzzing
+
+Fuzz tests are essential tools for asserting smart contract invariants and finding logical edge-cases via randomly generated arguments and witness. They are marked with `#[simplex::fuzz]` and run fully locally without interacting with the node.
+
+Run the example fuzz test with the following command:
+
+```bash
+simplex test --fuzz p2pk_fuzz_test -v
+```
+
+When a fuzz test finds a failing case, Simplex creates `fuzz-failures/` and saves its random seed and generated values. Later runs replay saved cases before generating new ones, making failures reproducible.
+
 ### Regtest
 
 If you wish to keep the blockchain's state between the tests, you will need to spin un a local regtest separately:
@@ -53,30 +65,6 @@ simplex regtest
 This command sets up the standalone nodes that can be connected to via simplex configuration.
 
 Update the `simplex.toml` file with the necessary URLs and credentials, then run the test again. You will see that the state gets preserved.
-
-### Fuzzing
-
-Fuzz tests exercise contracts with generated arguments and witness values.
-They are marked with `#[simplex::fuzz]` and run locally without broadcasting transactions.
-For each generated case, the engine compiles and executes the contract, then checks the result against the test's expectations.
-
-This project includes two examples. The `test_panic` test in [`tests/basic_fuzz.rs`](tests/basic_fuzz.rs) demonstrates finding a contract failure.
-It uses `#[should_panic]`, so the test passes when the expected failure is found:
-
-```bash
-simplex test --fuzz test_panic -v
-```
-
-The `p2pk_fuzz_test` test in [`tests/basic_fuzz.rs`](tests/basic_fuzz.rs) demonstrates signing a witness during fuzzing.
-It keeps the signer's public key fixed, fuzzes the initial witness, and inserts a valid `SIGNATURE` before checking that the contract executes successfully:
-
-```bash
-simplex test --fuzz p2pk_fuzz_test -v
-```
-
-When a fuzz test finds a failing case, Simplex creates `fuzz-failures/` and saves its random seed and generated values.
-Later runs replay saved cases before generating new ones, making failures reproducible.
-The intentional failure in `test_panic` also creates a saved case, even though the test itself passes.
 
 ## Disclaimer
 
