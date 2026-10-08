@@ -89,6 +89,7 @@ pub struct Program {
     arguments: Arguments,
     pub_key: XOnlyPublicKey,
     storage: Vec<Vec<u8>>,
+    extra_leaf_hashes: Vec<[u8; 32]>,
     include_debug_symbols: Option<bool>,
     compiled: Arc<OnceLock<CompiledProgram>>,
 }
@@ -218,6 +219,7 @@ impl Program {
             pub_key: tr_unspendable_key(),
             arguments: arguments.into(),
             storage: Vec::new(),
+            extra_leaf_hashes: Vec::new(),
             include_debug_symbols: None,
             compiled: Arc::new(OnceLock::new()),
         }
@@ -289,6 +291,33 @@ impl Program {
     #[must_use]
     pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
         self.storage[index].clone()
+    }
+
+    /// Commits sibling taproot nodes beside this program, in the given order.
+    ///
+    /// Each hash is a taproot node hash, such as another program's tapleaf hash
+    /// ([`Program::get_tapleaf_hash`], not its CMR) or the branch hash of a subtree
+    /// ([`crate::utils::tap_branch_hash`]).
+    ///
+    /// The tree is a left fold of this program's leaf, these hashes, then the storage leaves:
+    /// with siblings `[B]` and one slot `s`, the root is `tapbranch(tapbranch(leaf, B), s)`.
+    /// Programs that set the same storage share one address when each lists the others from its
+    /// own position:
+    ///
+    /// - two programs A and B: A takes `[B]`, and B takes `[A]`;
+    /// - three programs A, B and C: A takes `[B, C]`, B takes `[A, C]`, and C takes
+    ///   `[tap_branch_hash(A, B)]`, because C sits one level above the A–B pair.
+    ///
+    /// Each executable branch is an independent way to spend that address.
+    /// Satisfying its own program with its own witness is enough, and no other branch runs.
+    ///
+    /// A control block proves at most 128 levels, so sibling hashes and storage slots together
+    /// may number at most 128. Building the address of a larger tree panics.
+    #[must_use]
+    pub fn with_extra_leaf_hashes(mut self, hashes: Vec<[u8; 32]>) -> Self {
+        self.extra_leaf_hashes = hashes;
+
+        self
     }
 
     /// Returns a taproot address for a defined `SimplicityNetwork`.
@@ -412,18 +441,21 @@ impl Program {
     fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
         let mut builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;
-        let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
+        let depths = Self::taproot_leaf_depths(1 + self.get_storage_len() + self.extra_leaf_hashes.len());
 
         builder = builder
             .add_leaf_with_ver(depths[0], script, version)
             .expect("tap tree should be valid");
 
-        for (slot, depth) in self.get_storage().iter().zip(depths.into_iter().skip(1)) {
+        let hidden = self
+            .extra_leaf_hashes
+            .iter()
+            .copied()
+            .chain(self.storage.iter().map(|slot| tap_data_hash(slot).to_byte_array()));
+
+        for (hash, depth) in hidden.zip(depths.into_iter().skip(1)) {
             builder = builder
-                .add_hidden(
-                    depth,
-                    taproot::TapNodeHash::from_byte_array(tap_data_hash(slot).to_byte_array()),
-                )
+                .add_hidden(depth, taproot::TapNodeHash::from_byte_array(hash))
                 .expect("tap tree should be valid");
         }
 
@@ -499,6 +531,113 @@ mod tests {
         assert_ne!(one.get_tr_address(&network), other.get_tr_address(&network));
         assert_eq!(one.get_cmr(), other.get_cmr());
         assert_eq!(one.get_tapleaf_hash(), other.get_tapleaf_hash());
+    }
+
+    const COMPARING_PROGRAM: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
+
+    #[test]
+    fn two_programs_with_the_same_state_share_one_address() {
+        let a = dummy_program();
+        let b = Program::new(COMPARING_PROGRAM, EmptyArguments {});
+        let (hash_a, hash_b) = (a.get_tapleaf_hash(), b.get_tapleaf_hash());
+
+        let mut a = a.with_extra_leaf_hashes(vec![hash_b]).with_storage_capacity(1);
+        let mut b = b.with_extra_leaf_hashes(vec![hash_a]).with_storage_capacity(1);
+        a.set_storage_at(0, vec![0x11; Program::STORAGE_SLOT_BYTES]);
+        b.set_storage_at(0, vec![0x11; Program::STORAGE_SLOT_BYTES]);
+
+        let network = SimplicityNetwork::LiquidTestnet;
+        let output_key = a.taproot_spending_info().unwrap().output_key();
+
+        assert_eq!(a.get_script_pubkey(&network), b.get_script_pubkey(&network));
+
+        for program in [&a, &b] {
+            assert!(program.control_block().unwrap().verify_taproot_commitment(
+                secp256k1::SECP256K1,
+                &output_key,
+                &program.script_version().unwrap().0
+            ));
+        }
+    }
+
+    #[test]
+    fn three_programs_share_one_address_through_a_branch_hash() {
+        let a = dummy_program();
+        let b = Program::new(COMPARING_PROGRAM, EmptyArguments {});
+        let c = Program::new("fn main() { }", EmptyArguments {});
+        let (hash_a, hash_b, hash_c) = (a.get_tapleaf_hash(), b.get_tapleaf_hash(), c.get_tapleaf_hash());
+
+        let a = a.with_extra_leaf_hashes(vec![hash_b, hash_c]);
+        let b = b.with_extra_leaf_hashes(vec![hash_a, hash_c]);
+        let c = c.with_extra_leaf_hashes(vec![crate::utils::tap_branch_hash(hash_a, hash_b)]);
+
+        let network = SimplicityNetwork::LiquidTestnet;
+        let output_key = a.taproot_spending_info().unwrap().output_key();
+
+        assert_eq!(a.get_script_pubkey(&network), b.get_script_pubkey(&network));
+        assert_eq!(a.get_script_pubkey(&network), c.get_script_pubkey(&network));
+        assert_eq!(
+            crate::utils::tap_branch_hash(hash_a, hash_b),
+            crate::utils::tap_branch_hash(hash_b, hash_a)
+        );
+
+        for program in [&a, &b, &c] {
+            assert!(program.control_block().unwrap().verify_taproot_commitment(
+                secp256k1::SECP256K1,
+                &output_key,
+                &program.script_version().unwrap().0
+            ));
+        }
+    }
+
+    #[test]
+    fn a_sibling_branch_spends_through_the_signer() {
+        use crate::signer::Signer;
+        use crate::transaction::RequiredSignature;
+        use crate::transaction::{ChangeOutput, FinalTransaction, PartialInput, PartialOutput, ProgramInput, UTXO};
+        use simplicityhl::elements::{OutPoint, Txid};
+
+        let network = dummy_network();
+        let signer = Signer::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            network,
+        );
+
+        let comparing = Program::new(COMPARING_PROGRAM, EmptyArguments {});
+        let trivial = Program::new("fn main() { }", EmptyArguments {});
+        let spending = trivial.with_extra_leaf_hashes(vec![comparing.get_tapleaf_hash()]);
+        let other = comparing.with_extra_leaf_hashes(vec![spending.get_tapleaf_hash()]);
+        let shared = other.get_script_pubkey(&network);
+
+        assert_eq!(spending.get_script_pubkey(&network), shared);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_program_input(
+            PartialInput::new(UTXO {
+                outpoint: OutPoint::new(Txid::from_byte_array([3; 32]), 0),
+                txout: TxOut {
+                    asset: confidential::Asset::Explicit(network.policy_asset()),
+                    value: confidential::Value::Explicit(10_000),
+                    script_pubkey: shared,
+                    ..Default::default()
+                },
+                secrets: None,
+            }),
+            ProgramInput::new(Box::new(spending.clone()), WitnessValues::default()),
+            RequiredSignature::None,
+        );
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            9_000,
+            network.policy_asset(),
+        ));
+        ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
+
+        let (tx, _) = signer.finalize_strict(&ft, 100.0).expect("the trivial branch spends");
+        let control_block = &tx.input[0].witness.script_witness[3];
+
+        assert_eq!(control_block, &spending.control_block().unwrap().serialize());
+        assert_ne!(control_block, &other.control_block().unwrap().serialize());
     }
 
     #[derive(Clone)]

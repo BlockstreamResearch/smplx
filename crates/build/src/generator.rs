@@ -318,6 +318,12 @@ impl ArtifactsGenerator {
                     self
                 }
 
+                #[must_use]
+                pub fn with_extra_leaf_hashes(mut self, hashes: Vec<[u8; 32]>) -> Self {
+                    self.program = self.program.with_extra_leaf_hashes(hashes);
+                    self
+                }
+
                 // No #[must-use], as we don't return any value.
                 pub fn set_storage_at(&mut self, index: usize, new_value: impl Into<Vec<u8>>) {
                     self.program.set_storage_at(index, new_value);

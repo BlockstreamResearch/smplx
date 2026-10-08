@@ -79,16 +79,6 @@ impl IssuanceReport {
     }
 }
 
-/// Compile-time parameters for a covenant, resolved before construction.
-#[derive(Clone)]
-struct FixedArguments(Arguments);
-
-impl From<FixedArguments> for Arguments {
-    fn from(val: FixedArguments) -> Self {
-        val.0.clone()
-    }
-}
-
 /// Witness values for a covenant input, resolved before the transaction is assembled.
 #[derive(Clone)]
 struct FixedWitness(WitnessValues);
@@ -98,6 +88,11 @@ impl From<FixedWitness> for WitnessValues {
         val.0.clone()
     }
 }
+
+/// The most leaves `Covenant.withExecutableSiblings` commits beside a covenant, siblings and
+/// state together. The covenant's own leaf then sits at depth 128, the deepest a control block
+/// can prove.
+const MAX_EXTRA_LEAVES: usize = 128;
 
 /// A compiled `SimplicityHL` covenant.
 #[wasm_bindgen]
@@ -133,6 +128,50 @@ impl Covenant {
                 source,
                 arguments_json.as_deref(),
                 extra_leaves_json.as_deref(),
+                None,
+                include_debug_symbols,
+            )?,
+        })
+    }
+
+    /// Creates a covenant that shares its address with executable sibling branches.
+    ///
+    /// `source`, `argumentsJson`, `extraLeavesJson` and `includeDebugSymbols` mean exactly what
+    /// they mean for `new Covenant(…)`: the state values still fill the covenant's storage.
+    ///
+    /// `executableSiblingsJson` is a JSON array of the other branches, each
+    /// `{"source": "…", "arguments": {…}}`. `arguments` is optional and has the `argumentsJson`
+    /// shape, and `"type": "simplicity"` may also be given. Each sibling is compiled here in this
+    /// covenant's debug-symbol mode and committed by its tapleaf hash. An empty array gives the
+    /// same covenant as `new Covenant(…)` for up to 128 state values. Beyond that this method
+    /// refuses, while `new Covenant(…)` accepts them as before.
+    ///
+    /// The tree commits the covenant's own leaf, then the siblings in order, then the state
+    /// leaves. Two branches A and B share one address when A lists B and B lists A, with the same
+    /// state and the same `includeDebugSymbols`. Each branch then spends that address on its own,
+    /// through `TransactionBuilder.addCompiledCovenantInput`. A third branch sits above the A–B
+    /// pair and must commit to the pair's branch hash, which only the Rust SDK builds
+    /// (`Program::with_extra_leaf_hashes` and `utils::tap_branch_hash`).
+    ///
+    /// # Errors
+    /// Returns an error if the arguments or the state values are invalid as for `new Covenant(…)`,
+    /// if a sibling is not an object, has an unknown field, invalid arguments or no source, or does
+    /// not compile, or if siblings and state together number more than 128.
+    #[wasm_bindgen(js_name = withExecutableSiblings)]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn with_executable_siblings(
+        source: &str,
+        arguments_json: Option<String>,
+        extra_leaves_json: Option<String>,
+        executable_siblings_json: &str,
+        include_debug_symbols: Option<bool>,
+    ) -> Result<Covenant, JsError> {
+        Ok(Self {
+            program: Self::from_source(
+                source,
+                arguments_json.as_deref(),
+                extra_leaves_json.as_deref(),
+                Some(executable_siblings_json),
                 include_debug_symbols,
             )?,
         })
@@ -201,6 +240,7 @@ impl Covenant {
         source: &str,
         arguments_json: Option<&str>,
         extra_leaves_json: Option<&str>,
+        executable_siblings_json: Option<&str>,
         include_debug_symbols: Option<bool>,
     ) -> Result<Program, JsError> {
         let arguments = match arguments_json {
@@ -209,7 +249,7 @@ impl Covenant {
             _ => Arguments::default(),
         };
 
-        let mut program = Program::new(Arc::<str>::from(source), FixedArguments(arguments));
+        let mut program = Program::new(source, arguments);
 
         if let Some(include) = include_debug_symbols {
             program = program.with_debug_symbols(include);
@@ -223,6 +263,13 @@ impl Covenant {
             for (index, leaf) in leaves.into_iter().enumerate() {
                 program.set_storage_at(index, leaf);
             }
+        }
+
+        if let Some(json) = executable_siblings_json {
+            let siblings = Self::executable_siblings(json, include_debug_symbols, program.get_storage_len())
+                .map_err(|e| JsError::new(&e))?;
+
+            program = program.with_extra_leaf_hashes(siblings);
         }
 
         Ok(program)
@@ -251,6 +298,90 @@ impl Covenant {
         }
 
         Ok(leaves)
+    }
+
+    /// Reads the executable siblings and returns their tapleaf hashes, in order.
+    ///
+    /// `state_leaves` is how many state values the covenant also commits, so that the whole tree
+    /// stays within what a control block proves.
+    fn executable_siblings(
+        json: &str,
+        include_debug_symbols: Option<bool>,
+        state_leaves: usize,
+    ) -> Result<Vec<[u8; 32]>, String> {
+        let declared: Vec<serde_json::Value> =
+            serde_json::from_str(json).map_err(|e| format!("Invalid executable siblings: {e}"))?;
+
+        if declared.len() + state_leaves > MAX_EXTRA_LEAVES {
+            return Err(format!(
+                "A covenant commits at most {MAX_EXTRA_LEAVES} leaves beside itself, and this one declares {} \
+                 executable siblings and {state_leaves} state values",
+                declared.len()
+            ));
+        }
+
+        declared
+            .iter()
+            .enumerate()
+            .map(|(index, sibling)| {
+                let sibling = sibling
+                    .as_object()
+                    .ok_or_else(|| format!("Executable sibling {index} is not an object"))?;
+
+                Self::sibling_leaf_hash(index, sibling, include_debug_symbols)
+            })
+            .collect()
+    }
+
+    /// Compiles an executable sibling from its source and returns its tapleaf hash.
+    ///
+    /// Only source is accepted. An opaque hash would commit the address to a branch nobody here
+    /// has seen.
+    fn sibling_leaf_hash(
+        index: usize,
+        sibling: &serde_json::Map<String, serde_json::Value>,
+        include_debug_symbols: Option<bool>,
+    ) -> Result<[u8; 32], String> {
+        if let Some(unknown) = sibling
+            .keys()
+            .find(|key| !["type", "source", "arguments"].contains(&key.as_str()))
+        {
+            return Err(format!("Executable sibling {index} has an unknown field \"{unknown}\""));
+        }
+
+        if sibling
+            .get("type")
+            .is_some_and(|kind| kind.as_str() != Some("simplicity"))
+        {
+            return Err(format!(
+                "Executable sibling {index} has a \"type\" other than \"simplicity\""
+            ));
+        }
+
+        let source = sibling
+            .get("source")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| format!("Executable sibling {index} needs a \"source\" string"))?;
+
+        // SimplicityHL's typed values borrow their JSON strings, so the arguments are read back
+        // from their own encoding rather than through serde's owned `Value` deserializer.
+        let arguments = match sibling.get("arguments") {
+            Some(arguments) => serde_json::from_str::<Arguments>(&arguments.to_string())
+                .map_err(|e| format!("Executable sibling {index} has invalid arguments: {e}"))?,
+            None => Arguments::default(),
+        };
+
+        let mut program = Program::new(source, arguments);
+
+        if let Some(include) = include_debug_symbols {
+            program = program.with_debug_symbols(include);
+        }
+
+        program
+            .get_argument_types()
+            .map_err(|e| format!("Executable sibling {index} does not compile: {e}"))?;
+
+        Ok(program.get_tapleaf_hash())
     }
 
     fn validate(&self) -> Result<(), JsError> {
@@ -704,6 +835,82 @@ impl TransactionBuilder {
         Ok(IssuanceReport::from_details(&details))
     }
 
+    /// Adds a covenant input that spends through an already built `Covenant`.
+    ///
+    /// This is how a covenant made with `Covenant.withExecutableSiblings` is spent. The input
+    /// runs that covenant's own branch, with its arguments, state, siblings and debug-symbol
+    /// mode exactly as its `address` reports. `witness_json`, `signature_witness` and
+    /// `derivation_path` mean what they mean for `addCovenantInput`. The covenant itself is not
+    /// consumed.
+    ///
+    /// # Errors
+    /// Returns an error if the txid, the encoded output, the witness or the derivation path
+    /// cannot be parsed.
+    #[wasm_bindgen(js_name = addCompiledCovenantInput)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn add_compiled_covenant_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        covenant: &Covenant,
+        witness_json: Option<String>,
+        signature_witness: Option<String>,
+        derivation_path: Option<String>,
+    ) -> Result<(), JsError> {
+        self.transaction.add_program_input(
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            Self::compiled_program_input(covenant, witness_json)?,
+            Self::required_signature(signature_witness.as_deref()),
+        );
+
+        Ok(())
+    }
+
+    /// Adds a covenant input that spends through an already built `Covenant` and also creates a
+    /// new asset.
+    ///
+    /// The covenant half is the same as `addCompiledCovenantInput` and the issuance half the
+    /// same as `addCovenantIssuanceInput`.
+    ///
+    /// # Errors
+    /// Returns an error if the txid, the encoded output, the witness, the issuer contract or the
+    /// derivation path cannot be parsed, or if either issuance amount exceeds `i64::MAX`.
+    #[wasm_bindgen(js_name = addCompiledCovenantIssuanceInput)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn add_compiled_covenant_issuance_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        covenant: &Covenant,
+        witness_json: Option<String>,
+        signature_witness: Option<String>,
+        asset_amount_sats: u64,
+        inflation_amount_sats: u64,
+        issuer_contract_hex: Option<String>,
+        derivation_path: Option<String>,
+    ) -> Result<IssuanceReport, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+
+        let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
+            .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
+
+        let details = self.transaction.add_program_issuance_input(
+            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            Self::compiled_program_input(covenant, witness_json)?,
+            IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
+            Self::required_signature(signature_witness.as_deref()),
+        );
+
+        Ok(IssuanceReport::from_details(&details))
+    }
+
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
     /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
@@ -927,16 +1134,29 @@ impl TransactionBuilder {
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
     ) -> Result<ProgramInput, JsError> {
-        let witness = match witness_json {
-            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(&json)
-                .map_err(|e| JsError::new(&format!("Invalid witness values: {e}")))?,
-            _ => WitnessValues::default(),
-        };
+        let witness = Self::witness_values(witness_json)?;
 
         Ok(ProgramInput {
             program: Box::new(Covenant::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
             witness: FixedWitness(witness).into(),
         })
+    }
+
+    fn compiled_program_input(covenant: &Covenant, witness_json: Option<String>) -> Result<ProgramInput, JsError> {
+        let witness = Self::witness_values(witness_json)?;
+
+        Ok(ProgramInput {
+            program: Box::new(covenant.program.clone()),
+            witness: FixedWitness(witness).into(),
+        })
+    }
+
+    fn witness_values(witness_json: Option<String>) -> Result<WitnessValues, JsError> {
+        match witness_json {
+            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(&json)
+                .map_err(|e| JsError::new(&format!("Invalid witness values: {e}"))),
+            _ => Ok(WitnessValues::default()),
+        }
     }
 }
 
@@ -987,6 +1207,7 @@ pub fn sdk_version() -> String {
 
 #[cfg(test)]
 mod tests {
+    use simplicityhl::WitnessNameToValueMap;
     use simplicityhl::elements::AssetEntropy;
     use simplicityhl::elements::confidential::{Asset, Value};
     use simplicityhl::elements::secp256k1_zkp::SECP256K1;
@@ -995,8 +1216,8 @@ mod tests {
     use smplx_sdk::utils::asset_entropy;
 
     use super::{
-        AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput,
-        TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor,
+        Arguments, AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput,
+        Program, SimplicityNetwork, TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor, WalletSigner,
     };
 
     const TRIVIAL: &str = "fn main() { }";
@@ -1019,6 +1240,230 @@ mod tests {
             .expect("two full leaves");
 
         assert_eq!(read, vec![vec![0x00; 32], vec![0x11; 32]]);
+    }
+
+    const COMPARING: &str = "fn main() { assert!(jet::eq_32(witness::A, witness::B)); }";
+    const MNEMONIC: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    fn compiled(source: &str, include_debug_symbols: bool) -> Program {
+        Program::new(source, Arguments::default()).with_debug_symbols(include_debug_symbols)
+    }
+
+    fn sibling(source: &str) -> String {
+        serde_json::json!([{"source": source}]).to_string()
+    }
+
+    /// Spends 10 000 at the covenant's regtest address through `add` and returns the input's
+    /// witness stack: witness, program, CMR, control block.
+    fn spend_stack(covenant: &Covenant, add: impl FnOnce(&mut TransactionBuilder, &str)) -> Vec<Vec<u8>> {
+        let signer = WalletSigner::new(MNEMONIC, "regtest").unwrap();
+        let policy_asset = signer.network.policy_asset();
+        let spent = TxOut {
+            script_pubkey: simplicityhl::elements::Script::from(
+                hex::decode(covenant.script_pubkey_hex("regtest").unwrap()).unwrap(),
+            ),
+            ..TxOut::new_fee(10_000, policy_asset)
+        };
+
+        let mut builder = TransactionBuilder::new();
+        add(
+            &mut builder,
+            &hex::encode(simplicityhl::elements::encode::serialize(&spent)),
+        );
+        builder
+            .add_output(&signer.script_pubkey_hex(), 9_000, &policy_asset.to_string(), None)
+            .unwrap();
+        builder.add_change(&signer.script_pubkey_hex(), None).unwrap();
+
+        let finished = signer
+            .finalize_transaction(&builder, 100.0)
+            .expect("the covenant spends");
+        let read: simplicityhl::elements::Transaction =
+            simplicityhl::elements::encode::deserialize(&hex::decode(finished.hex()).unwrap()).unwrap();
+
+        read.input[0].witness.script_witness.to_vec()
+    }
+
+    #[test]
+    fn legacy_state_and_an_empty_sibling_list_keep_storage_address_and_control_block() {
+        let state = format!("[\"{}\", \"{}\"]", "42".repeat(32), "43".repeat(32));
+        let legacy = Covenant::new(TRIVIAL, None, Some(state.clone()), Some(false)).expect("two state leaves");
+        let additive = Covenant::with_executable_siblings(TRIVIAL, None, Some(state.clone()), "[]", Some(false))
+            .expect("no siblings");
+
+        // The state fills storage, exactly as `with_storage_capacity` and `set_storage_at` do.
+        let mut stored = compiled(TRIVIAL, false).with_storage_capacity(2);
+        stored.set_storage_at(0, vec![0x42; 32]);
+        stored.set_storage_at(1, vec![0x43; 32]);
+
+        for covenant in [&legacy, &additive] {
+            assert_eq!(covenant.program.get_storage(), stored.get_storage());
+            assert_eq!(
+                covenant.address("regtest").unwrap(),
+                stored.get_tr_address(&SimplicityNetwork::default_regtest()).to_string()
+            );
+        }
+
+        // Both spend with the same witness stack, so the same control block.
+        let through_legacy = spend_stack(&legacy, |builder, spent| {
+            builder
+                .add_covenant_input(
+                    ON_CHAIN[0].0,
+                    0,
+                    spent,
+                    TRIVIAL,
+                    None,
+                    None,
+                    None,
+                    Some(state),
+                    Some(false),
+                    None,
+                )
+                .unwrap();
+        });
+        let through_additive = spend_stack(&additive, |builder, spent| {
+            builder
+                .add_compiled_covenant_input(ON_CHAIN[0].0, 0, spent, &additive, None, None, None)
+                .unwrap();
+        });
+
+        assert_eq!(through_legacy, through_additive);
+    }
+
+    #[test]
+    fn branches_with_state_share_one_address_and_each_spends_it() {
+        let state = Some(format!("[\"{}\"]", "11".repeat(32)));
+        let trivial =
+            Covenant::with_executable_siblings(TRIVIAL, None, state.clone(), &sibling(COMPARING), Some(false)).unwrap();
+        let comparing =
+            Covenant::with_executable_siblings(COMPARING, None, state.clone(), &sibling(TRIVIAL), Some(false)).unwrap();
+
+        // The address a Rust program builds from the same siblings and storage.
+        let mut program = compiled(TRIVIAL, false)
+            .with_extra_leaf_hashes(vec![compiled(COMPARING, false).get_tapleaf_hash()])
+            .with_storage_capacity(1);
+        program.set_storage_at(0, vec![0x11; 32]);
+        let address = program.get_tr_address(&SimplicityNetwork::LiquidTestnet).to_string();
+
+        assert_eq!(trivial.address("liquidtestnet").unwrap(), address);
+        assert_eq!(comparing.address("liquidtestnet").unwrap(), address);
+        assert_eq!(trivial.program.get_storage(), &[vec![0x11_u8; 32]]);
+        assert_ne!(
+            trivial.address("liquidtestnet").unwrap(),
+            Covenant::new(TRIVIAL, None, state.clone(), Some(false))
+                .unwrap()
+                .address("liquidtestnet")
+                .unwrap()
+        );
+
+        // Siblings are compiled in the covenant's debug-symbol mode, which moves the address.
+        let debug = Covenant::with_executable_siblings(TRIVIAL, None, state, &sibling(COMPARING), Some(true)).unwrap();
+        assert_ne!(debug.address("liquidtestnet").unwrap(), address);
+
+        // Each branch spends the shared address on its own, with its own witness.
+        let through_trivial = spend_stack(&trivial, |builder, spent| {
+            builder
+                .add_compiled_covenant_input(ON_CHAIN[0].0, 0, spent, &trivial, None, None, None)
+                .unwrap();
+        });
+        let equal = r#"{"A": {"value": "7", "type": "u32"}, "B": {"value": "7", "type": "u32"}}"#;
+        let through_comparing = spend_stack(&comparing, |builder, spent| {
+            builder
+                .add_compiled_covenant_input(ON_CHAIN[0].0, 0, spent, &comparing, Some(equal.to_string()), None, None)
+                .unwrap();
+        });
+
+        assert_eq!(
+            hex::encode(&through_trivial[2]),
+            trivial.commitment_merkle_root().unwrap()
+        );
+        assert_eq!(
+            hex::encode(&through_comparing[2]),
+            comparing.commitment_merkle_root().unwrap()
+        );
+        assert_ne!(
+            through_trivial[3], through_comparing[3],
+            "each branch has its own control block"
+        );
+
+        // The issuance companion takes the same covenant.
+        let mut builder = TransactionBuilder::new();
+        let report = builder
+            .add_compiled_covenant_issuance_input(
+                ON_CHAIN[0].0,
+                0,
+                &spent_output(),
+                &trivial,
+                None,
+                None,
+                1_000,
+                0,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(builder.input_count(), 1);
+        assert_eq!(report.asset_id, report_for(ON_CHAIN[0].0, 0, &"0".repeat(64)).asset_id);
+    }
+
+    #[test]
+    fn covenant_and_sibling_arguments_are_typed_compile_arguments() {
+        let source = "fn main() { assert!(jet::eq_32(param::EXPECTED, witness::ACTUAL)); }";
+        let arguments_json = r#"{"EXPECTED": {"value": "7", "type": "u32"}}"#;
+        let typed = Arguments::from_map(std::collections::HashMap::from([(
+            simplicityhl::TemplateProgramWitness::parameter_from_str("EXPECTED"),
+            simplicityhl::Value::from(simplicityhl::value::UIntValue::U32(7)),
+        )]));
+        let expected = Program::new(source, typed).with_debug_symbols(false);
+
+        // The covenant's own arguments.
+        let covenant = Covenant::new(source, Some(arguments_json.to_string()), None, Some(false)).unwrap();
+        assert_eq!(
+            covenant.tapleaf_hash().unwrap(),
+            hex::encode(expected.get_tapleaf_hash())
+        );
+
+        // A sibling's arguments, with and without the optional "type".
+        for declaration in [
+            serde_json::json!([{"source": source, "arguments": serde_json::from_str::<serde_json::Value>(arguments_json).unwrap()}]),
+            serde_json::json!([{"type": "simplicity", "source": source, "arguments": serde_json::from_str::<serde_json::Value>(arguments_json).unwrap()}]),
+        ] {
+            assert_eq!(
+                Covenant::executable_siblings(&declaration.to_string(), Some(false), 0).unwrap(),
+                vec![expected.get_tapleaf_hash()],
+                "{declaration}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_siblings_and_trees_too_deep_are_refused() {
+        for declaration in [
+            "not json".to_string(),
+            serde_json::json!({"source": TRIVIAL}).to_string(),
+            serde_json::json!(["11".repeat(32)]).to_string(),
+            serde_json::json!([7]).to_string(),
+            serde_json::json!([{"source": TRIVIAL, "hash": "00".repeat(32)}]).to_string(),
+            serde_json::json!([{"type": "hash", "source": TRIVIAL}]).to_string(),
+            serde_json::json!([{"arguments": {}}]).to_string(),
+            serde_json::json!([{"source": "not a program"}]).to_string(),
+            serde_json::json!([{"source": TRIVIAL, "arguments": []}]).to_string(),
+            serde_json::json!(vec![serde_json::json!({"source": TRIVIAL}); 129]).to_string(),
+        ] {
+            assert!(
+                Covenant::executable_siblings(&declaration, Some(false), 0).is_err(),
+                "{declaration}"
+            );
+        }
+
+        // Siblings and state together fill at most the 128 levels a control block proves.
+        assert!(Covenant::executable_siblings(&sibling(COMPARING), Some(false), 128).is_err());
+
+        let deepest = serde_json::json!(vec!["11".repeat(32); 127]).to_string();
+        let covenant =
+            Covenant::with_executable_siblings(TRIVIAL, None, Some(deepest), &sibling(COMPARING), None).unwrap();
+        assert!(covenant.address("liquidtestnet").is_ok());
     }
 
     #[test]
