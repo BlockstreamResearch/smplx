@@ -1,96 +1,102 @@
-use std::collections::HashMap;
+use std::fmt::Debug;
 use std::marker::PhantomData;
-
-use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
-use proptest::test_runner::TestRunner;
+use proptest::test_runner::{Config as ProptestConfig, TestRunner};
 
-use smplx_sdk::program::{ProgramFactory, ProgramTrait};
-use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::{Signer, SignerError};
-use smplx_sdk::transaction::FinalTransaction;
+use simplicityhl::{Arguments, WitnessValues};
 
-use crate::fuzz::fuzz_program::{Expect, FuzzExecutionCheck};
+use smplx_sdk::program::{ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
+use smplx_sdk::signer::Signer;
+
+use crate::fuzz::FuzzableProgram;
+use crate::fuzz::args_strategy::ArgsStrategyBuilder;
+use crate::fuzz::fuzz_check::{Expect, FuzzExecutionCheck, ProgramCheck, ProgramExecResult};
 use crate::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
-use crate::fuzz::{FuzzableProgram, ProgramCheck, ProgramExecResult};
-
-pub struct FuzzContext {
-    pub signer: Option<Signer>,
-    pub network: SimplicityNetwork,
-}
 
 pub struct SimplexFuzzEngine<Program, Args, Wit> {
-    pub(crate) runner: TestRunner,
-    pub(crate) context: FuzzContext,
-    pub(crate) strategy: BoxedStrategy<(Arguments, WitnessValues)>,
-    pub(crate) blueprint: FuzzTransaction,
-    pub(crate) _placeholder: PhantomData<(Program, Args, Wit)>,
-}
-
-#[derive(Debug)]
-pub struct CaseOutcome {}
-
-/// Returned by a single fuzz when a counterexample has been discovered
-#[derive(Debug)]
-pub struct CounterExampleOutcome {
-    pub args: Arguments,
-    pub wit: WitnessValues,
-}
-
-/// Outcome of a single fuzz
-#[derive(Debug)]
-pub enum FuzzOutcome {
-    Case(CaseOutcome),
-    CounterExample(CounterExampleOutcome),
+    pub config: ProptestConfig,
+    pub signer: Signer,
+    pub strategy: Option<BoxedStrategy<(Arguments, WitnessValues)>>,
+    pub initial_transaction: Option<FuzzTransaction>,
+    pub program_check: Option<FuzzExecutionCheck>,
+    pub _placeholder: PhantomData<(Program, Args, Wit)>,
 }
 
 impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
 where
     Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
+    Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
+    Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
 {
-    #[inline]
-    pub fn sign_or_extract(
-        context: &FuzzContext,
-        ft: &FinalTransaction,
-    ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        match context.signer.as_ref() {
-            Some(signer) => Ok(signer.sign_tx(ft)?),
-            None => {
-                let witnesses = ft
-                    .inputs()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, input)| {
-                        input
-                            .program_input
-                            .as_ref()
-                            .map(|program_input| (index, program_input.witness.shallow_clone()))
-                    })
-                    .collect();
-
-                Ok((ft.extract_pst().0, witnesses))
-            }
+    pub fn new(config: ProptestConfig, signer: Signer) -> SimplexFuzzEngine<Program, Args, Wit> {
+        SimplexFuzzEngine {
+            config,
+            signer,
+            strategy: None,
+            initial_transaction: None,
+            program_check: None,
+            _placeholder: Default::default(),
         }
     }
 
-    pub fn run_with_default_check(self, expect: Expect) {
-        let program_check = FuzzExecutionCheck::new(self.runner.config().test_name.unwrap_or("fuzz_test_name"), expect);
+    #[must_use]
+    pub fn with_custom_config(mut self, config: ProptestConfig) -> Self {
+        self.config = config;
 
-        self.run_with_check(program_check)
+        self
     }
 
-    pub fn run_with_check(self, program_post_hook: impl ProgramCheck<Program, Args, Wit>) {
-        let mut runner = self.runner;
-        let context = self.context;
-        let blueprint = self.blueprint;
+    #[must_use]
+    pub fn with_custom_signer(mut self, signer: Signer) -> Self {
+        self.signer = signer;
 
-        let strategy = self.strategy.no_shrink();
+        self
+    }
 
-        let result = runner.run(&strategy, |(arguments, witness)| {
-            Self::fuzz(&context, &blueprint, &program_post_hook, arguments, witness)
+    #[must_use]
+    pub fn with_custom_strategy(
+        mut self,
+        strategy: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
+    ) -> Self {
+        self.strategy = Some(strategy.boxed());
+
+        self
+    }
+
+    #[must_use]
+    pub fn with_custom_transaction(mut self, transaction: FuzzTransaction) -> Self {
+        self.initial_transaction = Some(transaction);
+
+        self
+    }
+
+    #[must_use]
+    pub fn with_custom_check(mut self, check: FuzzExecutionCheck) -> Self {
+        self.program_check = Some(check);
+
+        self
+    }
+
+    pub fn run(self) {
+        let mut runner = TestRunner::new(self.config);
+
+        let strategy = match self.strategy {
+            None => ArgsStrategyBuilder::<Args, Wit>::new().build(),
+            Some(strategy) => strategy,
+        };
+        let program_check = match self.program_check {
+            None => FuzzExecutionCheck::new(runner.config().test_name.unwrap_or("simplex_fuzz"), Expect::Ok),
+            Some(check) => check,
+        };
+        let initial_transaction = match self.initial_transaction {
+            None => FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"),
+            Some(tx) => tx,
+        };
+
+        let result = runner.run(&strategy.no_shrink(), |(arguments, witness)| {
+            Self::fuzz(&self.signer, &initial_transaction, &program_check, arguments, witness)
         });
 
         match result {
@@ -106,19 +112,20 @@ where
 
     /// Extracted helper that performs exactly one isolated test run.
     fn fuzz(
-        fuzz_context: &FuzzContext,
+        signer: &Signer,
         initial_tx: &FuzzTransaction,
-        program_post_hook: &impl ProgramCheck<Program, Args, Wit>,
+        program_check: &impl ProgramCheck<Program, Args, Wit>,
         arguments: Arguments,
         witness: WitnessValues,
     ) -> Result<(), TestCaseError> {
-        let (program, script) = Program::build_program(arguments.clone(), &fuzz_context.network);
+        let (program, script) = Program::build_program(arguments.clone(), &signer.get_network());
 
         let final_transaction = initial_tx
             .prepare_transaction(program.as_ref().as_ref(), &script, &arguments, &witness)
             .map_err(|error| TestCaseError::fail(format!("failed to prepare fuzz transaction: {error}")))?;
 
-        let (pst, signed_witnesses) = Self::sign_or_extract(fuzz_context, &final_transaction)
+        let (pst, signed_witnesses) = signer
+            .sign_tx(&final_transaction)
             .map_err(|error| TestCaseError::fail(format!("failed to sign: {error}")))?;
 
         // Iterate over program inputs to check contract execution
@@ -133,11 +140,9 @@ where
                 program
                     .as_ref()
                     .as_ref()
-                    .execute(&pst, signed_witness, input_index, &fuzz_context.network);
+                    .execute(&pst, signed_witness, input_index, &*signer.get_network());
 
-            if let Err(error) =
-                program_post_hook.call(fuzz_context, &pst, &arguments, signed_witness, input_index, exec_result)
-            {
+            if let Err(error) = program_check.call(signer, &pst, &arguments, signed_witness, input_index, exec_result) {
                 return Err(TestCaseError::fail(format!(
                     "{error}, args: {arguments}, wit: {signed_witness}"
                 )));
@@ -155,7 +160,7 @@ mod tests {
     use smplx_sdk::global::Verbosity;
     use smplx_sdk::program::{Program, RandomArguments, RandomWitness};
     use smplx_sdk::provider::EsploraProvider;
-    use smplx_sdk::transaction::{PartialInput, ProgramInput, RequiredSignature, UTXO};
+    use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
     use crate::config::{DEFAULT_TEST_MNEMONIC, EsploraConfig, FuzzConfig, TestConfig};
     use crate::context::{FuzzMode, TestContext};

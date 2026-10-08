@@ -95,9 +95,9 @@ pub trait RandomWitness: Into<WitnessValues> {
 
 /// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
 /// for constructing and returning a program instance of a type that implements `AsRef<Program>`.
-/// Even only by generic struct name we have a possibility to create an instance of a program.
+/// Only by generic struct name we have a possibility to create an instance of a program.
 pub trait ProgramFactory<P: AsRef<Program> + Sized> {
-    /// Instantiates a program instance with the given arguments.
+    /// Instantiates a program with the given arguments.
     fn instantiate_program(args: impl Into<Arguments>) -> Box<P>;
 }
 

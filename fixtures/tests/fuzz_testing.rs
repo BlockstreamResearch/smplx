@@ -73,7 +73,7 @@ impl ProgramCheck<P2pkProgram, P2pkArguments, P2pkWitness> for SuccessfulProgram
     }
 }
 
-fn signed_fuzz_transaction(arguments: &P2pkArguments, witness: &P2pkWitness) -> Result<FuzzTransaction, FuzzError> {
+fn initial_fuzz_transaction(arguments: &P2pkArguments, witness: &P2pkWitness) -> Result<FuzzTransaction, FuzzError> {
     const FUZZ_PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
     let program = P2pkProgram::new(arguments.clone());
@@ -97,7 +97,7 @@ fn test_failure_ignoring_in_fuzzing(mut test_context: TestContext<FuzzMode>) -> 
 
     let runner = test_context.build(strategy, initial_transaction);
 
-    runner.run_with_check(FailureProgramCheck {
+    runner.run_custom(FailureProgramCheck {
         expect: Expect::Failure,
     });
 
@@ -110,10 +110,10 @@ fn test_panic_after_fuzzing(mut test_context: TestContext<FuzzMode>) {
     test_context.set_network(SimplicityNetwork::default_regtest()).unwrap();
 
     let strategy = ArgsStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
-    let initial_transaction = FuzzTransaction::try_default().unwrap();
-    let runner = test_context.build(strategy, initial_transaction);
+    let transaction = FuzzTransaction::try_default().unwrap();
+    let runner = test_context.build(strategy, transaction);
 
-    runner.run_with_check(FailureProgramCheck { expect: Expect::Ok });
+    runner.run_custom(FailureProgramCheck { expect: Expect::Ok });
 }
 
 #[simplex::fuzz]
@@ -122,6 +122,7 @@ fn test_signed_witness_with_program_checks(mut test_context: TestContext<FuzzMod
 
     let network = SimplicityNetwork::default_regtest();
     let signer = Signer::from_mnemonic(TEST_MNEMONIC, network);
+
     let arguments = P2pkArguments {
         public_key: signer.get_schnorr_public_key().serialize(),
     };
@@ -132,10 +133,10 @@ fn test_signed_witness_with_program_checks(mut test_context: TestContext<FuzzMod
     let witness = P2pkWitness::default();
     let strategy = Just(((&arguments).into(), (&witness).into()));
 
-    let initial_transaction = signed_fuzz_transaction(&arguments, &witness)?;
-    let runner = test_context.build(strategy, initial_transaction);
+    let transaction = initial_fuzz_transaction(&arguments, &witness)?;
+    let runner = test_context.build(strategy, transaction);
 
-    runner.run_with_check(SuccessfulProgramCheck);
+    runner.run_custom(SuccessfulProgramCheck);
 
     Ok(())
 }

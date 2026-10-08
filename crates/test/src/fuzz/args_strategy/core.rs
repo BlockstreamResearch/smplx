@@ -6,8 +6,8 @@ use proptest::prelude::{BoxedStrategy, Strategy};
 
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 
-pub struct ArgsStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
-    base_strat: BaseStrat,
+pub struct ArgsStrategyBuilder<Args, Wit, Base = InterestingRandom<Args, Wit>> {
+    base_strategy: Base,
     _placeholder: PhantomData<(Args, Wit)>,
 }
 
@@ -20,50 +20,50 @@ impl<Args, Wit> ArgsStrategyBuilder<Args, Wit> {
 impl<Args, Wit> Default for ArgsStrategyBuilder<Args, Wit> {
     fn default() -> Self {
         Self {
-            base_strat: InterestingRandom::default(),
+            base_strategy: InterestingRandom::default(),
             _placeholder: Default::default(),
         }
     }
 }
 
-impl<Args, Wit, BaseStrat> ArgsStrategyBuilder<Args, Wit, BaseStrat> {
+impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base> {
     pub fn with_random(self) -> ArgsStrategyBuilder<Args, Wit, Random<Args, Wit>> {
         ArgsStrategyBuilder {
-            base_strat: Random::<Args, Wit>::default(),
+            base_strategy: Random::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
 
     pub fn with_random_pool(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
         ArgsStrategyBuilder {
-            base_strat: RandomValuePool::<Args, Wit>::default(),
+            base_strategy: RandomValuePool::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
 
-    pub fn with_custom_strategy<NewStrat>(self, custom_strat: NewStrat) -> ArgsStrategyBuilder<Args, Wit, NewStrat>
+    pub fn with_custom_strategy<New>(self, custom_strategy: New) -> ArgsStrategyBuilder<Args, Wit, New>
     where
-        NewStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
+        New: Strategy<Value = (Arguments, WitnessValues)> + 'static,
     {
         ArgsStrategyBuilder {
-            base_strat: custom_strat,
+            base_strategy: custom_strategy,
             _placeholder: Default::default(),
         }
     }
 
     pub fn with_random_interesting_values(self) -> ArgsStrategyBuilder<Args, Wit, InterestingRandom<Args, Wit>> {
         ArgsStrategyBuilder {
-            base_strat: InterestingRandom::<Args, Wit>::default(),
+            base_strategy: InterestingRandom::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }
 }
 
-impl<Args, Wit, BaseStrat> ArgsStrategyBuilder<Args, Wit, BaseStrat>
+impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base>
 where
-    BaseStrat: Strategy<Value = (Arguments, WitnessValues)> + 'static,
+    Base: Strategy<Value = (Arguments, WitnessValues)> + 'static,
 {
     pub fn build(self) -> BoxedStrategy<(Arguments, WitnessValues)> {
-        self.base_strat.boxed()
+        self.base_strategy.boxed()
     }
 }

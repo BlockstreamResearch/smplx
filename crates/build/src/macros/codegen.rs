@@ -55,6 +55,7 @@ impl SimfContractMeta {
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
         let program_struct_name = construct_program_name(&simf_content.contract_name);
+
         Ok(SimfContractMeta {
             contract_source_const_name,
             program_struct_name,
@@ -65,7 +66,7 @@ impl SimfContractMeta {
         })
     }
 
-    /// Generates code necessary for creating mutant testing using simplex.
+    /// Generates code necessary for fuzz testing.
     pub fn generate_program_trait_helpers_impl(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
         let args_struct_name = &self.args_struct.struct_name;
         let program_name = &self.program_struct_name;

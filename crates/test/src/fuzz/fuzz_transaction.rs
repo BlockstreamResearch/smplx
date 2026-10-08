@@ -25,7 +25,7 @@ pub struct FuzzTransaction {
 }
 
 impl FuzzTransaction {
-    /// Creates a reusable fuzz transaction blueprint.
+    /// Creates a reusable fuzz transaction.
     ///
     /// # Errors
     /// Returns an error when there are no input targets, a target is duplicated, or a target index is out of bounds.
@@ -52,6 +52,7 @@ impl FuzzTransaction {
         const PROGRAM_TARGET: ProgramTarget = ProgramTarget::Input(0);
 
         let mut transaction = FinalTransaction::new();
+
         transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
 
         FuzzTransaction::new(transaction, [PROGRAM_TARGET])

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use proptest::prelude::Strategy;
-use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
+use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, TestRunner};
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::{Arguments, WitnessValues};
@@ -19,10 +19,9 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::utils::random_mnemonic;
 
 use crate::config::TestConfig;
-use crate::error::{FuzzError, TestError};
+use crate::error::TestError;
 use crate::network_utils::NetworkUtils;
 
-use crate::fuzz::core::FuzzContext;
 use crate::fuzz::fuzz_transaction::FuzzTransaction;
 use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
 
@@ -42,9 +41,8 @@ pub struct RegularMode {
 }
 
 pub struct FuzzMode {
-    proptest_config: proptest::test_runner::Config,
-    signer: Option<Signer>,
-    network: Option<SimplicityNetwork>,
+    signer: Signer,
+    proptest_config: ProptestConfig,
 }
 
 impl ContextMode for InitMode {}
@@ -59,6 +57,7 @@ pub struct TestContext<Mode: ContextMode = RegularMode> {
 impl TestContext<InitMode> {
     pub fn new(config_path: PathBuf) -> Result<Self, TestError> {
         let config = TestConfig::from_file(&config_path)?;
+
         Self::from_config(config)
     }
 
@@ -154,24 +153,6 @@ impl RegularMode {
 }
 
 impl TestContext<RegularMode> {
-    pub fn get_network_utils(&self) -> NetworkUtils {
-        assert!(
-            self.mode._client.is_some(),
-            "Network utils only available in Regtest network"
-        );
-
-        let regtest_rpc = ElementsRpc::new(
-            self.mode._provider_info.elements_url.clone().unwrap(),
-            self.mode._provider_info.auth.clone().unwrap(),
-        )
-        .expect("Failed to create rpc client for network utils");
-
-        let network = self.get_network();
-        let esplora = EsploraProvider::new(self.mode._provider_info.esplora_url.clone(), *network);
-
-        NetworkUtils::new(regtest_rpc, esplora)
-    }
-
     pub fn create_signer(&self, mnemonic: &str) -> Signer {
         let provider: Box<dyn ProviderTrait> = if self.mode._provider_info.elements_url.is_some() {
             // local regtest or external regtest
@@ -201,7 +182,7 @@ impl TestContext<RegularMode> {
     }
 
     /// # Panics
-    /// Panics when the signer was built without a provider, which a test context never is.
+    /// Panics when the signer was built without a provider.
     pub fn get_default_provider(&self) -> &dyn ProviderTrait {
         self.mode
             .signer
@@ -210,9 +191,27 @@ impl TestContext<RegularMode> {
     }
 
     /// # Panics
-    /// Panics when the signer was built without a provider, which a test context never is.
+    /// Panics when the signer was built without a provider.
     pub fn get_network(&self) -> &SimplicityNetwork {
         self.get_default_provider().get_network()
+    }
+
+    pub fn get_network_utils(&self) -> NetworkUtils {
+        assert!(
+            self.mode._client.is_some(),
+            "Network utils only available in Regtest network"
+        );
+
+        let regtest_rpc = ElementsRpc::new(
+            self.mode._provider_info.elements_url.clone().unwrap(),
+            self.mode._provider_info.auth.clone().unwrap(),
+        )
+        .expect("Failed to create rpc client for network utils");
+
+        let network = self.get_network();
+        let esplora = EsploraProvider::new(self.mode._provider_info.esplora_url.clone(), *network);
+
+        NetworkUtils::new(regtest_rpc, esplora)
     }
 }
 
@@ -233,7 +232,7 @@ impl FuzzMode {
             *persistence = Box::new(FileFailurePersistence::SourceParallel(FUZZ_FAILURES_DIRECTORY_NAME));
         }
 
-        let (mut network, mut signer) = (None, None);
+        let mut network = SimplicityNetwork::default_regtest();
 
         if let Some(fuzz_config) = config.fuzz.as_ref() {
             if let Some(cases) = fuzz_config.cases {
@@ -248,106 +247,53 @@ impl FuzzMode {
                 proptest_config.max_local_rejects = max_local_rejects;
             }
 
-            if let Some(n) = fuzz_config.network.as_ref() {
-                let _ = network.insert(SimplicityNetwork::from_str(n.as_str())?);
-                let _ = signer.insert(Signer::from_mnemonic(&config.mnemonic, *network.as_ref().unwrap()));
+            if let Some(net) = fuzz_config.network.as_ref() {
+                network = SimplicityNetwork::from_str(net.as_str())?;
             }
         }
+
+        let signer = Signer::from_mnemonic(config.mnemonic.as_str(), network);
 
         Ok(FuzzMode {
             proptest_config,
             signer,
-            network,
         })
-    }
-
-    fn create_signer(&self, mnemonic: &str) -> Option<Signer> {
-        self.network.map(|n| Signer::from_mnemonic(mnemonic, n))
     }
 }
 
 impl TestContext<FuzzMode> {
-    /// Creates a random signer from a random mnemonic
-    pub fn random_signer(&self) -> Option<Signer> {
-        self.mode.create_signer(random_mnemonic().as_str())
+    fn create_signer(&self, mnemonic: &str) -> Signer {
+        Signer::from_mnemonic(mnemonic, *self.get_network())
     }
 
-    /// Replaces the fuzz signer and synchronizes the fuzz network with it.
-    pub fn set_custom_signer(&mut self, signer: Signer) {
-        let _ = self.mode.network.insert(*signer.get_network());
-        let _ = self.mode.signer.insert(signer);
+    /// Creates a random signer from a random mnemonic.
+    pub fn random_signer(&self) -> Signer {
+        self.create_signer(random_mnemonic().as_str())
     }
 
-    /// Sets the fuzz network when it is compatible with the configured signer.
-    ///
-    /// # Errors
-    /// Returns [`FuzzError::SignerNetworkMismatch`] when the signer uses a different network.
-    pub fn set_network(&mut self, network: SimplicityNetwork) -> Result<(), FuzzError> {
-        if let Some(signer) = self.mode.signer.as_ref() {
-            let signer_network = *signer.get_network();
-
-            if network != signer_network {
-                return Err(FuzzError::SignerNetworkMismatch {
-                    network: format!("{:?}", network),
-                    signer_network: format!("{:?}", signer_network),
-                });
-            }
-        }
-
-        let _ = self.mode.network.insert(network);
-        Ok(())
-    }
-
-    /// Returns internal signer which is already derived or reassigned by a user.
-    pub fn get_default_signer(&self) -> &Option<Signer> {
+    /// Returns the default signer, initiated from the config.
+    pub fn get_default_signer(&self) -> &Signer {
         &self.mode.signer
     }
 
-    /// Sets the maximum number of combined inputs that may be rejected before the test as a whole aborts.
-    pub fn set_max_global_rejects(&mut self, max_global_rejects: u32) {
-        self.mode.proptest_config.max_global_rejects = max_global_rejects;
+    /// Returns the current network configuration.
+    pub fn get_network(&self) -> &SimplicityNetwork {
+        self.mode.signer.get_network()
     }
 
-    /// Sets the number of successful test cases that must execute for the test as a whole to pass.
-    pub fn set_cases(&mut self, cases: u32) {
-        self.mode.proptest_config.cases = cases;
+    /// Returns the current proptest configuration.
+    pub fn get_fuzz_config(&self) -> &ProptestConfig {
+        &self.mode.proptest_config
     }
 
-    /// Sets the concrete seed in a fuzz test configuration.
-    pub fn set_seed(&mut self, seed: u64) {
-        self.mode.proptest_config.rng_seed = RngSeed::Fixed(seed);
-    }
-
-    /// Sets the maximum number of individual inputs that may be rejected before the test as a whole aborts.
-    pub fn set_max_local_rejects(&mut self, max_local_rejects: u32) {
-        self.mode.proptest_config.max_local_rejects = max_local_rejects;
-    }
-
-    /// Builds a fuzz engine using the configured signer and network.
-    ///
-    /// Sets network to regtest, when it's absent.
-    pub fn build<Program, Args, Wit>(
-        self,
-        strategy_storage: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-        blueprint: FuzzTransaction,
-    ) -> SimplexFuzzEngine<Program, Args, Wit>
+    /// Builds a fuzz engine using a configured signer.
+    pub fn engine<Program, Args, Wit>(self) -> SimplexFuzzEngine<Program, Args, Wit>
     where
         Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
         Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
         Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
     {
-        let network = self.mode.network.unwrap_or(SimplicityNetwork::default_regtest());
-
-        SimplexFuzzEngine {
-            runner: proptest::test_runner::TestRunner::new(self.mode.proptest_config),
-            context: FuzzContext {
-                signer: self.mode.signer,
-                network,
-            },
-            strategy: strategy_storage.boxed(),
-            blueprint,
-            _placeholder: Default::default(),
-        }
+        SimplexFuzzEngine::new(self.mode.proptest_config.clone(), self.mode.signer)
     }
 }
 
