@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence};
+use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use simplicityhl::{Arguments, WitnessValues};
@@ -237,12 +237,8 @@ impl FuzzMode {
                 proptest_config.cases = cases;
             }
 
-            if let Some(max_global_rejects) = fuzz_config.max_global_rejects {
-                proptest_config.max_global_rejects = max_global_rejects;
-            }
-
-            if let Some(max_local_rejects) = fuzz_config.max_local_rejects {
-                proptest_config.max_local_rejects = max_local_rejects;
+            if let Some(seed) = fuzz_config.seed {
+                proptest_config.rng_seed = RngSeed::Fixed(seed);
             }
 
             if let Some(net) = fuzz_config.network.as_ref() {
@@ -260,7 +256,7 @@ impl FuzzMode {
 }
 
 impl TestContext<FuzzMode> {
-    fn create_signer(&self, mnemonic: &str) -> Signer {
+    pub fn create_signer(&self, mnemonic: &str) -> Signer {
         Signer::from_mnemonic(mnemonic, *self.get_network())
     }
 
@@ -284,14 +280,17 @@ impl TestContext<FuzzMode> {
         &self.mode.proptest_config
     }
 
-    /// Builds a fuzz engine using a configured signer.
-    pub fn engine<Program, Args, Wit>(self) -> SimplexFuzzEngine<Program, Args, Wit>
+    /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
+    pub fn engine<Program, Args, Wit>(&self) -> SimplexFuzzEngine<Program, Args, Wit>
     where
         Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
         Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
         Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
     {
-        SimplexFuzzEngine::new(self.mode.proptest_config.clone(), self.mode.signer)
+        SimplexFuzzEngine::new(
+            self.mode.proptest_config.clone(),
+            self.create_signer(self.config.mnemonic.as_str()),
+        )
     }
 }
 

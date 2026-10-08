@@ -2,7 +2,6 @@ use simplex::simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplex::simplicityhl::{Arguments, WitnessValues};
 use simplex::{FuzzMode, TestContext};
 
-use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
 use simplex::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
 use simplex::fuzz::proptest::strategy::Just;
 use simplex::fuzz::{FuzzError, ProgramCheck, ProgramExecResult};
@@ -88,13 +87,8 @@ fn initial_fuzz_transaction(arguments: &P2pkArguments, witness: &P2pkWitness) ->
 
 #[simplex::fuzz]
 fn test_failure_ignoring_in_fuzzing(test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
-    let strategy = ArgsStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
-    let initial_transaction = FuzzTransaction::try_default()?;
-
     test_context
         .engine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>()
-        .with_custom_strategy(strategy)
-        .with_custom_transaction(initial_transaction)
         .with_custom_check(FailureProgramCheck {
             expect: Expect::Failure,
         })
@@ -106,22 +100,15 @@ fn test_failure_ignoring_in_fuzzing(test_context: TestContext<FuzzMode>) -> anyh
 #[should_panic(expected = "Program failed with these arguments")]
 #[simplex::fuzz]
 fn test_panic_after_fuzzing(test_context: TestContext<FuzzMode>) {
-    let strategy = ArgsStrategyBuilder::<FailureTestArguments, FailureTestWitness>::new().build();
-    let transaction = FuzzTransaction::try_default().unwrap();
-
     test_context
         .engine::<FailureTestProgram, FailureTestArguments, FailureTestWitness>()
-        .with_custom_strategy(strategy)
-        .with_custom_transaction(transaction)
         .with_custom_check(FailureProgramCheck { expect: Expect::Ok })
         .run();
 }
 
 #[simplex::fuzz]
 fn test_signed_witness_with_program_checks(test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
-    const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
-
-    let signer = Signer::from_mnemonic(TEST_MNEMONIC, *test_context.get_network());
+    let signer = test_context.get_default_signer();
 
     let arguments = P2pkArguments {
         public_key: signer.get_schnorr_public_key().serialize(),
@@ -134,7 +121,6 @@ fn test_signed_witness_with_program_checks(test_context: TestContext<FuzzMode>) 
 
     test_context
         .engine::<P2pkProgram, P2pkArguments, P2pkWitness>()
-        .with_custom_signer(signer)
         .with_custom_strategy(strategy)
         .with_custom_transaction(transaction)
         .with_custom_check(SuccessfulProgramCheck)

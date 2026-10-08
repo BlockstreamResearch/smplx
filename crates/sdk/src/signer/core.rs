@@ -413,62 +413,6 @@ impl Signer {
         Ok((pst, signed_witnesses))
     }
 
-    /// Signs and inserts a signature into appropriate witness value.
-    ///
-    /// # Errors
-    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
-    /// retrieved from the program, if `witness_name` is not present among the program's
-    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
-    #[allow(clippy::too_many_arguments)]
-    pub fn get_signed_program_witness(
-        &self,
-        pst: &PartiallySignedTransaction,
-        program: &dyn ProgramTrait,
-        witness: &WitnessValues,
-        witness_name: &str,
-        sig_path: &[String],
-        index: usize,
-        derivation_path: Option<&DerivationPath>,
-        message: &SigMessage,
-    ) -> Result<WitnessValues, SignerError> {
-        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
-
-        // Inject the signature into the wtns name directly if the path is not provided
-        let sig_val = if sig_path.is_empty() {
-            Value::byte_array(signature.serialize())
-        } else {
-            let witness_types = program.get_witness_types()?;
-            let witness_type = witness_types
-                .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
-
-            #[allow(clippy::missing_panics_doc)]
-            let local_wtns = Arc::new(
-                witness
-                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                    .expect("checked above")
-                    .clone(),
-            );
-
-            WtnsInjector::inject_value(
-                &local_wtns,
-                witness_type,
-                sig_path,
-                Value::byte_array(signature.serialize()),
-            )?
-        };
-
-        let mut hm = HashMap::new();
-
-        witness.iter().for_each(|el| {
-            hm.insert(el.0.clone(), el.1.clone());
-        });
-
-        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
-
-        Ok(WitnessValues::from_map(hm))
-    }
-
     /// Returns the network used to derive keys and finalize transactions.
     #[must_use]
     pub const fn get_network(&self) -> &SimplicityNetwork {
@@ -769,6 +713,62 @@ impl Signer {
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
         Ok(Estimate::Success(final_tx, fee))
+    }
+
+    /// Signs and inserts a signature into appropriate witness value.
+    ///
+    /// # Errors
+    /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
+    /// retrieved from the program, if `witness_name` is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
+    #[allow(clippy::too_many_arguments)]
+    fn get_signed_program_witness(
+        &self,
+        pst: &PartiallySignedTransaction,
+        program: &dyn ProgramTrait,
+        witness: &WitnessValues,
+        witness_name: &str,
+        sig_path: &[String],
+        index: usize,
+        derivation_path: Option<&DerivationPath>,
+        message: &SigMessage,
+    ) -> Result<WitnessValues, SignerError> {
+        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
+
+        // Inject the signature into the wtns name directly if the path is not provided
+        let sig_val = if sig_path.is_empty() {
+            Value::byte_array(signature.serialize())
+        } else {
+            let witness_types = program.get_witness_types()?;
+            let witness_type = witness_types
+                .get(&TemplateProgramWitness::witness_from_str(witness_name))
+                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+
+            #[allow(clippy::missing_panics_doc)]
+            let local_wtns = Arc::new(
+                witness
+                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
+                    .expect("checked above")
+                    .clone(),
+            );
+
+            WtnsInjector::inject_value(
+                &local_wtns,
+                witness_type,
+                sig_path,
+                Value::byte_array(signature.serialize()),
+            )?
+        };
+
+        let mut hm = HashMap::new();
+
+        witness.iter().for_each(|el| {
+            hm.insert(el.0.clone(), el.1.clone());
+        });
+
+        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
+
+        Ok(WitnessValues::from_map(hm))
     }
 
     #[allow(clippy::unnecessary_wraps)]

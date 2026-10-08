@@ -43,8 +43,7 @@ pub struct RpcConfig {
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct FuzzConfig {
     pub cases: Option<u32>,
-    pub max_global_rejects: Option<u32>,
-    pub max_local_rejects: Option<u32>,
+    pub seed: Option<u64>,
     pub network: Option<String>,
 }
 

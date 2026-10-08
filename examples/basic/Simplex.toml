@@ -23,8 +23,7 @@
 
 # [test.fuzz]
 # cases = 10000
-# max_global_rejects = 100
-# max_local_rejects = 100
+# seed = 12345
 
 # [test.esplora]
 # url = "<esplora url>"

@@ -159,6 +159,7 @@ where
 #[cfg(test)]
 mod tests {
     use proptest::strategy::Just;
+    use proptest::test_runner::RngSeed;
 
     use smplx_sdk::global::Verbosity;
     use smplx_sdk::program::Program;
@@ -233,8 +234,7 @@ mod tests {
             }),
             fuzz: Some(FuzzConfig {
                 cases: Some(17),
-                max_global_rejects: Some(23),
-                max_local_rejects: Some(29),
+                seed: Some(23),
                 network: Some("Liquid".to_string()),
             }),
             verbosity: Verbosity::Trace,
@@ -255,8 +255,7 @@ mod tests {
         assert_eq!(engine.signer.get_address().params, network.address_params());
         assert!(engine.signer.get_provider().is_err());
         assert_eq!(engine.config.cases, 17);
-        assert_eq!(engine.config.max_global_rejects, 23);
-        assert_eq!(engine.config.max_local_rejects, 29);
+        assert_eq!(engine.config.rng_seed, RngSeed::Fixed(23));
         assert_eq!(engine.config.verbose, 2);
         assert_eq!(engine.config.test_name, Some(test_name));
         assert!(!engine.config.fork);
@@ -286,8 +285,7 @@ mod tests {
         let config = TestConfig {
             fuzz: Some(FuzzConfig {
                 cases: Some(17),
-                max_global_rejects: Some(23),
-                max_local_rejects: Some(29),
+                seed: Some(23),
                 network: Some("Liquid".to_string()),
             }),
             ..Default::default()
@@ -308,8 +306,7 @@ mod tests {
 
         let mut custom_config = context.get_fuzz_config().clone();
         custom_config.cases = 31;
-        custom_config.max_global_rejects = 37;
-        custom_config.max_local_rejects = 41;
+        custom_config.rng_seed = RngSeed::Fixed(37);
 
         let engine = build_test_engine(context)
             .with_custom_signer(custom_signer)
@@ -320,7 +317,24 @@ mod tests {
         assert_eq!(engine.signer.get_provider().unwrap().get_network(), &network);
 
         assert_eq!(engine.config.cases, 31);
-        assert_eq!(engine.config.max_global_rejects, 37);
-        assert_eq!(engine.config.max_local_rejects, 41);
+        assert_eq!(engine.config.rng_seed, RngSeed::Fixed(37));
+    }
+
+    #[test]
+    fn engine_can_be_built_repeatedly_from_one_context() {
+        let context = TestContext::from_config(TestConfig::default())
+            .unwrap()
+            .fuzz("crate::repeated_engine_fuzz_test", file!())
+            .unwrap();
+
+        let first = context.engine::<DummyProgram, EmptyArgs, EmptyArgs>();
+        let second = context.engine::<DummyProgram, EmptyArgs, EmptyArgs>();
+
+        let default_key = context.get_default_signer().get_schnorr_public_key();
+
+        assert_eq!(first.signer.get_schnorr_public_key(), default_key);
+        assert_eq!(second.signer.get_schnorr_public_key(), default_key);
+        assert_eq!(first.signer.get_network(), context.get_network());
+        assert_eq!(second.signer.get_network(), context.get_network());
     }
 }
