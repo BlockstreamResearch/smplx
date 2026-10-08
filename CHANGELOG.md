@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `signer::unblind_txout` opens explicit, fully confidential and explicit-asset/confidential-amount outputs.
+- `Signer::get_blinding_private_key_for_script` derives the wallet's SLIP77 blinding key for any script.
+
 - The built-in `Program` now checks the pruned program's execution cost against its witness budget during finalization.
 - `utils::check_budget` runs the same budget check for custom `ProgramTrait` implementations.
 - The WASM `TransactionBuilder` can now reissue an asset by spending a confidential output that holds its reissuance token.
