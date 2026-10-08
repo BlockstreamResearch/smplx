@@ -71,6 +71,7 @@ fn main() -> Result<(), String> {
     let _ = test_default()?;
     let _ = test_e2e_random_behaviour()?;
     let _ = test_e2e_random_value_generation_behaviour()?;
+    let _ = test_constants()?;
 
     Ok(())
 }
@@ -159,7 +160,7 @@ fn test_e2e_random_value_generation_behaviour() -> Result<(), String> {
 
 fn regenerate_witness_values(wit: &WitnessValues, rng: &mut dyn RngCore) -> WitnessValues {
     use std::collections::HashMap;
-    let mut map: HashMap<_,_> = Default::default();
+    let mut map: HashMap<_, _> = Default::default();
     for (name, val) in wit.iter() {
         map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
@@ -169,9 +170,41 @@ fn regenerate_witness_values(wit: &WitnessValues, rng: &mut dyn RngCore) -> Witn
 fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Arguments {
     use std::collections::HashMap;
 
-    let mut map: HashMap<_,_> = Default::default();
+    let mut map: HashMap<_, _> = Default::default();
     for (name, val) in args.iter() {
         map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     Arguments::from_map(map)
+}
+
+fn test_constants() -> Result<(), String> {
+    use simplex::simplicityhl::Value;
+    use simplex::simplicityhl::num::U256;
+    use simplex::simplicityhl::value::ValueConstructible;
+    use std::collections::HashSet;
+
+    let constants = ArrayTrStorageProgram::get_constants();
+    let expected: HashSet<_> = [
+        Value::u16(0),
+        Value::u16(0x5120),
+        Value::u64(20),
+        Value::u256(U256::from_byte_array([
+            0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54, 0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9, 0x7a, 0x5e, 0x07, 0x8a,
+            0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a, 0xce, 0x80, 0x3a, 0xc0,
+        ])),
+    ]
+    .into_iter()
+    .collect();
+    let actual: HashSet<_> = constants
+        .iter()
+        .map(|(ty, value)| {
+            assert_eq!(ty, value.ty());
+            value.clone()
+        })
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(constants.len(), actual.len(), "constants must be unique");
+    assert!(std::ptr::eq(constants, ArrayTrStorageProgram::get_constants()));
+
+    Ok(())
 }

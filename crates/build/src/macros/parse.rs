@@ -37,7 +37,7 @@ impl SynFilePath {
         if !path.is_absolute() {
             let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
                 syn::Error::new(
-                    proc_macro2::Span::call_site(),
+                    Span::call_site(),
                     "CARGO_MANIFEST_DIR not set - macro must be used within a Cargo workspace",
                 )
             })?;
@@ -50,7 +50,7 @@ impl SynFilePath {
 
         if !path.is_file() {
             return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
+                Span::call_site(),
                 format!(
                     "File not found, look path: '{}', is file: '{}', canonical: '{:?}'",
                     path.display(),

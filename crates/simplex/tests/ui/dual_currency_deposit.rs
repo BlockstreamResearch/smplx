@@ -71,6 +71,7 @@ fn main() -> Result<(), String> {
     let _ = test_default()?;
     let _ = test_e2e_random_behaviour()?;
     let _ = test_e2e_random_value_generation_behaviour()?;
+    let _ = test_constants()?;
 
     Ok(())
 }
@@ -181,4 +182,48 @@ fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Argum
         map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     Arguments::from_map(map)
+}
+
+fn test_constants() -> Result<(), String> {
+    use simplex::simplicityhl::Value;
+    use simplex::simplicityhl::value::ValueConstructible;
+    use std::collections::HashSet;
+
+    let constants = DualCurrencyDepositProgram::get_constants();
+    let expected: HashSet<_> = [
+        Value::u1(0),
+        Value::u1(1),
+        Value::u32(0),
+        Value::u32(1),
+        Value::u32(2),
+        Value::u32(3),
+        Value::u32(4),
+        Value::u32(5),
+        Value::u32(6),
+        Value::u32(7),
+        Value::u32(8),
+        Value::u32(9),
+        Value::u32(10),
+        Value::u32(11),
+        Value::u64(0),
+        Value::u64(10000),
+        Value::u128(0),
+    ]
+    .into_iter()
+    .collect();
+    let actual: HashSet<_> = constants
+        .iter()
+        .map(|(ty, value)| {
+            assert_eq!(ty, value.ty());
+            value.clone()
+        })
+        .collect();
+    assert_eq!(actual, expected);
+    assert_eq!(constants.len(), actual.len(), "constants must be unique");
+    assert!(std::ptr::eq(
+        constants,
+        DualCurrencyDepositProgram::get_constants()
+    ));
+
+    Ok(())
 }

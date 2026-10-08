@@ -71,6 +71,7 @@ fn main() -> Result<(), String> {
     let _ = test_default()?;
     let _ = test_e2e_random_behaviour()?;
     let _ = test_e2e_random_value_generation_behaviour()?;
+    let _ = test_constants()?;
 
     Ok(())
 }
@@ -185,4 +186,10 @@ fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Argum
         map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     Arguments::from_map(map)
+}
+
+fn test_constants() -> Result<(), String> {
+    assert!(EitherWithSingleWitnessProgram::get_constants().is_empty());
+
+    Ok(())
 }

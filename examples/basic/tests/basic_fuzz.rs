@@ -36,6 +36,23 @@ fn test_panic(mut test_context: TestContext<FuzzMode>) {
     runner.run_with_default_check(Expect::Ok);
 }
 
+#[should_panic(expected = "const CMP_VALUE: u16 = 1337;")]
+#[simplex::fuzz]
+fn test_panic_with_pool(test_context: TestContext<FuzzMode>) {
+    let strategy = ArgsStrategyBuilder::<ExceptionalContractArguments, ExceptionalContractWitness>::new()
+        .with_random_pool_with_const::<ExceptionalContractProgram>()
+        .build();
+    let initial_transaction = FuzzTransaction::try_default().unwrap();
+
+    let runner = test_context
+        .build::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>(
+            strategy,
+            initial_transaction,
+        );
+
+    runner.run_with_default_check(Expect::Ok);
+}
+
 #[simplex::fuzz]
 fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";

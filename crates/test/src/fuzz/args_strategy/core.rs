@@ -4,6 +4,8 @@ use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, Strategy};
 
+use smplx_sdk::program::ProgramConst;
+
 use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
 
 pub struct ArgsStrategyBuilder<Args, Wit, BaseStrat = InterestingRandom<Args, Wit>> {
@@ -37,6 +39,17 @@ impl<Args, Wit, BaseStrat> ArgsStrategyBuilder<Args, Wit, BaseStrat> {
     pub fn with_random_pool(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
         ArgsStrategyBuilder {
             base_strat: RandomValuePool::<Args, Wit>::default(),
+            _placeholder: Default::default(),
+        }
+    }
+
+    /// Seed a random pool with the program's cached, typed constants.
+    pub fn with_random_pool_with_const<P>(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>>
+    where
+        P: ProgramConst,
+    {
+        ArgsStrategyBuilder {
+            base_strat: RandomValuePool::with_constants(P::get_constants()),
             _placeholder: Default::default(),
         }
     }

@@ -1,46 +1,47 @@
-use proc_macro2::Ident;
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
-use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes};
+use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, Value, WitnessTypes};
 
 use crate::macros::parse::SimfContent;
-use crate::macros::types::{AllocationType, RustType};
+use crate::macros::types::{AllocationType, Constants, RustType};
 
 pub struct SimfContractMeta {
-    pub contract_source_const_name: proc_macro2::Ident,
-    pub program_struct_name: proc_macro2::Ident,
+    pub contract_source_const_name: Ident,
+    pub program_struct_name: Ident,
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
     pub simf_content: SimfContent,
     pub abi_meta: AbiMeta,
+    pub constants: Vec<Value>,
 }
 
 pub struct GeneratedArgumentTokens {
-    pub imports: proc_macro2::TokenStream,
-    pub struct_token_stream: proc_macro2::TokenStream,
-    pub struct_impl: proc_macro2::TokenStream,
+    pub imports: TokenStream,
+    pub struct_token_stream: TokenStream,
+    pub struct_impl: TokenStream,
 }
 
 pub struct GeneratedWitnessTokens {
-    pub imports: proc_macro2::TokenStream,
-    pub struct_token_stream: proc_macro2::TokenStream,
-    pub struct_impl: proc_macro2::TokenStream,
+    pub imports: TokenStream,
+    pub struct_token_stream: TokenStream,
+    pub struct_impl: TokenStream,
 }
 
 pub struct GeneratedProgramTraitHelperTokens {
-    pub imports: proc_macro2::TokenStream,
-    pub helper_impls: proc_macro2::TokenStream,
+    pub imports: TokenStream,
+    pub helper_impls: TokenStream,
 }
 
 pub struct WitnessField {
     witness_simf_name: String,
-    struct_rust_field: proc_macro2::Ident,
+    struct_rust_field: Ident,
     rust_type: RustType,
-    key_constructor: proc_macro2::Ident,
+    key_constructor: Ident,
 }
 
 pub struct WitnessStruct {
-    pub struct_name: proc_macro2::Ident,
+    pub struct_name: Ident,
     pub witness_values: Vec<WitnessField>,
 }
 
@@ -49,7 +50,7 @@ impl SimfContractMeta {
     ///
     /// # Errors
     /// Returns a `syn::Result` with an error if the arguments or witness structure cannot be generated.
-    pub fn try_from(simf_content: SimfContent, abi_meta: AbiMeta) -> syn::Result<Self> {
+    pub fn try_from(simf_content: SimfContent, abi_meta: AbiMeta, constants: Vec<Value>) -> syn::Result<Self> {
         let args_struct = WitnessStruct::generate_args_struct(&simf_content.contract_name, &abi_meta.param_types)?;
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
@@ -62,6 +63,7 @@ impl SimfContractMeta {
             witness_struct,
             simf_content,
             abi_meta,
+            constants,
         })
     }
 
@@ -89,13 +91,61 @@ impl SimfContractMeta {
             },
         })
     }
+
+    /// Emit constructors for literals discovered during macro expansion.
+    /// The generated cache initializes values once via `std::sync::LazyLock`.
+    pub fn generate_constants(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
+        let program_name = &self.program_struct_name;
+        let initializers = self
+            .constants
+            .iter()
+            .map(Constants::generate_init)
+            .collect::<syn::Result<Vec<_>>>()?;
+
+        let helper_impls = quote! {
+                static CONSTANTS: ::std::sync::LazyLock<Vec<(
+                    ::simplex::simplicityhl::ResolvedType,
+                    ::simplex::simplicityhl::Value,
+                )>> = ::std::sync::LazyLock::new(|| vec![
+                    #({
+                        let value = #initializers;
+                        (value.ty().clone(), value)
+                    }),*
+                ]);
+
+                impl ::simplex::program::ProgramConst for super::super::#program_name {
+                    fn get_constants() -> &'static [(
+                        ::simplex::simplicityhl::ResolvedType,
+                        ::simplex::simplicityhl::Value,
+                    )] {
+                        CONSTANTS.as_slice()
+                    }
+                }
+
+                impl super::super::#program_name {
+                    /// Return unique literal values with their resolved types.
+                    #[must_use]
+                    pub fn get_constants() -> &'static [(
+                        ::simplex::simplicityhl::ResolvedType,
+                        ::simplex::simplicityhl::Value,
+                    )] {
+                        CONSTANTS.as_slice()
+                    }
+                }
+        };
+
+        Ok(GeneratedProgramTraitHelperTokens {
+            imports: Default::default(),
+            helper_impls,
+        })
+    }
 }
 
 impl WitnessField {
     fn new(
         witness_name: &TemplateProgramWitness,
         resolved_type: &ResolvedType,
-        key_constructor: &proc_macro2::Ident,
+        key_constructor: &Ident,
     ) -> syn::Result<Self> {
         let (witness_simf_name, struct_rust_field) = {
             let w_name = witness_name.to_string();
@@ -114,7 +164,7 @@ impl WitnessField {
     }
 
     /// Generate the conversion code from Rust value to Simplicity Value
-    fn to_token_stream(&self, struct_name: &Ident, alloc_type: AllocationType) -> proc_macro2::TokenStream {
+    fn to_token_stream(&self, struct_name: &Ident, alloc_type: AllocationType) -> TokenStream {
         let witness_name = &self.witness_simf_name;
         let field_name = &self.struct_rust_field;
         let key_constructor = &self.key_constructor;
@@ -141,16 +191,15 @@ impl WitnessStruct {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
-        let copied_tuples: Vec<proc_macro2::TokenStream> =
-            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
-        let moved_tuples: Vec<proc_macro2::TokenStream> =
-            self.construct_witness_tuples(&struct_param, AllocationType::Move);
-        let (arguments_conversion_from_args_map, struct_to_return): (
-            proc_macro2::TokenStream,
-            proc_macro2::TokenStream,
-        ) = self.generate_from_args_conversion_with_param_name("args");
-        let rand_mapping: proc_macro2::TokenStream = self.generate_rand_mapping();
-        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
+
+        let copied_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Move);
+
+        let (arguments_conversion_from_args_map, struct_to_return): (TokenStream, TokenStream) =
+            self.generate_from_args_conversion_with_param_name("args");
+
+        let rand_mapping: TokenStream = self.generate_rand_mapping();
+        let default_mapping: TokenStream = self.generate_default_mapping();
 
         Ok(GeneratedArgumentTokens {
             imports: quote! {
@@ -247,16 +296,15 @@ impl WitnessStruct {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
-        let copied_tuples: Vec<proc_macro2::TokenStream> =
-            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
-        let moved_tuples: Vec<proc_macro2::TokenStream> =
-            self.construct_witness_tuples(&struct_param, AllocationType::Move);
-        let (arguments_conversion_from_args_map, struct_to_return): (
-            proc_macro2::TokenStream,
-            proc_macro2::TokenStream,
-        ) = self.generate_from_args_conversion_with_param_name("witness");
-        let default_mapping: proc_macro2::TokenStream = self.generate_default_mapping();
-        let rand_mapping: proc_macro2::TokenStream = self.generate_rand_mapping();
+
+        let copied_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Move);
+
+        let (arguments_conversion_from_args_map, struct_to_return): (TokenStream, TokenStream) =
+            self.generate_from_args_conversion_with_param_name("witness");
+
+        let default_mapping: TokenStream = self.generate_default_mapping();
+        let rand_mapping: TokenStream = self.generate_rand_mapping();
 
         Ok(GeneratedWitnessTokens {
             imports: quote! {
@@ -365,15 +413,15 @@ impl WitnessStruct {
 
     fn generate_witness_fields<'a>(
         iter: impl Iterator<Item = (&'a TemplateProgramWitness, &'a ResolvedType)>,
-        key_constructor: &proc_macro2::Ident,
+        key_constructor: &Ident,
     ) -> syn::Result<Vec<WitnessField>> {
         iter.map(|(name, resolved_type)| WitnessField::new(name, resolved_type, key_constructor))
             .collect()
     }
 
-    fn generate_struct_token_stream(&self) -> proc_macro2::TokenStream {
+    fn generate_struct_token_stream(&self) -> TokenStream {
         let name = format_ident!("{}", self.struct_name);
-        let fields: Vec<proc_macro2::TokenStream> = self
+        let fields: Vec<TokenStream> = self
             .witness_values
             .iter()
             .map(|field| {
@@ -392,9 +440,9 @@ impl WitnessStruct {
         }
     }
 
-    fn generate_rand_mapping(&self) -> proc_macro2::TokenStream {
+    fn generate_rand_mapping(&self) -> TokenStream {
         let name = format_ident!("{}", self.struct_name);
-        let fields: Vec<proc_macro2::TokenStream> = self
+        let fields: Vec<TokenStream> = self
             .witness_values
             .iter()
             .map(|field| {
@@ -411,9 +459,9 @@ impl WitnessStruct {
         }
     }
 
-    fn generate_default_mapping(&self) -> proc_macro2::TokenStream {
+    fn generate_default_mapping(&self) -> TokenStream {
         let name = format_ident!("{}", self.struct_name);
-        let fields: Vec<proc_macro2::TokenStream> = self
+        let fields: Vec<TokenStream> = self
             .witness_values
             .iter()
             .map(|field| {
@@ -431,11 +479,7 @@ impl WitnessStruct {
     }
 
     #[inline]
-    fn construct_witness_tuples(
-        &self,
-        struct_name: &Ident,
-        alloc_type: AllocationType,
-    ) -> Vec<proc_macro2::TokenStream> {
+    fn construct_witness_tuples(&self, struct_name: &Ident, alloc_type: AllocationType) -> Vec<TokenStream> {
         self.witness_values
             .iter()
             .map(|wit_field| wit_field.to_token_stream(struct_name, alloc_type))
@@ -444,12 +488,9 @@ impl WitnessStruct {
 
     /// Generate conversion code from Arguments/WitnessValues back to struct fields.
     /// Returns a tuple of (`extraction_code`, `struct_initialization_code`).
-    fn generate_from_args_conversion_with_param_name(
-        &self,
-        param_name: &str,
-    ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    fn generate_from_args_conversion_with_param_name(&self, param_name: &str) -> (TokenStream, TokenStream) {
         let param_ident = format_ident!("{}", param_name);
-        let field_extractions: Vec<proc_macro2::TokenStream> = self
+        let field_extractions: Vec<TokenStream> = self
             .witness_values
             .iter()
             .map(|field| {
@@ -466,7 +507,7 @@ impl WitnessStruct {
             })
             .collect();
 
-        let field_names: Vec<proc_macro2::Ident> = self
+        let field_names: Vec<Ident> = self
             .witness_values
             .iter()
             .map(|field| format_ident!("{}", field.struct_rust_field))
@@ -486,7 +527,7 @@ impl WitnessStruct {
     }
 }
 
-pub fn construct_program_name(contract_name: &str) -> proc_macro2::Ident {
+pub fn construct_program_name(contract_name: &str) -> Ident {
     let base_name = convert_contract_name_to_struct_name(contract_name);
     format_ident!("{base_name}Program")
 }
@@ -515,11 +556,11 @@ pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
     }
 }
 
-pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> proc_macro2::Ident {
+pub fn convert_contract_name_to_contract_source_const(contract_name: &str) -> Ident {
     format_ident!("{}_CONTRACT_SOURCE", contract_name.to_uppercase())
 }
 
-pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_macro2::Ident {
+pub fn convert_contract_name_to_contract_module(contract_name: &str) -> Ident {
     format_ident!("derived_{}", contract_name)
 }
 
