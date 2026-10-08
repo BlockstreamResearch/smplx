@@ -40,14 +40,11 @@ fn test_panic(mut test_context: TestContext<FuzzMode>) {
 fn p2pk_fuzz_test(mut context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     const TEST_MNEMONIC: &str = "exist carry drive collect lend cereal occur much tiger just involve mean";
 
-    fn get_p2pk_arguments(signer: &Signer) -> P2pkArguments {
-        P2pkArguments {
-            public_key: signer.get_schnorr_public_key().serialize(),
-        }
-    }
-
     let signer = Signer::from_mnemonic(TEST_MNEMONIC, SimplicityNetwork::default_regtest());
-    let arguments = get_p2pk_arguments(&signer);
+    let arguments = P2pkArguments {
+        public_key: signer.get_schnorr_public_key().serialize(),
+    };
+
     context.set_custom_signer(signer);
 
     // Keep the signer's public key fixed while fuzzing the initial witness.
