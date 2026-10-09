@@ -123,6 +123,7 @@ impl FuzzTransaction {
                     .inputs_mut()
                     .get_mut(index)
                     .ok_or(FuzzError::InputTargetOutOfBounds { index, input_count })?;
+
                 input.program_input = Some(ProgramInput::new(Box::new(program.clone()), witness.clone()));
             }
         }

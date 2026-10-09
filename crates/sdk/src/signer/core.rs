@@ -351,10 +351,6 @@ impl Signer {
     /// Blinds the transaction, signs the native inputs and injects signatures into program witnesses,
     /// without executing or finalizing the programs.
     ///
-    /// Returns the transaction exactly as it was signed, together with the signed witness of every program
-    /// input keyed by its input index. Programs must be executed against this transaction, not a freshly
-    /// extracted one, because blinding is randomized and the signatures commit to the blinded outputs.
-    ///
     /// # Errors
     /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
     pub fn sign_witnesses(
