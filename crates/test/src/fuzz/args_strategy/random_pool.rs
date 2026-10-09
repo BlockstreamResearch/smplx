@@ -74,6 +74,7 @@ impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Ran
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
         let args = Args::generate_arguments(runner.rng());
         let wit = Wit::generate_witness(runner.rng());
+
         let pool = ValuePool::new(&wit.clone(), &args.clone());
         let wit = pool.probabilistically_replace(wit, runner.rng());
 
@@ -96,13 +97,19 @@ impl ValuePool {
     pub fn new(wit: &WitnessValues, args: &Arguments) -> Self {
         let mut pool: HashMap<ResolvedType, Vec<Value>> = HashMap::new();
 
-        for (_, val) in wit.iter() {
+        let mut wit_entries: Vec<_> = wit.iter().collect();
+        wit_entries.sort_unstable_by_key(|(name, _)| *name);
+
+        for (_, val) in wit_entries {
             pool.entry(val.ty().clone())
                 .and_modify(|counter| counter.push(val.clone()))
                 .or_insert(vec![val.clone()]);
         }
 
-        for (_, val) in args.iter() {
+        let mut args_entries: Vec<_> = args.iter().collect();
+        args_entries.sort_unstable_by_key(|(name, _)| *name);
+
+        for (_, val) in args_entries {
             pool.entry(val.ty().clone())
                 .and_modify(|counter| counter.push(val.clone()))
                 .or_insert(vec![val.clone()]);
@@ -125,7 +132,10 @@ impl ValuePool {
     pub fn probabilistically_replace(&self, wit: WitnessValues, rng: &mut TestRng) -> WitnessValues {
         let mut map = HashMap::new();
 
-        for (name, val) in wit.iter() {
+        let mut entries: Vec<_> = wit.iter().collect();
+        entries.sort_unstable_by_key(|(name, _)| *name);
+
+        for (name, val) in entries {
             let should_replace: bool = rng.random();
 
             if should_replace {
@@ -137,5 +147,165 @@ impl ValuePool {
         }
 
         WitnessValues::from_map(map)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use proptest::prelude::{RngCore, Strategy};
+    use proptest::strategy::ValueTree;
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
+
+    use simplicityhl::num::{NonZeroPow2Usize, U256};
+    use simplicityhl::types::TypeConstructible;
+    use simplicityhl::value::ValueConstructible;
+    use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
+
+    use smplx_sdk::program::{RandomArguments, RandomWitness};
+
+    use crate::fuzz::args_strategy::RandomValuePool;
+
+    #[derive(Clone, Debug)]
+    struct Fields;
+
+    fn get_fields() -> HashMap<TemplateProgramWitness, Value> {
+        HashMap::from([
+            (TemplateProgramWitness::parameter_from_str("U1"), Value::u1(1)),
+            (TemplateProgramWitness::parameter_from_str("U8"), Value::u8(2)),
+            (TemplateProgramWitness::parameter_from_str("U16"), Value::u16(3)),
+            (TemplateProgramWitness::parameter_from_str("U32"), Value::u32(4)),
+            (TemplateProgramWitness::parameter_from_str("U64"), Value::u64(4)),
+            (TemplateProgramWitness::parameter_from_str("U128"), Value::u128(4)),
+            (
+                TemplateProgramWitness::parameter_from_str("U256"),
+                Value::u256(U256::from_byte_array(Default::default())),
+            ),
+            (TemplateProgramWitness::parameter_from_str("U2"), Value::u2(0)),
+            (TemplateProgramWitness::parameter_from_str("U4"), Value::u4(0)),
+            (
+                TemplateProgramWitness::parameter_from_str("BOOL_FALSE"),
+                Value::from(false),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("BOOL_TRUE"),
+                Value::from(true),
+            ),
+            (TemplateProgramWitness::parameter_from_str("UNIT"), Value::unit()),
+            (
+                TemplateProgramWitness::parameter_from_str("EITHER_LEFT"),
+                Value::left(Value::u8(0), ResolvedType::u16()),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("EITHER_RIGHT"),
+                Value::right(ResolvedType::u8(), Value::u16(0)),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("OPTION_NONE"),
+                Value::none(ResolvedType::u8()),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("OPTION_SOME"),
+                Value::some(Value::u8(0)),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("PRODUCT"),
+                Value::product(Value::u8(0), Value::from(false)),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("TUPLE"),
+                Value::tuple([Value::u8(0), Value::u16(0), Value::from(false)]),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("ARRAY_EMPTY"),
+                Value::array([], ResolvedType::u8()),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("ARRAY"),
+                Value::array([Value::u8(0), Value::u8(0)], ResolvedType::u8()),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("LIST_EMPTY"),
+                Value::list([], ResolvedType::u8(), NonZeroPow2Usize::TWO),
+            ),
+            (
+                TemplateProgramWitness::parameter_from_str("LIST_NONEMPTY"),
+                Value::list([Value::u8(0)], ResolvedType::u8(), NonZeroPow2Usize::TWO),
+            ),
+        ])
+    }
+
+    impl From<Fields> for Arguments {
+        fn from(_: Fields) -> Self {
+            Arguments::from_map(get_fields())
+        }
+    }
+
+    impl From<Fields> for WitnessValues {
+        fn from(_: Fields) -> Self {
+            WitnessValues::from_map(get_fields())
+        }
+    }
+
+    impl RandomArguments for Fields {
+        fn generate_arguments(_: &mut dyn RngCore) -> Arguments {
+            Fields.into()
+        }
+    }
+
+    impl RandomWitness for Fields {
+        fn generate_witness(_: &mut dyn RngCore) -> WitnessValues {
+            Fields.into()
+        }
+    }
+
+    fn deterministic_runner() -> TestRunner {
+        let config = Config {
+            rng_seed: RngSeed::Fixed(0x0000_0734),
+            failure_persistence: None,
+            ..Config::default()
+        };
+
+        TestRunner::new(config)
+    }
+
+    #[test]
+    fn strategy_is_persistent() {
+        const ITERATIONS: usize = 1024;
+
+        let strategy = RandomValuePool::<Fields, Fields>::default();
+
+        let mut runner_1 = deterministic_runner();
+        let mut runner_2 = deterministic_runner();
+
+        for case in 0..ITERATIONS {
+            let mut first = strategy.new_tree(&mut runner_1).unwrap();
+            let mut second = strategy.new_tree(&mut runner_2).unwrap();
+
+            assert_eq!(
+                first.current(),
+                second.current(),
+                "same seed produced a different pool case {case}"
+            );
+
+            for step in 0..ITERATIONS {
+                let (first_changed, second_changed) = if step % 2 == 0 {
+                    (first.simplify(), second.simplify())
+                } else {
+                    (first.complicate(), second.complicate())
+                };
+
+                assert_eq!(
+                    first_changed, second_changed,
+                    "pool case {case} diverged at step {step}"
+                );
+                assert_eq!(
+                    first.current(),
+                    second.current(),
+                    "pool case {case} diverged at step {step}"
+                );
+            }
+        }
     }
 }

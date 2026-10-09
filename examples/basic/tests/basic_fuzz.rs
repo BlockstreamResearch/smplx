@@ -49,7 +49,7 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
 fn test_panic(test_context: TestContext<FuzzMode>) {
     let mut config = test_context.get_fuzz_config().clone();
     config.cases = 66_000;
-    config.rng_seed = RngSeed::Fixed(0x0001);
+    config.rng_seed = RngSeed::Fixed(0x0000_0034);
 
     test_context
         .engine::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>()
