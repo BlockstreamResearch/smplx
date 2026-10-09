@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 
 use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes};
 
-use crate::macros::literals::extract_literals;
+use crate::macros::literals::LiteralExtractor;
 use crate::macros::parse::SimfContent;
 use crate::macros::types::{AllocationType, RustType};
 
@@ -73,10 +73,12 @@ impl SimfContractMeta {
         let program_name = &self.program_struct_name;
         let argument_types = self.args_struct.generate_schema();
         let witness_types = self.witness_struct.generate_schema();
-        let literals = extract_literals(&self.simf_content.content).into_iter().map(|literal| {
-            let bytes = literal.to_byte_array();
-            quote! { U256::from_byte_array([#(#bytes),*]) }
-        });
+        let literals = LiteralExtractor::extract(&self.simf_content.content)
+            .into_iter()
+            .map(|literal| {
+                let bytes = literal.to_byte_array();
+                quote! { U256::from_byte_array([#(#bytes),*]) }
+            });
 
         let program_helpers_impl = quote! {
             impl ProgramFactory<#program_name> for #program_name {

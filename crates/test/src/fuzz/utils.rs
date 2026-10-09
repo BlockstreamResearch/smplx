@@ -17,16 +17,6 @@ pub fn random_witness<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> Witness
     WitnessValues::from_map(random_fields(&P::witness_types(), rng))
 }
 
-fn random_fields<R: Rng + ?Sized>(
-    types: &[(TemplateProgramWitness, ResolvedType)],
-    rng: &mut R,
-) -> HashMap<TemplateProgramWitness, Value> {
-    types
-        .iter()
-        .map(|(name, ty)| (name.clone(), generate_random_value_by_ty(ty, rng)))
-        .collect()
-}
-
 pub fn generate_random_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut R) -> Value {
     match ty.as_inner() {
         TypeInner::Either(left_ty, right_ty) => match rng.random::<bool>() {
@@ -64,4 +54,14 @@ pub fn generate_random_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut
         }
         _ => Value::unit(),
     }
+}
+
+fn random_fields<R: Rng + ?Sized>(
+    types: &[(TemplateProgramWitness, ResolvedType)],
+    rng: &mut R,
+) -> HashMap<TemplateProgramWitness, Value> {
+    types
+        .iter()
+        .map(|(name, ty)| (name.clone(), generate_random_value_by_ty(ty, rng)))
+        .collect()
 }
