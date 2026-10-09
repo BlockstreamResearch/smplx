@@ -93,6 +93,14 @@ pub trait RandomWitness: Into<WitnessValues> {
     fn generate_witness(rng: &mut dyn rand_core::RngCore) -> WitnessValues;
 }
 
+/// Provides the literal constants and generated input types of a Simplicity program.
+///
+/// Implemented by `include_simf!()` macro, which generates an automatic `ConstProvider` implementation.
+pub trait ConstProvider {
+    /// Returns the program's unique literal values.
+    fn get_constants() -> &'static [simplicityhl::Value];
+}
+
 /// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
 /// for constructing and returning a program instance of a type that implements `AsRef<Program>`.
 /// Only by generic struct name we have a possibility to create an instance of a program.

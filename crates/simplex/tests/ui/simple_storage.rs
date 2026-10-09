@@ -71,6 +71,7 @@ fn main() -> Result<(), String> {
     let _ = test_default()?;
     let _ = test_e2e_random_behaviour()?;
     let _ = test_e2e_random_value_generation_behaviour()?;
+    let _ = test_constants()?;
 
     Ok(())
 }
@@ -173,4 +174,22 @@ fn regenerate_arguments_values(args: &Arguments, rng: &mut dyn RngCore) -> Argum
         map.insert(name.clone(), generate_random_value_by_ty(val.ty(), rng));
     }
     Arguments::from_map(map)
+}
+
+fn test_constants() -> Result<(), String> {
+    use simplex::simplicityhl::Value;
+    use simplex::simplicityhl::value::ValueConstructible;
+    use std::collections::HashSet;
+
+    let constants = SimpleStorageProgram::get_constants();
+    let expected: HashSet<_> = [Value::u1(0), Value::u32(0), Value::u32(1)].into_iter().collect();
+    let actual: HashSet<_> = constants.iter().cloned().collect();
+    assert_eq!(actual, expected);
+    assert_eq!(constants.len(), actual.len(), "constants must be unique");
+    assert!(std::ptr::eq(
+        constants,
+        SimpleStorageProgram::get_constants()
+    ));
+
+    Ok(())
 }

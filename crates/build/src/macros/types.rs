@@ -1,8 +1,125 @@
+use std::collections::HashSet;
 use std::fmt::Display;
 
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 
-use simplicityhl::ResolvedType;
+use simplicityhl::ast::{self, CallName, ExpressionInner, SingleExpressionInner, Statement};
+use simplicityhl::either::Either;
+use simplicityhl::value::{UIntValue, ValueInner};
+use simplicityhl::{ResolvedType, Value};
+
+pub struct Constants;
+
+impl Constants {
+    /// Generates initialization tokens for a constant value derived from AST.
+    pub fn generate_init(value: &Value) -> syn::Result<TokenStream> {
+        let integer = match value.inner() {
+            ValueInner::Boolean(bit) => return Ok(quote! { ::simplex::simplicityhl::Value::from(#bit) }),
+            ValueInner::UInt(integer) => match integer {
+                UIntValue::U1(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U1(#n) },
+                UIntValue::U2(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U2(#n) },
+                UIntValue::U4(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U4(#n) },
+                UIntValue::U8(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U8(#n) },
+                UIntValue::U16(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U16(#n) },
+                UIntValue::U32(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U32(#n) },
+                UIntValue::U64(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U64(#n) },
+                UIntValue::U128(n) => quote! { ::simplex::simplicityhl::value::UIntValue::U128(#n) },
+                UIntValue::U256(n) => {
+                    let bytes = n.to_byte_array();
+                    quote! { ::simplex::simplicityhl::value::UIntValue::U256(
+                        ::simplex::simplicityhl::num::U256::from_byte_array([#(#bytes),*])
+                    ) }
+                }
+            },
+            ValueInner::Array(elements) => {
+                let bytes = elements
+                    .iter()
+                    .map(|element| match element.inner() {
+                        ValueInner::UInt(UIntValue::U8(byte)) => Ok(*byte),
+                        _ => Err(syn::Error::new(Span::call_site(), "Expected a byte-array literal")),
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?;
+                return Ok(quote! {
+                    <::simplex::simplicityhl::Value as ::simplex::simplicityhl::value::ValueConstructible>::byte_array([#(#bytes),*])
+                });
+            }
+            _ => {
+                return Err(syn::Error::new(Span::call_site(), "Unsupported AST literal constant"));
+            }
+        };
+        Ok(quote! { ::simplex::simplicityhl::Value::from(#integer) })
+    }
+
+    /// Collects unique typed literals reachable from main, including called function bodies.
+    pub fn collect(program: &ast::Program) -> Vec<&Value> {
+        let mut constants = Vec::new();
+        let mut seen_values = HashSet::new();
+        let mut visited = HashSet::new();
+        let mut stack = vec![program.main()];
+
+        while let Some(expression) = stack.pop() {
+            if !visited.insert(expression as *const ast::Expression) {
+                continue;
+            }
+            match expression.inner() {
+                ExpressionInner::Block(statements, tail) => {
+                    if let Some(tail) = tail {
+                        stack.push(tail.as_ref());
+                    }
+                    for statement in statements.iter().rev() {
+                        stack.push(match statement {
+                            Statement::Assignment(assignment) => assignment.expression(),
+                            Statement::Expression(expression) => expression,
+                        });
+                    }
+                }
+                ExpressionInner::Single(single) => match single.inner() {
+                    SingleExpressionInner::Constant(value) => {
+                        if seen_values.insert(value) {
+                            constants.push(value);
+                        }
+                    }
+                    SingleExpressionInner::Expression(child)
+                    | SingleExpressionInner::Either(Either::Left(child))
+                    | SingleExpressionInner::Either(Either::Right(child))
+                    | SingleExpressionInner::Option(Some(child)) => stack.push(child.as_ref()),
+                    SingleExpressionInner::Tuple(children)
+                    | SingleExpressionInner::Array(children)
+                    | SingleExpressionInner::List(children) => stack.extend(children.iter().rev()),
+                    SingleExpressionInner::Call(call) => {
+                        match call.name() {
+                            CallName::Custom(function)
+                            | CallName::Fold(function, _)
+                            | CallName::ArrayFold(function, _)
+                            | CallName::ForWhile(function, _) => stack.push(function.body()),
+                            _ => {}
+                        }
+                        stack.extend(call.args().iter().rev());
+                    }
+                    SingleExpressionInner::Match(match_expression) => {
+                        stack.push(match_expression.right().expression());
+                        stack.push(match_expression.left().expression());
+                        stack.push(match_expression.scrutinee());
+                    }
+                    SingleExpressionInner::EnumMatch(match_expression) => {
+                        stack.extend(match_expression.arms().iter().rev().map(|arm| arm.body()));
+                        stack.push(match_expression.scrutinee());
+                    }
+                    SingleExpressionInner::EnumConstruction(construction) => {
+                        stack.extend(construction.payload().iter().rev().map(|child| child.as_ref()));
+                    }
+                    SingleExpressionInner::Witness(_)
+                    | SingleExpressionInner::Parameter(_)
+                    | SingleExpressionInner::Variable(_)
+                    | SingleExpressionInner::Option(None) => {}
+                },
+            }
+        }
+
+        constants
+    }
+}
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -688,5 +805,48 @@ impl RustType {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use simplicityhl::ast::ElementsJetHinter;
+    use simplicityhl::error::DiagnosticManager;
+    use simplicityhl::parse::{self, ParseFromStr};
+    use simplicityhl::value::ValueConstructible;
+
+    #[test]
+    fn deduplicates_called_function_literals_by_type_and_value() {
+        let parsed = parse::Program::parse_from_str(
+            r#"
+            fn check(n: u16) -> bool { jet::eq_16(n, 1337) }
+            fn main() {
+                let input: u16 = witness::INPUT;
+                assert!(check(input));
+                assert!(check(input));
+                let duplicate: u16 = 0x0539;
+                let different_type: u32 = 1337;
+                let boolean: bool = true;
+            }
+        "#,
+        )
+        .unwrap();
+        let analyzed =
+            ast::Program::analyze(&parsed, Box::new(ElementsJetHinter), &mut DiagnosticManager::default()).unwrap();
+
+        assert_eq!(
+            Constants::collect(&analyzed),
+            vec![&Value::u16(1337), &Value::u32(1337), &Value::from(true)]
+        );
+    }
+
+    #[test]
+    fn contracts_without_literals_have_no_constants() {
+        let parsed = parse::Program::parse_from_str("fn main() { let input: u16 = witness::INPUT; }").unwrap();
+
+        let analyzed =
+            ast::Program::analyze(&parsed, Box::new(ElementsJetHinter), &mut DiagnosticManager::default()).unwrap();
+        assert!(Constants::collect(&analyzed).is_empty());
     }
 }

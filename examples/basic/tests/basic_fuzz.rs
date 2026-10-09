@@ -1,7 +1,7 @@
 use simplex::simplicityhl::Arguments;
 use simplex::{FuzzMode, TestContext};
 
-use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
+use simplex::fuzz::args_strategy::{ArgsStrategyBuilder, RandomValuePool};
 use simplex::fuzz::fuzz_transaction::FuzzTransaction;
 use simplex::fuzz::proptest::prelude::Strategy;
 use simplex::fuzz::proptest::test_runner::RngSeed;
@@ -54,5 +54,22 @@ fn test_panic(test_context: TestContext<FuzzMode>) {
     test_context
         .engine::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>()
         .with_custom_config(config)
+        .run();
+}
+
+#[should_panic(expected = "const CMP_VALUE: u16 = 1337;")]
+#[simplex::fuzz]
+fn test_panic_with_pool(test_context: TestContext<FuzzMode>) {
+    let mut config = test_context.get_fuzz_config().clone();
+    config.cases = 66_000;
+    config.rng_seed = RngSeed::Fixed(0x0000_0034);
+
+    test_context
+        .engine::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>()
+        .with_custom_config(config)
+        .with_custom_strategy(RandomValuePool::<
+            ExceptionalContractArguments,
+            ExceptionalContractWitness,
+        >::with_constants(ExceptionalContractProgram::get_constants()))
         .run();
 }

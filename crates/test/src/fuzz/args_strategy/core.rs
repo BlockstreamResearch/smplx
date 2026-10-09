@@ -4,9 +4,9 @@ use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, Strategy};
 
-use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
+use crate::fuzz::args_strategy::{NoConst, Random, RandomValuePool};
 
-pub struct ArgsStrategyBuilder<Args, Wit, Base = InterestingRandom<Args, Wit>> {
+pub struct ArgsStrategyBuilder<Args, Wit, Base = RandomValuePool<Args, Wit, NoConst>> {
     base_strategy: Base,
     _placeholder: PhantomData<(Args, Wit)>,
 }
@@ -20,7 +20,7 @@ impl<Args, Wit> ArgsStrategyBuilder<Args, Wit> {
 impl<Args, Wit> Default for ArgsStrategyBuilder<Args, Wit> {
     fn default() -> Self {
         Self {
-            base_strategy: InterestingRandom::default(),
+            base_strategy: RandomValuePool::default(),
             _placeholder: Default::default(),
         }
     }
@@ -34,9 +34,9 @@ impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base> {
         }
     }
 
-    pub fn with_random_pool(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
+    pub fn with_random_pool<Const>(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit, Const>> {
         ArgsStrategyBuilder {
-            base_strategy: RandomValuePool::<Args, Wit>::default(),
+            base_strategy: RandomValuePool::<Args, Wit, Const>::default(),
             _placeholder: Default::default(),
         }
     }
@@ -47,13 +47,6 @@ impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base> {
     {
         ArgsStrategyBuilder {
             base_strategy: custom_strategy,
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_random_interesting_values(self) -> ArgsStrategyBuilder<Args, Wit, InterestingRandom<Args, Wit>> {
-        ArgsStrategyBuilder {
-            base_strategy: InterestingRandom::<Args, Wit>::default(),
             _placeholder: Default::default(),
         }
     }

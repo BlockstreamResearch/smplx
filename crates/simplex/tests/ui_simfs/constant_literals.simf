@@ -1,0 +1,37 @@
+type Amount = u16;
+
+fn check(n: Amount) -> bool {
+    jet::eq_16(n, 1337)
+}
+
+fn fold_step(element: u8, accumulator: u8) -> u8 {
+    let marker: u8 = 42;
+    accumulator
+}
+
+fn main() {
+    let bit: u1 = 0b1;
+    let pair: u2 = 3;
+    let nibble: u4 = 15;
+    let byte: u8 = 255;
+    let short: u16 = 65535;
+    let word: u32 = 4294967295;
+    let long: u64 = 18446744073709551615;
+    let wide: u128 = 340282366920938463463374607431768211455;
+    let widest: u256 = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+    let bytes: [u8; 3] = 0x000102;
+    let input: Amount = witness::INPUT;
+    assert!(check(input));
+    assert!(check(input));
+    let duplicate: Amount = 0x0539;
+    let different_type: u32 = 1337;
+    let nested: (Option<u8>, List<Amount, 4>) = (Some(7), list![8, 9]);
+    let enabled: bool = true;
+    let disabled: bool = false;
+    let folded: u8 = array_fold::<fold_step, 2>([1, 2], 0);
+    let choice: Either<u8, Amount> = Right(5);
+    match choice {
+        Left(left: u8) => { let branch: u8 = 6; },
+        Right(right: Amount) => { let branch: Amount = 6; },
+    }
+}
