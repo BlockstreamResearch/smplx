@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::env;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
@@ -9,7 +8,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde::Serialize;
 
-use simplicityhl::TemplateProgram;
+use simplicityhl::TemplateAst;
 use simplicityhl::UnstableFeatures;
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::resolution::DependencyMap;
@@ -19,8 +18,7 @@ use simplicityhl::source::CanonSourceFile;
 
 use crate::contract_id::ContractId;
 use crate::macros::codegen::{
-    convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
-    convert_contract_name_to_struct_name,
+    construct_program_name, convert_contract_name_to_contract_module, convert_contract_name_to_contract_source_const,
 };
 use crate::macros::parse::SimfContent;
 
@@ -64,21 +62,22 @@ struct SourceEntry {
 
 impl ArtifactsGenerator {
     pub fn generate_artifacts(
+        root_dir: &Path,
         out_dir: impl AsRef<Path>,
         base_dir: impl AsRef<Path>,
         simfs: &[impl AsRef<Path>],
         validated_deps: &ValidatedDeps,
     ) -> Result<(), BuildError> {
-        let cwd = env::current_dir()?;
         let out_dir = out_dir.as_ref();
         let base_dir = base_dir.as_ref();
 
         let json_metadata_file = out_dir.join(METADATA_FILENAME);
 
-        let pathdiff = pathdiff::diff_paths(base_dir, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
-            cwd,
-            simf_file: base_dir.to_path_buf(),
-        })?;
+        let pathdiff =
+            pathdiff::diff_paths(base_dir, root_dir).ok_or_else(|| BuildError::FailedToFindCorrectRelativePath {
+                root_dir: root_dir.to_path_buf(),
+                simf_file: base_dir.to_path_buf(),
+            })?;
 
         let simf_out_dir = out_dir.join(pathdiff);
         let mut metadata = Metadata::default();
@@ -93,7 +92,7 @@ impl ArtifactsGenerator {
 
         let tree = Self::build_tree(artifacts)?;
 
-        Self::generate_bindings(out_dir, tree)?;
+        Self::generate_bindings(root_dir, out_dir, tree)?;
 
         Ok(())
     }
@@ -162,14 +161,14 @@ impl ArtifactsGenerator {
         let canon_source_file = CanonSourceFile::new(canon_source, Arc::from(content));
         let dependency_map = Self::build_dependency_map(validated_deps, project_root)?;
 
-        let template = TemplateProgram::new_with_dep(
+        let template = TemplateAst::new_with_dep(
             canon_source_file.clone(),
             &dependency_map,
             &UnstableFeatures::all(),
             Box::new(ElementsJetHinter),
         )
         .map_err(|diags| BuildError::DryRun(diags.to_string()))?;
-        let flattened = TemplateProgram::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
+        let flattened = TemplateAst::flatten(canon_source_file, &dependency_map, &UnstableFeatures::all())
             .map_err(|diags| BuildError::Flattening(diags.to_string()))?;
 
         Ok(SourceEntry {
@@ -208,18 +207,18 @@ impl ArtifactsGenerator {
     }
 
     /// Recursively generates bindings for every node in the tree.
-    fn generate_bindings(out_dir: &Path, tree: TreeNode) -> Result<(), BuildError> {
+    fn generate_bindings(root_dir: &Path, out_dir: &Path, tree: TreeNode) -> Result<(), BuildError> {
         fs::create_dir_all(out_dir)?;
 
         let mut mod_names = Vec::new();
 
         for artifact in tree.files {
-            let mod_name = Self::generate_simf_binding(out_dir, artifact)?;
+            let mod_name = Self::generate_simf_binding(root_dir, out_dir, artifact)?;
             mod_names.push(mod_name);
         }
 
         for (dir_name, subtree) in tree.dirs {
-            Self::generate_bindings(&out_dir.join(&dir_name), subtree)?;
+            Self::generate_bindings(root_dir, &out_dir.join(&dir_name), subtree)?;
             mod_names.push(dir_name);
         }
 
@@ -229,7 +228,7 @@ impl ArtifactsGenerator {
     }
 
     /// Generates a single `.rs` binding file for one simf artifact.
-    fn generate_simf_binding(out_dir: &Path, artifact: SimfArtifact) -> Result<String, BuildError> {
+    fn generate_simf_binding(root_dir: &Path, out_dir: &Path, artifact: SimfArtifact) -> Result<String, BuildError> {
         let output_file = out_dir.join(format!("{}.rs", artifact.contract_name));
 
         let mut file = fs::OpenOptions::new()
@@ -238,12 +237,12 @@ impl ArtifactsGenerator {
             .truncate(true)
             .open(&output_file)?;
 
-        let cwd = env::current_dir()?;
-        let pathdiff =
-            pathdiff::diff_paths(&artifact.mirrored_path, &cwd).ok_or(BuildError::FailedToFindCorrectRelativePath {
-                cwd,
+        let pathdiff = pathdiff::diff_paths(&artifact.mirrored_path, root_dir).ok_or_else(|| {
+            BuildError::FailedToFindCorrectRelativePath {
+                root_dir: root_dir.to_path_buf(),
                 simf_file: artifact.mirrored_path.clone(),
-            })?;
+            }
+        })?;
 
         let code = Self::generate_simf_binding_code(&artifact.contract_name, &pathdiff)?;
 
@@ -279,22 +278,20 @@ impl ArtifactsGenerator {
     }
 
     fn generate_simf_binding_code(contract_name: &str, target_simf: &Path) -> Result<TokenStream, BuildError> {
-        let program_name = {
-            let base_name = convert_contract_name_to_struct_name(contract_name);
-            format_ident!("{base_name}Program")
-        };
-
+        let program_name = construct_program_name(contract_name);
         let include_simf_source_const = convert_contract_name_to_contract_source_const(contract_name);
         let include_simf_module = convert_contract_name_to_contract_module(contract_name);
         let target_simf_str = target_simf.to_string_lossy().into_owned();
 
         let code = quote! {
             use simplex::include_simf;
-            use simplex::program::{ArgumentsTrait, Program};
+            use simplex::program::{Program};
             use simplex::provider::SimplicityNetwork;
             use simplex::simplicityhl::elements::Script;
             use simplex::simplicityhl::elements::secp256k1_zkp::XOnlyPublicKey;
+            use simplex::simplicityhl::Arguments;
 
+            #[derive(Clone)]
             pub struct #program_name {
                 program: Program,
             }
@@ -303,9 +300,9 @@ impl ArtifactsGenerator {
                 pub const SOURCE: &'static str = #include_simf_module::#include_simf_source_const;
 
                 #[must_use]
-                pub fn new(arguments: &impl ArgumentsTrait) -> Self {
+                pub fn new(arguments: impl Into<Arguments>) -> Self {
                     Self {
-                        program: Program::new(Self::SOURCE, arguments),
+                        program: Program::new(Self::SOURCE, arguments.into()),
                     }
                 }
 

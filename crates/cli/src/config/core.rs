@@ -1,14 +1,14 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use smplx_build::{BuildConfig, DependencyConfig};
+use smplx_build::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 use smplx_regtest::RegtestConfig;
+use smplx_sdk::provider::SimplicityNetwork;
 use smplx_test::TestConfig;
 
 use super::error::ConfigError;
 
 pub const INIT_CONFIG: &str = include_str!("../../assets/Simplex.default.toml");
-pub const CONFIG_FILENAME: &str = "Simplex.toml";
 
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
@@ -33,7 +33,7 @@ impl Config {
     }
 
     /// Constructs a complete configuration file path by joining the provided path with the
-    /// predefined configuration file name `CONFIG_FILENAME`.
+    /// predefined configuration file name [`CONFIG_FILENAME`].
     ///
     /// # Errors
     /// This function will return an error if the provided `path` cannot be resolved for any reason
@@ -69,7 +69,7 @@ impl Config {
     }
 
     fn validate(config: &Config) -> Result<(), ConfigError> {
-        if let Some(esplora_config) = config.test.esplora.clone() {
+        if let Some(esplora_config) = config.test.esplora.as_ref() {
             Self::validate_network(&esplora_config.network)?;
 
             if config.test.rpc.is_some() && esplora_config.network != "ElementsRegtest" {
@@ -77,13 +77,15 @@ impl Config {
             }
         }
 
+        if let Some(network) = config.test.fuzz.as_ref().and_then(|fuzz| fuzz.network.as_deref()) {
+            Self::validate_network(network)?;
+        }
+
         Ok(())
     }
 
-    fn validate_network(network: &String) -> Result<(), ConfigError> {
-        if network != "Liquid" && network != "LiquidTestnet" && network != "ElementsRegtest" {
-            return Err(ConfigError::BadNetworkName(network.clone()));
-        }
+    fn validate_network(network: &str) -> Result<(), ConfigError> {
+        let _ = network.parse::<SimplicityNetwork>()?;
 
         Ok(())
     }

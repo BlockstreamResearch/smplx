@@ -1,0 +1,9 @@
+fn check(n: u16) -> bool {
+    <u1>::into(jet::complement_1(<bool>::into(jet::eq_16(n, 1337))))
+}
+
+fn main() {
+    let cmp_value: u16 = witness::CMP_VALUE;
+
+    assert!(check(cmp_value));
+}

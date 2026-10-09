@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.1.0]
+
+- Added fuzz testing: `#[simplex::fuzz]`, `simplex test --fuzz` and the `[test.fuzz]` config section.
+- Added the `Guided` (default) and `Random` fuzz strategies.
+- Bumped `simplicityhl` to `0.8.0`.
+
+### sdk
+
+- Updated the built-in `Program` to check the pruned program's execution cost against its witness budget during finalization.
+- Added `ProgramSchema`, implemented by `include_simf!()`.
+- `Signer::sign_tx` and `Signer::sign_witnesses` are now public.
+- Removed `ArgumentsTrait` and `WitnessTrait`. `Program::new` and `ProgramInput::new` take `impl Into<Arguments>` and `impl Into<WitnessValues>`.
+
+### build
+
+- Put `smplx-build` code generation behind the default `full` feature.
+
+### config
+
+- Changed the default `[regtest]` and `[test]` mnemonic to `abandon ... about`.
+
+### install
+
+- Installed git dependencies are named with a base58 hash.
+- Git dependencies accept a `package` subdirectory.
+- Fixed `simplex install` recursing forever on cyclic git dependencies.
+
+### wasm
+
+- `TransactionBuilder` can now reissue an asset by spending a confidential output that holds its reissuance token.
+- Issuance and output methods now reject amounts above `i64::MAX` before adding them to a transaction.
+- Blinding secrets now accept `value` as a decimal string. JSON numbers above 2^53 - 1 are rejected because JavaScript may serialize them with different digits.
+
 ## [0.0.12]
 
 - Added transaction sanity check to the `Signer` to not sign obviously malformed transactions.

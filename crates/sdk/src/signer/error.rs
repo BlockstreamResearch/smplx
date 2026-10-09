@@ -44,9 +44,13 @@ pub enum SignerError {
     #[error("Failed to extract tx from pst: {0}")]
     TxExtraction(#[from] simplicityhl::elements::pset::Error),
 
+    // Boxed because `UnblindError` would push every `SignerError` over clippy's 128-byte
+    // `result_large_err` limit. Since SimplicityHL 0.8.0 (elements 0.27.0), `UnblindError` has a
+    // `RangeProofMessage(RangeProofMessageError)` variant whose `ConfidentialAssetMismatch` arm
+    // holds two 64-byte `Generator`s (`in_txout`, `in_message`), making it 132 bytes.
     /// Error indicating failure to unblind a confidential transaction output.
     #[error("Failed to unblind txout: {0}")]
-    Unblind(#[from] simplicityhl::elements::UnblindError),
+    Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
     /// Error thrown when PSET blinding fails.
     #[error("Failed to blind a PST: {0}")]
@@ -134,4 +138,10 @@ pub enum WtnsWrappingError {
     /// Error indicating that a path traversal attempted to reach an undefined or mismatched Either branch.
     #[error("Path reached undefined branch of Either")]
     EitherBranchMismatch,
+}
+
+impl From<simplicityhl::elements::UnblindError> for SignerError {
+    fn from(err: simplicityhl::elements::UnblindError) -> Self {
+        Self::Unblind(Box::new(err))
+    }
 }

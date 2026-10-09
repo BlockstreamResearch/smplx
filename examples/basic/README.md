@@ -42,9 +42,21 @@ Under the hood, Simplex spins up a local Electrs + Elements regtest, establishes
 
 Check out `confidential_test.rs` to learn how to issue and spend confidential UTXOs!
 
+### Fuzzing
+
+Fuzz tests are essential tools for asserting smart contract invariants and finding logical edge-cases via randomly generated arguments and witness. They are marked with `#[simplex::fuzz]` and run fully locally without interacting with the node.
+
+Run the example fuzz test with the following command:
+
+```bash
+simplex test --fuzz p2pk_fuzz_test -v
+```
+
+When a fuzz test finds a failing case, Simplex creates `fuzz-failures/` and saves its random seed and generated values. Later runs replay saved cases before generating new ones, making failures reproducible.
+
 ### Regtest
 
-If you wish to keep the blockchain's state between the tests, you will need to spin un a local regest separately:
+If you wish to keep the blockchain's state between the tests, you will need to spin un a local regtest separately:
 
 ```bash
 simplex regtest

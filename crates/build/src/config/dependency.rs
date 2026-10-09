@@ -1,13 +1,18 @@
 use std::collections::HashMap;
+#[cfg(feature = "full")]
 use std::path::Path;
 
+#[cfg(feature = "full")]
 use toml_edit::{DocumentMut, Item};
 
 use serde::Deserialize;
 
+#[cfg(feature = "full")]
 use super::dep_spec::DepSpec;
 
-use crate::error::{BuildError, DependencyValidationError, TomlEditError};
+#[cfg(feature = "full")]
+use crate::error::TomlEditError;
+use crate::error::{BuildError, DependencyValidationError};
 
 /// The default directory name used for Simplex project dependencies.
 pub const DEFAULT_DEPENDENCY_DIR: &str = "deps";
@@ -23,7 +28,11 @@ pub struct DependencyConfig {
 #[derive(Debug, Clone)]
 pub enum Dependency {
     Path(String),
-    Git { url: String, reference: Option<GitRef> },
+    Git {
+        url: String,
+        reference: Option<GitRef>,
+        package: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +52,7 @@ struct RawDependencyConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawDependency {
-    /// The exact path to the directory containing the `Simplex.toml` file.
+    /// The exact path to the directory containing the [`CONFIG_FILENAME`](crate::CONFIG_FILENAME) file.
     path: Option<String>,
     /// The URL of the Git repository.
     git: Option<String>,
@@ -51,8 +60,10 @@ struct RawDependency {
     rev: Option<String>,
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
-    /// The specific branch to download (only applicable if `branch` is provided)
+    /// The specific branch to download (only applicable if `branch` is provided).
     branch: Option<String>,
+    /// The specific directory with contracts to download (only applicable if `git` is provided).
+    package: Option<String>,
 }
 
 impl DependencyConfig {
@@ -70,6 +81,7 @@ impl DependencyConfig {
         }
     }
 
+    #[cfg(feature = "full")]
     /// Appends new entries to the `[dependencies]` table of the config file at `path`,
     /// preserving existing formatting and comments.
     ///
@@ -127,7 +139,7 @@ impl RawDependency {
             (Some(_), Some(_)) => Err(DependencyValidationError::Conflicting(name.into())),
             (None, None) => Err(DependencyValidationError::Missing(name.into())),
             (Some(p), None) => {
-                if self.rev.is_some() || self.tag.is_some() || self.branch.is_some() {
+                if self.rev.is_some() || self.tag.is_some() || self.branch.is_some() || self.package.is_some() {
                     return Err(DependencyValidationError::PathWithGitField(name.into()));
                 }
 
@@ -143,8 +155,13 @@ impl RawDependency {
                 };
 
                 let url = Self::reject_dash_prefix(name, "git", url)?;
+                let package = self.package.map(|p| Self::normalize_package(name, p)).transpose()?;
 
-                Ok(Dependency::Git { url, reference })
+                Ok(Dependency::Git {
+                    url,
+                    reference,
+                    package,
+                })
             }
         }
     }
@@ -159,6 +176,27 @@ impl RawDependency {
         }
 
         Ok(value)
+    }
+
+    /// Normalizes `package` to a plain relative directory path (`a/b`) inside the repository.
+    fn normalize_package(name: &str, value: String) -> Result<String, DependencyValidationError> {
+        let trimmed = value.trim_matches('/');
+
+        let has_bad_segment = trimmed
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..");
+        let has_pattern_chars = trimmed
+            .chars()
+            .any(|c| matches!(c, '*' | '?' | '[' | ']' | '!' | '#' | '\\') || c.is_whitespace());
+
+        if trimmed.is_empty() || has_bad_segment || has_pattern_chars {
+            return Err(DependencyValidationError::InvalidPackage {
+                name: name.into(),
+                value,
+            });
+        }
+
+        Self::reject_dash_prefix(name, "package", trimmed.to_owned())
     }
 }
 
@@ -206,6 +244,52 @@ mod tests {
     }
 
     #[test]
+    fn git_package_is_normalized() {
+        let config = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                pkg = { git = "https://example.com/mono.git", tag = "v1", package = "/contracts/temp/" }
+            "#,
+        )
+        .expect("dependency config should parse");
+
+        assert!(
+            matches!(config.inner.get("pkg"), Some(Dependency::Git { package: Some(value), .. }) if value == "contracts/temp")
+        );
+    }
+
+    #[test]
+    fn invalid_git_package_is_rejected() {
+        for package in [
+            "",
+            "/",
+            "../outside",
+            "contracts/../..",
+            "contracts//temp",
+            "contracts/*",
+            "-x",
+        ] {
+            let result = DependencyConfig::from_source(&format!(
+                "[dependencies]\npkg = {{ git = \"https://example.com/mono.git\", package = \"{package}\" }}"
+            ));
+
+            assert!(result.is_err(), "package '{package}' should be rejected");
+        }
+    }
+
+    #[test]
+    fn path_with_package_is_rejected() {
+        let result = DependencyConfig::from_source(
+            r#"
+                [dependencies]
+                broken = { path = "../local", package = "contracts" }
+            "#,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn conflicting_dependency_sources_are_rejected() {
         let result = DependencyConfig::from_source(
             r#"
@@ -220,6 +304,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full")]
     fn dependency_edit_preserves_existing_toml() {
         let path = std::env::temp_dir().join(format!("smplx-dependency-edit-{}.toml", std::process::id()));
         std::fs::write(&path, "# keep this comment\n[package]\nname = \"fixture\"\n")

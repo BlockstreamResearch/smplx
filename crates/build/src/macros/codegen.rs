@@ -1,13 +1,15 @@
+use proc_macro2::Ident;
 use quote::{format_ident, quote};
 
-use simplicityhl::str::WitnessName;
-use simplicityhl::{AbiMeta, Parameters, ResolvedType, WitnessTypes};
+use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes};
 
+use crate::macros::literals::LiteralExtractor;
 use crate::macros::parse::SimfContent;
-use crate::macros::types::RustType;
+use crate::macros::types::{AllocationType, RustType};
 
 pub struct SimfContractMeta {
     pub contract_source_const_name: proc_macro2::Ident,
+    pub program_struct_name: proc_macro2::Ident,
     pub args_struct: WitnessStruct,
     pub witness_struct: WitnessStruct,
     pub simf_content: SimfContent,
@@ -26,10 +28,16 @@ pub struct GeneratedWitnessTokens {
     pub struct_impl: proc_macro2::TokenStream,
 }
 
+pub struct GeneratedProgramTraitHelperTokens {
+    pub imports: proc_macro2::TokenStream,
+    pub helper_impls: proc_macro2::TokenStream,
+}
+
 pub struct WitnessField {
     witness_simf_name: String,
     struct_rust_field: proc_macro2::Ident,
     rust_type: RustType,
+    key_constructor: proc_macro2::Ident,
 }
 
 pub struct WitnessStruct {
@@ -47,19 +55,74 @@ impl SimfContractMeta {
         let witness_struct =
             WitnessStruct::generate_witness_struct(&simf_content.contract_name, &abi_meta.witness_types)?;
         let contract_source_const_name = convert_contract_name_to_contract_source_const(&simf_content.contract_name);
+        let program_struct_name = construct_program_name(&simf_content.contract_name);
 
         Ok(SimfContractMeta {
             contract_source_const_name,
+            program_struct_name,
             args_struct,
             witness_struct,
             simf_content,
             abi_meta,
         })
     }
+
+    /// Generates code necessary for fuzz testing.
+    pub fn generate_program_trait_helpers_impl(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
+        let args_struct_name = &self.args_struct.struct_name;
+        let program_name = &self.program_struct_name;
+        let argument_types = self.args_struct.generate_schema();
+        let witness_types = self.witness_struct.generate_schema();
+        let literals = LiteralExtractor::extract(&self.simf_content.content)
+            .into_iter()
+            .map(|literal| {
+                let bytes = literal.to_byte_array();
+                quote! { U256::from_byte_array([#(#bytes),*]) }
+            });
+
+        let program_helpers_impl = quote! {
+            impl ProgramFactory<#program_name> for #program_name {
+                fn instantiate_program(args: impl Into<Arguments>) -> Box<#program_name> {
+                    Box::new(#program_name::new(args))
+                }
+            }
+
+            impl ProgramSchema for #program_name {
+                fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
+                    vec![#(#argument_types),*]
+                }
+
+                fn witness_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
+                    vec![#(#witness_types),*]
+                }
+
+                fn literals() -> Vec<U256> {
+                    vec![#(#literals),*]
+                }
+            }
+        };
+
+        Ok(GeneratedProgramTraitHelperTokens {
+            imports: quote! {
+                use super::{super::#program_name, #args_struct_name};
+                use simplex::program::{Program, ProgramFactory, ProgramSchema};
+                use simplex::simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness};
+                use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
+                use simplex::simplicityhl::types::TypeConstructible;
+            },
+            helper_impls: quote! {
+                #program_helpers_impl
+            },
+        })
+    }
 }
 
 impl WitnessField {
-    fn new(witness_name: &WitnessName, resolved_type: &ResolvedType) -> syn::Result<Self> {
+    fn new(
+        witness_name: &TemplateProgramWitness,
+        resolved_type: &ResolvedType,
+        key_constructor: &proc_macro2::Ident,
+    ) -> syn::Result<Self> {
         let (witness_simf_name, struct_rust_field) = {
             let w_name = witness_name.to_string();
             let r_name = format_ident!("{}", w_name.to_lowercase());
@@ -72,20 +135,23 @@ impl WitnessField {
             witness_simf_name,
             struct_rust_field,
             rust_type,
+            key_constructor: key_constructor.clone(),
         })
     }
 
     /// Generate the conversion code from Rust value to Simplicity Value
-    fn to_token_stream(&self) -> proc_macro2::TokenStream {
+    fn to_token_stream(&self, struct_name: &Ident, alloc_type: AllocationType) -> proc_macro2::TokenStream {
         let witness_name = &self.witness_simf_name;
         let field_name = &self.struct_rust_field;
+        let key_constructor = &self.key_constructor;
+        let field_access = quote! { #struct_name.#field_name };
         let conversion = self
             .rust_type
-            .generate_to_simplicity_conversion(&quote! { self.#field_name });
+            .generate_to_simplicity_conversion(&field_access, alloc_type);
 
         quote! {
             (
-                simplex::simplicityhl::str::WitnessName::from_str_unchecked(#witness_name),
+                simplex::simplicityhl::TemplateProgramWitness::#key_constructor(#witness_name),
                 #conversion
             )
         }
@@ -100,7 +166,11 @@ impl WitnessStruct {
     pub fn generate_arguments_impl(&self) -> syn::Result<GeneratedArgumentTokens> {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples();
+        let struct_param = format_ident!("val");
+        let copied_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Move);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -113,36 +183,24 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{Arguments, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
                     use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
-                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
-                    use simplex::program::ArgumentsTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity Arguments.
+                    /// Build struct from Simplicity `Arguments`.
                     ///
                     /// # Errors
                     ///
-                    /// Returns error if any required witness is missing, has wrong type, or has invalid value.
+                    /// Returns error if any required witness is missing, has the wrong type, or has an invalid value.
                     pub fn from_arguments(args: &Arguments) -> Result<Self, String> {
                         #arguments_conversion_from_args_map
 
                         Ok(#struct_to_return)
-                    }
-
-                }
-
-                impl simplex::program::ArgumentsTrait for #struct_name {
-                    /// Build Simplicity arguments for contract instantiation.
-                    #[must_use]
-                    fn build_arguments(&self) -> simplex::simplicityhl::Arguments {
-                        simplex::simplicityhl::Arguments::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
                     }
                 }
 
@@ -151,7 +209,8 @@ impl WitnessStruct {
                     where
                     S: simplex::serde::Serializer,
                     {
-                        self.build_arguments().serialize(serializer)
+                        let args: Arguments = self.into();
+                        args.serialize(serializer)
                     }
                 }
 
@@ -160,7 +219,7 @@ impl WitnessStruct {
                     where
                     D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = simplex::simplicityhl::Arguments::deserialize(deserializer)?;
+                        let x = Arguments::deserialize(deserializer)?;
                         Self::from_arguments(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
@@ -168,6 +227,22 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for Arguments {
+                    fn from(#struct_param: #struct_name) -> Arguments {
+                        Arguments::from_map(HashMap::from([
+                            #(#moved_tuples),*
+                        ]))
+                    }
+                }
+
+                impl From<&#struct_name> for Arguments {
+                    fn from(#struct_param: &#struct_name) -> Arguments {
+                        Arguments::from_map(HashMap::from([
+                            #(#copied_tuples),*
+                        ]))
                     }
                 }
             },
@@ -181,7 +256,11 @@ impl WitnessStruct {
     pub fn generate_witness_impl(&self) -> syn::Result<GeneratedWitnessTokens> {
         let generated_struct = self.generate_struct_token_stream();
         let struct_name = &self.struct_name;
-        let tuples: Vec<proc_macro2::TokenStream> = self.construct_witness_tuples();
+        let struct_param = format_ident!("val");
+        let copied_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Copy);
+        let moved_tuples: Vec<proc_macro2::TokenStream> =
+            self.construct_witness_tuples(&struct_param, AllocationType::Move);
         let (arguments_conversion_from_args_map, struct_to_return): (
             proc_macro2::TokenStream,
             proc_macro2::TokenStream,
@@ -194,17 +273,16 @@ impl WitnessStruct {
                     use simplex::simplicityhl::{WitnessValues, Value, ResolvedType};
                     use simplex::simplicityhl::value::{UIntValue, ValueInner};
                     use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
-                    use simplex::simplicityhl::str::WitnessName;
+                    use simplex::simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap};
                     use simplex::simplicityhl::types::TypeConstructible;
                     use simplex::simplicityhl::value::ValueConstructible;
-                    use simplex::program::WitnessTrait;
             },
             struct_token_stream: quote! {
                 #generated_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
-                    /// Build struct from Simplicity WitnessValues.
+                    /// Build struct from Simplicity `WitnessValues`.
                     ///
                     /// # Errors
                     ///
@@ -216,22 +294,13 @@ impl WitnessStruct {
                     }
                 }
 
-                impl simplex::program::WitnessTrait for #struct_name {
-                     /// Build Simplicity witness values for contract execution.
-                    #[must_use]
-                    fn build_witness(&self) -> simplex::simplicityhl::WitnessValues {
-                        simplex::simplicityhl::WitnessValues::from(HashMap::from([
-                            #(#tuples),*
-                        ]))
-                    }
-                }
-
                 impl simplex::serde::Serialize for #struct_name {
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
                         S: simplex::serde::Serializer,
                     {
-                        self.build_witness().serialize(serializer)
+                        let wit: WitnessValues = self.into();
+                        wit.serialize(serializer)
                     }
                 }
 
@@ -240,7 +309,7 @@ impl WitnessStruct {
                     where
                         D: simplex::serde::Deserializer<'de>,
                     {
-                        let x = simplex::simplicityhl::WitnessValues::deserialize(deserializer)?;
+                        let x = WitnessValues::deserialize(deserializer)?;
                         Self::from_witness(&x).map_err(simplex::serde::de::Error::custom)
                     }
                 }
@@ -248,6 +317,22 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl From<#struct_name> for WitnessValues {
+                    fn from(#struct_param: #struct_name) -> WitnessValues {
+                        WitnessValues::from_map(HashMap::from([
+                            #(#moved_tuples),*
+                        ]))
+                    }
+                }
+
+                impl From<&#struct_name> for WitnessValues {
+                    fn from(#struct_param: &#struct_name) -> WitnessValues {
+                        WitnessValues::from_map(HashMap::from([
+                            #(#copied_tuples),*
+                        ]))
                     }
                 }
             },
@@ -259,7 +344,7 @@ impl WitnessStruct {
 
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Arguments", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
+            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("parameter_from_str"))?,
         })
     }
 
@@ -268,14 +353,15 @@ impl WitnessStruct {
 
         Ok(WitnessStruct {
             struct_name: format_ident!("{}Witness", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter())?,
+            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("witness_from_str"))?,
         })
     }
 
     fn generate_witness_fields<'a>(
-        iter: impl Iterator<Item = (&'a WitnessName, &'a ResolvedType)>,
+        iter: impl Iterator<Item = (&'a TemplateProgramWitness, &'a ResolvedType)>,
+        key_constructor: &proc_macro2::Ident,
     ) -> syn::Result<Vec<WitnessField>> {
-        iter.map(|(name, resolved_type)| WitnessField::new(name, resolved_type))
+        iter.map(|(name, resolved_type)| WitnessField::new(name, resolved_type, key_constructor))
             .collect()
     }
 
@@ -300,6 +386,22 @@ impl WitnessStruct {
         }
     }
 
+    fn generate_schema(&self) -> Vec<proc_macro2::TokenStream> {
+        let mut fields: Vec<_> = self.witness_values.iter().collect();
+        fields.sort_unstable_by(|a, b| a.witness_simf_name.cmp(&b.witness_simf_name));
+
+        fields
+            .into_iter()
+            .map(|field| {
+                let name = &field.witness_simf_name;
+                let key_constructor = &field.key_constructor;
+                let ty = field.rust_type.generate_simplicity_type_construction();
+
+                quote! { (TemplateProgramWitness::#key_constructor(#name), #ty) }
+            })
+            .collect()
+    }
+
     fn generate_default_mapping(&self) -> proc_macro2::TokenStream {
         let name = format_ident!("{}", self.struct_name);
         let fields: Vec<proc_macro2::TokenStream> = self
@@ -320,8 +422,15 @@ impl WitnessStruct {
     }
 
     #[inline]
-    fn construct_witness_tuples(&self) -> Vec<proc_macro2::TokenStream> {
-        self.witness_values.iter().map(WitnessField::to_token_stream).collect()
+    fn construct_witness_tuples(
+        &self,
+        struct_name: &Ident,
+        alloc_type: AllocationType,
+    ) -> Vec<proc_macro2::TokenStream> {
+        self.witness_values
+            .iter()
+            .map(|wit_field| wit_field.to_token_stream(struct_name, alloc_type))
+            .collect()
     }
 
     /// Generate conversion code from Arguments/WitnessValues back to struct fields.
@@ -337,9 +446,10 @@ impl WitnessStruct {
             .map(|field| {
                 let field_name = &field.struct_rust_field;
                 let witness_name = &field.witness_simf_name;
-                let extraction = field
-                    .rust_type
-                    .generate_from_value_extraction(&param_ident, witness_name);
+                let extraction =
+                    field
+                        .rust_type
+                        .generate_from_value_extraction(&param_ident, witness_name, &field.key_constructor);
 
                 quote! {
                     let #field_name = #extraction;
@@ -365,6 +475,11 @@ impl WitnessStruct {
 
         (extractions, struct_init)
     }
+}
+
+pub fn construct_program_name(contract_name: &str) -> proc_macro2::Ident {
+    let base_name = convert_contract_name_to_struct_name(contract_name);
+    format_ident!("{base_name}Program")
 }
 
 pub fn convert_contract_name_to_struct_name(contract_name: &str) -> String {
@@ -401,10 +516,50 @@ pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_mac
 
 #[cfg(test)]
 mod tests {
-    use super::convert_contract_name_to_struct_name;
+    use simplicityhl::types::TypeConstructible;
+    use simplicityhl::{ResolvedType, TemplateProgramWitness};
+
+    use super::{WitnessStruct, convert_contract_name_to_struct_name};
 
     #[test]
     fn struct_names_preserve_a_leading_identifier_underscore() {
         assert_eq!(convert_contract_name_to_struct_name("_9_lives"), "_9Lives");
+    }
+
+    #[test]
+    fn schema_is_independent_of_metadata_order() {
+        let metadata = [
+            (TemplateProgramWitness::witness_from_str("Z"), ResolvedType::u16()),
+            (TemplateProgramWitness::witness_from_str("A"), ResolvedType::boolean()),
+            (TemplateProgramWitness::witness_from_str("M"), ResolvedType::u32()),
+        ];
+
+        let key_constructor = quote::format_ident!("witness_from_str");
+        let iter = metadata.iter().map(|(name, ty)| (name, ty));
+
+        let mut fields = WitnessStruct {
+            struct_name: quote::format_ident!("SeededFields"),
+            witness_values: WitnessStruct::generate_witness_fields(iter, &key_constructor).unwrap(),
+        };
+
+        let schema = |fields: &WitnessStruct| -> String {
+            fields
+                .generate_schema()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let ideal_schema = schema(&fields);
+
+        fields.witness_values.reverse();
+        assert_eq!(ideal_schema, schema(&fields));
+
+        let (idx_a, idx_m, idx_z) = (
+            ideal_schema.find("\"A\"").unwrap(),
+            ideal_schema.find("\"M\"").unwrap(),
+            ideal_schema.find("\"Z\"").unwrap(),
+        );
+        assert!(idx_a < idx_m && idx_m < idx_z);
     }
 }

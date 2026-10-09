@@ -20,13 +20,13 @@ impl Clean {
     /// # Errors
     /// Returns a `CommandError` if the artifacts directory cannot be resolved
     /// or if removing any directory fails.
-    pub fn run(artifacts: &impl AsRef<Path>, flags: &CleanFlags) -> Result<(), CommandError> {
-        let artifacts_dir = ArtifactsResolver::resolve_local_dir(artifacts)
+    pub fn run(root_dir: &Path, artifacts: &impl AsRef<Path>, flags: &CleanFlags) -> Result<(), CommandError> {
+        let artifacts_dir = ArtifactsResolver::resolve_local_dir(root_dir, artifacts)
             .map_err(|err| CleanError::ResolveOutDir(err.to_string()))?;
 
         let mut to_remove = vec![artifacts_dir];
         if flags.remove_all {
-            let deps_dir = ArtifactsResolver::resolve_local_dir(&DEFAULT_DEPENDENCY_DIR)
+            let deps_dir = ArtifactsResolver::resolve_local_dir(root_dir, &DEFAULT_DEPENDENCY_DIR)
                 .map_err(|err| CleanError::ResolveOutDir(err.to_string()))?;
 
             to_remove.push(deps_dir);

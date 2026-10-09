@@ -1,6 +1,6 @@
 [package]
 name = "smplx-build"
-version = "0.0.12"
+version = "0.1.0"
 description = "Simplex build command internal implementation"
 license.workspace = true
 edition.workspace = true
@@ -8,18 +8,23 @@ edition.workspace = true
 [lints]
 workspace = true
 
+# On by default for the `simplex` CLI and macros. Crates that only read `Simplex.toml`
+# and resolve dependencies (e.g. simplicityhl-lsp) use `default-features = false`.
+[features]
+default = ["full"]
+full = ["dep:syn", "dep:proc-macro2", "dep:quote", "dep:pathdiff", "dep:prettyplease", "dep:globwalk", "dep:serde_json", "dep:toml_edit"]
+
 [dependencies]
 thiserror = { workspace = true }
 toml = { workspace = true }
-toml_edit = { workspace = true }
+toml_edit = { workspace = true, optional = true }
 serde = { workspace = true }
 simplicityhl = { workspace = true }
 
-syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
-proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
-quote = { version = "1.0.44" }
-pathdiff = { version = "0.2.3" }
-prettyplease = { version = "0.2.37" }
-glob = { version = "0.3.3"}
-globwalk = { version = "0.9.1"}
-serde_json = { version = "1.0.151" }
+syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"], optional = true }
+proc-macro2 = { version = "1.0.106", features = ["span-locations"], optional = true }
+quote = { version = "1.0.44", optional = true }
+pathdiff = { version = "0.2.3", optional = true }
+prettyplease = { version = "0.2.37", optional = true }
+globwalk = { version = "0.9.1", optional = true }
+serde_json = { version = "1.0.151", optional = true }

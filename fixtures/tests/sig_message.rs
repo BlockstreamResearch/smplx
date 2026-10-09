@@ -3,7 +3,7 @@ use std::sync::Arc;
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::either::Either;
 use simplex::simplicityhl::elements::Script;
-use simplex::simplicityhl::simplicity::hashes::{Hash, sha256};
+use simplex::simplicityhl::simplicity::hashes::sha256;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, SigMessage};
 
 use simplex_fixtures::artifacts::sig_message::SigMessageProgram;
@@ -19,7 +19,7 @@ fn get_sig_message(context: &simplex::TestContext) -> (SigMessageProgram, Script
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    let program = SigMessageProgram::new(&arguments);
+    let program = SigMessageProgram::new(arguments);
     let script = program.get_script_pubkey(context.get_network());
 
     (program, script)
@@ -51,7 +51,7 @@ fn spend_sig_message(
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(program.as_ref().clone()), Box::new(witness)),
+        ProgramInput::new(Box::new(program.as_ref().clone()), witness),
         required_sig,
     );
 

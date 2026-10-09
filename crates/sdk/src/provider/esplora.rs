@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::Duration;
 
-use simplicityhl::elements::hashes::{Hash, sha256};
+use simplicityhl::elements::hashes::sha256;
 
 use simplicityhl::elements::encode;
 use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};

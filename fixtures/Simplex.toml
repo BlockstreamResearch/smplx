@@ -12,7 +12,7 @@ base_math = { path = "deps/math" }
 std = { git = "https://github.com/BlockstreamResearch/simplicityhl-std.git", tag = "v0.1.0" }
 
 # [regtest]
-# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+# mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 # bitcoins = 10_000_000
 # rpc_port = 18443
 # esplora_port = 3000
@@ -20,9 +20,14 @@ std = { git = "https://github.com/BlockstreamResearch/simplicityhl-std.git", tag
 # rpc_password = "password"
 
 # [test]
-# mnemonic = "exist carry drive collect lend cereal occur much tiger just involve mean"
+# mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 # bitcoins = 10_000_000
 # verbosity = 0
+
+# [test.fuzz]
+# cases = 10000
+# seed = 12345
+# network = "<Liquid, LiquidTestnet, ElementsRegtest>"
 
 # [test.esplora]
 # url = "<esplora url>"

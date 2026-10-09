@@ -2,16 +2,16 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Initializes Simplex project
+    /// Initializes Simplex project.
     Init {
-        /// Name of the new project
+        /// Name of the new project.
         name: Option<String>,
     },
-    /// Prints current Simplex config in use
+    /// Prints current Simplex config in use.
     Config,
-    /// Spins up local Electrs + Elements regtest
+    /// Spins up local Electrs + Elements regtest.
     Regtest,
-    /// Runs Simplex tests
+    /// Runs Simplex tests.
     Test {
         #[command(flatten)]
         args: TestArguments,
@@ -19,17 +19,17 @@ pub enum Command {
         #[command(flatten)]
         flags: TestFlags,
     },
-    /// Install a `SimplicityHL` dependency (requires the dep to be a simplex project)
-    /// If `deps` is empty, install everything from `Simplex.toml`.
+    /// Installs a `SimplicityHL` dependency (requires the dep to be a Simplex project)
+    /// If `deps` is empty, installs everything from `Simplex.toml`.
     Install {
         /// Dependencies to install, as `<source>` or `<alias>=<source>`.
         /// The bare name `std` pins the latest `SimplicityHL` standard library release.
         #[arg(value_name = "DEP")]
         deps: Vec<String>,
     },
-    /// Generates the simplicity contracts artifacts
+    /// Generates Simplex artifacts for tests and fuzz tests.
     Build,
-    /// Cleans Simplex artifacts in the current directory
+    /// Cleans Simplex artifacts in the current directory.
     Clean {
         #[command(flatten)]
         flags: CleanFlags,
@@ -39,13 +39,13 @@ pub enum Command {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestArguments {
-    /// Space-separated test name filters
+    /// Space-separated test name filters.
     #[arg(value_name = "FILTER", num_args = 0..)]
     pub filters: Vec<String>,
-    /// Integration test target to run
+    /// Integration test target to run.
     #[arg(long = "target")]
     pub target: Option<String>,
-    /// Number of tests to run simultaneously
+    /// Number of tests to run simultaneously.
     #[arg(long = "test-threads")]
     pub test_threads: Option<std::num::NonZeroUsize>,
 }
@@ -53,30 +53,33 @@ pub struct TestArguments {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct TestFlags {
-    /// Show detailed output about running tests
+    /// Show detailed output about running tests.
     #[arg(long = "show-output")]
     pub show_output: bool,
-    /// Run ignored tests
+    /// Run ignored tests.
     #[arg(long)]
     pub ignored: bool,
-    /// Run tests regardless of failure
+    /// Run tests regardless of failure.
     #[arg(long = "no-fail-fast")]
     pub no_fail_fast: bool,
-    /// Verbosity level for test output (-v for debug, -vv for trace)
+    /// Verbosity level for test output (-v for debug, -vv for trace).
     #[arg(short = 'v', long, action = clap::ArgAction::Count)]
     pub verbose: u8,
-    /// Do not print cargo log messages
+    /// Do not print cargo log messages.
     #[arg(short = 'q', long)]
     pub quiet: bool,
-    /// Run non-simplex tests (may be used for running unit tests)
-    #[arg(long = "no-simplex")]
+    /// Run non-simplex tests (may be used for running Rust unit tests).
+    #[arg(long = "no-simplex", conflicts_with = "fuzz")]
     pub no_simplex: bool,
+    /// Run Simplex fuzz tests.
+    #[arg(long = "fuzz")]
+    pub fuzz: bool,
 }
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args, Clone)]
 pub struct CleanFlags {
-    /// Remove all files created by Simplex, including installed dependencies
+    /// Remove all files created by Simplex, including installed dependencies.
     #[arg(long = "all")]
     pub remove_all: bool,
 }

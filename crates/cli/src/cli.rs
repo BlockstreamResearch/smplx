@@ -1,3 +1,4 @@
+use std::env;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -11,8 +12,8 @@ use crate::commands::init::Init;
 use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
 use crate::commands::test::Test;
-use crate::config::Config;
 use crate::config::error::ConfigError;
+use crate::config::{CONFIG_FILENAME, Config};
 use crate::error::CliError;
 
 #[derive(Debug, Parser)]
@@ -36,14 +37,14 @@ impl Cli {
             Command::Init { name } => {
                 let simplex_conf_path = match name {
                     Some(name) => {
-                        let dir = std::env::current_dir()?.join(name);
+                        let dir = env::current_dir()?.join(name);
 
                         if dir.exists() {
                             return Err(CliError::Io(std::io::Error::from(std::io::ErrorKind::AlreadyExists)));
                         }
 
                         std::fs::create_dir_all(&dir)?;
-                        dir.join("Simplex.toml")
+                        dir.join(CONFIG_FILENAME)
                     }
                     None => Config::get_default_path()?,
                 };
@@ -78,16 +79,22 @@ impl Cli {
                 Ok(Install::run(&loaded_config.dependencies)?)
             }
             Command::Build => {
+                let root_dir = env::current_dir()?;
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Build::run(&loaded_config.build, &loaded_config.dependencies)?)
+                Ok(Build::run(
+                    &root_dir,
+                    &loaded_config.build,
+                    &loaded_config.dependencies,
+                )?)
             }
             Command::Clean { flags } => {
+                let root_dir = env::current_dir()?;
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(&config_path)?;
 
-                Ok(Clean::run(&loaded_config.build.out_dir, flags)?)
+                Ok(Clean::run(&root_dir, &loaded_config.build.out_dir, flags)?)
             }
         }
     }

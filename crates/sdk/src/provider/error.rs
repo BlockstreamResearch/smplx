@@ -40,3 +40,11 @@ pub enum ProviderError {
     #[error("Couldn't parse the response")]
     BadResponse(),
 }
+
+/// Network conversion error.
+#[derive(thiserror::Error, Debug)]
+pub enum NetworkConvertError {
+    /// The provided network name is not supported.
+    #[error("Network name should either be `Liquid`, `LiquidTestnet` or `ElementsRegtest`, got: {0}")]
+    BadNetworkName(String),
+}

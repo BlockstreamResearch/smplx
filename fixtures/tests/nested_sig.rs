@@ -12,7 +12,7 @@ fn get_nested_sig(context: &simplex::TestContext) -> (NestedSigProgram, Script) 
         public_key: signer.get_schnorr_public_key().serialize(),
     };
 
-    let program = NestedSigProgram::new(&arguments);
+    let program = NestedSigProgram::new(arguments);
     let script = program.get_script_pubkey(context.get_network());
 
     (program, script)
@@ -44,7 +44,7 @@ fn spend_nested_sig(
 
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
-        ProgramInput::new(Box::new(program.as_ref().clone()), Box::new(witness)),
+        ProgramInput::new(Box::new(program.as_ref().clone()), witness),
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
     );
 
