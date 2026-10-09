@@ -7,7 +7,7 @@ use proptest::test_runner::{Config as ProptestConfig, TestRunner};
 
 use simplicityhl::{Arguments, WitnessValues};
 
-use smplx_sdk::program::{ProgramFactory, ProgramTrait, RandomArguments, RandomWitness};
+use smplx_sdk::program::{ProgramFactory, ProgramSchema, ProgramTrait};
 use smplx_sdk::signer::Signer;
 
 use crate::fuzz::FuzzableProgram;
@@ -26,9 +26,9 @@ pub struct SimplexFuzzEngine<Program, Args, Wit> {
 
 impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
 where
-    Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-    Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
-    Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
+    Program: FuzzableProgram<Program> + ProgramFactory<Program> + ProgramSchema + Clone + 'static,
+    Args: Into<Arguments> + Debug + Clone + 'static,
+    Wit: Into<WitnessValues> + Debug + Clone + 'static,
 {
     pub fn new(config: ProptestConfig, signer: Signer) -> SimplexFuzzEngine<Program, Args, Wit> {
         SimplexFuzzEngine {
@@ -83,7 +83,7 @@ where
         let mut runner = TestRunner::new(self.config);
 
         let strategy = match self.strategy {
-            None => ArgsStrategyBuilder::<Args, Wit>::new().build(),
+            None => ArgsStrategyBuilder::<Program>::new().build(),
             Some(strategy) => strategy,
         };
         let program_check = match self.program_check {
@@ -186,6 +186,20 @@ mod tests {
         }
     }
 
+    impl ProgramSchema for DummyProgram {
+        fn argument_types() -> Vec<(simplicityhl::TemplateProgramWitness, simplicityhl::ResolvedType)> {
+            Vec::new()
+        }
+
+        fn witness_types() -> Vec<(simplicityhl::TemplateProgramWitness, simplicityhl::ResolvedType)> {
+            Vec::new()
+        }
+
+        fn literals() -> Vec<simplicityhl::num::U256> {
+            Vec::new()
+        }
+    }
+
     #[derive(Clone, Debug)]
     struct EmptyArgs;
 
@@ -198,18 +212,6 @@ mod tests {
     impl From<EmptyArgs> for WitnessValues {
         fn from(_: EmptyArgs) -> Self {
             Self::default()
-        }
-    }
-
-    impl RandomArguments for EmptyArgs {
-        fn generate_arguments(_: &mut dyn rand::RngCore) -> Arguments {
-            Arguments::default()
-        }
-    }
-
-    impl RandomWitness for EmptyArgs {
-        fn generate_witness(_: &mut dyn rand::RngCore) -> WitnessValues {
-            WitnessValues::default()
         }
     }
 

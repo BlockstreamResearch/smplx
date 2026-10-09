@@ -1,9 +1,10 @@
 mod core;
+mod guided;
 mod random;
-mod random_interesting;
-mod random_pool;
+
+#[cfg(test)]
+mod test_schema;
 
 pub use core::*;
+pub use guided::*;
 pub use random::*;
-pub use random_interesting::*;
-pub use random_pool::*;

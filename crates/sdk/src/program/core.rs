@@ -5,10 +5,11 @@ use dyn_clone::DynClone;
 use simplicityhl::ast::ElementsJetHinter;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
+use simplicityhl::num::U256;
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
 use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
-use simplicityhl::{Arguments, Parameters, WitnessTypes, WitnessValues};
+use simplicityhl::{Arguments, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes, WitnessValues};
 use simplicityhl::{CompiledProgram, UnstableFeatures};
 
 use crate::global::GlobalConfig;
@@ -79,18 +80,16 @@ pub trait ProgramTrait: DynClone {
     ) -> Result<Vec<Vec<u8>>, ProgramError>;
 }
 
-/// An interface for the struct capable of generating proper `Arguments` mappings using the provided RNG.
-/// See the `include_simf!()` macro, which generates an automatic `Into<Arguments>`, `RandomArguments` implementation.
-pub trait RandomArguments: Into<Arguments> {
-    /// Generates a random `Arguments` instance using the provided RNG.
-    fn generate_arguments(rng: &mut dyn rand_core::RngCore) -> Arguments;
-}
+/// Static description of a program's inputs and integer literals. Implemented by `include_simf!()`.
+pub trait ProgramSchema {
+    /// Parameter names and types.
+    fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)>;
 
-/// An interface for the struct capable of generating proper `WitnessValues` mappings using the provided RNG.
-/// See the `include_simf!()` macro, which generates an automatic `Into<WitnessValues>`, `RandomWitness` implementation.
-pub trait RandomWitness: Into<WitnessValues> {
-    /// Generates a random `WitnessValues` instance using the provided RNG.
-    fn generate_witness(rng: &mut dyn rand_core::RngCore) -> WitnessValues;
+    /// Witness names and types.
+    fn witness_types() -> Vec<(TemplateProgramWitness, ResolvedType)>;
+
+    /// Integer literals in the source.
+    fn literals() -> Vec<U256>;
 }
 
 /// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
