@@ -215,6 +215,7 @@ mod tests {
         let mut runner_2 = deterministic_runner();
 
         let generate = |runner: &mut TestRunner| strategy.new_tree(runner).unwrap().current();
+
         for _ in 0..ITERATIONS {
             let first = generate(&mut runner_1);
             let second = generate(&mut runner_2);
