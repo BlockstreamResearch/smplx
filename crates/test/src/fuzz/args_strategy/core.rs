@@ -1,69 +1,83 @@
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::{BoxedStrategy, Strategy};
+use proptest::strategy::ValueTree;
 
-use crate::fuzz::args_strategy::{InterestingRandom, Random, RandomValuePool};
+use crate::fuzz::args_strategy::{Guided, Random};
 
-pub struct ArgsStrategyBuilder<Args, Wit, Base = InterestingRandom<Args, Wit>> {
+pub struct ArgsStrategyBuilder<P, Base = Guided<P>> {
     base_strategy: Base,
-    _placeholder: PhantomData<(Args, Wit)>,
+    _program: PhantomData<fn() -> P>,
 }
 
-impl<Args, Wit> ArgsStrategyBuilder<Args, Wit> {
+impl<P> ArgsStrategyBuilder<P> {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl<Args, Wit> Default for ArgsStrategyBuilder<Args, Wit> {
+impl<P> Default for ArgsStrategyBuilder<P> {
     fn default() -> Self {
         Self {
-            base_strategy: InterestingRandom::default(),
-            _placeholder: Default::default(),
+            base_strategy: Guided::default(),
+            _program: PhantomData,
         }
     }
 }
 
-impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base> {
-    pub fn with_random(self) -> ArgsStrategyBuilder<Args, Wit, Random<Args, Wit>> {
+impl<P, Base> ArgsStrategyBuilder<P, Base> {
+    pub fn with_random(self) -> ArgsStrategyBuilder<P, Random<P>> {
         ArgsStrategyBuilder {
-            base_strategy: Random::<Args, Wit>::default(),
-            _placeholder: Default::default(),
+            base_strategy: Random::default(),
+            _program: PhantomData,
         }
     }
 
-    pub fn with_random_pool(self) -> ArgsStrategyBuilder<Args, Wit, RandomValuePool<Args, Wit>> {
+    pub fn with_guided(self) -> ArgsStrategyBuilder<P, Guided<P>> {
         ArgsStrategyBuilder {
-            base_strategy: RandomValuePool::<Args, Wit>::default(),
-            _placeholder: Default::default(),
+            base_strategy: Guided::default(),
+            _program: PhantomData,
         }
     }
 
-    pub fn with_custom_strategy<New>(self, custom_strategy: New) -> ArgsStrategyBuilder<Args, Wit, New>
+    pub fn with_custom_strategy<New>(self, custom_strategy: New) -> ArgsStrategyBuilder<P, New>
     where
         New: Strategy<Value = (Arguments, WitnessValues)> + 'static,
     {
         ArgsStrategyBuilder {
             base_strategy: custom_strategy,
-            _placeholder: Default::default(),
-        }
-    }
-
-    pub fn with_random_interesting_values(self) -> ArgsStrategyBuilder<Args, Wit, InterestingRandom<Args, Wit>> {
-        ArgsStrategyBuilder {
-            base_strategy: InterestingRandom::<Args, Wit>::default(),
-            _placeholder: Default::default(),
+            _program: PhantomData,
         }
     }
 }
 
-impl<Args, Wit, Base> ArgsStrategyBuilder<Args, Wit, Base>
+impl<P, Base> ArgsStrategyBuilder<P, Base>
 where
     Base: Strategy<Value = (Arguments, WitnessValues)> + 'static,
 {
     pub fn build(self) -> BoxedStrategy<(Arguments, WitnessValues)> {
         self.base_strategy.boxed()
+    }
+}
+
+/// A generated case that is never shrunk.
+pub struct FixedValueTree<T>(pub T);
+
+impl<T: Clone + Debug> ValueTree for FixedValueTree<T> {
+    type Value = T;
+
+    fn current(&self) -> T {
+        self.0.clone()
+    }
+
+    fn simplify(&mut self) -> bool {
+        false
+    }
+
+    fn complicate(&mut self) -> bool {
+        false
     }
 }

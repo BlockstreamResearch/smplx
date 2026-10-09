@@ -24,7 +24,7 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     let fixed_arguments: Arguments = (&arguments).into();
 
     // Keep the signer's public key fixed while fuzzing the initial witness.
-    let strategy = ArgsStrategyBuilder::<P2pkArguments, P2pkWitness>::new()
+    let strategy = ArgsStrategyBuilder::<P2pkProgram>::new()
         .build()
         .prop_map(move |(_, witness)| (fixed_arguments.clone(), witness));
 

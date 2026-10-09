@@ -10,7 +10,7 @@ use simplicityhl::{Arguments, WitnessValues};
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 use smplx_sdk::global::GlobalConfig;
-use smplx_sdk::program::{ProgramFactory, RandomArguments, RandomWitness};
+use smplx_sdk::program::{ProgramFactory, ProgramSchema};
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
@@ -283,9 +283,9 @@ impl TestContext<FuzzMode> {
     /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
     pub fn engine<Program, Args, Wit>(&self) -> SimplexFuzzEngine<Program, Args, Wit>
     where
-        Program: FuzzableProgram<Program> + ProgramFactory<Program> + Clone + 'static,
-        Args: Into<Arguments> + RandomArguments + Debug + Clone + 'static,
-        Wit: Into<WitnessValues> + RandomWitness + Debug + Clone + 'static,
+        Program: FuzzableProgram<Program> + ProgramFactory<Program> + ProgramSchema + Clone + 'static,
+        Args: Into<Arguments> + Debug + Clone + 'static,
+        Wit: Into<WitnessValues> + Debug + Clone + 'static,
     {
         SimplexFuzzEngine::new(
             self.mode.proptest_config.clone(),

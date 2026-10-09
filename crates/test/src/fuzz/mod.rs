@@ -11,4 +11,4 @@ pub use crate::error::FuzzError;
 pub use core::SimplexFuzzEngine;
 pub use fuzz_check::{ProgramCheck, ProgramExecResult};
 pub use fuzz_program::FuzzableProgram;
-pub use utils::{generate_interesting_or_scratch_by_ty, generate_random_value_by_ty};
+pub use utils::{generate_random_value_by_ty, random_arguments, random_witness};
