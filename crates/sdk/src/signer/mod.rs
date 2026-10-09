@@ -2,8 +2,11 @@
 pub mod core;
 /// Signer-specific error enumerations capturing execution constraints and mapping internal failure types.
 pub mod error;
+/// Reading confidential outputs with a blinding key.
+mod unblind;
 /// Utilities for injecting witness data bindings into Simplicity environments.
 mod wtns_injector;
 
 pub use core::{Signer, SignerTrait};
 pub use error::SignerError;
+pub use unblind::unblind_txout;

@@ -36,6 +36,8 @@ use crate::program::logger::ProgramLogger;
 #[cfg(feature = "provider")]
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
+#[cfg(feature = "provider")]
+use crate::signer::unblind_txout;
 use crate::signer::wtns_injector::WtnsInjector;
 use crate::transaction::{ChangeOutput, FinalTransaction, PartialOutput, RequiredSignature, SigMessage};
 #[cfg(feature = "provider")]
@@ -595,10 +597,19 @@ impl Signer {
     /// Panics if the master SLIP77 key cannot be derived.
     #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
-        let blinding_key = self
-            .master_slip77()
-            .unwrap()
-            .blinding_private_key(&self.get_address().script_pubkey());
+        self.get_blinding_private_key_for_script(&self.get_address().script_pubkey())
+    }
+
+    /// Derives the SLIP77 blinding private key the wallet uses for `script`.
+    ///
+    /// A wallet that receives on many derivation indices has one blinding key per script, and this
+    /// is how it reads outputs paid to any of them.
+    ///
+    /// # Panics
+    /// Panics if the master SLIP77 key cannot be derived.
+    #[must_use]
+    pub fn get_blinding_private_key_for_script(&self, script: &Script) -> PrivateKey {
+        let blinding_key = self.master_slip77().unwrap().blinding_private_key(script);
 
         PrivateKey::new(blinding_key, self.network)
     }
@@ -609,7 +620,7 @@ impl Signer {
 
         for mut utxo in utxos {
             let blinding_key = self.get_blinding_private_key();
-            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
+            let secrets = unblind_txout(&utxo.txout, blinding_key.inner)?;
 
             utxo.secrets = Some(secrets);
 
