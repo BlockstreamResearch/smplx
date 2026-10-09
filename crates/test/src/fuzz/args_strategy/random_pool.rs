@@ -295,6 +295,7 @@ mod tests {
                 } else {
                     (first.complicate(), second.complicate())
                 };
+
                 assert_eq!(
                     first_changed, second_changed,
                     "pool case {case} diverged at step {step}"
