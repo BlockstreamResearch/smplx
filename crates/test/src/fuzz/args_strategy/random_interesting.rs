@@ -58,6 +58,7 @@ impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Int
 
         let mut args_entries: Vec<_> = args.iter().collect();
         args_entries.sort_unstable_by_key(|(name, _)| *name);
+
         let mut args_map = HashMap::new();
         for (name, val) in args_entries {
             args_map.insert(
@@ -68,6 +69,7 @@ impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Int
 
         let mut wit_entries: Vec<_> = wit.iter().collect();
         wit_entries.sort_unstable_by_key(|(name, _)| *name);
+
         let mut wit_map = HashMap::new();
         for (name, val) in wit_entries {
             wit_map.insert(

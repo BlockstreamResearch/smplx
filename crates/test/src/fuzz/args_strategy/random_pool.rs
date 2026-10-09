@@ -74,6 +74,7 @@ impl<Args: RandomArguments + Debug, Wit: RandomWitness + Debug> Strategy for Ran
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
         let args = Args::generate_arguments(runner.rng());
         let wit = Wit::generate_witness(runner.rng());
+
         let pool = ValuePool::new(&wit.clone(), &args.clone());
         let wit = pool.probabilistically_replace(wit, runner.rng());
 
@@ -98,6 +99,7 @@ impl ValuePool {
 
         let mut wit_entries: Vec<_> = wit.iter().collect();
         wit_entries.sort_unstable_by_key(|(name, _)| *name);
+
         for (_, val) in wit_entries {
             pool.entry(val.ty().clone())
                 .and_modify(|counter| counter.push(val.clone()))
@@ -106,6 +108,7 @@ impl ValuePool {
 
         let mut args_entries: Vec<_> = args.iter().collect();
         args_entries.sort_unstable_by_key(|(name, _)| *name);
+
         for (_, val) in args_entries {
             pool.entry(val.ty().clone())
                 .and_modify(|counter| counter.push(val.clone()))
@@ -131,6 +134,7 @@ impl ValuePool {
 
         let mut entries: Vec<_> = wit.iter().collect();
         entries.sort_unstable_by_key(|(name, _)| *name);
+
         for (name, val) in entries {
             let should_replace: bool = rng.random();
 
