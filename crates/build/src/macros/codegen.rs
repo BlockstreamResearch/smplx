@@ -395,9 +395,14 @@ impl WitnessStruct {
 
     fn generate_rand_mapping(&self) -> proc_macro2::TokenStream {
         let name = format_ident!("{}", self.struct_name);
-        let fields: Vec<proc_macro2::TokenStream> = self
-            .witness_values
-            .iter()
+
+        // Keep RNG draws stable across macro expansions.
+        // Sort unstable is usable here, as our names are unique
+        let mut witness_values: Vec<_> = self.witness_values.iter().collect();
+        witness_values.sort_unstable_by(|a, b| a.witness_simf_name.cmp(&b.witness_simf_name));
+
+        let fields: Vec<proc_macro2::TokenStream> = witness_values
+            .into_iter()
             .map(|field| {
                 let field_name = format_ident!("{}", field.struct_rust_field);
                 let field_default_value = field.rust_type.get_random_value();
@@ -526,10 +531,48 @@ pub fn convert_contract_name_to_contract_module(contract_name: &str) -> proc_mac
 
 #[cfg(test)]
 mod tests {
-    use super::convert_contract_name_to_struct_name;
+    use simplicityhl::types::TypeConstructible;
+    use simplicityhl::{ResolvedType, TemplateProgramWitness};
+
+    use super::{WitnessStruct, convert_contract_name_to_struct_name};
 
     #[test]
     fn struct_names_preserve_a_leading_identifier_underscore() {
         assert_eq!(convert_contract_name_to_struct_name("_9_lives"), "_9Lives");
+    }
+
+    #[test]
+    fn random_generation_is_independent_of_metadata_order() {
+        let metadata = [
+            (TemplateProgramWitness::witness_from_str("Z"), ResolvedType::u16()),
+            (TemplateProgramWitness::witness_from_str("A"), ResolvedType::boolean()),
+            (TemplateProgramWitness::witness_from_str("M"), ResolvedType::u32()),
+        ];
+
+        let key_constructor = quote::format_ident!("default_name");
+        let iter = metadata.iter().map(|(name, ty)| (name, ty));
+
+        let mut fields = WitnessStruct {
+            struct_name: quote::format_ident!("SeededFields"),
+            witness_values: WitnessStruct::generate_witness_fields(iter, &key_constructor).unwrap(),
+        };
+
+        let ideal_rand_mapping = fields.generate_rand_mapping().to_string();
+
+        fields.witness_values.reverse();
+        assert_eq!(ideal_rand_mapping, fields.generate_rand_mapping().to_string());
+
+        let (idx_a, idx_m, idx_z) = (
+            ideal_rand_mapping
+                .find("a : rng")
+                .expect("failed to find witness value with name `a`"),
+            ideal_rand_mapping
+                .find("m : rng")
+                .expect("failed to find witness value with name `m`"),
+            ideal_rand_mapping
+                .find("z : rng")
+                .expect("failed to find witness value with name `z`"),
+        );
+        assert!(idx_a < idx_m && idx_m < idx_z);
     }
 }
