@@ -290,7 +290,7 @@ fn spend_with_exact_outputs(
     // Simplicity program, where a failed `assert!` surfaces, before the
     // transaction reaches the network and its consensus rules, such as relative
     // locktimes. Several tests depend on telling those two apart.
-    let tx = signer.sign_tx(&ft)?;
+    let tx = signer.sign_tx(&ft)?.extract_tx()?;
     let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
     println!("  -> accepted: {receipt}");
     Ok(receipt.txid())

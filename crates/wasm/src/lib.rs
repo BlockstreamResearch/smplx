@@ -411,7 +411,9 @@ impl WalletSigner {
         let transaction = self
             .signer
             .sign_tx(&builder.transaction)
-            .map_err(|e| JsError::new(&format!("Could not sign the transaction: {e}")))?;
+            .map_err(|e| JsError::new(&format!("Could not sign the transaction: {e}")))?
+            .extract_tx()
+            .map_err(|e| JsError::new(&format!("Could not extract the signed transaction: {e}")))?;
 
         // In Elements the fee is an explicit output with an empty scriptPubKey.
         let fee_sats: u64 = transaction
