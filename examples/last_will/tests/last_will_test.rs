@@ -9,11 +9,12 @@ use last_will_example::artifacts::last_will::derived_last_will::{LastWillArgumen
 
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::either::Either;
+use simplex::program::ProgramError;
 use simplex::provider::{ProviderError, SimplicityNetwork};
 use simplex::signer::{Signer, SignerError};
 use simplex::simplicityhl::elements::{Script, Sequence, Txid};
 use simplex::transaction::{
-    ChangeOutput, FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO,
+    ChangeOutput, FinalTransaction, PartialInput, PartialOutput, ProgramInput, ProgramSignature, UTXO,
 };
 
 // The three roles each get their own wallet, built from its own BIP-39
@@ -102,7 +103,7 @@ impl Parties {
 /// `witness::INHERIT_OR_NOT` is an `Either<Signature, Either<Signature,
 /// Signature>>`, so each spending path is a position in that nested type.
 /// `witness()` puts a placeholder signature at that position, and
-/// `sig_path()` names the same position for the signer, which replaces it.
+/// `signature()` names the same position for the signer, which replaces it.
 /// An `enum` would read better in the contract, but Simplex does not support
 /// contracts that use one.
 #[derive(Clone, Copy)]
@@ -127,12 +128,13 @@ impl SpendPath {
         }
     }
 
-    fn sig_path(self) -> &'static [&'static str] {
-        match self {
+    fn signature(self) -> ProgramSignature {
+        let path: &[&str] = match self {
             SpendPath::Inherit => &["Left"],
             SpendPath::ColdSpend => &["Right", "Left"],
             SpendPath::HotSpend => &["Right", "Right"],
-        }
+        };
+        ProgramSignature::new("INHERIT_OR_NOT").at_path(path)
     }
 }
 
@@ -212,8 +214,8 @@ fn covenant_spend(
 
     ft.add_program_input(
         PartialInput::new(utxo).with_sequence(sequence),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
+        ProgramInput::new(Box::new(prog.as_ref().clone()), path.witness()),
+        Some(path.signature()),
     );
     ft.add_change(ChangeOutput::new(change_to));
 
@@ -277,8 +279,8 @@ fn spend_with_exact_outputs(
     let mut ft = FinalTransaction::new();
     ft.add_program_input(
         PartialInput::new(utxo).with_sequence(sequence),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
+        ProgramInput::new(Box::new(prog.as_ref().clone()), path.witness()),
+        Some(path.signature()),
     );
     for output in outputs {
         ft.add_output(output);
@@ -290,7 +292,7 @@ fn spend_with_exact_outputs(
     // Simplicity program, where a failed `assert!` surfaces, before the
     // transaction reaches the network and its consensus rules, such as relative
     // locktimes. Several tests depend on telling those two apart.
-    let tx = signer.sign_tx(&ft)?;
+    let tx = signer.sign_tx(&ft)?.extract_tx()?;
     let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
     println!("  -> accepted: {receipt}");
     Ok(receipt.txid())
@@ -303,7 +305,7 @@ fn spend_with_exact_outputs(
 /// contract's own logic catches it before broadcast is ever attempted.
 ///
 /// Both spend helpers run the program through the `Signer`, so a failed
-/// `assert!` always arrives as `SignerError::CovenantExecution`. Matching the
+/// `assert!` always arrives as `ProgramError::ProgramExecution`. Matching the
 /// type rather than the message text keeps the test independent of a
 /// dependency's wording.
 fn expect_assert_failure(result: anyhow::Result<Txid>, what_was_wrong: &str) -> anyhow::Result<()> {
@@ -313,7 +315,10 @@ fn expect_assert_failure(result: anyhow::Result<Txid>, what_was_wrong: &str) -> 
         }
         Err(err) => {
             anyhow::ensure!(
-                matches!(err.downcast_ref::<SignerError>(), Some(SignerError::CovenantExecution { .. })),
+                matches!(
+                    err.downcast_ref::<SignerError>(),
+                    Some(SignerError::Program(ProgramError::ProgramExecution { .. }))
+                ),
                 "expected an assertion failure ({what_was_wrong}), got a different error: {err}"
             );
             println!("  -> rejected locally, as expected: {what_was_wrong}\n");
@@ -416,7 +421,7 @@ fn inherit_too_early_is_rejected(context: simplex::TestContext) -> anyhow::Resul
             // body. Matching that variant, rather than grepping the formatted
             // error chain, keeps this test specific to a network rejection: a
             // local `assert!` failure arrives as
-            // `SignerError::CovenantExecution` and must not pass here.
+            // `ProgramError::ProgramExecution` and must not pass here.
             let Some(SignerError::Provider(ProviderError::BroadcastRejected { message, .. })) =
                 err.downcast_ref::<SignerError>()
             else {
@@ -750,7 +755,7 @@ fn covenant_survives_two_refreshes_then_breaks_out(context: simplex::TestContext
     // the script. The new balance comes from `UTXO::amount` on that output, so
     // the hop never needs to know the fee.
     let hot_spend_hop = |utxo: UTXO, hop_name: &str| -> anyhow::Result<UTXO> {
-        println!("Submitting {hop_name} (HotSpend, {} sats in)...", utxo.amount());
+        println!("Submitting {hop_name} (HotSpend, {} sats in)...", utxo.amount()?);
 
         // Paying the change back into the covenant's own script gives
         // `recursive_covenant()` the outputs it requires.
@@ -767,9 +772,9 @@ fn covenant_survives_two_refreshes_then_breaks_out(context: simplex::TestContext
     };
 
     let after_first = hot_spend_hop(funded, "first refresh")?;
-    println!("Covenant still alive at {} sats.\n", after_first.amount());
+    println!("Covenant still alive at {} sats.\n", after_first.amount()?);
     let after_second = hot_spend_hop(after_first, "second refresh")?;
-    println!("Covenant still alive at {} sats.\n", after_second.amount());
+    println!("Covenant still alive at {} sats.\n", after_second.amount()?);
 
     // Final hop: break out via ColdSpend, spending the UTXO the second refresh
     // created.
