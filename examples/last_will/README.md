@@ -52,7 +52,7 @@ which the contract rejects.
 
 Spending uses Simplex's signing path: the witness carries a placeholder
 signature at the branch being taken,
-`RequiredSignature::witness_with_path` says where the signature belongs,
+`ProgramSignature::at_path` says where the signature belongs,
 and the signer fills it in.
 
 The mnemonics in the test file are standard BIP-39 test vectors, so
