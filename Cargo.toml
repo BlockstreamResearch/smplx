@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-exclude = ["examples/basic", "fixtures"]
+exclude = ["examples/basic", "examples/last_will", "fixtures"]
 
 [workspace.package]
 license = "MIT"
