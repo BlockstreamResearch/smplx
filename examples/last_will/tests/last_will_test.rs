@@ -212,7 +212,7 @@ fn covenant_spend(
 
     ft.add_program_input(
         PartialInput::new(utxo).with_sequence(sequence),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
+        ProgramInput::new(Box::new(prog.as_ref().clone()), path.witness()),
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
     );
     ft.add_change(ChangeOutput::new(change_to));
@@ -277,7 +277,7 @@ fn spend_with_exact_outputs(
     let mut ft = FinalTransaction::new();
     ft.add_program_input(
         PartialInput::new(utxo).with_sequence(sequence),
-        ProgramInput::new(Box::new(prog.as_ref().clone()), Box::new(path.witness())),
+        ProgramInput::new(Box::new(prog.as_ref().clone()), path.witness()),
         RequiredSignature::witness_with_path("INHERIT_OR_NOT", path.sig_path()),
     );
     for output in outputs {
