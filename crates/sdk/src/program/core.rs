@@ -82,6 +82,12 @@ pub trait ProgramTrait: DynClone {
 
 /// Static description of a program's inputs and integer literals. Implemented by `include_simf!()`.
 pub trait ProgramSchema {
+    /// Generated arguments struct.
+    type Arguments;
+
+    /// Generated witness struct.
+    type Witness;
+
     /// Parameter names and types.
     fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)>;
 

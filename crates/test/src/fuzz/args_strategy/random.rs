@@ -104,6 +104,9 @@ mod tests {
     }
 
     impl ProgramSchema for RichSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Self::types(TemplateProgramWitness::parameter_from_str)
         }

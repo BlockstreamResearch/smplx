@@ -8,11 +8,8 @@ use simplex::fuzz::proptest::test_runner::RngSeed;
 use simplex::transaction::RequiredSignature;
 
 use simplex_example::artifacts::exceptional_contract::ExceptionalContractProgram;
-use simplex_example::artifacts::exceptional_contract::derived_exceptional_contract::{
-    ExceptionalContractArguments, ExceptionalContractWitness,
-};
 use simplex_example::artifacts::p2pk::P2pkProgram;
-use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
+use simplex_example::artifacts::p2pk::derived_p2pk::P2pkArguments;
 
 #[simplex::fuzz]
 fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
@@ -36,7 +33,7 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     });
 
     context
-        .engine::<P2pkProgram, P2pkArguments, P2pkWitness>()
+        .engine::<P2pkProgram>()
         .with_custom_strategy(strategy)
         .with_custom_transaction(initial_transaction)
         .run();
@@ -52,7 +49,7 @@ fn test_panic(test_context: TestContext<FuzzMode>) {
     config.rng_seed = RngSeed::Fixed(0x0000_0034);
 
     test_context
-        .engine::<ExceptionalContractProgram, ExceptionalContractArguments, ExceptionalContractWitness>()
+        .engine::<ExceptionalContractProgram>()
         .with_custom_config(config)
         .run();
 }

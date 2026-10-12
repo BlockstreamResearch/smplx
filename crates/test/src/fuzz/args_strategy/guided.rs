@@ -413,6 +413,9 @@ mod tests {
     }
 
     impl ProgramSchema for RichSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Self::types(TemplateProgramWitness::parameter_from_str)
         }
@@ -433,6 +436,9 @@ mod tests {
     struct MagicSchema;
 
     impl ProgramSchema for MagicSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Vec::new()
         }
