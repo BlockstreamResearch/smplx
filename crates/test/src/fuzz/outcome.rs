@@ -11,7 +11,7 @@ pub enum Outcome {
     Rejected(Rejection),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Rejection {
     /// A jet failed, e.g. `assert!`.
     Assertion,
@@ -34,6 +34,10 @@ pub enum SetupError {
     Signing(String),
     Engine(String),
     Spec,
+}
+
+impl Rejection {
+    pub const ALL: [Self; 5] = [Self::Assertion, Self::Panic, Self::Unwrap, Self::Resource, Self::Budget];
 }
 
 impl Outcome {

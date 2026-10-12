@@ -8,7 +8,7 @@ use crate::fuzz::FuzzableProgram;
 use crate::fuzz::outcome::SetupError;
 
 /// What the spec says should happen to the spend.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Expect {
     Accept,
     Reject,

@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::Debug;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
@@ -14,9 +15,11 @@ use smplx_sdk::signer::Signer;
 
 use crate::fuzz::FuzzableProgram;
 use crate::fuzz::args_strategy::ArgsStrategyBuilder;
+use crate::fuzz::authorization::AuthorizationCheck;
 use crate::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::spec::{Expect, FuzzCase};
+use crate::fuzz::summary::RunSummary;
 
 type Spec<P> = dyn Fn(&FuzzCase<'_, P>) -> Expect;
 
@@ -31,6 +34,8 @@ pub struct SimplexFuzzEngine<Program: FuzzableProgram> {
     pub strategy: Option<BoxedStrategy<(Arguments, WitnessValues)>>,
     pub initial_transaction: Option<FuzzTransaction>,
     pub spec: Option<Box<Spec<Program>>>,
+    pub allow_no_acceptance: bool,
+    pub check_authorization: bool,
 }
 
 impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
@@ -41,6 +46,8 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             strategy: None,
             initial_transaction: None,
             spec: None,
+            allow_no_acceptance: false,
+            check_authorization: true,
         }
     }
 
@@ -83,10 +90,32 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
         self
     }
 
+    /// Lets a run pass without any accepted case, for tests where no spend should ever be accepted.
+    #[must_use]
+    pub fn allow_no_acceptance(mut self) -> Self {
+        self.allow_no_acceptance = true;
+
+        self
+    }
+
+    /// Skips checking that accepted spends depend on their signatures.
+    #[must_use]
+    pub fn without_authorization_check(mut self) -> Self {
+        self.check_authorization = false;
+
+        self
+    }
+
     pub fn run(self) {
         let setup_error = Arc::new(Mutex::new(None));
 
         let mut config = self.config;
+        let summary = RefCell::new(RunSummary::new(
+            config.test_name.unwrap_or("simplex_fuzz"),
+            config.rng_seed,
+            self.check_authorization,
+        ));
+
         config.failure_persistence = config.failure_persistence.map(|inner| {
             Box::new(SkipSetupErrors {
                 inner,
@@ -105,25 +134,39 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             .unwrap_or_else(|| FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"));
 
         let result = runner.run(&strategy.no_shrink(), |(arguments, witness)| {
-            Self::fuzz(&self.signer, &initial_transaction, &*spec, arguments, witness).map_err(
-                |failure| match failure {
-                    CaseFailure::Setup(error) => {
-                        let reason = error.to_string();
-                        *setup_error.lock().unwrap() = Some(error);
-
-                        TestCaseError::fail(reason)
-                    }
-                    CaseFailure::Finding(reason) => TestCaseError::fail(reason),
-                },
+            Self::fuzz(
+                &self.signer,
+                &initial_transaction,
+                &*spec,
+                &summary,
+                self.check_authorization,
+                arguments,
+                witness,
             )
+            .map_err(|failure| match failure {
+                CaseFailure::Setup(error) => {
+                    let reason = error.to_string();
+                    *setup_error.lock().unwrap() = Some(error);
+
+                    TestCaseError::fail(reason)
+                }
+                CaseFailure::Finding(reason) => TestCaseError::fail(reason),
+            })
         });
+
+        let summary = summary.into_inner();
+        eprintln!("{summary}");
 
         if let Some(error) = setup_error.lock().unwrap().take() {
             panic!("The fuzz setup is broken, the contract was not judged: {error}");
         }
 
         match result {
-            Ok(()) => {}
+            Ok(()) => {
+                if let Some(reason) = summary.empty_run(self.allow_no_acceptance) {
+                    panic!("{reason}");
+                }
+            }
             Err(TestError::Fail(reason, (args, wit))) => {
                 panic!("Program failed with these arguments: {args} and witness: {wit}, reason: `{reason}`");
             }
@@ -138,6 +181,8 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
         signer: &Signer,
         initial_tx: &FuzzTransaction,
         spec: &Spec<Program>,
+        summary: &RefCell<RunSummary>,
+        check_authorization: bool,
         arguments: Arguments,
         witness: WitnessValues,
     ) -> Result<(), CaseFailure> {
@@ -180,21 +225,46 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             })
             .collect::<Result<Vec<_>, CaseFailure>>()?;
 
-        let accepted = outcomes.iter().all(|(_, outcome)| outcome.is_accepted());
+        let verdict = outcomes
+            .iter()
+            .map(|(_, outcome)| *outcome)
+            .find(|outcome| !outcome.is_accepted())
+            .unwrap_or(Outcome::Accepted);
 
-        let finding = match (expect, accepted) {
-            (Expect::Reject, true) => "unsound: the contract accepted a spend the spec rejects",
-            (Expect::Accept, false) => "liveness: the contract rejected a spend the spec accepts",
-            _ => return Ok(()),
+        summary.borrow_mut().record(expect, verdict);
+
+        let finding = match (expect, verdict.is_accepted()) {
+            (Expect::Reject, true) => Some("unsound: the contract accepted a spend the spec rejects"),
+            (Expect::Accept, false) => Some("liveness: the contract rejected a spend the spec accepts"),
+            _ => None,
         };
 
-        let inputs = outcomes
-            .iter()
-            .map(|(input_index, outcome)| format!("input {input_index} {outcome}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        if let Some(finding) = finding {
+            let inputs = outcomes
+                .iter()
+                .map(|(input_index, outcome)| format!("input {input_index} {outcome}"))
+                .collect::<Vec<_>>()
+                .join(", ");
 
-        Err(CaseFailure::Finding(format!("{finding} ({inputs})")))
+            return Err(CaseFailure::Finding(format!("{finding} ({inputs})")));
+        }
+
+        if check_authorization
+            && verdict.is_accepted()
+            && let Some(check) = AuthorizationCheck::new(signer, program, &final_transaction, &program_inputs)
+        {
+            let bypasses = check.run().map_err(CaseFailure::Setup)?;
+            summary.borrow_mut().record_authorization();
+
+            if !bypasses.is_empty() {
+                return Err(CaseFailure::Finding(format!(
+                    "authorization bypass: {}",
+                    bypasses.join("; ")
+                )));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -257,21 +327,30 @@ mod tests {
     use super::*;
 
     #[derive(Clone)]
-    struct DummyProgram(Program);
+    struct TestProgram<const ACCEPTS: bool>(Program);
 
-    impl AsRef<Program> for DummyProgram {
+    type DummyProgram = TestProgram<true>;
+    type RejectingProgram = TestProgram<false>;
+
+    impl<const ACCEPTS: bool> AsRef<Program> for TestProgram<ACCEPTS> {
         fn as_ref(&self) -> &Program {
             &self.0
         }
     }
 
-    impl ProgramFactory<DummyProgram> for DummyProgram {
-        fn instantiate_program(args: impl Into<Arguments>) -> Box<DummyProgram> {
-            Box::new(DummyProgram(Program::new("fn main() { assert!(true); }", args)))
+    impl<const ACCEPTS: bool> ProgramFactory<TestProgram<ACCEPTS>> for TestProgram<ACCEPTS> {
+        fn instantiate_program(args: impl Into<Arguments>) -> Box<Self> {
+            let source = if ACCEPTS {
+                "fn main() { assert!(true); }"
+            } else {
+                "fn main() { assert!(false); }"
+            };
+
+            Box::new(Self(Program::new(source, args)))
         }
     }
 
-    impl ProgramSchema for DummyProgram {
+    impl<const ACCEPTS: bool> ProgramSchema for TestProgram<ACCEPTS> {
         type Arguments = EmptyArgs;
         type Witness = EmptyArgs;
 
@@ -452,12 +531,12 @@ mod tests {
     }
 
     /// An engine that does not persist failures, for tests that expect one.
-    fn finding_engine(test_name: &'static str) -> SimplexFuzzEngine<DummyProgram> {
+    fn engine_without_persistence<P: FuzzableProgram>(test_name: &'static str) -> SimplexFuzzEngine<P> {
         let mut engine = TestContext::from_config(TestConfig::default())
             .unwrap()
             .fuzz(test_name, file!())
             .unwrap()
-            .engine::<DummyProgram>()
+            .engine::<P>()
             .with_custom_strategy(Just((Arguments::default(), WitnessValues::default())));
 
         engine.config.failure_persistence = None;
@@ -468,7 +547,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "unsound: the contract accepted a spend the spec rejects")]
     fn spec_rejecting_an_accepted_spend_is_unsound() {
-        finding_engine("crate::unsound_fuzz_test")
+        engine_without_persistence::<DummyProgram>("crate::unsound_fuzz_test")
             .spec(|_| Expect::Reject)
             .run();
     }
@@ -476,8 +555,32 @@ mod tests {
     #[test]
     #[should_panic(expected = "the spec panicked")]
     fn panicking_spec_is_a_setup_error() {
-        finding_engine("crate::panicking_spec_fuzz_test")
+        engine_without_persistence::<DummyProgram>("crate::panicking_spec_fuzz_test")
             .spec(|_| panic!("spec bug"))
+            .run();
+    }
+
+    #[test]
+    #[should_panic(expected = "The spec made no prediction")]
+    fn spec_without_predictions_fails() {
+        engine_without_persistence::<DummyProgram>("crate::no_prediction_fuzz_test")
+            .spec(|_| Expect::Any)
+            .run();
+    }
+
+    #[test]
+    #[should_panic(expected = "No case was accepted")]
+    fn run_without_acceptance_fails() {
+        engine_without_persistence::<RejectingProgram>("crate::no_acceptance_fuzz_test")
+            .spec(|_| Expect::Reject)
+            .run();
+    }
+
+    #[test]
+    fn allow_no_acceptance_lets_a_rejecting_run_pass() {
+        engine_without_persistence::<RejectingProgram>("crate::allowed_no_acceptance_fuzz_test")
+            .spec(|_| Expect::Reject)
+            .allow_no_acceptance()
             .run();
     }
 }

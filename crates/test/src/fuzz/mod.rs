@@ -1,9 +1,11 @@
 pub mod args_strategy;
+mod authorization;
 pub mod core;
 pub mod fuzz_program;
 pub mod fuzz_transaction;
 pub mod outcome;
 pub mod spec;
+pub mod summary;
 pub mod utils;
 
 pub use proptest;
