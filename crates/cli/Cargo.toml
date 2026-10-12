@@ -1,6 +1,6 @@
 [package]
 name = "smplx-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Simplex cli with various utilities to manage a simplicity project"
 license.workspace = true
 edition.workspace = true
@@ -26,8 +26,8 @@ toml = { workspace = true }
 toml_edit = { workspace = true }
 minreq = { workspace = true }
 
-anyhow = "1"
-dotenvy = "0.15"
-clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1.0.104"
+dotenvy = "0.15.7"
+clap = { version = "4.6.7", features = ["derive", "env"] }
 ctrlc = { version = "3.5.2", features = ["termination"] }
-serde_json = { version = "1.0.149" }
+serde_json = { version = "1.0.154" }

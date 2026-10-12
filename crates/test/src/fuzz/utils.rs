@@ -5,7 +5,7 @@ use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 use smplx_sdk::program::ProgramSchema;
 

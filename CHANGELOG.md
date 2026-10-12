@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.1]
+
+- Fixed broken dependencies.
+
 ## [0.1.0]
 
 - Added fuzz testing: `#[simplex::fuzz]`, `simplex test --fuzz` and the `[test.fuzz]` config section.

@@ -1,6 +1,6 @@
 [package]
 name = "smplx-test"
-version = "0.1.0"
+version = "0.1.1"
 description = "Simplex test command internal implementation"
 license.workspace = true
 edition.workspace = true
@@ -21,7 +21,7 @@ serde = { workspace = true }
 toml = { workspace = true }
 rand = { workspace = true }
 
-syn = { version = "2.0.114", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
-proc-macro2 = { version = "1.0.106", features = ["span-locations"] }
-quote = { version = "1.0.44" }
-proptest = { version = "1.11.0", features = ["std"] }
+syn = { version = "3.0.8", default-features = false, features = ["proc-macro", "full", "parsing", "derive", "clone-impls", "extra-traits", "printing"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+quote = { version = "1.0.47" }
+proptest = { version = "=1.12.0", features = ["std"] }
