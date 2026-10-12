@@ -1,13 +1,11 @@
 use std::any::Any;
-use std::cell::RefCell;
 use std::fmt::Debug;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use proptest::prelude::{BoxedStrategy, TestCaseError};
 use proptest::strategy::Strategy;
-use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestRunner};
+use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestError, TestRunner};
 
 use simplicityhl::{Arguments, WitnessValues};
 
@@ -21,6 +19,11 @@ use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::spec::{Expect, FuzzCase};
 
 type Spec<P> = dyn Fn(&FuzzCase<'_, P>) -> Expect;
+
+enum CaseFailure {
+    Setup(SetupError),
+    Finding(String),
+}
 
 pub struct SimplexFuzzEngine<Program: FuzzableProgram> {
     pub config: ProptestConfig,
@@ -81,37 +84,32 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
     }
 
     pub fn run(self) {
-        let setup_error = RefCell::new(None);
-        let skip_save = Arc::new(AtomicBool::new(false));
+        let setup_error = Arc::new(Mutex::new(None));
 
         let mut config = self.config;
         config.failure_persistence = config.failure_persistence.map(|inner| {
             Box::new(SkipSetupErrors {
                 inner,
-                skip: skip_save.clone(),
+                setup_error: setup_error.clone(),
             }) as Box<dyn FailurePersistence>
         });
 
         let mut runner = TestRunner::new(config);
 
-        let strategy = match self.strategy {
-            None => ArgsStrategyBuilder::<Program>::new().build(),
-            Some(strategy) => strategy,
-        };
+        let strategy = self
+            .strategy
+            .unwrap_or_else(|| ArgsStrategyBuilder::<Program>::new().build());
         let spec = self.spec.unwrap_or_else(|| Box::new(|_| Expect::Accept));
-        let initial_transaction = match self.initial_transaction {
-            None => FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"),
-            Some(tx) => tx,
-        };
+        let initial_transaction = self
+            .initial_transaction
+            .unwrap_or_else(|| FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"));
 
         let result = runner.run(&strategy.no_shrink(), |(arguments, witness)| {
             Self::fuzz(&self.signer, &initial_transaction, &*spec, arguments, witness).map_err(
                 |failure| match failure {
                     CaseFailure::Setup(error) => {
-                        skip_save.store(true, Ordering::Relaxed);
-
                         let reason = error.to_string();
-                        *setup_error.borrow_mut() = Some(error);
+                        *setup_error.lock().unwrap() = Some(error);
 
                         TestCaseError::fail(reason)
                     }
@@ -120,13 +118,13 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             )
         });
 
-        if let Some(error) = setup_error.into_inner() {
+        if let Some(error) = setup_error.lock().unwrap().take() {
             panic!("The fuzz setup is broken, the contract was not judged: {error}");
         }
 
         match result {
             Ok(()) => {}
-            Err(proptest::test_runner::TestError::Fail(reason, (args, wit))) => {
+            Err(TestError::Fail(reason, (args, wit))) => {
                 panic!("Program failed with these arguments: {args} and witness: {wit}, reason: `{reason}`");
             }
             Err(err) => {
@@ -164,18 +162,12 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             })
             .collect();
 
-        let case = FuzzCase::<Program>::new(
-            &arguments,
-            &witness,
-            &pst,
-            &program_inputs,
-            network,
-            signer.get_schnorr_public_key(),
-        )
-        .map_err(CaseFailure::Setup)?;
+        let case = FuzzCase::<Program>::new(&arguments, &witness, &pst, &program_inputs, signer)
+            .map_err(CaseFailure::Setup)?;
 
-        let expect = panic::catch_unwind(AssertUnwindSafe(|| spec(&case)))
-            .map_err(|payload| CaseFailure::Setup(SetupError::from_spec_panic(&*payload)))?;
+        // A panicking spec is a bug in the test, not a finding against the contract
+        let expect =
+            panic::catch_unwind(AssertUnwindSafe(|| spec(&case))).map_err(|_| CaseFailure::Setup(SetupError::Spec))?;
 
         // Classify every program input before judging, so a setup error is never masked
         let outcomes = program_inputs
@@ -206,16 +198,11 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
     }
 }
 
-enum CaseFailure {
-    Setup(SetupError),
-    Finding(String),
-}
-
 /// Keeps setup errors out of the persisted failures.
 #[derive(Clone, Debug)]
 struct SkipSetupErrors {
     inner: Box<dyn FailurePersistence>,
-    skip: Arc<AtomicBool>,
+    setup_error: Arc<Mutex<Option<SetupError>>>,
 }
 
 impl FailurePersistence for SkipSetupErrors {
@@ -229,7 +216,7 @@ impl FailurePersistence for SkipSetupErrors {
         seed: PersistedSeed,
         shrunken_value: &dyn Debug,
     ) {
-        if !self.skip.load(Ordering::Relaxed) {
+        if self.setup_error.lock().unwrap().is_none() {
             self.inner.save_persisted_failure2(source_file, seed, shrunken_value);
         }
     }
@@ -487,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the spec panicked: spec bug")]
+    #[should_panic(expected = "the spec panicked")]
     fn panicking_spec_is_a_setup_error() {
         finding_engine("crate::panicking_spec_fuzz_test")
             .spec(|_| panic!("spec bug"))

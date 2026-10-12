@@ -1,8 +1,8 @@
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::provider::SimplicityNetwork;
+use smplx_sdk::signer::Signer;
 
 use crate::fuzz::FuzzableProgram;
 use crate::fuzz::outcome::SetupError;
@@ -21,8 +21,7 @@ pub struct FuzzCase<'a, P: FuzzableProgram> {
     program: ProgramView<'a, P>,
     transaction: &'a PartiallySignedTransaction,
     program_inputs: &'a [usize],
-    network: &'a SimplicityNetwork,
-    signer_public_key: XOnlyPublicKey,
+    signer: &'a Signer,
 }
 
 /// One program's part of a case.
@@ -39,8 +38,7 @@ impl<'a, P: FuzzableProgram> FuzzCase<'a, P> {
         raw_witness: &'a WitnessValues,
         transaction: &'a PartiallySignedTransaction,
         program_inputs: &'a [usize],
-        network: &'a SimplicityNetwork,
-        signer_public_key: XOnlyPublicKey,
+        signer: &'a Signer,
     ) -> Result<Self, SetupError> {
         let program = ProgramView {
             arguments: P::Arguments::try_from(raw_arguments).map_err(SetupError::Arguments)?,
@@ -53,8 +51,7 @@ impl<'a, P: FuzzableProgram> FuzzCase<'a, P> {
             program,
             transaction,
             program_inputs,
-            network,
-            signer_public_key,
+            signer,
         })
     }
 
@@ -86,10 +83,11 @@ impl<'a, P: FuzzableProgram> FuzzCase<'a, P> {
     }
 
     pub fn network(&self) -> &SimplicityNetwork {
-        self.network
+        self.signer.get_network()
     }
 
-    pub fn signer_public_key(&self) -> XOnlyPublicKey {
-        self.signer_public_key
+    /// The signer that signed the transaction.
+    pub fn signer(&self) -> &Signer {
+        self.signer
     }
 }

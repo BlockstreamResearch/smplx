@@ -33,19 +33,7 @@ pub enum SetupError {
     Transaction(String),
     Signing(String),
     Engine(String),
-    Spec(String),
-}
-
-impl SetupError {
-    pub(crate) fn from_spec_panic(payload: &(dyn std::any::Any + Send)) -> Self {
-        let message = payload
-            .downcast_ref::<&str>()
-            .map(ToString::to_string)
-            .or_else(|| payload.downcast_ref::<String>().cloned())
-            .unwrap_or_default();
-
-        Self::Spec(message)
-    }
+    Spec,
 }
 
 impl Outcome {
@@ -118,7 +106,7 @@ impl Display for SetupError {
             Self::Transaction(error) => write!(f, "transaction does not fit the program: {error}"),
             Self::Signing(error) => write!(f, "signing failed: {error}"),
             Self::Engine(error) => write!(f, "program and environment disagree, please report a bug: {error}"),
-            Self::Spec(error) => write!(f, "the spec panicked: {error}"),
+            Self::Spec => write!(f, "the spec panicked, see its message above"),
         }
     }
 }
