@@ -8,9 +8,11 @@ use simplicityhl::types::{TypeInner, UIntType};
 use simplicityhl::value::{ValueConstructible, ValueInner};
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
-use proptest::prelude::{Rng, Strategy};
+use proptest::prelude::Strategy;
 use proptest::strategy::NewTree;
 use proptest::test_runner::{TestRng, TestRunner};
+
+use rand::RngExt;
 
 use smplx_sdk::program::ProgramSchema;
 

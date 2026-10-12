@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-use bip39::Mnemonic;
+use bip39::{Mnemonic, WordCount};
 
 use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script, encode};
 use simplicityhl::simplicity::Cost;
@@ -16,7 +16,7 @@ use crate::program::ProgramError;
 /// Panics if the underlying mnemonic generation fails (e.g. invalid word count configuration).
 #[must_use]
 pub fn random_mnemonic() -> String {
-    let mnemonic = Mnemonic::generate(12).expect("word count should be valid");
+    let mnemonic = Mnemonic::generate(WordCount::Words12).expect("word count should be valid");
 
     mnemonic.to_string()
 }

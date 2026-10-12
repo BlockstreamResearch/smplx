@@ -7,7 +7,7 @@ version = "0.1.0"
 [dependencies]
 smplx-std = { path = "../crates/simplex" }
 
-anyhow = { version = "1.0.101" }
+anyhow = { version = "1.0.104" }
 
 [dev-dependencies]
-serde_json = { version = "1.0.151" }
+serde_json = { version = "1.0.154" }
