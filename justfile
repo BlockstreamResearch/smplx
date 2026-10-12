@@ -100,7 +100,8 @@ install_local_simplex:
     cargo +stable install \
         --path ./crates/cli \
         --bin simplex \
-        --root "$install_root"
+        --root "$install_root" \
+        --locked
     mkdir -p "$cargo_bin_dir"
     install -m 755 "$install_root/bin/simplex" "$cargo_bin_dir/test_simplex"
 
