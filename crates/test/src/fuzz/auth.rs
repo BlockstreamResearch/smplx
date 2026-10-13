@@ -8,24 +8,19 @@ use simplicityhl::{Value, WitnessNameToValueMap, WitnessValues};
 use smplx_sdk::program::{Program, ProgramTrait};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, RequiredSignature, SigMessage};
+use smplx_sdk::utils::random_mnemonic;
 
 use crate::fuzz::outcome::{Outcome, SetupError};
 
-/// Two, so one always differs from the engine's signer.
-const OTHER_MNEMONICS: [&str; 2] = [
-    "legal winner thank year wave sausage worth useful legal winner thank yellow",
-    "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
-];
-
-/// Checks that an accepted spend depends on its signatures, the way an attacker would test it.
-pub(crate) struct AuthorizationCheck<'a> {
+/// Checks that an accepted spend depends on its signatures.
+pub(crate) struct AuthCheck<'a> {
     signer: &'a Signer,
     program: &'a Program,
     transaction: &'a FinalTransaction,
     signed_inputs: Vec<(usize, String)>,
 }
 
-impl<'a> AuthorizationCheck<'a> {
+impl<'a> AuthCheck<'a> {
     /// `None` when no program input requests a signature.
     pub(crate) fn new(
         signer: &'a Signer,
@@ -76,13 +71,7 @@ impl<'a> AuthorizationCheck<'a> {
     }
 
     fn other_signer(&self) -> Signer {
-        let key = self.signer.get_schnorr_public_key();
-
-        OTHER_MNEMONICS
-            .iter()
-            .map(|mnemonic| Signer::from_mnemonic(mnemonic, *self.signer.get_network()))
-            .find(|signer| signer.get_schnorr_public_key() != key)
-            .expect("the mnemonics derive distinct keys")
+        Signer::from_mnemonic(&random_mnemonic(), *self.signer.get_network())
     }
 
     /// An attacker also swaps any key the contract reads from the witness.
@@ -189,7 +178,7 @@ mod tests {
     impl Contract {
         fn bypasses(self) -> Vec<String> {
             let signer = Signer::from_mnemonic(DEFAULT_TEST_MNEMONIC, SimplicityNetwork::default_regtest());
-            let key = AuthorizationCheck::key_value(&signer);
+            let key = AuthCheck::key_value(&signer);
 
             let arguments = if self.key_argument {
                 Arguments::from_map(HashMap::from([(
@@ -217,7 +206,7 @@ mod tests {
                 self.required_sig,
             );
 
-            let check = AuthorizationCheck::new(&signer, &program, &transaction, &[0]).unwrap();
+            let check = AuthCheck::new(&signer, &program, &transaction, &[0]).unwrap();
 
             assert_eq!(
                 check.accepted_inputs(&signer, &transaction).unwrap(),

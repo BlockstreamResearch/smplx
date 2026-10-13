@@ -15,7 +15,7 @@ use smplx_sdk::signer::Signer;
 
 use crate::fuzz::FuzzableProgram;
 use crate::fuzz::args_strategy::ArgsStrategyBuilder;
-use crate::fuzz::authorization::AuthorizationCheck;
+use crate::fuzz::auth::AuthCheck;
 use crate::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::spec::{Expect, FuzzCase};
@@ -31,11 +31,11 @@ enum CaseFailure {
 pub struct SimplexFuzzEngine<Program: FuzzableProgram> {
     pub config: ProptestConfig,
     pub signer: Signer,
-    pub strategy: Option<BoxedStrategy<(Arguments, WitnessValues)>>,
-    pub initial_transaction: Option<FuzzTransaction>,
-    pub spec: Option<Box<Spec<Program>>>,
-    pub allow_no_acceptance: bool,
-    pub check_authorization: bool,
+    pub strategy: BoxedStrategy<(Arguments, WitnessValues)>,
+    pub initial_transaction: FuzzTransaction,
+    pub spec: Box<Spec<Program>>,
+    pub allow_unspendable: bool,
+    pub check_auth: bool,
 }
 
 impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
@@ -43,11 +43,11 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
         SimplexFuzzEngine {
             config,
             signer,
-            strategy: None,
-            initial_transaction: None,
-            spec: None,
-            allow_no_acceptance: false,
-            check_authorization: true,
+            strategy: ArgsStrategyBuilder::<Program>::new().build(),
+            initial_transaction: FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"),
+            spec: Box::new(|_| Expect::Accept),
+            allow_unspendable: false,
+            check_auth: true,
         }
     }
 
@@ -70,14 +70,14 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
         mut self,
         strategy: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
     ) -> Self {
-        self.strategy = Some(strategy.boxed());
+        self.strategy = strategy.boxed();
 
         self
     }
 
     #[must_use]
     pub fn with_custom_transaction(mut self, transaction: FuzzTransaction) -> Self {
-        self.initial_transaction = Some(transaction);
+        self.initial_transaction = transaction;
 
         self
     }
@@ -85,37 +85,36 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
     /// Sets what should happen to each spend. Without a spec, every spend is expected to be accepted.
     #[must_use]
     pub fn spec(mut self, spec: impl Fn(&FuzzCase<'_, Program>) -> Expect + 'static) -> Self {
-        self.spec = Some(Box::new(spec));
+        self.spec = Box::new(spec);
 
         self
     }
 
     /// Lets a run pass without any accepted case, for tests where no spend should ever be accepted.
     #[must_use]
-    pub fn allow_no_acceptance(mut self) -> Self {
-        self.allow_no_acceptance = true;
+    pub fn allow_unspendable(mut self) -> Self {
+        self.allow_unspendable = true;
 
         self
     }
 
     /// Skips checking that accepted spends depend on their signatures.
     #[must_use]
-    pub fn without_authorization_check(mut self) -> Self {
-        self.check_authorization = false;
+    pub fn without_auth_check(mut self) -> Self {
+        self.check_auth = false;
 
         self
     }
 
     pub fn run(self) {
         let setup_error = Arc::new(Mutex::new(None));
-
-        let mut config = self.config;
         let summary = RefCell::new(RunSummary::new(
-            config.test_name.unwrap_or("simplex_fuzz"),
-            config.rng_seed,
-            self.check_authorization,
+            self.config.test_name.unwrap_or("simplex_fuzz"),
+            self.config.rng_seed,
+            self.check_auth,
         ));
 
+        let mut config = self.config.clone();
         config.failure_persistence = config.failure_persistence.map(|inner| {
             Box::new(SkipSetupErrors {
                 inner,
@@ -125,45 +124,29 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
 
         let mut runner = TestRunner::new(config);
 
-        let strategy = self
-            .strategy
-            .unwrap_or_else(|| ArgsStrategyBuilder::<Program>::new().build());
-        let spec = self.spec.unwrap_or_else(|| Box::new(|_| Expect::Accept));
-        let initial_transaction = self
-            .initial_transaction
-            .unwrap_or_else(|| FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"));
+        let result = runner.run(&self.strategy.clone().no_shrink(), |(arguments, witness)| {
+            self.fuzz(&summary, arguments, witness)
+                .map_err(|failure| match failure {
+                    CaseFailure::Setup(error) => {
+                        let reason = error.to_string();
+                        *setup_error.lock().unwrap() = Some(error);
 
-        let result = runner.run(&strategy.no_shrink(), |(arguments, witness)| {
-            Self::fuzz(
-                &self.signer,
-                &initial_transaction,
-                &*spec,
-                &summary,
-                self.check_authorization,
-                arguments,
-                witness,
-            )
-            .map_err(|failure| match failure {
-                CaseFailure::Setup(error) => {
-                    let reason = error.to_string();
-                    *setup_error.lock().unwrap() = Some(error);
-
-                    TestCaseError::fail(reason)
-                }
-                CaseFailure::Finding(reason) => TestCaseError::fail(reason),
-            })
+                        TestCaseError::fail(reason)
+                    }
+                    CaseFailure::Finding(reason) => TestCaseError::fail(reason),
+                })
         });
 
         let summary = summary.into_inner();
         eprintln!("{summary}");
 
         if let Some(error) = setup_error.lock().unwrap().take() {
-            panic!("The fuzz setup is broken, the contract was not judged: {error}");
+            panic!("The fuzz setup is broken, the contract was not tested: {error}");
         }
 
         match result {
             Ok(()) => {
-                if let Some(reason) = summary.empty_run(self.allow_no_acceptance) {
+                if let Some(reason) = summary.is_run_empty(self.allow_unspendable) {
                     panic!("{reason}");
                 }
             }
@@ -178,14 +161,14 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
 
     /// Extracted helper that performs exactly one isolated test run.
     fn fuzz(
-        signer: &Signer,
-        initial_tx: &FuzzTransaction,
-        spec: &Spec<Program>,
+        &self,
         summary: &RefCell<RunSummary>,
-        check_authorization: bool,
         arguments: Arguments,
         witness: WitnessValues,
     ) -> Result<(), CaseFailure> {
+        let signer = &self.signer;
+        let initial_tx = &self.initial_transaction;
+
         let network = signer.get_network();
         let (program, script) = Program::build_program(arguments.clone(), network);
         let program = program.as_ref().as_ref();
@@ -211,10 +194,9 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             .map_err(CaseFailure::Setup)?;
 
         // A panicking spec is a bug in the test, not a finding against the contract
-        let expect =
-            panic::catch_unwind(AssertUnwindSafe(|| spec(&case))).map_err(|_| CaseFailure::Setup(SetupError::Spec))?;
+        let expect = panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(&case)))
+            .map_err(|_| CaseFailure::Setup(SetupError::Spec))?;
 
-        // Classify every program input before judging, so a setup error is never masked
         let outcomes = program_inputs
             .iter()
             .map(|&input_index| {
@@ -249,12 +231,12 @@ impl<Program: FuzzableProgram> SimplexFuzzEngine<Program> {
             return Err(CaseFailure::Finding(format!("{finding} ({inputs})")));
         }
 
-        if check_authorization
+        if self.check_auth
             && verdict.is_accepted()
-            && let Some(check) = AuthorizationCheck::new(signer, program, &final_transaction, &program_inputs)
+            && let Some(check) = AuthCheck::new(signer, program, &final_transaction, &program_inputs)
         {
             let bypasses = check.run().map_err(CaseFailure::Setup)?;
-            summary.borrow_mut().record_authorization();
+            summary.borrow_mut().record_auth_check();
 
             if !bypasses.is_empty() {
                 return Err(CaseFailure::Finding(format!(
@@ -577,10 +559,10 @@ mod tests {
     }
 
     #[test]
-    fn allow_no_acceptance_lets_a_rejecting_run_pass() {
+    fn allow_unspendable_lets_a_rejecting_run_pass() {
         engine_without_persistence::<RejectingProgram>("crate::allowed_no_acceptance_fuzz_test")
             .spec(|_| Expect::Reject)
-            .allow_no_acceptance()
+            .allow_unspendable()
             .run();
     }
 }

@@ -4,7 +4,7 @@ use simplicityhl::simplicity::bit_machine::ExecutionError;
 
 use smplx_sdk::program::ProgramError;
 
-/// Result of executing one program input, as the network would judge it.
+/// Result of executing one program input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Accepted,
@@ -19,7 +19,7 @@ pub enum Rejection {
     Panic,
     /// A pruned branch was reached, e.g. `unwrap(None)`.
     Unwrap,
-    /// A Bit Machine limit was exceeded.
+    /// A Bit Machine limit exceeded.
     Resource,
     /// The program costs more than its witness pays for.
     Budget,

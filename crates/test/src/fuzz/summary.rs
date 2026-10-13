@@ -14,12 +14,12 @@ pub struct RunSummary {
     accepted: usize,
     rejections: HashMap<Rejection, usize>,
     expectations: HashMap<Expect, usize>,
-    check_authorization: bool,
-    authorization_checks: usize,
+    check_auth: bool,
+    auth_checks: usize,
 }
 
 impl RunSummary {
-    pub fn new(test_name: &'static str, seed: RngSeed, check_authorization: bool) -> Self {
+    pub fn new(test_name: &'static str, seed: RngSeed, check_auth: bool) -> Self {
         Self {
             test_name,
             seed,
@@ -27,8 +27,8 @@ impl RunSummary {
             accepted: 0,
             rejections: HashMap::new(),
             expectations: HashMap::new(),
-            check_authorization,
-            authorization_checks: 0,
+            check_auth,
+            auth_checks: 0,
         }
     }
 
@@ -42,35 +42,27 @@ impl RunSummary {
         }
     }
 
-    pub fn record_authorization(&mut self) {
-        self.authorization_checks += 1;
+    pub fn record_auth_check(&mut self) {
+        self.auth_checks += 1;
     }
 
-    /// Why a run without findings still tested nothing, if it did not.
-    pub fn empty_run(&self, allow_no_acceptance: bool) -> Option<String> {
+    pub fn is_run_empty(&self, allow_unspendable: bool) -> Option<String> {
         if self.expectations.get(&Expect::Any) == Some(&self.cases) {
             return Some(format!(
-                "The spec made no prediction in {}, it returned `Expect::Any` for every case",
-                self.cases()
+                "The spec made no prediction in {} case(s), it returned `Expect::Any` for every run",
+                self.cases
             ));
         }
 
-        if self.accepted == 0 && !allow_no_acceptance {
+        if self.accepted == 0 && !allow_unspendable {
             return Some(format!(
-                "No case was accepted in {}, so acceptance was never tested and every rejection may come \
-                 from the setup. Call `allow_no_acceptance()` if no spend should ever be accepted",
-                self.cases()
+                "No case was accepted in {} run(s), so either the spec is faulty or the covenant is unspendable. \
+                 Consider calling `allow_unspendable()` if unspendability is intended",
+                self.cases
             ));
         }
 
         None
-    }
-
-    fn cases(&self) -> String {
-        match self.cases {
-            1 => "1 case".to_string(),
-            cases => format!("{cases} cases"),
-        }
     }
 
     fn count<K: Eq + std::hash::Hash>(counts: &HashMap<K, usize>, key: &K) -> usize {
@@ -91,7 +83,7 @@ impl Display for RunSummary {
             .collect::<Vec<_>>()
             .join(", ");
 
-        writeln!(f, "fuzz {}: {}, seed {seed}", self.test_name, self.cases())?;
+        writeln!(f, "fuzz {}: {} case(s), seed {seed}", self.test_name, self.cases)?;
         writeln!(
             f,
             "  verdicts  accepted {}, rejected {} ({rejections})",
@@ -106,11 +98,11 @@ impl Display for RunSummary {
             Self::count(&self.expectations, &Expect::Any)
         )?;
 
-        if self.check_authorization {
+        if self.check_auth {
             write!(
                 f,
-                "  authorization  {} signed accepted cases checked with a wrong key and a replayed signature",
-                self.authorization_checks
+                "  authorization  {} signed cases checked with a wrong key and a replayed signature",
+                self.auth_checks
             )
         } else {
             write!(f, "  authorization  off")

@@ -1,5 +1,5 @@
 pub mod args_strategy;
-mod authorization;
+mod auth;
 pub mod core;
 pub mod fuzz_program;
 pub mod fuzz_transaction;
