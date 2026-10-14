@@ -107,7 +107,7 @@ impl SimplexFuzzEngine {
 
         let mut runner = TestRunner::new(config);
 
-        let result = runner.run(&self.scenario.strategy().no_shrink(), |values| {
+        let result = runner.run(&self.scenario.program_scenario_strategies().no_shrink(), |values| {
             self.fuzz(&summary, values).map_err(|failure| match failure {
                 CaseFailure::Setup(error) => {
                     let reason = error.to_string();
@@ -162,7 +162,7 @@ impl SimplexFuzzEngine {
             .sign_witnesses(&transaction)
             .map_err(|error| CaseFailure::Setup(SetupError::Signing(error.to_string())))?;
 
-        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &pst, &self.signer);
+        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &self.signer);
 
         // A panicking spec is a bug in the test, not a finding against the contract
         let expect = panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(&case)))

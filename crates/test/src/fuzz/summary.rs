@@ -6,7 +6,7 @@ use proptest::test_runner::RngSeed;
 use crate::fuzz::outcome::{Outcome, Rejection};
 use crate::fuzz::spec::Expect;
 
-/// What a fuzz run exercised, printed when the run ends.
+/// A fuzz tun summary, printed when the run ends.
 pub struct RunSummary {
     test_name: &'static str,
     seed: RngSeed,
@@ -36,7 +36,6 @@ impl RunSummary {
         }
     }
 
-    /// `rejected_by` names whoever rejected the case.
     pub fn record(&mut self, expect: Expect, verdict: Outcome, rejected_by: Option<String>) {
         self.cases += 1;
         *self.expectations.entry(expect).or_default() += 1;

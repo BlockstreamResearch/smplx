@@ -15,18 +15,18 @@ use crate::fuzz::outcome::SetupError;
 
 type Values = (Arguments, WitnessValues);
 
-/// A transaction and the programs fuzzed in it.
+/// A transaction and the programs being fuzzed.
 pub struct Scenario {
     transaction: FinalTransaction,
     program_scenarios: Vec<FuzzProgramScenario>,
 }
 
-/// Declares where a program added with [`Scenario::add`] sits in the transaction.
+/// A builder to configure what each FuzzProgram does.
 pub struct FuzzProgramScenarioBuilder<'a> {
     program_scenario: &'a mut FuzzProgramScenario,
 }
 
-/// What the scenario fuzzes about one program.
+/// The FuzzProgram fuzz configuration.
 pub(crate) struct FuzzProgramScenario {
     pub(crate) name: String,
     pub(crate) inputs: Vec<usize>,
@@ -112,13 +112,6 @@ impl Scenario {
         Ok(())
     }
 
-    pub(crate) fn strategy(&self) -> Vec<BoxedStrategy<Values>> {
-        self.program_scenarios
-            .iter()
-            .map(|program_scenario| program_scenario.strategy.clone())
-            .collect()
-    }
-
     /// Builds every program and places it into the transaction.
     ///
     /// # Errors
@@ -193,6 +186,13 @@ impl Scenario {
             .map(|program_scenario| program_scenario.name.as_str())
     }
 
+    pub(crate) fn program_scenario_strategies(&self) -> Vec<BoxedStrategy<Values>> {
+        self.program_scenarios
+            .iter()
+            .map(|program_scenario| program_scenario.strategy.clone())
+            .collect()
+    }
+
     /// Where each program sits, e.g. "vault spends input 0, unvault locks output 0".
     pub(crate) fn layout(&self) -> String {
         let programs = self.program_scenarios.iter().map(|program_scenario| {
@@ -235,7 +235,7 @@ impl Default for Scenario {
 }
 
 impl FuzzProgramScenarioBuilder<'_> {
-    /// Spends the transaction input at `index`, overriding its script, program and witness.
+    /// Spends the transaction input at `index`, overriding its arguments and witness.
     pub fn spends(self, index: usize) -> Self {
         self.program_scenario.inputs.push(index);
 
@@ -267,7 +267,6 @@ mod tests {
 
     use super::*;
 
-    /// Validation never builds a program, so none is needed.
     fn program_scenario(name: &str, inputs: &[usize], outputs: &[usize]) -> FuzzProgramScenario {
         FuzzProgramScenario {
             name: name.to_string(),

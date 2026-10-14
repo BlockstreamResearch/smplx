@@ -25,7 +25,7 @@ pub enum Rejection {
     Budget,
 }
 
-/// A broken fuzz setup. Never a statement about the contract.
+/// A broken fuzz setup. Not a statement about the contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SetupError {
     Scenario(String),
