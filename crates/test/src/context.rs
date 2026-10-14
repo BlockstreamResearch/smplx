@@ -18,7 +18,7 @@ use crate::config::TestConfig;
 use crate::error::TestError;
 use crate::network_utils::NetworkUtils;
 
-use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
+use crate::fuzz::{Scenario, SimplexFuzzEngine};
 
 pub use crate::context::sealed::ContextMode;
 
@@ -278,10 +278,11 @@ impl TestContext<FuzzMode> {
     }
 
     /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
-    pub fn engine<Program: FuzzableProgram>(&self) -> SimplexFuzzEngine<Program> {
+    pub fn engine(&self, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine::new(
             self.mode.proptest_config.clone(),
             self.create_signer(self.config.mnemonic.as_str()),
+            scenario,
         )
     }
 }

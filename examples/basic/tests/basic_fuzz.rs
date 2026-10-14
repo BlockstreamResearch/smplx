@@ -1,15 +1,15 @@
 use simplex::simplicityhl::Arguments;
 use simplex::{FuzzMode, TestContext};
 
+use simplex::fuzz::Scenario;
 use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
-use simplex::fuzz::fuzz_transaction::FuzzTransaction;
 use simplex::fuzz::proptest::prelude::Strategy;
 use simplex::fuzz::proptest::test_runner::RngSeed;
-use simplex::transaction::RequiredSignature;
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
 use simplex_example::artifacts::exceptional_contract::ExceptionalContractProgram;
 use simplex_example::artifacts::p2pk::P2pkProgram;
-use simplex_example::artifacts::p2pk::derived_p2pk::P2pkArguments;
+use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
 #[simplex::fuzz]
 fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
@@ -19,24 +19,25 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
         public_key: signer.get_schnorr_public_key().serialize(),
     };
     let fixed_arguments: Arguments = (&arguments).into();
+    let program = P2pkProgram::new(arguments).as_ref().clone();
 
     // Keep the signer's public key fixed while fuzzing the initial witness.
     let strategy = ArgsStrategyBuilder::<P2pkProgram>::new()
         .build()
         .prop_map(move |(_, witness)| (fixed_arguments.clone(), witness));
 
-    let initial_transaction = FuzzTransaction::try_default()?.with_post_hook(|transaction, _, _, _| {
-        // Ask the signer to replace each fuzzed `SIGNATURE` with a valid signature.
-        transaction.inputs_mut()[0].required_sig = RequiredSignature::Witness("SIGNATURE".to_string());
+    // Ask the signer to replace each fuzzed `SIGNATURE` with a valid signature.
+    let mut transaction = FinalTransaction::new();
+    transaction.add_program_input(
+        PartialInput::new(UTXO::default()),
+        ProgramInput::new(Box::new(program), P2pkWitness::default()),
+        RequiredSignature::Witness("SIGNATURE".to_string()),
+    );
 
-        Ok(())
-    });
+    let mut scenario = Scenario::new(transaction);
+    scenario.add::<P2pkProgram>("p2pk").spends(0).strategy(strategy);
 
-    context
-        .engine::<P2pkProgram>()
-        .with_custom_strategy(strategy)
-        .with_custom_transaction(initial_transaction)
-        .run();
+    context.engine(scenario).run();
 
     Ok(())
 }
@@ -48,8 +49,8 @@ fn test_panic(test_context: TestContext<FuzzMode>) {
     config.cases = 66_000;
     config.rng_seed = RngSeed::Fixed(0x0000_0034);
 
-    test_context
-        .engine::<ExceptionalContractProgram>()
-        .with_custom_config(config)
-        .run();
+    let mut scenario = Scenario::default();
+    scenario.add::<ExceptionalContractProgram>("exceptional").spends(0);
+
+    test_context.engine(scenario).with_custom_config(config).run();
 }

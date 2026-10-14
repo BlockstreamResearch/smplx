@@ -336,6 +336,12 @@ impl Program {
         *slot = value;
     }
 
+    /// Returns the arguments the program was created with.
+    #[must_use]
+    pub fn get_arguments(&self) -> &Arguments {
+        &self.arguments
+    }
+
     /// Returns the number of storage chunks for a program.
     #[must_use]
     pub fn get_storage_len(&self) -> usize {

@@ -28,6 +28,7 @@ pub enum Rejection {
 /// A broken fuzz setup. Never a statement about the contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SetupError {
+    Scenario(String),
     Arguments(String),
     Witness(String),
     Transaction(String),
@@ -105,6 +106,7 @@ impl Display for Rejection {
 impl Display for SetupError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
+            Self::Scenario(error) => write!(f, "the scenario is invalid: {error}"),
             Self::Arguments(error) => write!(f, "arguments do not fit the program: {error}"),
             Self::Witness(error) => write!(f, "witness does not fit the program: {error}"),
             Self::Transaction(error) => write!(f, "transaction does not fit the program: {error}"),

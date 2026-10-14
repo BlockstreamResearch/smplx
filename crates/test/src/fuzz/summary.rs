@@ -10,35 +10,47 @@ use crate::fuzz::spec::Expect;
 pub struct RunSummary {
     test_name: &'static str,
     seed: RngSeed,
+    layout: String,
     cases: usize,
     accepted: usize,
     rejections: HashMap<Rejection, usize>,
+    rejected_by: Vec<(String, usize)>,
     expectations: HashMap<Expect, usize>,
     check_auth: bool,
     auth_checks: usize,
 }
 
 impl RunSummary {
-    pub fn new(test_name: &'static str, seed: RngSeed, check_auth: bool) -> Self {
+    pub fn new(test_name: &'static str, seed: RngSeed, layout: String, check_auth: bool) -> Self {
         Self {
             test_name,
             seed,
+            layout,
             cases: 0,
             accepted: 0,
             rejections: HashMap::new(),
+            rejected_by: Vec::new(),
             expectations: HashMap::new(),
             check_auth,
             auth_checks: 0,
         }
     }
 
-    pub fn record(&mut self, expect: Expect, verdict: Outcome) {
+    /// `rejected_by` names whoever rejected the case.
+    pub fn record(&mut self, expect: Expect, verdict: Outcome, rejected_by: Option<String>) {
         self.cases += 1;
         *self.expectations.entry(expect).or_default() += 1;
 
         match verdict {
             Outcome::Accepted => self.accepted += 1,
             Outcome::Rejected(rejection) => *self.rejections.entry(rejection).or_default() += 1,
+        }
+
+        if let Some(name) = rejected_by {
+            match self.rejected_by.iter_mut().find(|(rejector, _)| *rejector == name) {
+                Some((_, count)) => *count += 1,
+                None => self.rejected_by.push((name, 1)),
+            }
         }
     }
 
@@ -84,15 +96,28 @@ impl Display for RunSummary {
             .join(", ");
 
         writeln!(f, "fuzz {}: {} case(s), seed {seed}", self.test_name, self.cases)?;
+        writeln!(f, "  programs       {}", self.layout)?;
         writeln!(
             f,
-            "  verdicts  accepted {}, rejected {} ({rejections})",
+            "  verdicts       accepted {}, rejected {} ({rejections})",
             self.accepted,
             self.cases - self.accepted
         )?;
+
+        if !self.rejected_by.is_empty() {
+            let rejected_by = self
+                .rejected_by
+                .iter()
+                .map(|(name, count)| format!("{name} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            writeln!(f, "  rejected by    {rejected_by}")?;
+        }
+
         writeln!(
             f,
-            "  spec      accept {}, reject {}, any {}",
+            "  spec           accept {}, reject {}, any {}",
             Self::count(&self.expectations, &Expect::Accept),
             Self::count(&self.expectations, &Expect::Reject),
             Self::count(&self.expectations, &Expect::Any)

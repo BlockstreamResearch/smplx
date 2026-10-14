@@ -5,7 +5,6 @@ use simplicityhl::num::U256;
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{Value, WitnessNameToValueMap, WitnessValues};
 
-use smplx_sdk::program::{Program, ProgramTrait};
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, RequiredSignature, SigMessage};
 use smplx_sdk::utils::random_mnemonic;
@@ -15,19 +14,13 @@ use crate::fuzz::outcome::{Outcome, SetupError};
 /// Checks that an accepted spend depends on its signatures.
 pub(crate) struct AuthCheck<'a> {
     signer: &'a Signer,
-    program: &'a Program,
     transaction: &'a FinalTransaction,
     signed_inputs: Vec<(usize, String)>,
 }
 
 impl<'a> AuthCheck<'a> {
     /// `None` when no program input requests a signature.
-    pub(crate) fn new(
-        signer: &'a Signer,
-        program: &'a Program,
-        transaction: &'a FinalTransaction,
-        program_inputs: &[usize],
-    ) -> Option<Self> {
+    pub(crate) fn new(signer: &'a Signer, transaction: &'a FinalTransaction, program_inputs: &[usize]) -> Option<Self> {
         let signed_inputs: Vec<(usize, String)> = program_inputs
             .iter()
             .filter_map(|&index| match &transaction.inputs()[index].required_sig {
@@ -40,7 +33,6 @@ impl<'a> AuthCheck<'a> {
 
         (!signed_inputs.is_empty()).then_some(Self {
             signer,
-            program,
             transaction,
             signed_inputs,
         })
@@ -140,9 +132,12 @@ impl<'a> AuthCheck<'a> {
         let mut accepted = Vec::new();
 
         for (index, _) in &self.signed_inputs {
-            let result = self
-                .program
-                .finalize(&pst, &witnesses[index], *index, self.signer.get_network());
+            let program = &transaction.inputs()[*index]
+                .program_input
+                .as_ref()
+                .expect("a signed input runs a program")
+                .program;
+            let result = program.finalize(&pst, &witnesses[index], *index, self.signer.get_network());
 
             if Outcome::classify(result)?.is_accepted() {
                 accepted.push(*index);
@@ -161,6 +156,7 @@ impl<'a> AuthCheck<'a> {
 mod tests {
     use simplicityhl::{Arguments, TemplateProgramWitness};
 
+    use smplx_sdk::program::Program;
     use smplx_sdk::provider::SimplicityNetwork;
     use smplx_sdk::transaction::{PartialInput, ProgramInput, UTXO};
 
@@ -202,11 +198,11 @@ mod tests {
             let mut transaction = FinalTransaction::new();
             transaction.add_program_input(
                 PartialInput::new(utxo),
-                ProgramInput::new(Box::new(program.clone()), witness),
+                ProgramInput::new(Box::new(program), witness),
                 self.required_sig,
             );
 
-            let check = AuthCheck::new(&signer, &program, &transaction, &[0]).unwrap();
+            let check = AuthCheck::new(&signer, &transaction, &[0]).unwrap();
 
             assert_eq!(
                 check.accepted_inputs(&signer, &transaction).unwrap(),

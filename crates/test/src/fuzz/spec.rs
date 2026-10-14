@@ -1,11 +1,12 @@
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::{Arguments, WitnessValues};
 
+use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
+use smplx_sdk::transaction::FinalTransaction;
 
-use crate::fuzz::FuzzableProgram;
-use crate::fuzz::outcome::SetupError;
+use crate::fuzz::fuzz_program::{FuzzProgram, FuzzProgramTrait};
+use crate::fuzz::scenario::Scenario;
 
 /// What the spec says should happen to the spend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -16,70 +17,52 @@ pub enum Expect {
     Any,
 }
 
-/// Read-only view of one fuzz case, given to the spec before the program executes.
-pub struct FuzzCase<'a, P: FuzzableProgram> {
-    program: ProgramView<'a, P>,
-    transaction: &'a PartiallySignedTransaction,
-    program_inputs: &'a [usize],
+/// Read-only view of one fuzz case, given to the spec before the programs execute.
+pub struct FuzzCase<'a> {
+    scenario: &'a Scenario,
+    programs: &'a [Program],
+    transaction: &'a FinalTransaction,
+    pst: &'a PartiallySignedTransaction,
     signer: &'a Signer,
 }
 
-/// One program's part of a case.
-struct ProgramView<'a, P: FuzzableProgram> {
-    arguments: P::Arguments,
-    witness: P::Witness,
-    raw_arguments: &'a Arguments,
-    raw_witness: &'a WitnessValues,
-}
-
-impl<'a, P: FuzzableProgram> FuzzCase<'a, P> {
+impl<'a> FuzzCase<'a> {
     pub(crate) fn new(
-        raw_arguments: &'a Arguments,
-        raw_witness: &'a WitnessValues,
-        transaction: &'a PartiallySignedTransaction,
-        program_inputs: &'a [usize],
+        scenario: &'a Scenario,
+        programs: &'a [Program],
+        transaction: &'a FinalTransaction,
+        pst: &'a PartiallySignedTransaction,
         signer: &'a Signer,
-    ) -> Result<Self, SetupError> {
-        let program = ProgramView {
-            arguments: P::Arguments::try_from(raw_arguments).map_err(SetupError::Arguments)?,
-            witness: P::Witness::try_from(raw_witness).map_err(SetupError::Witness)?,
-            raw_arguments,
-            raw_witness,
-        };
-
-        Ok(Self {
-            program,
+    ) -> Self {
+        Self {
+            scenario,
+            programs,
             transaction,
-            program_inputs,
+            pst,
             signer,
-        })
+        }
     }
 
-    pub fn arguments(&self) -> &P::Arguments {
-        &self.program.arguments
-    }
+    /// # Panics
+    /// Panics when no program is named `name`, or it is not a `P`.
+    pub fn program<P: FuzzProgramTrait>(&self, name: &str) -> FuzzProgram<'_, P> {
+        let (index, program_scenario) = self.scenario.program_scenario::<P>(name);
+        let program = &self.programs[index];
 
-    /// The witness as generated, before any signature is injected.
-    pub fn witness(&self) -> &P::Witness {
-        &self.program.witness
-    }
+        let raw_witness = program_scenario.inputs.first().map(|&input| {
+            &self.transaction.inputs()[input]
+                .program_input
+                .as_ref()
+                .expect("a spent input runs its program")
+                .witness
+        });
 
-    pub fn raw_arguments(&self) -> &Arguments {
-        self.program.raw_arguments
-    }
-
-    pub fn raw_witness(&self) -> &WitnessValues {
-        self.program.raw_witness
+        FuzzProgram::new(program_scenario, program, raw_witness, self.signer.get_network())
     }
 
     /// The transaction as signed. Program inputs carry no final witness yet.
     pub fn transaction(&self) -> &PartiallySignedTransaction {
-        self.transaction
-    }
-
-    /// Indices of the inputs that execute the program.
-    pub fn program_inputs(&self) -> &[usize] {
-        self.program_inputs
+        self.pst
     }
 
     pub fn network(&self) -> &SimplicityNetwork {
