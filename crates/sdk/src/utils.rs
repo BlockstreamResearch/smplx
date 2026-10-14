@@ -60,6 +60,22 @@ pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
     tagged_hash("TapData", data)
 }
 
+/// Hashes two taproot node hashes into their parent `TapBranch` node, as Elements does.
+///
+/// Elements orders the children by their bytes first, so the argument order does not matter.
+/// Pass the result to [`crate::program::Program::with_extra_leaf_hashes`] to commit a program
+/// beside a whole subtree, for example to share one address among three or more programs.
+#[must_use]
+pub fn tap_branch_hash(a: [u8; 32], b: [u8; 32]) -> [u8; 32] {
+    let (first, second) = if a < b { (a, b) } else { (b, a) };
+    let mut children = [0_u8; 64];
+
+    children[..32].copy_from_slice(&first);
+    children[32..].copy_from_slice(&second);
+
+    tagged_hash("TapBranch/elements", &children).to_byte_array()
+}
+
 /// Computes the SHA-256 hash of a given script and returns the resulting 32-byte array.
 #[must_use]
 pub fn hash_script(script: &Script) -> [u8; 32] {
