@@ -1,0 +1,6 @@
+fn main() {
+    let required_script_hash: u256 = param::REQUIRED_SCRIPT_HASH;
+    let input_script_hash: u256 = unwrap(jet::input_script_hash(1));
+
+    assert!(jet::eq_256(input_script_hash, required_script_hash));
+}

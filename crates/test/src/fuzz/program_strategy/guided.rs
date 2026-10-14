@@ -16,7 +16,7 @@ use rand::RngExt;
 
 use smplx_sdk::program::ProgramSchema;
 
-use crate::fuzz::args_strategy::FixedValueTree;
+use crate::fuzz::common::FixedValueTree;
 
 // TODO: make the weights configurable.
 const RANDOM_WEIGHT: u32 = 40;
@@ -50,49 +50,83 @@ impl<P: ProgramSchema> Strategy for Guided<P> {
     type Value = (Arguments, WitnessValues);
 
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let case = GuidedCase::new(&P::literals(), runner.rng()).generate(&P::argument_types(), &P::witness_types());
+        let schema = GuidedSchema::of::<P>();
+        let values = GuidedCase::new(&[&schema], runner.rng()).generate();
 
-        Ok(FixedValueTree(case))
+        Ok(FixedValueTree(values.into_iter().next().expect("one schema")))
     }
 }
 
-/// State of a single generated case.
-struct GuidedCase<'a> {
+/// What guided generation needs to know about one program.
+#[derive(Clone, Debug)]
+pub(crate) struct GuidedSchema {
+    argument_types: Vec<(TemplateProgramWitness, ResolvedType)>,
+    witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
+    literals: Vec<U256>,
+}
+
+impl GuidedSchema {
+    pub(crate) fn of<P: ProgramSchema>() -> Self {
+        Self {
+            argument_types: P::argument_types(),
+            witness_types: P::witness_types(),
+            literals: P::literals(),
+        }
+    }
+}
+
+/// State of a single generated case. Programs generated together share literals and values.
+pub(crate) struct GuidedCase<'a> {
+    schemas: &'a [&'a GuidedSchema],
     literals: Vec<Word>,
     leaves: Vec<(usize, Word)>,
     rng: &'a mut TestRng,
 }
 
 impl<'a> GuidedCase<'a> {
-    fn new(literals: &[U256], rng: &'a mut TestRng) -> Self {
+    pub(crate) fn new(schemas: &'a [&'a GuidedSchema], rng: &'a mut TestRng) -> Self {
         Self {
-            literals: literals.iter().copied().map(Word::from).collect(),
+            schemas,
+            literals: schemas
+                .iter()
+                .flat_map(|schema| schema.literals.iter().copied().map(Word::from))
+                .collect(),
             leaves: Vec::new(),
             rng,
         }
     }
 
-    fn generate(
-        mut self,
-        argument_types: &[(TemplateProgramWitness, ResolvedType)],
-        witness_types: &[(TemplateProgramWitness, ResolvedType)],
-    ) -> (Arguments, WitnessValues) {
-        let arguments = self.draw_fields(argument_types);
-        let witness = self.draw_fields(witness_types);
+    /// The arguments and witness of each schema, in order.
+    pub(crate) fn generate(mut self) -> Vec<(Arguments, WitnessValues)> {
+        let schemas = self.schemas;
+        let fields: Vec<_> = schemas
+            .iter()
+            .map(|schema| {
+                (
+                    self.draw_fields(&schema.argument_types),
+                    self.draw_fields(&schema.witness_types),
+                )
+            })
+            .collect();
 
         let mut words = self.reuse().into_iter();
         let mut next_word = |uint: UIntType| words.next().expect("one word per leaf").to_value(uint);
 
-        let arguments: HashMap<_, _> = arguments
+        fields
             .into_iter()
-            .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
-            .collect();
-        let witness: HashMap<_, _> = witness
-            .into_iter()
-            .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
-            .collect();
+            .map(|(arguments, witness)| {
+                let arguments: HashMap<_, _> = arguments
+                    .into_iter()
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
+                    .collect();
+                let witness: HashMap<_, _> = witness
+                    .into_iter()
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
+                    .collect();
 
-        (Arguments::from_map(arguments), WitnessValues::from_map(witness))
+                (Arguments::from_map(arguments), WitnessValues::from_map(witness))
+            })
+            .collect()
     }
 
     fn draw_fields(
@@ -504,6 +538,7 @@ mod tests {
 
         for _ in 0..1024 {
             let words = GuidedCase {
+                schemas: &[],
                 literals: Vec::new(),
                 leaves: leaves.clone(),
                 rng: runner.rng(),

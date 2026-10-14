@@ -1,9 +1,6 @@
-use simplex::simplicityhl::Arguments;
 use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::Scenario;
-use simplex::fuzz::args_strategy::ArgsStrategyBuilder;
-use simplex::fuzz::proptest::prelude::Strategy;
 use simplex::fuzz::proptest::test_runner::RngSeed;
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
@@ -15,16 +12,8 @@ use simplex_example::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness}
 fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
 
-    let arguments = P2pkArguments {
-        public_key: signer.get_schnorr_public_key().serialize(),
-    };
-    let fixed_arguments: Arguments = (&arguments).into();
-    let program = P2pkProgram::new(arguments).as_ref().clone();
-
-    // Keep the signer's public key fixed while fuzzing the initial witness.
-    let strategy = ArgsStrategyBuilder::<P2pkProgram>::new()
-        .build()
-        .prop_map(move |(_, witness)| (fixed_arguments.clone(), witness));
+    let public_key = signer.get_schnorr_public_key().serialize();
+    let program = P2pkProgram::new(P2pkArguments { public_key }).as_ref().clone();
 
     // Ask the signer to replace each fuzzed `SIGNATURE` with a valid signature.
     let mut transaction = FinalTransaction::new();
@@ -35,7 +24,11 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     );
 
     let mut scenario = Scenario::new(transaction);
-    scenario.add::<P2pkProgram>("p2pk").spends(0).strategy(strategy);
+    // Keep the signer's public key fixed while fuzzing the witness.
+    scenario
+        .add::<P2pkProgram>("p2pk")
+        .spends(0)
+        .bind_arguments(move |arguments, _| arguments.public_key = public_key);
 
     context.engine(scenario).run();
 

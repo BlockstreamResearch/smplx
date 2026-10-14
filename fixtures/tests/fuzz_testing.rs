@@ -1,6 +1,5 @@
 use simplex::{FuzzMode, TestContext};
 
-use simplex::fuzz::proptest::strategy::Just;
 use simplex::fuzz::{Expect, Scenario};
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
@@ -42,16 +41,15 @@ fn default_spec_reports_liveness(test_context: TestContext<FuzzMode>) {
 fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     let signer = test_context.get_default_signer();
 
-    let arguments = P2pkArguments {
-        public_key: signer.get_schnorr_public_key().serialize(),
-    };
-
-    let witness = P2pkWitness::default();
+    let public_key = signer.get_schnorr_public_key().serialize();
 
     let mut transaction = FinalTransaction::new();
     transaction.add_program_input(
         PartialInput::new(UTXO::default()),
-        ProgramInput::new(Box::new(P2pkProgram::new(arguments.clone()).as_ref().clone()), &witness),
+        ProgramInput::new(
+            Box::new(P2pkProgram::new(P2pkArguments { public_key }).as_ref().clone()),
+            P2pkWitness::default(),
+        ),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );
 
@@ -59,7 +57,7 @@ fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Re
     scenario
         .add::<P2pkProgram>("p2pk")
         .spends(0)
-        .strategy(Just(((&arguments).into(), (&witness).into())));
+        .bind_arguments(move |arguments, _| arguments.public_key = public_key);
 
     test_context.engine(scenario).run();
 

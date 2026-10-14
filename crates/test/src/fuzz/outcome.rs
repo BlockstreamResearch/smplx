@@ -34,6 +34,7 @@ pub enum SetupError {
     Transaction(String),
     Signing(String),
     Engine(String),
+    Binding(String),
     Spec,
 }
 
@@ -112,6 +113,7 @@ impl Display for SetupError {
             Self::Transaction(error) => write!(f, "transaction does not fit the program: {error}"),
             Self::Signing(error) => write!(f, "signing failed: {error}"),
             Self::Engine(error) => write!(f, "program and environment disagree, please report a bug: {error}"),
+            Self::Binding(name) => write!(f, "a binding of `{name}` panicked, see its message above"),
             Self::Spec => write!(f, "the spec panicked, see its message above"),
         }
     }

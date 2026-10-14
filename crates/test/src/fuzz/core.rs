@@ -107,7 +107,7 @@ impl SimplexFuzzEngine {
 
         let mut runner = TestRunner::new(config);
 
-        let result = runner.run(&self.scenario.program_scenario_strategies().no_shrink(), |values| {
+        let result = runner.run(&self.scenario.combined_strategy().no_shrink(), |values| {
             self.fuzz(&summary, values).map_err(|failure| match failure {
                 CaseFailure::Setup(error) => {
                     let reason = error.to_string();
@@ -132,18 +132,8 @@ impl SimplexFuzzEngine {
                     panic!("{reason}");
                 }
             }
-            Err(TestError::Fail(reason, values)) => {
-                let values = self
-                    .scenario
-                    .program_scenario_names()
-                    .zip(values)
-                    .map(|(name, (arguments, witness))| {
-                        format!("`{name}` arguments: {arguments} and witness: {witness}")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-
-                panic!("Case failed with {values}, reason: `{reason}`");
+            Err(TestError::Fail(reason, _)) => {
+                panic!("{reason}");
             }
             Err(err) => {
                 panic!("Fuzzing aborted: {err}");
@@ -155,7 +145,13 @@ impl SimplexFuzzEngine {
     fn fuzz(&self, summary: &RefCell<RunSummary>, values: Vec<(Arguments, WitnessValues)>) -> Result<(), CaseFailure> {
         let network = self.signer.get_network();
 
-        let (programs, transaction) = self.scenario.build(values, network).map_err(CaseFailure::Setup)?;
+        let (programs, transaction) = self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
+
+        let failure = |reason: String| {
+            let values = self.scenario.describe(&programs, &transaction);
+
+            CaseFailure::Finding(format!("Case failed with {values}, reason: `{reason}`"))
+        };
 
         let (pst, signed_witnesses) = self
             .signer
@@ -221,7 +217,7 @@ impl SimplexFuzzEngine {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            return Err(CaseFailure::Finding(format!("{finding} ({inputs})")));
+            return Err(failure(format!("{finding} ({inputs})")));
         }
 
         if self.check_auth
@@ -232,10 +228,7 @@ impl SimplexFuzzEngine {
             summary.borrow_mut().record_auth_check();
 
             if !bypasses.is_empty() {
-                return Err(CaseFailure::Finding(format!(
-                    "authorization bypass: {}",
-                    bypasses.join("; ")
-                )));
+                return Err(failure(format!("authorization bypass: {}", bypasses.join("; "))));
             }
         }
 

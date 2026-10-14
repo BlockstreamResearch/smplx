@@ -9,7 +9,7 @@ use proptest::test_runner::TestRunner;
 
 use smplx_sdk::program::ProgramSchema;
 
-use crate::fuzz::args_strategy::FixedValueTree;
+use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::utils::{random_arguments, random_witness};
 
 pub struct Random<P> {

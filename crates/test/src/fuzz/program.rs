@@ -4,15 +4,15 @@ use simplicityhl::{Arguments, WitnessValues};
 use smplx_sdk::program::{Program, ProgramFactory, ProgramSchema};
 use smplx_sdk::provider::SimplicityNetwork;
 
-use crate::fuzz::scenario::FuzzProgramScenario;
+use crate::fuzz::program_scenario::FuzzProgramScenario;
 
 /// A program the fuzz engine can build, describe and decode. Implemented for every `include_simf!()` program.
 pub trait FuzzProgramTrait:
     AsRef<Program>
     + ProgramFactory<Self>
     + ProgramSchema<
-        Arguments: for<'a> TryFrom<&'a Arguments, Error = String>,
-        Witness: for<'a> TryFrom<&'a WitnessValues, Error = String>,
+        Arguments: for<'a> TryFrom<&'a Arguments, Error = String> + Into<Arguments>,
+        Witness: for<'a> TryFrom<&'a WitnessValues, Error = String> + Into<WitnessValues>,
     > + Clone
     + 'static
 {
@@ -40,8 +40,8 @@ impl<P> FuzzProgramTrait for P where
     P: AsRef<Program>
         + ProgramFactory<P>
         + ProgramSchema<
-            Arguments: for<'a> TryFrom<&'a Arguments, Error = String>,
-            Witness: for<'a> TryFrom<&'a WitnessValues, Error = String>,
+            Arguments: for<'a> TryFrom<&'a Arguments, Error = String> + Into<Arguments>,
+            Witness: for<'a> TryFrom<&'a WitnessValues, Error = String> + Into<WitnessValues>,
         > + Clone
         + 'static
 {

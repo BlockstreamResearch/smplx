@@ -2,6 +2,6 @@ mod core;
 mod guided;
 mod random;
 
-pub use core::*;
+pub(crate) use core::*;
 pub use guided::*;
 pub use random::*;

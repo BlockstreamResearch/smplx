@@ -1,17 +1,18 @@
 use std::any::{TypeId, type_name};
 use std::collections::{HashMap, HashSet};
-
-use proptest::prelude::{BoxedStrategy, Strategy};
+use std::panic::{self, AssertUnwindSafe};
 
 use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::program::Program;
-use smplx_sdk::provider::SimplicityNetwork;
+use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
 
 use crate::fuzz::FuzzProgramTrait;
-use crate::fuzz::args_strategy::ArgsStrategyBuilder;
 use crate::fuzz::outcome::SetupError;
+use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
+use crate::fuzz::scenario_strategy::Combined;
+use crate::fuzz::spec::FuzzCase;
 
 type Values = (Arguments, WitnessValues);
 
@@ -19,22 +20,6 @@ type Values = (Arguments, WitnessValues);
 pub struct Scenario {
     transaction: FinalTransaction,
     program_scenarios: Vec<FuzzProgramScenario>,
-}
-
-/// A builder to configure what each FuzzProgram does.
-pub struct FuzzProgramScenarioBuilder<'a> {
-    program_scenario: &'a mut FuzzProgramScenario,
-}
-
-/// The FuzzProgram fuzz configuration.
-pub(crate) struct FuzzProgramScenario {
-    pub(crate) name: String,
-    pub(crate) inputs: Vec<usize>,
-    pub(crate) outputs: Vec<usize>,
-    program_type: (TypeId, &'static str),
-    strategy: BoxedStrategy<Values>,
-    build_program: fn(&Arguments) -> Result<Program, String>,
-    check_witness: fn(&WitnessValues) -> Result<(), String>,
 }
 
 impl Scenario {
@@ -46,20 +31,10 @@ impl Scenario {
         }
     }
 
-    pub fn add<P: FuzzProgramTrait>(&mut self, name: impl Into<String>) -> FuzzProgramScenarioBuilder<'_> {
-        self.program_scenarios.push(FuzzProgramScenario {
-            name: name.into(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            program_type: (TypeId::of::<P>(), type_name::<P>()),
-            strategy: ArgsStrategyBuilder::<P>::new().build(),
-            build_program: P::build_program,
-            check_witness: P::check_witness,
-        });
+    pub fn add<P: FuzzProgramTrait>(&mut self, name: impl Into<String>) -> FuzzProgramScenarioBuilder<'_, P> {
+        self.program_scenarios.push(FuzzProgramScenario::new::<P>(name.into()));
 
-        FuzzProgramScenarioBuilder {
-            program_scenario: self.program_scenarios.last_mut().expect("just added"),
-        }
+        FuzzProgramScenarioBuilder::new(self.program_scenarios.last_mut().expect("just added"))
     }
 
     /// # Errors
@@ -76,6 +51,10 @@ impl Scenario {
 
             if !names.insert(name) {
                 return invalid(format!("two programs are named `{name}`"));
+            }
+
+            if program_scenario.inputs.is_empty() && !program_scenario.witness_bindings.is_empty() {
+                return invalid(format!("`{name}` binds its witness, but spends no input"));
             }
 
             for &index in &program_scenario.inputs {
@@ -112,24 +91,32 @@ impl Scenario {
         Ok(())
     }
 
-    /// Builds every program and places it into the transaction.
+    /// Binds and builds every program in order and places it into the transaction, then binds the witnesses.
     ///
     /// # Errors
-    /// Returns a [`SetupError`] when the values do not fit a program.
+    /// Returns a [`SetupError`] when the values do not fit a program or a binding panics.
     pub(crate) fn build(
         &self,
         values: Vec<Values>,
-        network: &SimplicityNetwork,
+        signer: &Signer,
     ) -> Result<(Vec<Program>, FinalTransaction), SetupError> {
         let mut programs = Vec::with_capacity(self.program_scenarios.len());
         let mut transaction = self.transaction.clone();
 
-        for (program_scenario, (arguments, witness)) in self.program_scenarios.iter().zip(values) {
+        for (program_scenario, (mut arguments, witness)) in self.program_scenarios.iter().zip(values) {
             let name = &program_scenario.name;
+
+            // Bind arguments.
+            for binding in &program_scenario.argument_bindings {
+                let case = FuzzCase::new(self, &programs, &transaction, signer);
+
+                arguments = panic::catch_unwind(AssertUnwindSafe(|| binding(&arguments, &case)))
+                    .map_err(|_| SetupError::Binding(name.clone()))?;
+            }
 
             let program = (program_scenario.build_program)(&arguments)
                 .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
-            let script = program.get_script_pubkey(network);
+            let script = program.get_script_pubkey(signer.get_network());
 
             if !program_scenario.inputs.is_empty() {
                 (program_scenario.check_witness)(&witness)
@@ -148,6 +135,32 @@ impl Scenario {
             }
 
             programs.push(program);
+        }
+
+        // Bind witnesses after each program is built.
+        for program_scenario in &self.program_scenarios {
+            let name = &program_scenario.name;
+
+            for binding in &program_scenario.witness_bindings {
+                let case = FuzzCase::new(self, &programs, &transaction, signer);
+                let witness = &transaction.inputs()[program_scenario.inputs[0]]
+                    .program_input
+                    .as_ref()
+                    .expect("a spent input runs its program")
+                    .witness;
+
+                let witness = panic::catch_unwind(AssertUnwindSafe(|| binding(witness, &case)))
+                    .map_err(|_| SetupError::Binding(name.clone()))?;
+
+                for &index in &program_scenario.inputs {
+                    let input = transaction.inputs_mut()[index]
+                        .program_input
+                        .as_mut()
+                        .expect("a spent input runs its program");
+
+                    input.witness = witness.clone();
+                }
+            }
         }
 
         Ok((programs, transaction))
@@ -180,17 +193,38 @@ impl Scenario {
             .find(|program_scenario| program_scenario.inputs.contains(&input))
     }
 
-    pub(crate) fn program_scenario_names(&self) -> impl Iterator<Item = &str> {
-        self.program_scenarios
-            .iter()
-            .map(|program_scenario| program_scenario.name.as_str())
+    pub(crate) fn combined_strategy(&self) -> Combined {
+        Combined::new(
+             self.program_scenarios
+                .iter()
+                .map(|program_scenario| program_scenario.strategy.clone())
+                .collect(),
+        )
     }
 
-    pub(crate) fn program_scenario_strategies(&self) -> Vec<BoxedStrategy<Values>> {
+    /// Each program and the fixed program inputs with their bound values.
+    pub(crate) fn describe(&self, programs: &[Program], transaction: &FinalTransaction) -> String {
         self.program_scenarios
             .iter()
-            .map(|program_scenario| program_scenario.strategy.clone())
-            .collect()
+            .zip(programs)
+            .map(|(program_scenario, program)| match program_scenario.inputs.first() {
+                Some(&input) => {
+                    let witness = &transaction.inputs()[input]
+                        .program_input
+                        .as_ref()
+                        .expect("an input runs its program")
+                        .witness;
+
+                    format!(
+                        "`{}` arguments: {} and witness: {witness}",
+                        program_scenario.name,
+                        program.get_arguments()
+                    )
+                }
+                None => format!("`{}` arguments: {}", program_scenario.name, program.get_arguments()),
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
     }
 
     /// Where each program sits, e.g. "vault spends input 0, unvault locks output 0".
@@ -234,36 +268,16 @@ impl Default for Scenario {
     }
 }
 
-impl FuzzProgramScenarioBuilder<'_> {
-    /// Spends the transaction input at `index`, overriding its arguments and witness.
-    pub fn spends(self, index: usize) -> Self {
-        self.program_scenario.inputs.push(index);
-
-        self
-    }
-
-    /// Locks the transaction output at `index`, overriding its script.
-    pub fn locks(self, index: usize) -> Self {
-        self.program_scenario.outputs.push(index);
-
-        self
-    }
-
-    /// Replaces how the program's arguments and witness are generated.
-    pub fn strategy(self, strategy: impl Strategy<Value = Values> + 'static) -> Self {
-        self.program_scenario.strategy = strategy.boxed();
-
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use proptest::strategy::Just;
+    use proptest::strategy::{Just, Strategy};
 
     use simplicityhl::elements::{OutPoint, Script, Txid};
 
+    use smplx_sdk::provider::SimplicityNetwork;
     use smplx_sdk::transaction::PartialOutput;
+
+    use crate::fuzz::program_strategy::ProgramStrategy;
 
     use super::*;
 
@@ -273,7 +287,9 @@ mod tests {
             inputs: inputs.to_vec(),
             outputs: outputs.to_vec(),
             program_type: (TypeId::of::<()>(), "()"),
-            strategy: Just((Arguments::default(), WitnessValues::default())).boxed(),
+            strategy: ProgramStrategy::Other(Just((Arguments::default(), WitnessValues::default())).boxed()),
+            argument_bindings: Vec::new(),
+            witness_bindings: Vec::new(),
             build_program: |_| unreachable!(),
             check_witness: |_| unreachable!(),
         }

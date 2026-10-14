@@ -1,11 +1,17 @@
 use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, Scenario};
-use simplex::simplicityhl::elements::{OutPoint, Txid};
-use simplex::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
+use simplex::simplicityhl::WitnessValues;
+use simplex::simplicityhl::elements::{OutPoint, Script, Txid};
+use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
 use simplex_fixtures::artifacts::dummy_accept::DummyAcceptProgram;
+use simplex_fixtures::artifacts::dummy_accept::derived_dummy_accept::DummyAcceptArguments;
 use simplex_fixtures::artifacts::dummy_panic::DummyPanicProgram;
+use simplex_fixtures::artifacts::requires_input::RequiresInputProgram;
+use simplex_fixtures::artifacts::tapleaf_check::TapleafCheckProgram;
+use simplex_fixtures::artifacts::unvault::UnvaultProgram;
+use simplex_fixtures::artifacts::vault::VaultProgram;
 
 fn two_inputs() -> FinalTransaction {
     let mut transaction = FinalTransaction::new();
@@ -79,4 +85,74 @@ fn allow_unspendable_lets_a_rejecting_run_pass(test_context: TestContext<FuzzMod
         .spec(|_| Expect::Reject)
         .allow_unspendable()
         .run();
+}
+
+#[simplex::fuzz]
+fn vault_bound_to_its_unvault_passes(test_context: TestContext<FuzzMode>) {
+    let mut transaction = FinalTransaction::new();
+    transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+    transaction.add_output(PartialOutput::new(
+        Script::new(),
+        1,
+        test_context.get_network().policy_asset(),
+    ));
+
+    let mut scenario = Scenario::new(transaction);
+
+    scenario.add::<UnvaultProgram>("unvault").locks(0).random_strategy();
+    scenario
+        .add::<VaultProgram>("vault")
+        .spends(0)
+        .bind_arguments(|arguments, case| {
+            arguments.unvault_script_hash = case.program::<UnvaultProgram>("unvault").script_hash();
+        });
+
+    test_context.engine(scenario).run();
+}
+
+#[simplex::fuzz]
+fn program_bound_to_a_fixed_input_passes(test_context: TestContext<FuzzMode>) {
+    let fixed = DummyAcceptProgram::new(DummyAcceptArguments::default());
+
+    let mut fixed_utxo = UTXO {
+        outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 1),
+        ..UTXO::default()
+    };
+    fixed_utxo.txout.script_pubkey = fixed.get_script_pubkey(test_context.get_network());
+
+    let mut transaction = FinalTransaction::new();
+    transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+    transaction.add_program_input(
+        PartialInput::new(fixed_utxo),
+        ProgramInput::new(Box::new(fixed.as_ref().clone()), WitnessValues::default()),
+        RequiredSignature::None,
+    );
+
+    let mut scenario = Scenario::new(transaction);
+
+    scenario
+        .add::<RequiresInputProgram>("requires_input")
+        .spends(0)
+        .bind_arguments(|arguments, case| {
+            arguments.required_script_hash = case.input_script_hash(1);
+        });
+
+    test_context.engine(scenario).run();
+}
+
+#[simplex::fuzz]
+fn tapleaf_check_bound_to_its_own_tapleaf_passes(test_context: TestContext<FuzzMode>) {
+    let mut scenario = Scenario::default();
+
+    scenario
+        .add::<TapleafCheckProgram>("tapleaf_check")
+        .spends(0)
+        .bind_witness(|witness, case| {
+            witness.program_tapleaf_hash = case
+                .program::<TapleafCheckProgram>("tapleaf_check")
+                .program()
+                .get_tapleaf_hash();
+        });
+
+    test_context.engine(scenario).run();
 }
