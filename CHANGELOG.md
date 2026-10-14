@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- `signer::unblind_txout` opens explicit, fully confidential and explicit-asset/confidential-amount outputs.
+- `Signer::get_blinding_private_key_for_script` derives the wallet's SLIP77 blinding key for any script.
+
 ## [0.1.1]
 
 - Fixed broken dependencies.
