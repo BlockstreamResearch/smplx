@@ -1,5 +1,6 @@
 use simplicityhl::elements::Script;
-use simplicityhl::{Arguments, WitnessValues};
+use simplicityhl::num::U256;
+use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValues};
 
 use smplx_sdk::program::{Program, ProgramFactory, ProgramSchema};
 use smplx_sdk::provider::SimplicityNetwork;
@@ -45,6 +46,33 @@ impl<P> FuzzProgramTrait for P where
         > + Clone
         + 'static
 {
+}
+
+/// What a strategy needs to know about one program.
+#[derive(Clone, Debug)]
+pub(crate) struct FuzzProgramSchema {
+    pub(crate) argument_types: Vec<(TemplateProgramWitness, ResolvedType)>,
+    pub(crate) witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
+    pub(crate) literals: Vec<U256>,
+    pub(crate) storage_capacity: usize,
+}
+
+impl FuzzProgramSchema {
+    pub(crate) fn of<P: ProgramSchema>() -> Self {
+        Self {
+            argument_types: P::argument_types(),
+            witness_types: P::witness_types(),
+            literals: P::literals(),
+            storage_capacity: 0,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_storage_capacity(mut self, storage_capacity: usize) -> Self {
+        self.storage_capacity = storage_capacity;
+
+        self
+    }
 }
 
 /// One fuzzed program as built for a case.
@@ -107,6 +135,15 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
 
     pub fn program(&self) -> &Program {
         self.program
+    }
+
+    /// The storage the program is spent with.
+    pub fn storage(&self) -> Vec<[u8; 32]> {
+        self.program
+            .get_storage()
+            .iter()
+            .map(|slot| slot.as_slice().try_into().expect("a storage slot is 32 bytes"))
+            .collect()
     }
 
     pub fn script_pubkey(&self) -> Script {

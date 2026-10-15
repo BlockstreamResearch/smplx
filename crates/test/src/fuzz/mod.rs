@@ -17,6 +17,7 @@ pub use core::SimplexFuzzEngine;
 pub use outcome::{Outcome, Rejection, SetupError};
 pub use program::{FuzzProgram, FuzzProgramTrait};
 pub use program_scenario::FuzzProgramScenarioBuilder;
+pub use program_strategy::FuzzProgramValues;
 pub use scenario::Scenario;
 pub use spec::{Expect, FuzzCase};
 pub use utils::{generate_random_value_by_ty, random_arguments, random_witness};

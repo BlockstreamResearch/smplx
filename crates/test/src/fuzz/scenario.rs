@@ -2,8 +2,6 @@ use std::any::{TypeId, type_name};
 use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 
-use simplicityhl::{Arguments, WitnessValues};
-
 use smplx_sdk::program::Program;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
@@ -11,10 +9,10 @@ use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, Requi
 use crate::fuzz::FuzzProgramTrait;
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
+use crate::fuzz::program_strategy::FuzzProgramStrategy;
+use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::scenario_strategy::Combined;
 use crate::fuzz::spec::FuzzCase;
-
-type Values = (Arguments, WitnessValues);
 
 /// A transaction and the programs being fuzzed.
 pub struct Scenario {
@@ -97,14 +95,27 @@ impl Scenario {
     /// Returns a [`SetupError`] when the values do not fit a program or a binding panics.
     pub(crate) fn build(
         &self,
-        values: Vec<Values>,
+        values: Vec<FuzzProgramValues>,
         signer: &Signer,
     ) -> Result<(Vec<Program>, FinalTransaction), SetupError> {
         let mut programs = Vec::with_capacity(self.program_scenarios.len());
         let mut transaction = self.transaction.clone();
 
-        for (program_scenario, (mut arguments, witness)) in self.program_scenarios.iter().zip(values) {
+        for (program_scenario, values) in self.program_scenarios.iter().zip(values) {
+            let FuzzProgramValues {
+                mut arguments,
+                witness,
+                storage,
+            } = values;
             let name = &program_scenario.name;
+
+            if storage.len() != program_scenario.storage_capacity {
+                return Err(SetupError::Storage(format!(
+                    "`{name}` was generated {} slot(s), but it has {}",
+                    storage.len(),
+                    program_scenario.storage_capacity
+                )));
+            }
 
             // Bind arguments.
             for binding in &program_scenario.argument_bindings {
@@ -116,6 +127,7 @@ impl Scenario {
 
             let program = (program_scenario.build_program)(&arguments)
                 .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
+            let program = Self::update_program_storage(program, &storage);
             let script = program.get_script_pubkey(signer.get_network());
 
             if !program_scenario.inputs.is_empty() {
@@ -163,6 +175,32 @@ impl Scenario {
             }
         }
 
+        // Lock recursive outputs to each program with its next storage.
+        for (program_scenario, program) in self.program_scenarios.iter().zip(&programs) {
+            let name = &program_scenario.name;
+
+            for (index, transition) in &program_scenario.transitions {
+                let case = FuzzCase::new(self, &programs, &transaction, signer);
+
+                let storage = panic::catch_unwind(AssertUnwindSafe(|| {
+                    let storage = transition(&case);
+
+                    assert!(
+                        storage.len() == program_scenario.storage_capacity,
+                        "The transition of `{name}` returned {} storage slot(s), but it has {}",
+                        storage.len(),
+                        program_scenario.storage_capacity
+                    );
+
+                    storage
+                }))
+                .map_err(|_| SetupError::Binding(name.clone()))?;
+
+                transaction.outputs_mut()[*index].script_pubkey =
+                    Self::update_program_storage(program.clone(), &storage).get_script_pubkey(signer.get_network());
+            }
+        }
+
         Ok((programs, transaction))
     }
 
@@ -195,9 +233,21 @@ impl Scenario {
 
     pub(crate) fn combined_strategy(&self) -> Combined {
         Combined::new(
-             self.program_scenarios
+            self.program_scenarios
                 .iter()
-                .map(|program_scenario| program_scenario.strategy.clone())
+                .map(|program_scenario| {
+                    let storage_capacity = program_scenario.storage_capacity;
+
+                    match &program_scenario.strategy {
+                        FuzzProgramStrategy::Guided(schema) => {
+                            FuzzProgramStrategy::Guided(schema.clone().with_storage_capacity(storage_capacity))
+                        }
+                        FuzzProgramStrategy::Random(schema) => {
+                            FuzzProgramStrategy::Random(schema.clone().with_storage_capacity(storage_capacity))
+                        }
+                        FuzzProgramStrategy::Other(strategy) => FuzzProgramStrategy::Other(strategy.clone()),
+                    }
+                })
                 .collect(),
         )
     }
@@ -207,21 +257,31 @@ impl Scenario {
         self.program_scenarios
             .iter()
             .zip(programs)
-            .map(|(program_scenario, program)| match program_scenario.inputs.first() {
-                Some(&input) => {
+            .map(|(program_scenario, program)| {
+                let mut description = format!("`{}` arguments: {}", program_scenario.name, program.get_arguments());
+
+                if let Some(&input) = program_scenario.inputs.first() {
                     let witness = &transaction.inputs()[input]
                         .program_input
                         .as_ref()
                         .expect("an input runs its program")
                         .witness;
 
-                    format!(
-                        "`{}` arguments: {} and witness: {witness}",
-                        program_scenario.name,
-                        program.get_arguments()
-                    )
+                    description += &format!(" and witness: {witness}");
                 }
-                None => format!("`{}` arguments: {}", program_scenario.name, program.get_arguments()),
+
+                if !program.get_storage().is_empty() {
+                    let storage = program
+                        .get_storage()
+                        .iter()
+                        .map(|slot| slot.iter().map(|byte| format!("{byte:02x}")).collect::<String>())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    description += &format!(" and storage: [{storage}]");
+                }
+
+                description
             })
             .collect::<Vec<_>>()
             .join("; ")
@@ -234,12 +294,17 @@ impl Scenario {
                 .inputs
                 .iter()
                 .map(|index| format!("spends input {index}"))
-                .chain(
-                    program_scenario
-                        .outputs
+                .chain(program_scenario.outputs.iter().map(|index| {
+                    if program_scenario
+                        .transitions
                         .iter()
-                        .map(|index| format!("locks output {index}")),
-                )
+                        .any(|(recursive, _)| recursive == index)
+                    {
+                        format!("locks output {index} recursively")
+                    } else {
+                        format!("locks output {index}")
+                    }
+                }))
                 .collect::<Vec<_>>()
                 .join(" and ");
 
@@ -255,6 +320,16 @@ impl Scenario {
             .map(|(index, _)| format!("input {index} is fixed"));
 
         programs.chain(fixed).collect::<Vec<_>>().join(", ")
+    }
+
+    fn update_program_storage(program: Program, storage: &[[u8; 32]]) -> Program {
+        let mut program = program.with_storage_capacity(storage.len());
+
+        for (index, slot) in storage.iter().enumerate() {
+            program.set_storage_at(index, *slot);
+        }
+
+        program
     }
 }
 
@@ -273,11 +348,12 @@ mod tests {
     use proptest::strategy::{Just, Strategy};
 
     use simplicityhl::elements::{OutPoint, Script, Txid};
+    use simplicityhl::{Arguments, WitnessValues};
 
     use smplx_sdk::provider::SimplicityNetwork;
     use smplx_sdk::transaction::PartialOutput;
 
-    use crate::fuzz::program_strategy::ProgramStrategy;
+    use crate::fuzz::program_strategy::FuzzProgramStrategy;
 
     use super::*;
 
@@ -286,8 +362,16 @@ mod tests {
             name: name.to_string(),
             inputs: inputs.to_vec(),
             outputs: outputs.to_vec(),
+            transitions: Vec::new(),
+            storage_capacity: 0,
             program_type: (TypeId::of::<()>(), "()"),
-            strategy: ProgramStrategy::Other(Just((Arguments::default(), WitnessValues::default())).boxed()),
+            strategy: FuzzProgramStrategy::Other(
+                Just(FuzzProgramValues::from((
+                    Arguments::default(),
+                    WitnessValues::default(),
+                )))
+                .boxed(),
+            ),
             argument_bindings: Vec::new(),
             witness_bindings: Vec::new(),
             build_program: |_| unreachable!(),

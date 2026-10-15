@@ -5,6 +5,7 @@ use simplex::simplicityhl::WitnessValues;
 use simplex::simplicityhl::elements::{OutPoint, Script, Txid};
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
+use simplex_fixtures::artifacts::counter::CounterProgram;
 use simplex_fixtures::artifacts::dummy_accept::DummyAcceptProgram;
 use simplex_fixtures::artifacts::dummy_accept::derived_dummy_accept::DummyAcceptArguments;
 use simplex_fixtures::artifacts::dummy_panic::DummyPanicProgram;
@@ -155,4 +156,61 @@ fn tapleaf_check_bound_to_its_own_tapleaf_passes(test_context: TestContext<FuzzM
         });
 
     test_context.engine(scenario).run();
+}
+
+/// The counter adds `STEP` to the lowest 64 bits of its state. `extra` makes the modelled transition wrong.
+fn counter(test_context: &TestContext<FuzzMode>, extra: u64) {
+    let mut transaction = FinalTransaction::new();
+    transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+    transaction.add_output(PartialOutput::new(
+        Script::new(),
+        1,
+        test_context.get_network().policy_asset(),
+    ));
+
+    let mut scenario = Scenario::new(transaction);
+
+    scenario
+        .add::<CounterProgram>("counter")
+        .storage_capacity(1)
+        .spends(0)
+        .bind_witness(|witness, case| {
+            witness.state = case.program::<CounterProgram>("counter").storage()[0];
+        })
+        .recursive(0, move |counter| {
+            let mut state = counter.storage()[0];
+            let low = u64::from_be_bytes(state[24..].try_into().unwrap())
+                .wrapping_add(counter.witness().step)
+                .wrapping_add(extra);
+
+            state[24..].copy_from_slice(&low.to_be_bytes());
+
+            vec![state]
+        });
+
+    test_context
+        .engine(scenario)
+        .spec(|case| {
+            let counter = case.program::<CounterProgram>("counter");
+            let low = u64::from_be_bytes(counter.storage()[0][24..].try_into().unwrap());
+            let step = counter.witness().step;
+
+            if step <= counter.arguments().max_step && low.checked_add(step).is_some() {
+                Expect::Accept
+            } else {
+                Expect::Reject
+            }
+        })
+        .run();
+}
+
+#[simplex::fuzz]
+fn counter_with_its_transition_passes(test_context: TestContext<FuzzMode>) {
+    counter(&test_context, 0);
+}
+
+#[should_panic(expected = "liveness: the contract rejected a spend the spec accepts")]
+#[simplex::fuzz]
+fn counter_with_an_off_by_one_transition_is_live(test_context: TestContext<FuzzMode>) {
+    counter(&test_context, 1);
 }

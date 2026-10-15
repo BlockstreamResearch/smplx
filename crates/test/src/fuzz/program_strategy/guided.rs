@@ -17,6 +17,8 @@ use rand::RngExt;
 use smplx_sdk::program::ProgramSchema;
 
 use crate::fuzz::common::FixedValueTree;
+use crate::fuzz::program::FuzzProgramSchema;
+use crate::fuzz::program_strategy::FuzzProgramValues;
 
 // TODO: make the weights configurable.
 const RANDOM_WEIGHT: u32 = 40;
@@ -30,12 +32,25 @@ const BOUNDARY_SMALL: &[u128] = &[0, 1, 2, 100, 1000];
 /// Draws each integer from uniform random, boundary or literal values, then copies values between
 /// integers of the same case.
 pub struct Guided<P> {
+    storage_capacity: usize,
     _program: PhantomData<fn() -> P>,
+}
+
+impl<P> Guided<P> {
+    #[must_use]
+    pub fn with_storage_capacity(mut self, storage_capacity: usize) -> Self {
+        self.storage_capacity = storage_capacity;
+
+        self
+    }
 }
 
 impl<P> Default for Guided<P> {
     fn default() -> Self {
-        Self { _program: PhantomData }
+        Self {
+            storage_capacity: 0,
+            _program: PhantomData,
+        }
     }
 }
 
@@ -46,45 +61,27 @@ impl<P> Debug for Guided<P> {
 }
 
 impl<P: ProgramSchema> Strategy for Guided<P> {
-    type Tree = FixedValueTree<(Arguments, WitnessValues)>;
-    type Value = (Arguments, WitnessValues);
+    type Tree = FixedValueTree<FuzzProgramValues>;
+    type Value = FuzzProgramValues;
 
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let schema = GuidedSchema::of::<P>();
+        let schema = FuzzProgramSchema::of::<P>().with_storage_capacity(self.storage_capacity);
         let values = GuidedCase::new(&[&schema], runner.rng()).generate();
 
         Ok(FixedValueTree(values.into_iter().next().expect("one schema")))
     }
 }
 
-/// What guided generation needs to know about one program.
-#[derive(Clone, Debug)]
-pub(crate) struct GuidedSchema {
-    argument_types: Vec<(TemplateProgramWitness, ResolvedType)>,
-    witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
-    literals: Vec<U256>,
-}
-
-impl GuidedSchema {
-    pub(crate) fn of<P: ProgramSchema>() -> Self {
-        Self {
-            argument_types: P::argument_types(),
-            witness_types: P::witness_types(),
-            literals: P::literals(),
-        }
-    }
-}
-
 /// State of a single generated case. Programs generated together share literals and values.
 pub(crate) struct GuidedCase<'a> {
-    schemas: &'a [&'a GuidedSchema],
+    schemas: &'a [&'a FuzzProgramSchema],
     literals: Vec<Word>,
     leaves: Vec<(usize, Word)>,
     rng: &'a mut TestRng,
 }
 
 impl<'a> GuidedCase<'a> {
-    pub(crate) fn new(schemas: &'a [&'a GuidedSchema], rng: &'a mut TestRng) -> Self {
+    pub(crate) fn new(schemas: &'a [&'a FuzzProgramSchema], rng: &'a mut TestRng) -> Self {
         Self {
             schemas,
             literals: schemas
@@ -96,35 +93,45 @@ impl<'a> GuidedCase<'a> {
         }
     }
 
-    /// The arguments and witness of each schema, in order.
-    pub(crate) fn generate(mut self) -> Vec<(Arguments, WitnessValues)> {
+    /// The values of each schema, in order. Storage slots are drawn like `u256` leaves.
+    pub(crate) fn generate(mut self) -> Vec<FuzzProgramValues> {
         let schemas = self.schemas;
         let fields: Vec<_> = schemas
             .iter()
             .map(|schema| {
-                (
-                    self.draw_fields(&schema.argument_types),
-                    self.draw_fields(&schema.witness_types),
-                )
+                let arguments = self.draw_fields(&schema.argument_types);
+                let witness = self.draw_fields(&schema.witness_types);
+
+                for _ in 0..schema.storage_capacity {
+                    let word = self.draw_word(256);
+                    self.leaves.push((256, word));
+                }
+
+                (arguments, witness, schema.storage_capacity)
             })
             .collect();
 
         let mut words = self.reuse().into_iter();
-        let mut next_word = |uint: UIntType| words.next().expect("one word per leaf").to_value(uint);
 
         fields
             .into_iter()
-            .map(|(arguments, witness)| {
+            .map(|(arguments, witness, storage_capacity)| {
                 let arguments: HashMap<_, _> = arguments
                     .into_iter()
-                    .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut words)))
                     .collect();
                 let witness: HashMap<_, _> = witness
                     .into_iter()
-                    .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut words)))
                     .collect();
 
-                (Arguments::from_map(arguments), WitnessValues::from_map(witness))
+                FuzzProgramValues {
+                    arguments: Arguments::from_map(arguments),
+                    witness: WitnessValues::from_map(witness),
+                    storage: (0..storage_capacity)
+                        .map(|_| words.next().expect("one word per leaf").0)
+                        .collect(),
+                }
             })
             .collect()
     }
@@ -239,26 +246,26 @@ impl<'a> GuidedCase<'a> {
     }
 
     /// Rebuilds `value`, replacing every integer leaf in traversal order.
-    fn map_uints(value: &Value, next: &mut impl FnMut(UIntType) -> Value) -> Value {
+    fn map_uints(value: &Value, words: &mut impl Iterator<Item = Word>) -> Value {
         match (value.inner(), value.ty().as_inner()) {
-            (ValueInner::UInt(_), TypeInner::UInt(uint)) => next(*uint),
+            (ValueInner::UInt(_), TypeInner::UInt(uint)) => words.next().expect("one word per leaf").to_value(*uint),
             (ValueInner::Either(either), TypeInner::Either(left_ty, right_ty)) => match either {
-                Either::Left(left) => Value::left(Self::map_uints(left, next), (**right_ty).clone()),
-                Either::Right(right) => Value::right((**left_ty).clone(), Self::map_uints(right, next)),
+                Either::Left(left) => Value::left(Self::map_uints(left, words), (**right_ty).clone()),
+                Either::Right(right) => Value::right((**left_ty).clone(), Self::map_uints(right, words)),
             },
-            (ValueInner::Option(Some(inner)), _) => Value::some(Self::map_uints(inner, next)),
+            (ValueInner::Option(Some(inner)), _) => Value::some(Self::map_uints(inner, words)),
             (ValueInner::Tuple(elements), _) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::tuple(values)
             }
             (ValueInner::Array(elements), TypeInner::Array(element_ty, _)) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::array(values, (**element_ty).clone())
             }
             (ValueInner::List(elements, bound), TypeInner::List(element_ty, _)) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::list(values, (**element_ty).clone(), *bound)
             }
@@ -507,9 +514,9 @@ mod tests {
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let (arguments, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = strategy.new_tree(&mut runner).unwrap().current();
 
-            RichSchema::assert_matches(&arguments, &witness);
+            RichSchema::assert_matches(&values.arguments, &values.witness);
         }
     }
 
@@ -521,9 +528,9 @@ mod tests {
         let name = TemplateProgramWitness::witness_from_str("VALUE");
 
         let found = (0..100).any(|_| {
-            let (_, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = strategy.new_tree(&mut runner).unwrap().current();
 
-            witness.get(&name) == Some(&magic)
+            values.witness.get(&name) == Some(&magic)
         });
 
         assert!(found);
@@ -585,9 +592,7 @@ mod tests {
             Value::left(Value::u8(1), ResolvedType::boolean()),
             Value::some(Value::u16(2)),
         ]);
-        let mut next = |uint: UIntType| Word::from_u128(3).to_value(uint);
-
-        let mapped = GuidedCase::map_uints(&value, &mut next);
+        let mapped = GuidedCase::map_uints(&value, &mut std::iter::repeat(Word::from_u128(3)));
 
         assert!(mapped.is_of_type(&ty));
         assert_eq!(

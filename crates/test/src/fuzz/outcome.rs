@@ -31,6 +31,7 @@ pub enum SetupError {
     Scenario(String),
     Arguments(String),
     Witness(String),
+    Storage(String),
     Transaction(String),
     Signing(String),
     Engine(String),
@@ -110,10 +111,11 @@ impl Display for SetupError {
             Self::Scenario(error) => write!(f, "the scenario is invalid: {error}"),
             Self::Arguments(error) => write!(f, "arguments do not fit the program: {error}"),
             Self::Witness(error) => write!(f, "witness does not fit the program: {error}"),
+            Self::Storage(error) => write!(f, "storage does not fit the program: {error}"),
             Self::Transaction(error) => write!(f, "transaction does not fit the program: {error}"),
             Self::Signing(error) => write!(f, "signing failed: {error}"),
             Self::Engine(error) => write!(f, "program and environment disagree, please report a bug: {error}"),
-            Self::Binding(name) => write!(f, "a binding of `{name}` panicked, see its message above"),
+            Self::Binding(name) => write!(f, "a binding or transition of `{name}` panicked, see its message above"),
             Self::Spec => write!(f, "the spec panicked, see its message above"),
         }
     }

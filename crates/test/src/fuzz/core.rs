@@ -8,11 +8,10 @@ use proptest::prelude::TestCaseError;
 use proptest::strategy::Strategy;
 use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestError, TestRunner};
 
-use simplicityhl::{Arguments, WitnessValues};
-
 use smplx_sdk::signer::Signer;
 
 use crate::fuzz::outcome::{Outcome, SetupError};
+use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::scenario::Scenario;
 use crate::fuzz::smart_check::AuthCheck;
 use crate::fuzz::spec::{Expect, FuzzCase};
@@ -142,7 +141,7 @@ impl SimplexFuzzEngine {
     }
 
     /// Extracted helper that performs exactly one isolated test run.
-    fn fuzz(&self, summary: &RefCell<RunSummary>, values: Vec<(Arguments, WitnessValues)>) -> Result<(), CaseFailure> {
+    fn fuzz(&self, summary: &RefCell<RunSummary>, values: Vec<FuzzProgramValues>) -> Result<(), CaseFailure> {
         let network = self.signer.get_network();
 
         let (programs, transaction) = self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;

@@ -7,12 +7,12 @@ use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_sdk::program::Program;
 
-use crate::fuzz::FuzzProgramTrait;
-use crate::fuzz::program_strategy::{GuidedSchema, ProgramStrategy, Random};
+use crate::fuzz::program::{FuzzProgram, FuzzProgramSchema, FuzzProgramTrait};
+use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues};
 use crate::fuzz::spec::FuzzCase;
 
-type Values = (Arguments, WitnessValues);
 type Binding<T> = Box<dyn Fn(&T, &FuzzCase<'_>) -> T>;
+type Transition = Box<dyn Fn(&FuzzCase<'_>) -> Vec<[u8; 32]>>;
 
 /// A builder to configure what each FuzzProgram does.
 pub struct FuzzProgramScenarioBuilder<'a, P> {
@@ -25,8 +25,10 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) name: String,
     pub(crate) inputs: Vec<usize>,
     pub(crate) outputs: Vec<usize>,
+    pub(crate) transitions: Vec<(usize, Transition)>,
+    pub(crate) storage_capacity: usize,
     pub(crate) program_type: (TypeId, &'static str),
-    pub(crate) strategy: ProgramStrategy,
+    pub(crate) strategy: FuzzProgramStrategy,
     pub(crate) argument_bindings: Vec<Binding<Arguments>>,
     pub(crate) witness_bindings: Vec<Binding<WitnessValues>>,
     pub(crate) build_program: fn(&Arguments) -> Result<Program, String>,
@@ -39,8 +41,10 @@ impl FuzzProgramScenario {
             name,
             inputs: Vec::new(),
             outputs: Vec::new(),
+            transitions: Vec::new(),
+            storage_capacity: 0,
             program_type: (TypeId::of::<P>(), type_name::<P>()),
-            strategy: ProgramStrategy::Guided(GuidedSchema::of::<P>()),
+            strategy: FuzzProgramStrategy::Guided(FuzzProgramSchema::of::<P>()),
             argument_bindings: Vec::new(),
             witness_bindings: Vec::new(),
             build_program: P::build_program,
@@ -71,16 +75,35 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
         self
     }
 
+    /// Locks the transaction output at `index` to this program with the storage `transition` function returns.
+    pub fn recursive(self, index: usize, transition: impl Fn(&FuzzProgram<'_, P>) -> Vec<[u8; 32]> + 'static) -> Self {
+        let name = self.program_scenario.name.clone();
+
+        self.program_scenario.outputs.push(index);
+        self.program_scenario
+            .transitions
+            .push((index, Box::new(move |case| transition(&case.program::<P>(&name)))));
+
+        self
+    }
+
+    /// Gives the program `capacity` storage slots, generated like its other values.
+    pub fn storage_capacity(self, capacity: usize) -> Self {
+        self.program_scenario.storage_capacity = capacity;
+
+        self
+    }
+
     /// Generates the program's arguments and witness uniformly at random.
     pub fn random_strategy(self) -> Self {
-        self.program_scenario.strategy = ProgramStrategy::Random(Random::<P>::default().boxed());
+        self.program_scenario.strategy = FuzzProgramStrategy::Random(FuzzProgramSchema::of::<P>());
 
         self
     }
 
     /// Replaces how the program's arguments and witness are generated.
-    pub fn custom_strategy(self, strategy: impl Strategy<Value = Values> + 'static) -> Self {
-        self.program_scenario.strategy = ProgramStrategy::Other(strategy.boxed());
+    pub fn custom_strategy(self, strategy: impl Strategy<Value = FuzzProgramValues> + 'static) -> Self {
+        self.program_scenario.strategy = FuzzProgramStrategy::Other(strategy.boxed());
 
         self
     }
