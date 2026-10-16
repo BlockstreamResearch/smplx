@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use proptest::prelude::Strategy;
 
-use simplicityhl::{Arguments, WitnessValues};
+use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValues};
 
 use smplx_sdk::program::Program;
 
@@ -27,6 +27,9 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) outputs: Vec<usize>,
     /// Locked outputs the lock check leaves alone. Also listed in `outputs`.
     pub(crate) unchecked_outputs: Vec<usize>,
+    /// Witness fields with the branches the witness must take, e.g. `("PATH", ["Right", "Left"])`.
+    pub(crate) spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>,
+    pub(crate) witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
     pub(crate) transitions: Vec<(usize, Transition)>,
     pub(crate) storage_capacity: usize,
     pub(crate) program_type: (TypeId, &'static str),
@@ -44,6 +47,8 @@ impl FuzzProgramScenario {
             inputs: Vec::new(),
             outputs: Vec::new(),
             unchecked_outputs: Vec::new(),
+            spending_paths: Vec::new(),
+            witness_types: P::witness_types(),
             transitions: Vec::new(),
             storage_capacity: 0,
             program_type: (TypeId::of::<P>(), type_name::<P>()),
@@ -83,6 +88,20 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
     pub fn locks_unchecked(self, index: usize) -> Self {
         self.program_scenario.outputs.push(index);
         self.program_scenario.unchecked_outputs.push(index);
+
+        self
+    }
+
+    /// Specifies the spending path of the program to fuzz. The path must exist in witness.
+    pub fn spending_path<I>(self, name: &str, path: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
+        self.program_scenario.spending_paths.push((
+            TemplateProgramWitness::witness_from_str(name),
+            path.into_iter().map(|route| route.as_ref().to_string()).collect(),
+        ));
 
         self
     }

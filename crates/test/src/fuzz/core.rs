@@ -9,7 +9,6 @@ use proptest::strategy::Strategy;
 use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestError, TestRunner};
 
 use smplx_sdk::signer::Signer;
-use smplx_sdk::transaction::FinalTransaction;
 
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::program_strategy::FuzzProgramValues;
@@ -232,9 +231,7 @@ impl SimplexFuzzEngine {
         }
 
         if verdict.is_accepted()
-            && let Some(bypass) = self
-                .do_smart_checks(summary, &transaction)
-                .map_err(CaseFailure::Setup)?
+            && let Some(bypass) = self.do_smart_checks(summary, &case).map_err(CaseFailure::Setup)?
         {
             return Err(failure(bypass));
         }
@@ -246,8 +243,10 @@ impl SimplexFuzzEngine {
     fn do_smart_checks(
         &self,
         summary: &RefCell<RunSummary>,
-        transaction: &FinalTransaction,
+        case: &FuzzCase<'_>,
     ) -> Result<Option<String>, SetupError> {
+        let transaction = case.transaction();
+
         if self.check_lock
             && let Some(check) = LockCheck::new(&self.signer, transaction, self.scenario.locked_outputs())
         {

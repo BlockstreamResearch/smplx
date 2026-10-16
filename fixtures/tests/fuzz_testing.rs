@@ -4,6 +4,8 @@ use simplex::fuzz::{Expect, Scenario};
 use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
+use simplex_fixtures::artifacts::nested_sig::NestedSigProgram;
+use simplex_fixtures::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
 use simplex_fixtures::artifacts::p2pk::P2pkProgram;
 use simplex_fixtures::artifacts::p2pk::derived_p2pk::{P2pkArguments, P2pkWitness};
 
@@ -57,6 +59,37 @@ fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Re
     scenario
         .add::<P2pkProgram>("p2pk")
         .spends(0)
+        .bind_arguments(move |arguments, _| arguments.public_key = public_key);
+
+    test_context.engine(scenario).run();
+
+    Ok(())
+}
+
+/// The hot path signs with the first of its two signatures, the second is never checked.
+#[simplex::fuzz]
+fn nested_sig_spends_through_its_hot_path(test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
+    let public_key = test_context.get_default_signer().get_schnorr_public_key().serialize();
+
+    let mut transaction = FinalTransaction::new();
+    transaction.add_program_input(
+        PartialInput::default(),
+        ProgramInput::new(
+            Box::new(
+                NestedSigProgram::new(NestedSigArguments { public_key })
+                    .as_ref()
+                    .clone(),
+            ),
+            NestedSigWitness::default(),
+        ),
+        RequiredSignature::witness_with_path("INHERIT_OR_NOT", ["Right", "Right", "0"]),
+    );
+
+    let mut scenario = Scenario::new(transaction);
+    scenario
+        .add::<NestedSigProgram>("nested_sig")
+        .spends(0)
+        .spending_path("INHERIT_OR_NOT", ["Right", "Right"])
         .bind_arguments(move |arguments, _| arguments.public_key = public_key);
 
     test_context.engine(scenario).run();

@@ -55,6 +55,7 @@ pub(crate) struct FuzzProgramSchema {
     pub(crate) witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
     pub(crate) literals: Vec<U256>,
     pub(crate) storage_capacity: usize,
+    pub(crate) spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>,
 }
 
 impl FuzzProgramSchema {
@@ -64,6 +65,7 @@ impl FuzzProgramSchema {
             witness_types: P::witness_types(),
             literals: P::literals(),
             storage_capacity: 0,
+            spending_paths: Vec::new(),
         }
     }
 
@@ -72,6 +74,21 @@ impl FuzzProgramSchema {
         self.storage_capacity = storage_capacity;
 
         self
+    }
+
+    #[must_use]
+    pub(crate) fn with_spending_paths(mut self, spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>) -> Self {
+        self.spending_paths = spending_paths;
+
+        self
+    }
+
+    /// The spending path of `field`, empty when there is none.
+    pub(crate) fn spending_path(&self, field: &TemplateProgramWitness) -> &[String] {
+        self.spending_paths
+            .iter()
+            .find(|(pinned, _)| pinned == field)
+            .map_or(&[], |(_, path)| path.as_slice())
     }
 }
 

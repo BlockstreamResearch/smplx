@@ -2,6 +2,8 @@ use std::any::{TypeId, type_name};
 use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 
+use simplicityhl::WitnessNameToValueMap;
+
 use smplx_sdk::program::Program;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
@@ -13,6 +15,8 @@ use crate::fuzz::program_strategy::FuzzProgramStrategy;
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::scenario_strategy::Combined;
 use crate::fuzz::spec::FuzzCase;
+use crate::fuzz::transaction::FuzzTransactionSchema;
+use crate::fuzz::utils::{fits_path, follows_path};
 
 /// A transaction and the programs being fuzzed.
 pub struct Scenario {
@@ -49,6 +53,20 @@ impl Scenario {
 
             if !names.insert(name) {
                 return invalid(format!("two programs are named `{name}`"));
+            }
+
+            for (field, path) in &program_scenario.spending_paths {
+                let fits = program_scenario
+                    .witness_types
+                    .iter()
+                    .find(|(witness, _)| witness == field)
+                    .is_some_and(|(_, ty)| fits_path(ty, path));
+
+                if !fits {
+                    return invalid(format!(
+                        "`{name}` has no witness field `{field}` with the spending path {path:?}"
+                    ));
+                }
             }
 
             if program_scenario.inputs.is_empty() && !program_scenario.witness_bindings.is_empty() {
@@ -175,6 +193,28 @@ impl Scenario {
             }
         }
 
+        // Check that custom strategies and bindings don't leave the spending path.
+        for program_scenario in &self.program_scenarios {
+            let Some(&input) = program_scenario.inputs.first() else {
+                continue;
+            };
+
+            let witness = &transaction.inputs()[input]
+                .program_input
+                .as_ref()
+                .expect("a spent input runs its program")
+                .witness;
+
+            for (field, path) in &program_scenario.spending_paths {
+                if !witness.get(field).is_some_and(|value| follows_path(value, path)) {
+                    return Err(SetupError::Witness(format!(
+                        "`{}` leaves its spending path {path:?} in `{field}`",
+                        program_scenario.name
+                    )));
+                }
+            }
+        }
+
         // Lock recursive outputs to each program with its next storage.
         for (program_scenario, program) in self.program_scenarios.iter().zip(&programs) {
             let name = &program_scenario.name;
@@ -237,18 +277,26 @@ impl Scenario {
                 .iter()
                 .map(|program_scenario| {
                     let storage_capacity = program_scenario.storage_capacity;
+                    let spending_paths = program_scenario.spending_paths.clone();
 
                     match &program_scenario.strategy {
-                        FuzzProgramStrategy::Guided(schema) => {
-                            FuzzProgramStrategy::Guided(schema.clone().with_storage_capacity(storage_capacity))
-                        }
-                        FuzzProgramStrategy::Random(schema) => {
-                            FuzzProgramStrategy::Random(schema.clone().with_storage_capacity(storage_capacity))
-                        }
+                        FuzzProgramStrategy::Guided(schema) => FuzzProgramStrategy::Guided(
+                            schema
+                                .clone()
+                                .with_storage_capacity(storage_capacity)
+                                .with_spending_paths(spending_paths.clone()),
+                        ),
+                        FuzzProgramStrategy::Random(schema) => FuzzProgramStrategy::Random(
+                            schema
+                                .clone()
+                                .with_storage_capacity(storage_capacity)
+                                .with_spending_paths(spending_paths.clone()),
+                        ),
                         FuzzProgramStrategy::Other(strategy) => FuzzProgramStrategy::Other(strategy.clone()),
                     }
                 })
                 .collect(),
+            FuzzTransactionSchema::of(&self.transaction),
         )
     }
 
@@ -364,7 +412,7 @@ mod tests {
     use proptest::strategy::{Just, Strategy};
 
     use simplicityhl::elements::{OutPoint, Txid};
-    use simplicityhl::{Arguments, WitnessValues};
+    use simplicityhl::{Arguments, TemplateProgramWitness, WitnessValues};
 
     use smplx_sdk::transaction::{PartialOutput, UTXO};
 
@@ -378,6 +426,8 @@ mod tests {
             inputs: inputs.to_vec(),
             outputs: outputs.to_vec(),
             unchecked_outputs: Vec::new(),
+            spending_paths: Vec::new(),
+            witness_types: Vec::new(),
             transitions: Vec::new(),
             storage_capacity: 0,
             program_type: (TypeId::of::<()>(), "()"),
@@ -435,6 +485,18 @@ mod tests {
             (
                 vec![program_scenario("a", &[0], &[]), program_scenario("a", &[1], &[])],
                 "two programs are named `a`",
+            ),
+            (
+                {
+                    let mut unknown_path = program_scenario("a", &[0], &[]);
+                    unknown_path.spending_paths.push((
+                        TemplateProgramWitness::witness_from_str("PATH"),
+                        vec!["Left".to_string()],
+                    ));
+
+                    vec![unknown_path]
+                },
+                "`a` has no witness field `PATH` with the spending path",
             ),
         ];
 

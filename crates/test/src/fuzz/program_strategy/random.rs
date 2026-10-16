@@ -14,7 +14,7 @@ use smplx_sdk::program::ProgramSchema;
 use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_strategy::FuzzProgramValues;
-use crate::fuzz::utils::random_fields;
+use crate::fuzz::utils::{draw_on_path, generate_random_value_by_ty, random_fields};
 
 /// Draws every value uniformly at random.
 pub struct Random<P> {
@@ -69,9 +69,23 @@ impl<'a> RandomCase<'a> {
     }
 
     pub(crate) fn generate(self) -> FuzzProgramValues {
+        let witness = self
+            .schema
+            .witness_types
+            .iter()
+            .map(|(name, ty)| {
+                let path = self.schema.spending_path(name);
+
+                (
+                    name.clone(),
+                    draw_on_path(ty, path, &mut |ty| generate_random_value_by_ty(ty, self.rng)),
+                )
+            })
+            .collect();
+
         FuzzProgramValues {
             arguments: Arguments::from_map(random_fields(&self.schema.argument_types, self.rng)),
-            witness: WitnessValues::from_map(random_fields(&self.schema.witness_types, self.rng)),
+            witness: WitnessValues::from_map(witness),
             storage: (0..self.schema.storage_capacity).map(|_| self.rng.random()).collect(),
         }
     }

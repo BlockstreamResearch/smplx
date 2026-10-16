@@ -9,6 +9,7 @@ mod scenario_strategy;
 mod smart_check;
 pub mod spec;
 pub mod summary;
+mod transaction;
 pub mod utils;
 
 pub use proptest;

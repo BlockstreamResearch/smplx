@@ -19,11 +19,14 @@ use smplx_sdk::program::ProgramSchema;
 use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_strategy::FuzzProgramValues;
+use crate::fuzz::transaction::FuzzTransactionSchema;
+use crate::fuzz::utils::draw_on_path;
 
 // TODO: make the weights configurable.
 const RANDOM_WEIGHT: u32 = 40;
 const BOUNDARY_WEIGHT: u32 = 20;
 const LITERAL_WEIGHT: u32 = 20;
+const UTXO_WEIGHT: u32 = 40;
 const REUSE_PERCENT: u32 = 20;
 
 const BOUNDARY_POWERS: &[usize] = &[4, 5, 6, 7, 8, 10, 12, 15, 16, 31, 32, 63, 64, 127, 128, 255];
@@ -76,6 +79,7 @@ impl<P: ProgramSchema> Strategy for Guided<P> {
 pub(crate) struct GuidedCase<'a> {
     schemas: &'a [&'a FuzzProgramSchema],
     literals: Vec<Word>,
+    utxos_max: u32,
     leaves: Vec<(usize, Word)>,
     rng: &'a mut TestRng,
 }
@@ -88,9 +92,19 @@ impl<'a> GuidedCase<'a> {
                 .iter()
                 .flat_map(|schema| schema.literals.iter().copied().map(Word::from))
                 .collect(),
+            utxos_max: 0,
             leaves: Vec::new(),
             rng,
         }
+    }
+
+    /// Draws from the transaction's values too: its literals join the pool and indices up to `utxos_max` come up often.
+    #[must_use]
+    pub(crate) fn with_transaction_schema(mut self, schema: &FuzzTransactionSchema) -> Self {
+        self.literals.extend(schema.literals.iter().copied().map(Word::from));
+        self.utxos_max = schema.utxos_max;
+
+        self
     }
 
     /// The values of each schema, in order. Storage slots are drawn like `u256` leaves.
@@ -99,8 +113,8 @@ impl<'a> GuidedCase<'a> {
         let fields: Vec<_> = schemas
             .iter()
             .map(|schema| {
-                let arguments = self.draw_fields(&schema.argument_types);
-                let witness = self.draw_fields(&schema.witness_types);
+                let arguments = self.draw_fields(&schema.argument_types, |_| &[]);
+                let witness = self.draw_fields(&schema.witness_types, |field| schema.spending_path(field));
 
                 for _ in 0..schema.storage_capacity {
                     let word = self.draw_word(256);
@@ -136,11 +150,16 @@ impl<'a> GuidedCase<'a> {
             .collect()
     }
 
-    fn draw_fields(
+    /// Each field takes the branches of the path `path_of` gives it.
+    fn draw_fields<'p>(
         &mut self,
         types: &[(TemplateProgramWitness, ResolvedType)],
+        path_of: impl Fn(&TemplateProgramWitness) -> &'p [String],
     ) -> Vec<(TemplateProgramWitness, Value)> {
-        types.iter().map(|(name, ty)| (name.clone(), self.draw(ty))).collect()
+        types
+            .iter()
+            .map(|(name, ty)| (name.clone(), draw_on_path(ty, path_of(name), &mut |ty| self.draw(ty))))
+            .collect()
     }
 
     fn draw(&mut self, ty: &ResolvedType) -> Value {
@@ -196,12 +215,19 @@ impl<'a> GuidedCase<'a> {
     fn draw_word(&mut self, bits: usize) -> Word {
         let fitting: Vec<Word> = self.literals.iter().copied().filter(|word| word.fits(bits)).collect();
         let literal_weight = if fitting.is_empty() { 0 } else { LITERAL_WEIGHT };
+        let utxo_weight = if self.utxos_max > 0 && Word::from_u128(self.utxos_max.into()).fits(bits) {
+            UTXO_WEIGHT
+        } else {
+            0
+        };
 
         let roll = self
             .rng
-            .random_range(0..RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight);
+            .random_range(0..RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight + utxo_weight);
 
-        if roll < RANDOM_WEIGHT {
+        if roll >= RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight {
+            Word::from_u128(self.rng.random_range(0..=self.utxos_max).into())
+        } else if roll < RANDOM_WEIGHT {
             Word::random(bits, self.rng)
         } else if roll < RANDOM_WEIGHT + BOUNDARY_WEIGHT {
             let boundaries = Word::boundaries(bits);
@@ -547,6 +573,7 @@ mod tests {
             let words = GuidedCase {
                 schemas: &[],
                 literals: Vec::new(),
+                utxos_max: 0,
                 leaves: leaves.clone(),
                 rng: runner.rng(),
             }
