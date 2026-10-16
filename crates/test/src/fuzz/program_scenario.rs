@@ -25,6 +25,8 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) name: String,
     pub(crate) inputs: Vec<usize>,
     pub(crate) outputs: Vec<usize>,
+    /// Locked outputs the lock check leaves alone. Also listed in `outputs`.
+    pub(crate) unchecked_outputs: Vec<usize>,
     pub(crate) transitions: Vec<(usize, Transition)>,
     pub(crate) storage_capacity: usize,
     pub(crate) program_type: (TypeId, &'static str),
@@ -41,6 +43,7 @@ impl FuzzProgramScenario {
             name,
             inputs: Vec::new(),
             outputs: Vec::new(),
+            unchecked_outputs: Vec::new(),
             transitions: Vec::new(),
             storage_capacity: 0,
             program_type: (TypeId::of::<P>(), type_name::<P>()),
@@ -71,6 +74,15 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
     /// Locks the transaction output at `index`, overriding its script.
     pub fn locks(self, index: usize) -> Self {
         self.program_scenario.outputs.push(index);
+
+        self
+    }
+
+    /// Locks the transaction output at `index` like [`Self::locks`] but doesn't do the "redirect" check.
+    /// E.g. for a spend that may legitimately send the coins anywhere.
+    pub fn locks_unchecked(self, index: usize) -> Self {
+        self.program_scenario.outputs.push(index);
+        self.program_scenario.unchecked_outputs.push(index);
 
         self
     }

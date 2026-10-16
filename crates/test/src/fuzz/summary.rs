@@ -16,12 +16,14 @@ pub struct RunSummary {
     rejections: HashMap<Rejection, usize>,
     rejected_by: Vec<(String, usize)>,
     expectations: HashMap<Expect, usize>,
+    check_lock: bool,
+    lock_checks: usize,
     check_auth: bool,
     auth_checks: usize,
 }
 
 impl RunSummary {
-    pub fn new(test_name: &'static str, seed: RngSeed, layout: String, check_auth: bool) -> Self {
+    pub fn new(test_name: &'static str, seed: RngSeed, layout: String, check_lock: bool, check_auth: bool) -> Self {
         Self {
             test_name,
             seed,
@@ -31,6 +33,8 @@ impl RunSummary {
             rejections: HashMap::new(),
             rejected_by: Vec::new(),
             expectations: HashMap::new(),
+            check_lock,
+            lock_checks: 0,
             check_auth,
             auth_checks: 0,
         }
@@ -51,6 +55,10 @@ impl RunSummary {
                 None => self.rejected_by.push((name, 1)),
             }
         }
+    }
+
+    pub fn record_lock_check(&mut self) {
+        self.lock_checks += 1;
     }
 
     pub fn record_auth_check(&mut self) {
@@ -121,6 +129,16 @@ impl Display for RunSummary {
             Self::count(&self.expectations, &Expect::Reject),
             Self::count(&self.expectations, &Expect::Any)
         )?;
+
+        if self.check_lock {
+            writeln!(
+                f,
+                "  lock           {} accepted case(s) checked with their locked outputs redirected",
+                self.lock_checks
+            )?;
+        } else {
+            writeln!(f, "  lock           off")?;
+        }
 
         if self.check_auth {
             write!(

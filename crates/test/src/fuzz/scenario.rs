@@ -252,6 +252,20 @@ impl Scenario {
         )
     }
 
+    /// Every output the lock check protects, with the name of the program it is locked to.
+    pub(crate) fn locked_outputs(&self) -> Vec<(usize, &str)> {
+        self.program_scenarios
+            .iter()
+            .flat_map(|program_scenario| {
+                program_scenario
+                    .outputs
+                    .iter()
+                    .filter(|index| !program_scenario.unchecked_outputs.contains(index))
+                    .map(|&index| (index, program_scenario.name.as_str()))
+            })
+            .collect()
+    }
+
     /// Each program and the fixed program inputs with their bound values.
     pub(crate) fn describe(&self, programs: &[Program], transaction: &FinalTransaction) -> String {
         self.program_scenarios
@@ -301,6 +315,8 @@ impl Scenario {
                         .any(|(recursive, _)| recursive == index)
                     {
                         format!("locks output {index} recursively")
+                    } else if program_scenario.unchecked_outputs.contains(index) {
+                        format!("locks output {index} unchecked")
                     } else {
                         format!("locks output {index}")
                     }
@@ -362,6 +378,7 @@ mod tests {
             name: name.to_string(),
             inputs: inputs.to_vec(),
             outputs: outputs.to_vec(),
+            unchecked_outputs: Vec::new(),
             transitions: Vec::new(),
             storage_capacity: 0,
             program_type: (TypeId::of::<()>(), "()"),

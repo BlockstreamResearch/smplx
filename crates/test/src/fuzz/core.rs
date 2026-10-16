@@ -9,11 +9,12 @@ use proptest::strategy::Strategy;
 use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestError, TestRunner};
 
 use smplx_sdk::signer::Signer;
+use smplx_sdk::transaction::FinalTransaction;
 
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::scenario::Scenario;
-use crate::fuzz::smart_check::AuthCheck;
+use crate::fuzz::smart_check::{AuthCheck, LockCheck};
 use crate::fuzz::spec::{Expect, FuzzCase};
 use crate::fuzz::summary::RunSummary;
 
@@ -30,6 +31,7 @@ pub struct SimplexFuzzEngine {
     pub scenario: Scenario,
     pub spec: Box<Spec>,
     pub allow_unspendable: bool,
+    pub check_lock: bool,
     pub check_auth: bool,
 }
 
@@ -41,6 +43,7 @@ impl SimplexFuzzEngine {
             scenario,
             spec: Box::new(|_| Expect::Accept),
             allow_unspendable: false,
+            check_lock: true,
             check_auth: true,
         }
     }
@@ -75,6 +78,14 @@ impl SimplexFuzzEngine {
         self
     }
 
+    /// Skips checking that accepted spends cannot redirect the outputs they lock.
+    #[must_use]
+    pub fn without_lock_check(mut self) -> Self {
+        self.check_lock = false;
+
+        self
+    }
+
     /// Skips checking that accepted spends depend on their signatures.
     #[must_use]
     pub fn without_auth_check(mut self) -> Self {
@@ -93,6 +104,7 @@ impl SimplexFuzzEngine {
             self.config.test_name.unwrap_or("simplex_fuzz"),
             self.config.rng_seed,
             self.scenario.layout(),
+            self.check_lock,
             self.check_auth,
         ));
 
@@ -219,19 +231,47 @@ impl SimplexFuzzEngine {
             return Err(failure(format!("{finding} ({inputs})")));
         }
 
-        if self.check_auth
-            && verdict.is_accepted()
-            && let Some(check) = AuthCheck::new(&self.signer, &transaction, &program_inputs)
+        if verdict.is_accepted()
+            && let Some(bypass) = self
+                .do_smart_checks(summary, &transaction, &program_inputs)
+                .map_err(CaseFailure::Setup)?
         {
-            let bypasses = check.run().map_err(CaseFailure::Setup)?;
-            summary.borrow_mut().record_auth_check();
-
-            if !bypasses.is_empty() {
-                return Err(failure(format!("authorization bypass: {}", bypasses.join("; "))));
-            }
+            return Err(failure(bypass));
         }
 
         Ok(())
+    }
+
+    /// Runs the smart checks on an accepted case and returns the first bypass they find.
+    fn do_smart_checks(
+        &self,
+        summary: &RefCell<RunSummary>,
+        transaction: &FinalTransaction,
+        program_inputs: &[usize],
+    ) -> Result<Option<String>, SetupError> {
+        if self.check_lock
+            && let Some(check) = LockCheck::new(&self.signer, transaction, self.scenario.locked_outputs())
+        {
+            let bypasses = check.run()?;
+            summary.borrow_mut().record_lock_check();
+
+            if !bypasses.is_empty() {
+                return Ok(Some(format!("lock bypass: {}", bypasses.join("; "))));
+            }
+        }
+
+        if self.check_auth
+            && let Some(check) = AuthCheck::new(&self.signer, transaction, program_inputs)
+        {
+            let bypasses = check.run()?;
+            summary.borrow_mut().record_auth_check();
+
+            if !bypasses.is_empty() {
+                return Ok(Some(format!("authorization bypass: {}", bypasses.join("; "))));
+            }
+        }
+
+        Ok(None)
     }
 }
 
