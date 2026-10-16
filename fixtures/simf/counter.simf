@@ -1,0 +1,40 @@
+/*
+ * Adds a witness step, at most MAX_STEP, to the lowest 64 bits of the state stored in its taproot tree.
+ */
+
+fn script_hash_for_state(state: u256) -> u256 {
+    let tap_leaf: u256 = jet::tapleaf_hash();
+    let state_ctx1: Ctx8 = jet::tapdata_init();
+    let state_ctx2: Ctx8 = jet::sha_256_ctx_8_add_32(state_ctx1, state);
+    let state_leaf: u256 = jet::sha_256_ctx_8_finalize(state_ctx2);
+    let tap_node: u256 = jet::build_tapbranch(tap_leaf, state_leaf);
+
+    let bip0341_key: u256 = 0x50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0;
+    let tweaked_key: u256 = jet::build_taptweak(bip0341_key, tap_node);
+
+    let hash_ctx1: Ctx8 = jet::sha_256_ctx_8_init();
+    let hash_ctx2: Ctx8 = jet::sha_256_ctx_8_add_2(hash_ctx1, 0x5120);
+    let hash_ctx3: Ctx8 = jet::sha_256_ctx_8_add_32(hash_ctx2, tweaked_key);
+    jet::sha_256_ctx_8_finalize(hash_ctx3)
+}
+
+fn main() {
+    let state: u256 = witness::STATE;
+    assert!(jet::eq_256(
+        script_hash_for_state(state),
+        unwrap(jet::input_script_hash(jet::current_index()))
+    ));
+
+    let step: u64 = witness::STEP;
+    assert!(jet::le_64(step, param::MAX_STEP));
+
+    let (state1, state2, state3, state4): (u64, u64, u64, u64) = <u256>::into(state);
+    let (carry, next_state4): (bool, u64) = jet::add_64(state4, step);
+    assert!(jet::eq_1(<bool>::into(carry), 0));
+
+    let next_state: u256 = <(u64, u64, u64, u64)>::into((state1, state2, state3, next_state4));
+    assert!(jet::eq_256(
+        script_hash_for_state(next_state),
+        unwrap(jet::output_script_hash(jet::current_index()))
+    ));
+}

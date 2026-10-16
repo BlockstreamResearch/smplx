@@ -1,16 +1,13 @@
-use std::fmt::Debug;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use proptest::test_runner::{Config as ProptestConfig, FileFailurePersistence, RngSeed};
 
 use electrsd::bitcoind::bitcoincore_rpc::Auth;
-use simplicityhl::{Arguments, WitnessValues};
 
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 use smplx_sdk::global::GlobalConfig;
-use smplx_sdk::program::{ProgramFactory, ProgramSchema};
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
@@ -21,7 +18,7 @@ use crate::config::TestConfig;
 use crate::error::TestError;
 use crate::network_utils::NetworkUtils;
 
-use crate::fuzz::{FuzzableProgram, SimplexFuzzEngine};
+use crate::fuzz::{Scenario, SimplexFuzzEngine};
 
 pub use crate::context::sealed::ContextMode;
 
@@ -281,15 +278,11 @@ impl TestContext<FuzzMode> {
     }
 
     /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
-    pub fn engine<Program, Args, Wit>(&self) -> SimplexFuzzEngine<Program, Args, Wit>
-    where
-        Program: FuzzableProgram<Program> + ProgramFactory<Program> + ProgramSchema + Clone + 'static,
-        Args: Into<Arguments> + Debug + Clone + 'static,
-        Wit: Into<WitnessValues> + Debug + Clone + 'static,
-    {
+    pub fn engine(&self, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine::new(
             self.mode.proptest_config.clone(),
             self.create_signer(self.config.mnemonic.as_str()),
+            scenario,
         )
     }
 }

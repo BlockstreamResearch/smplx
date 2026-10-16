@@ -165,6 +165,13 @@ pub enum IssuanceInput {
     },
 }
 
+impl Default for PartialInput {
+    /// An input spending the default `UTXO`.
+    fn default() -> Self {
+        Self::new(UTXO::default())
+    }
+}
+
 impl PartialInput {
     /// Creates a new `PartialInput` from an existing `UTXO`.
     /// Extracts explicit value and asset amounts if available.

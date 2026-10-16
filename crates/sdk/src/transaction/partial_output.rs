@@ -16,6 +16,13 @@ pub struct PartialOutput {
     pub blinding_key: Option<PublicKey>,
 }
 
+impl Default for PartialOutput {
+    /// An empty-script output of zero of the default asset, matching the default `UTXO`.
+    fn default() -> Self {
+        Self::new(Script::new(), 0, AssetId::default())
+    }
+}
+
 impl PartialOutput {
     /// Creates a new `PartialOutput` assigning a base script, amount, and `AssetId`.
     #[must_use]

@@ -70,6 +70,7 @@ impl SimfContractMeta {
     /// Generates code necessary for fuzz testing.
     pub fn generate_program_trait_helpers_impl(&self) -> syn::Result<GeneratedProgramTraitHelperTokens> {
         let args_struct_name = &self.args_struct.struct_name;
+        let witness_struct_name = &self.witness_struct.struct_name;
         let program_name = &self.program_struct_name;
         let argument_types = self.args_struct.generate_schema();
         let witness_types = self.witness_struct.generate_schema();
@@ -88,6 +89,9 @@ impl SimfContractMeta {
             }
 
             impl ProgramSchema for #program_name {
+                type Arguments = #args_struct_name;
+                type Witness = #witness_struct_name;
+
                 fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
                     vec![#(#argument_types),*]
                 }
@@ -104,7 +108,7 @@ impl SimfContractMeta {
 
         Ok(GeneratedProgramTraitHelperTokens {
             imports: quote! {
-                use super::{super::#program_name, #args_struct_name};
+                use super::{super::#program_name, #args_struct_name, #witness_struct_name};
                 use simplex::program::{Program, ProgramFactory, ProgramSchema};
                 use simplex::simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness};
                 use simplex::simplicityhl::num::{NonZeroPow2Usize, U256};
@@ -230,6 +234,14 @@ impl WitnessStruct {
                     }
                 }
 
+                impl TryFrom<&Arguments> for #struct_name {
+                    type Error = String;
+
+                    fn try_from(args: &Arguments) -> Result<Self, String> {
+                        Self::from_arguments(args)
+                    }
+                }
+
                 impl From<#struct_name> for Arguments {
                     fn from(#struct_param: #struct_name) -> Arguments {
                         Arguments::from_map(HashMap::from([
@@ -317,6 +329,14 @@ impl WitnessStruct {
                 impl core::default::Default for #struct_name {
                     fn default() -> Self {
                         #default_mapping
+                    }
+                }
+
+                impl TryFrom<&WitnessValues> for #struct_name {
+                    type Error = String;
+
+                    fn try_from(witness: &WitnessValues) -> Result<Self, String> {
+                        Self::from_witness(witness)
                     }
                 }
 

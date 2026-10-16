@@ -1,24 +1,42 @@
 use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
-use simplicityhl::{Arguments, WitnessValues};
+use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
 use proptest::prelude::Strategy;
 use proptest::strategy::NewTree;
-use proptest::test_runner::TestRunner;
+use proptest::test_runner::{TestRng, TestRunner};
+
+use rand::RngExt;
 
 use smplx_sdk::program::ProgramSchema;
 
-use crate::fuzz::args_strategy::FixedValueTree;
-use crate::fuzz::utils::{random_arguments, random_witness};
+use crate::fuzz::common::FixedValueTree;
+use crate::fuzz::program::FuzzProgramSchema;
+use crate::fuzz::program_strategy::FuzzProgramValues;
+use crate::fuzz::utils::{draw_on_path, generate_random_value_by_ty, random_fields};
 
+/// Draws every value uniformly at random.
 pub struct Random<P> {
+    storage_capacity: usize,
     _program: PhantomData<fn() -> P>,
+}
+
+impl<P> Random<P> {
+    #[must_use]
+    pub fn with_storage_capacity(mut self, storage_capacity: usize) -> Self {
+        self.storage_capacity = storage_capacity;
+
+        self
+    }
 }
 
 impl<P> Default for Random<P> {
     fn default() -> Self {
-        Self { _program: PhantomData }
+        Self {
+            storage_capacity: 0,
+            _program: PhantomData,
+        }
     }
 }
 
@@ -29,14 +47,47 @@ impl<P> Debug for Random<P> {
 }
 
 impl<P: ProgramSchema> Strategy for Random<P> {
-    type Tree = FixedValueTree<(Arguments, WitnessValues)>;
-    type Value = (Arguments, WitnessValues);
+    type Tree = FixedValueTree<FuzzProgramValues>;
+    type Value = FuzzProgramValues;
 
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let arguments = random_arguments::<P, _>(runner.rng());
-        let witness = random_witness::<P, _>(runner.rng());
+        let schema = FuzzProgramSchema::of::<P>().with_storage_capacity(self.storage_capacity);
 
-        Ok(FixedValueTree((arguments, witness)))
+        Ok(FixedValueTree(RandomCase::new(&schema, runner.rng()).generate()))
+    }
+}
+
+/// A single randomly generated case.
+pub(crate) struct RandomCase<'a> {
+    schema: &'a FuzzProgramSchema,
+    rng: &'a mut TestRng,
+}
+
+impl<'a> RandomCase<'a> {
+    pub(crate) fn new(schema: &'a FuzzProgramSchema, rng: &'a mut TestRng) -> Self {
+        Self { schema, rng }
+    }
+
+    pub(crate) fn generate(self) -> FuzzProgramValues {
+        let witness = self
+            .schema
+            .witness_types
+            .iter()
+            .map(|(name, ty)| {
+                let path = self.schema.spending_path(name);
+
+                (
+                    name.clone(),
+                    draw_on_path(ty, path, &mut |ty| generate_random_value_by_ty(ty, self.rng)),
+                )
+            })
+            .collect();
+
+        FuzzProgramValues {
+            arguments: Arguments::from_map(random_fields(&self.schema.argument_types, self.rng)),
+            witness: WitnessValues::from_map(witness),
+            storage: (0..self.schema.storage_capacity).map(|_| self.rng.random()).collect(),
+        }
     }
 }
 
@@ -104,6 +155,9 @@ mod tests {
     }
 
     impl ProgramSchema for RichSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Self::types(TemplateProgramWitness::parameter_from_str)
         }
@@ -138,9 +192,9 @@ mod tests {
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let (arguments, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = strategy.new_tree(&mut runner).unwrap().current();
 
-            RichSchema::assert_matches(&arguments, &witness);
+            RichSchema::assert_matches(&values.arguments, &values.witness);
         }
     }
 }
