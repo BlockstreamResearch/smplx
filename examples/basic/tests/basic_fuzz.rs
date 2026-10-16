@@ -2,7 +2,7 @@ use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::Scenario;
 use simplex::fuzz::proptest::test_runner::RngSeed;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use simplex_example::artifacts::exceptional_contract::ExceptionalContractProgram;
 use simplex_example::artifacts::p2pk::P2pkProgram;
@@ -18,7 +18,7 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     // Ask the signer to replace each fuzzed `SIGNATURE` with a valid signature.
     let mut transaction = FinalTransaction::new();
     transaction.add_program_input(
-        PartialInput::new(UTXO::default()),
+        PartialInput::default(),
         ProgramInput::new(Box::new(program), P2pkWitness::default()),
         RequiredSignature::Witness("SIGNATURE".to_string()),
     );

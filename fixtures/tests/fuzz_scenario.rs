@@ -2,7 +2,7 @@ use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, Scenario};
 use simplex::simplicityhl::WitnessValues;
-use simplex::simplicityhl::elements::{OutPoint, Script, Txid};
+use simplex::simplicityhl::elements::{OutPoint, Txid};
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
 use simplex_fixtures::artifacts::counter::CounterProgram;
@@ -29,14 +29,10 @@ fn two_inputs() -> FinalTransaction {
     transaction
 }
 
-fn one_input_one_output(test_context: &TestContext<FuzzMode>) -> FinalTransaction {
+fn one_input_one_output() -> FinalTransaction {
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
-    transaction.add_output(PartialOutput::new(
-        Script::new(),
-        1,
-        test_context.get_network().policy_asset(),
-    ));
+    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_output(PartialOutput::default());
 
     transaction
 }
@@ -102,7 +98,7 @@ fn allow_unspendable_lets_a_rejecting_run_pass(test_context: TestContext<FuzzMod
 
 #[simplex::fuzz]
 fn vault_bound_to_its_unvault_passes(test_context: TestContext<FuzzMode>) {
-    let mut scenario = Scenario::new(one_input_one_output(&test_context));
+    let mut scenario = Scenario::new(one_input_one_output());
 
     scenario.add::<UnvaultProgram>("unvault").locks(0).random_strategy();
     scenario
@@ -126,7 +122,7 @@ fn program_bound_to_a_fixed_input_passes(test_context: TestContext<FuzzMode>) {
     fixed_utxo.txout.script_pubkey = fixed.get_script_pubkey(test_context.get_network());
 
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), RequiredSignature::None);
     transaction.add_program_input(
         PartialInput::new(fixed_utxo),
         ProgramInput::new(Box::new(fixed.as_ref().clone()), WitnessValues::default()),
@@ -164,7 +160,7 @@ fn tapleaf_check_bound_to_its_own_tapleaf_passes(test_context: TestContext<FuzzM
 
 /// The counter adds `STEP` to the lowest 64 bits of its state. `extra` makes the modelled transition wrong.
 fn counter(test_context: &TestContext<FuzzMode>, extra: u64) {
-    let mut scenario = Scenario::new(one_input_one_output(test_context));
+    let mut scenario = Scenario::new(one_input_one_output());
 
     scenario
         .add::<CounterProgram>("counter")
@@ -214,7 +210,7 @@ fn counter_with_an_off_by_one_transition_is_live(test_context: TestContext<FuzzM
 #[should_panic(expected = "lock bypass: output 0 (locked to `unvault`) can be redirected")]
 #[simplex::fuzz]
 fn vault_that_ignores_its_output_is_redirected(test_context: TestContext<FuzzMode>) {
-    let mut scenario = Scenario::new(one_input_one_output(&test_context));
+    let mut scenario = Scenario::new(one_input_one_output());
 
     scenario.add::<UnvaultProgram>("unvault").locks(0);
     scenario.add::<DummyAcceptProgram>("leaky_vault").spends(0);
@@ -224,7 +220,7 @@ fn vault_that_ignores_its_output_is_redirected(test_context: TestContext<FuzzMod
 
 #[simplex::fuzz]
 fn unchecked_lock_may_be_redirected(test_context: TestContext<FuzzMode>) {
-    let mut scenario = Scenario::new(one_input_one_output(&test_context));
+    let mut scenario = Scenario::new(one_input_one_output());
 
     scenario.add::<UnvaultProgram>("unvault").locks_unchecked(0);
     scenario.add::<DummyAcceptProgram>("key_path").spends(0);

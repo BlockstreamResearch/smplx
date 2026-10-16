@@ -4,7 +4,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 use smplx_sdk::program::Program;
 use smplx_sdk::signer::Signer;
-use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use crate::fuzz::FuzzProgramTrait;
 use crate::fuzz::outcome::SetupError;
@@ -353,7 +353,7 @@ impl Default for Scenario {
     /// A transaction with one default input.
     fn default() -> Self {
         let mut transaction = FinalTransaction::new();
-        transaction.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
+        transaction.add_input(PartialInput::default(), RequiredSignature::None);
 
         Self::new(transaction)
     }
@@ -363,11 +363,10 @@ impl Default for Scenario {
 mod tests {
     use proptest::strategy::{Just, Strategy};
 
-    use simplicityhl::elements::{OutPoint, Script, Txid};
+    use simplicityhl::elements::{OutPoint, Txid};
     use simplicityhl::{Arguments, WitnessValues};
 
-    use smplx_sdk::provider::SimplicityNetwork;
-    use smplx_sdk::transaction::PartialOutput;
+    use smplx_sdk::transaction::{PartialOutput, UTXO};
 
     use crate::fuzz::program_strategy::FuzzProgramStrategy;
 
@@ -408,11 +407,7 @@ mod tests {
             transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
         }
 
-        transaction.add_output(PartialOutput::new(
-            Script::new(),
-            1,
-            SimplicityNetwork::default_regtest().policy_asset(),
-        ));
+        transaction.add_output(PartialOutput::default());
 
         transaction
     }

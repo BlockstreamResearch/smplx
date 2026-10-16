@@ -1,7 +1,7 @@
 use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, Scenario};
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, UTXO};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
 use simplex_fixtures::artifacts::p2pk::P2pkProgram;
@@ -45,7 +45,7 @@ fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Re
 
     let mut transaction = FinalTransaction::new();
     transaction.add_program_input(
-        PartialInput::new(UTXO::default()),
+        PartialInput::default(),
         ProgramInput::new(
             Box::new(P2pkProgram::new(P2pkArguments { public_key }).as_ref().clone()),
             P2pkWitness::default(),

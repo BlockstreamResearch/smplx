@@ -15,18 +15,21 @@ use crate::fuzz::outcome::{Outcome, SetupError};
 pub(crate) struct AuthCheck<'a> {
     signer: &'a Signer,
     transaction: &'a FinalTransaction,
-    signed_inputs: Vec<(usize, String)>,
+    signed_inputs: Vec<(usize, &'a str)>,
 }
 
 impl<'a> AuthCheck<'a> {
-    /// `None` when no program input requests a signature.
-    pub(crate) fn new(signer: &'a Signer, transaction: &'a FinalTransaction, program_inputs: &[usize]) -> Option<Self> {
-        let signed_inputs: Vec<(usize, String)> = program_inputs
+    /// `None` when no program input requests a signature. Each signed input comes with its signature's witness name.
+    pub(crate) fn new(signer: &'a Signer, transaction: &'a FinalTransaction) -> Option<Self> {
+        let signed_inputs: Vec<(usize, &str)> = transaction
+            .inputs()
             .iter()
-            .filter_map(|&index| match &transaction.inputs()[index].required_sig {
+            .enumerate()
+            .filter(|(_, input)| input.program_input.is_some())
+            .filter_map(|(index, input)| match &input.required_sig {
                 RequiredSignature::Witness(name)
                 | RequiredSignature::WitnessWithPath(name, _)
-                | RequiredSignature::WitnessWithMessage(name, _, _) => Some((index, name.clone())),
+                | RequiredSignature::WitnessWithMessage(name, _, _) => Some((index, name.as_str())),
                 RequiredSignature::None | RequiredSignature::NativeEcdsa => None,
             })
             .collect();
@@ -43,33 +46,37 @@ impl<'a> AuthCheck<'a> {
     /// # Errors
     /// Returns a [`SetupError`] when a variant cannot be signed or executed.
     pub(crate) fn run(&self) -> Result<Vec<String>, SetupError> {
-        let other_signer = self.other_signer();
+        let attacker_signer = self.attacker_signer();
 
-        let wrong_key = self.accepted_inputs(&other_signer, &self.with_key_of(&other_signer))?;
-        let replayed = self.accepted_inputs(self.signer, &self.with_message_of_another_transaction())?;
+        let wrong_key = self.accepted_inputs(&attacker_signer, &self.with_attacker_key(&attacker_signer))?;
+        let replayed = self.accepted_inputs(self.signer, &self.replayed())?;
 
-        Ok(self
-            .signed_inputs
-            .iter()
-            .filter_map(|(index, field)| match (wrong_key.contains(index), replayed.contains(index)) {
-                (true, true) => Some(format!("input {index} accepts any `{field}`, the signature is not checked")),
-                (true, false) => Some(format!("input {index} accepts a `{field}` signature from any key")),
-                (false, true) => Some(format!(
-                    "input {index} accepts a `{field}` signature made for another transaction, so it can be replayed"
-                )),
-                (false, false) => None,
-            })
-            .collect())
+        let mut bypasses = Vec::new();
+
+        for &(index, name) in &self.signed_inputs {
+            let bypass = match (wrong_key.contains(&index), replayed.contains(&index)) {
+                (true, true) => format!("input {index} accepts any `{name}`, the signature is not checked"),
+                (true, false) => format!("input {index} accepts a `{name}` signature from any key"),
+                (false, true) => format!(
+                    "input {index} accepts a `{name}` signature made for another transaction, so it can be replayed"
+                ),
+                (false, false) => continue,
+            };
+
+            bypasses.push(bypass);
+        }
+
+        Ok(bypasses)
     }
 
-    fn other_signer(&self) -> Signer {
+    fn attacker_signer(&self) -> Signer {
         Signer::from_mnemonic(&random_mnemonic(), *self.signer.get_network())
     }
 
-    /// An attacker also swaps any key the contract reads from the witness.
-    fn with_key_of(&self, other: &Signer) -> FinalTransaction {
+    /// The attacker also swaps any key the contract reads from the witness.
+    fn with_attacker_key(&self, attacker_signer: &Signer) -> FinalTransaction {
         let own_key = Self::key_value(self.signer);
-        let other_key = Self::key_value(other);
+        let attacker_key = Self::key_value(attacker_signer);
 
         let mut transaction = self.transaction.clone();
 
@@ -83,7 +90,7 @@ impl<'a> AuthCheck<'a> {
                 .iter()
                 .map(|(name, value)| {
                     let value = if *value == own_key {
-                        other_key.clone()
+                        attacker_key.clone()
                     } else {
                         value.clone()
                     };
@@ -99,11 +106,11 @@ impl<'a> AuthCheck<'a> {
     }
 
     /// Each signed input signs what it would sign for a transaction with a different sighash.
-    fn with_message_of_another_transaction(&self) -> FinalTransaction {
+    fn replayed(&self) -> FinalTransaction {
         let mut transaction = self.transaction.clone();
 
-        for (index, _) in &self.signed_inputs {
-            let input = &mut transaction.inputs_mut()[*index];
+        for &(index, _) in &self.signed_inputs {
+            let input = &mut transaction.inputs_mut()[index];
 
             let (name, path, message) = match &input.required_sig {
                 RequiredSignature::Witness(name) => (name.clone(), Vec::new(), SigMessage::Sighash),
@@ -131,16 +138,16 @@ impl<'a> AuthCheck<'a> {
 
         let mut accepted = Vec::new();
 
-        for (index, _) in &self.signed_inputs {
-            let program = &transaction.inputs()[*index]
+        for &(index, _) in &self.signed_inputs {
+            let program = &transaction.inputs()[index]
                 .program_input
                 .as_ref()
                 .expect("a signed input runs a program")
                 .program;
-            let result = program.finalize(&pst, &witnesses[index], *index, self.signer.get_network());
+            let result = program.finalize(&pst, &witnesses[&index], index, self.signer.get_network());
 
             if Outcome::classify(result)?.is_accepted() {
-                accepted.push(*index);
+                accepted.push(index);
             }
         }
 
@@ -202,7 +209,7 @@ mod tests {
                 self.required_sig,
             );
 
-            let check = AuthCheck::new(&signer, &transaction, &[0]).unwrap();
+            let check = AuthCheck::new(&signer, &transaction).unwrap();
 
             assert_eq!(
                 check.accepted_inputs(&signer, &transaction).unwrap(),

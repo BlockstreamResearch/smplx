@@ -233,7 +233,7 @@ impl SimplexFuzzEngine {
 
         if verdict.is_accepted()
             && let Some(bypass) = self
-                .do_smart_checks(summary, &transaction, &program_inputs)
+                .do_smart_checks(summary, &transaction)
                 .map_err(CaseFailure::Setup)?
         {
             return Err(failure(bypass));
@@ -247,7 +247,6 @@ impl SimplexFuzzEngine {
         &self,
         summary: &RefCell<RunSummary>,
         transaction: &FinalTransaction,
-        program_inputs: &[usize],
     ) -> Result<Option<String>, SetupError> {
         if self.check_lock
             && let Some(check) = LockCheck::new(&self.signer, transaction, self.scenario.locked_outputs())
@@ -261,7 +260,7 @@ impl SimplexFuzzEngine {
         }
 
         if self.check_auth
-            && let Some(check) = AuthCheck::new(&self.signer, transaction, program_inputs)
+            && let Some(check) = AuthCheck::new(&self.signer, transaction)
         {
             let bypasses = check.run()?;
             summary.borrow_mut().record_auth_check();
