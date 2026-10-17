@@ -92,7 +92,8 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
         self
     }
 
-    /// Specifies the spending path of the program to fuzz. The path must exist in witness.
+    /// Specifies the spending path of the program to fuzz. The path must exist in witness
+    /// and end with "Left" or "Right".
     pub fn spending_path<I>(self, name: &str, path: I) -> Self
     where
         I: IntoIterator,

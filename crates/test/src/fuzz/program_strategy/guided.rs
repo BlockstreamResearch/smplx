@@ -150,7 +150,7 @@ impl<'a> GuidedCase<'a> {
             .collect()
     }
 
-    /// Each field takes the branches of the path `path_of` gives it.
+    /// Each field takes the branches of the given path.
     fn draw_fields<'p>(
         &mut self,
         types: &[(TemplateProgramWitness, ResolvedType)],

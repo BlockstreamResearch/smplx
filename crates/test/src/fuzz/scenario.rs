@@ -56,6 +56,12 @@ impl Scenario {
             }
 
             for (field, path) in &program_scenario.spending_paths {
+                if !matches!(path.last().map(String::as_str), Some("Left" | "Right")) {
+                    return invalid(format!(
+                        "`{name}` has the spending path {path:?} in `{field}`, which must end at an `Either` branch"
+                    ));
+                }
+
                 let fits = program_scenario
                     .witness_types
                     .iter()
@@ -497,6 +503,18 @@ mod tests {
                     vec![unknown_path]
                 },
                 "`a` has no witness field `PATH` with the spending path",
+            ),
+            (
+                {
+                    let mut index_last = program_scenario("a", &[0], &[]);
+                    index_last.spending_paths.push((
+                        TemplateProgramWitness::witness_from_str("PATH"),
+                        vec!["Left".to_string(), "0".to_string()],
+                    ));
+
+                    vec![index_last]
+                },
+                "which must end at an `Either` branch",
             ),
         ];
 
