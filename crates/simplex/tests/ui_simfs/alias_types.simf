@@ -1,0 +1,26 @@
+fn main() {
+    let wit_Ctx8: Ctx8 = witness::CTX8;
+    let wit_Pubkey: Pubkey = witness::PUBKEY;
+    let wit_Message: Message = witness::MESSAGE;
+    let wit_Message64: Message64 = witness::MESSAGE64;
+    let wit_Signature: Signature = witness::SIGNATURE;
+    let wit_Scalar: Scalar = witness::SCALAR;
+    let wit_Fe: Fe = witness::FE;
+    let wit_Ge: Ge = witness::GE;
+    let wit_Gej: Gej = witness::GEJ;
+    let wit_Point: Point = witness::POINT;
+    let wit_Height: Height = witness::HEIGHT;
+    let wit_Time: Time = witness::TIME;
+    let wit_Distance: Distance = witness::DISTANCE;
+    let wit_Duration: Duration = witness::DURATION;
+    let wit_Lock: Lock = witness::LOCK;
+    let wit_Outpoint: Outpoint = witness::OUTPOINT;
+    let wit_Confidential1: Confidential1 = witness::CONFIDENTIAL1;
+    let wit_ExplicitAsset: ExplicitAsset = witness::EXPLICIT_ASSET;
+    let wit_Asset1: Asset1 = witness::ASSET1;
+    let wit_ExplicitAmount: ExplicitAmount = witness::EXPLICIT_AMOUNT;
+    let wit_Amount1: Amount1 = witness::AMOUNT1;
+    let wit_ExplicitNonce: ExplicitNonce = witness::EXPLICIT_NONCE;
+    let wit_Nonce: Nonce = witness::NONCE;
+    let wit_TokenAmount1: TokenAmount1 = witness::TOKEN_AMOUNT1;
+}
