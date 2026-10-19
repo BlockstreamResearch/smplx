@@ -561,11 +561,7 @@ mod tests {
     }
 
     fn explicit_utxo(txid_byte: u8, vout: u32, amount: u64, asset: AssetId) -> UTXO {
-        UTXO {
-            outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
-            txout: TxOut::new_fee(amount, asset),
-            secrets: None,
-        }
+        UTXO::explicit(OutPoint::new(dummy_txid(txid_byte), vout), Script::new(), amount, asset)
     }
 
     fn confidential_utxo(txid_byte: u8, vout: u32, asset: AssetId, value: u64) -> UTXO {

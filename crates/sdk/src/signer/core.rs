@@ -938,7 +938,6 @@ mod tests {
     #[test]
     fn sign_witnesses_leaves_failing_programs_for_the_caller_to_execute() {
         use simplicityhl::Arguments;
-        use simplicityhl::elements::TxOut;
 
         use simplicityhl::simplicity::bit_machine::ExecutionError;
 
@@ -948,25 +947,24 @@ mod tests {
         let signer = create_signer();
         let program = Program::new("fn main() { assert!(false); }", Arguments::default());
 
-        let mut program_txout = TxOut::new_fee(1000, signer.network.policy_asset());
-        program_txout.script_pubkey = program.get_tr_address(&signer.network).script_pubkey();
-
         let mut ft = FinalTransaction::new();
         // A native input first, so the program sits at index 1
         ft.add_input(
-            PartialInput::new(UTXO {
-                outpoint: OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
-                txout: TxOut::new_fee(1000, signer.network.policy_asset()),
-                secrets: None,
-            }),
+            PartialInput::new(UTXO::explicit(
+                OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
+                Script::new(),
+                1000,
+                signer.network.policy_asset(),
+            )),
             RequiredSignature::NativeEcdsa,
         );
         ft.add_program_input(
-            PartialInput::new(UTXO {
-                outpoint: OutPoint::new(Txid::from_byte_array([0x02; 32]), 0),
-                txout: program_txout,
-                secrets: None,
-            }),
+            PartialInput::new(UTXO::explicit(
+                OutPoint::new(Txid::from_byte_array([0x02; 32]), 0),
+                program.get_tr_address(&signer.network).script_pubkey(),
+                1000,
+                signer.network.policy_asset(),
+            )),
             ProgramInput::new(Box::new(program.clone()), WitnessValues::default()),
             RequiredSignature::None,
         );

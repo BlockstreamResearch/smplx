@@ -1,4 +1,4 @@
-use simplicityhl::elements::{AssetId, OutPoint, TxOut, TxOutSecrets};
+use simplicityhl::elements::{AssetId, OutPoint, Script, TxOut, TxOutSecrets};
 
 /// Represents an Unspent Transaction Output (UTXO).
 #[derive(Debug, Clone)]
@@ -13,15 +13,24 @@ pub struct UTXO {
 
 impl Default for UTXO {
     fn default() -> Self {
-        Self {
-            outpoint: OutPoint::default(),
-            txout: TxOut::new_fee(0, AssetId::default()),
-            secrets: None,
-        }
+        Self::explicit(OutPoint::default(), Script::new(), 0, AssetId::default())
     }
 }
 
 impl UTXO {
+    /// Creates a UTXO with an explicit amount and asset, locked by `script`.
+    #[must_use]
+    pub fn explicit(outpoint: OutPoint, script: Script, amount: u64, asset: AssetId) -> Self {
+        let mut txout = TxOut::new_fee(amount, asset);
+        txout.script_pubkey = script;
+
+        Self {
+            outpoint,
+            txout,
+            secrets: None,
+        }
+    }
+
     /// Retrieves the explicit `AssetId` from the transaction output (`txout`).
     ///
     /// # Panics

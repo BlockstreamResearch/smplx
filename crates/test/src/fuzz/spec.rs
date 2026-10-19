@@ -75,9 +75,40 @@ impl<'a> FuzzCase<'a> {
     }
 
     /// # Panics
+    /// Panics when the transaction has no input `index` or its asset is confidential.
+    pub fn input_asset(&self, index: usize) -> [u8; 32] {
+        self.transaction.inputs()[index]
+            .partial_input
+            .asset
+            .expect("the input asset is confidential")
+            .to_byte_array()
+    }
+
+    /// # Panics
+    /// Panics when the transaction has no input `index` or its amount is confidential.
+    pub fn input_amount(&self, index: usize) -> u64 {
+        self.transaction.inputs()[index]
+            .partial_input
+            .amount
+            .expect("the input amount is confidential")
+    }
+
+    /// # Panics
     /// Panics when the transaction has no output `index`.
     pub fn output_script_hash(&self, index: usize) -> [u8; 32] {
         hash_script(&self.transaction.outputs()[index].script_pubkey)
+    }
+
+    /// # Panics
+    /// Panics when the transaction has no output `index`.
+    pub fn output_asset(&self, index: usize) -> [u8; 32] {
+        self.transaction.outputs()[index].asset.to_byte_array()
+    }
+
+    /// # Panics
+    /// Panics when the transaction has no output `index`.
+    pub fn output_amount(&self, index: usize) -> u64 {
+        self.transaction.outputs()[index].amount
     }
 
     pub fn network(&self) -> &SimplicityNetwork {

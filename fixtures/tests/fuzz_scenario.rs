@@ -2,7 +2,7 @@ use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, Scenario};
 use simplex::simplicityhl::WitnessValues;
-use simplex::simplicityhl::elements::{OutPoint, Txid};
+use simplex::simplicityhl::elements::{AssetId, OutPoint, Txid};
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
 
 use simplex_fixtures::artifacts::counter::CounterProgram;
@@ -115,11 +115,12 @@ fn vault_bound_to_its_unvault_passes(test_context: TestContext<FuzzMode>) {
 fn program_bound_to_a_fixed_input_passes(test_context: TestContext<FuzzMode>) {
     let fixed = DummyAcceptProgram::new(DummyAcceptArguments::default());
 
-    let mut fixed_utxo = UTXO {
-        outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 1),
-        ..UTXO::default()
-    };
-    fixed_utxo.txout.script_pubkey = fixed.get_script_pubkey(test_context.get_network());
+    let fixed_utxo = UTXO::explicit(
+        OutPoint::new(Txid::from_byte_array(Default::default()), 1),
+        fixed.get_script_pubkey(test_context.get_network()),
+        0,
+        AssetId::default(),
+    );
 
     let mut transaction = FinalTransaction::new();
     transaction.add_input(PartialInput::default(), RequiredSignature::None);
