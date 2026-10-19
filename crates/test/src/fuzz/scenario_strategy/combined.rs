@@ -1,10 +1,22 @@
 use proptest::strategy::{NewTree, Strategy, ValueTree};
 use proptest::test_runner::TestRunner;
 
+use rand::RngExt;
+
 use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues, GuidedCase, RandomCase};
 use crate::fuzz::transaction::FuzzTransactionSchema;
+
+const VIOLATION_PERCENT: u32 = 50;
+
+/// The values of one case.
+#[derive(Clone, Debug)]
+pub(crate) struct CombinedValues {
+    pub(crate) programs: Vec<FuzzProgramValues>,
+    /// Picks the required value the case should violates.
+    pub(crate) violation: Option<u64>,
+}
 
 /// Combines the strategies of every program of a case. Guided programs are generated together, so they share literals and values.
 #[derive(Debug)]
@@ -23,8 +35,8 @@ impl Combined {
 }
 
 impl Strategy for Combined {
-    type Tree = FixedValueTree<Vec<FuzzProgramValues>>;
-    type Value = Vec<FuzzProgramValues>;
+    type Tree = FixedValueTree<CombinedValues>;
+    type Value = CombinedValues;
 
     fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
         let schemas: Vec<&FuzzProgramSchema> = self
@@ -50,6 +62,12 @@ impl Strategy for Combined {
             });
         }
 
-        Ok(FixedValueTree(values))
+        let rng = runner.rng();
+        let violation = (rng.random_range(0..100) < VIOLATION_PERCENT).then(|| rng.random());
+
+        Ok(FixedValueTree(CombinedValues {
+            programs: values,
+            violation,
+        }))
     }
 }

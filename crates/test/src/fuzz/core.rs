@@ -11,8 +11,8 @@ use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, Persis
 use smplx_sdk::signer::Signer;
 
 use crate::fuzz::outcome::{Outcome, SetupError};
-use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::scenario::Scenario;
+use crate::fuzz::scenario_strategy::CombinedValues;
 use crate::fuzz::smart_check::{AuthCheck, LockCheck};
 use crate::fuzz::spec::{Expect, FuzzCase};
 use crate::fuzz::summary::RunSummary;
@@ -152,10 +152,11 @@ impl SimplexFuzzEngine {
     }
 
     /// Extracted helper that performs exactly one isolated test run.
-    fn fuzz(&self, summary: &RefCell<RunSummary>, values: Vec<FuzzProgramValues>) -> Result<(), CaseFailure> {
+    fn fuzz(&self, summary: &RefCell<RunSummary>, values: CombinedValues) -> Result<(), CaseFailure> {
         let network = self.signer.get_network();
 
-        let (programs, transaction) = self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
+        let (programs, transaction, violated) =
+            self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
 
         let failure = |reason: String| {
             let values = self.scenario.describe(&programs, &transaction);
@@ -170,9 +171,15 @@ impl SimplexFuzzEngine {
 
         let case = FuzzCase::new(&self.scenario, &programs, &transaction, &self.signer);
 
-        // A panicking spec is a bug in the test, not a finding against the contract
-        let expect = panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(&case)))
-            .map_err(|_| CaseFailure::Setup(SetupError::Spec))?;
+        // A generated case that violates a requirement must be rejected.
+        let expect = match violated {
+            Some(_) => None,
+            None => Some(
+                // A panicking spec is a bug in the test, not a finding against the contract.
+                panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(&case)))
+                    .map_err(|_| CaseFailure::Setup(SetupError::Spec))?,
+            ),
+        };
 
         let program_inputs: Vec<usize> = transaction
             .inputs()
@@ -210,8 +217,14 @@ impl SimplexFuzzEngine {
         );
 
         let finding = match (expect, verdict.is_accepted()) {
-            (Expect::Reject, true) => Some("unsound: the contract accepted a spend the spec rejects"),
-            (Expect::Accept, false) => Some("liveness: the contract rejected a spend the spec accepts"),
+            (None, true) => Some(format!(
+                "unsound: the contract accepted a spend that violates a requirement, {}",
+                violated.expect("violating case should have a violation")
+            )),
+            (Some(Expect::Reject), true) => Some("unsound: the contract accepted a spend the spec rejects".to_string()),
+            (Some(Expect::Accept), false) => {
+                Some("liveness: the contract rejected a spend the spec accepts".to_string())
+            }
             _ => None,
         };
 

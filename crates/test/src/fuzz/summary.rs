@@ -16,6 +16,7 @@ pub struct RunSummary {
     rejections: HashMap<Rejection, usize>,
     rejected_by: Vec<(String, usize)>,
     expectations: HashMap<Expect, usize>,
+    violations: usize,
     check_lock: bool,
     lock_checks: usize,
     check_auth: bool,
@@ -33,6 +34,7 @@ impl RunSummary {
             rejections: HashMap::new(),
             rejected_by: Vec::new(),
             expectations: HashMap::new(),
+            violations: 0,
             check_lock,
             lock_checks: 0,
             check_auth,
@@ -40,9 +42,15 @@ impl RunSummary {
         }
     }
 
-    pub fn record(&mut self, expect: Expect, verdict: Outcome, rejected_by: Option<String>) {
+    /// `expect` is `None` for a case that violates a requirement.
+    pub fn record(&mut self, expect: Option<Expect>, verdict: Outcome, rejected_by: Option<String>) {
         self.cases += 1;
-        *self.expectations.entry(expect).or_default() += 1;
+
+        match expect {
+            Some(expect) => *self.expectations.entry(expect).or_default() += 1,
+            None if !verdict.is_accepted() => self.violations += 1,
+            None => {}
+        }
 
         match verdict {
             Outcome::Accepted => self.accepted += 1,
@@ -66,7 +74,7 @@ impl RunSummary {
     }
 
     pub fn is_run_empty(&self, allow_unspendable: bool) -> Option<String> {
-        if self.expectations.get(&Expect::Any) == Some(&self.cases) {
+        if self.expectations.get(&Expect::Any) == Some(&(self.cases - self.violations)) {
             return Some(format!(
                 "The spec made no prediction in {} case(s), it returned `Expect::Any` for every run",
                 self.cases
@@ -129,6 +137,14 @@ impl Display for RunSummary {
             Self::count(&self.expectations, &Expect::Reject),
             Self::count(&self.expectations, &Expect::Any)
         )?;
+
+        if self.violations > 0 {
+            writeln!(
+                f,
+                "  requirements   {} case(s) rejected with a required value violated",
+                self.violations
+            )?;
+        }
 
         if self.check_lock {
             writeln!(

@@ -4,6 +4,7 @@ pub mod outcome;
 pub mod program;
 pub mod program_scenario;
 pub mod program_strategy;
+mod requirement;
 pub mod scenario;
 mod scenario_strategy;
 mod smart_check;

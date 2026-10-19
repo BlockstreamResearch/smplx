@@ -13,7 +13,8 @@ use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
 use crate::fuzz::program_strategy::FuzzProgramStrategy;
 use crate::fuzz::program_strategy::FuzzProgramValues;
-use crate::fuzz::scenario_strategy::Combined;
+use crate::fuzz::requirement::{RequiredValue, Requirements};
+use crate::fuzz::scenario_strategy::{Combined, CombinedValues};
 use crate::fuzz::spec::FuzzCase;
 use crate::fuzz::transaction::FuzzTransactionSchema;
 use crate::fuzz::utils::{fits_path, follows_path};
@@ -75,8 +76,10 @@ impl Scenario {
                 }
             }
 
-            if program_scenario.inputs.is_empty() && !program_scenario.witness_bindings.is_empty() {
-                return invalid(format!("`{name}` binds its witness, but spends no input"));
+            if program_scenario.inputs.is_empty()
+                && !(program_scenario.witness_bindings.is_empty() && program_scenario.witness_requirements.is_empty())
+            {
+                return invalid(format!("`{name}` binds or requires its witness, but spends no input"));
             }
 
             for &index in &program_scenario.inputs {
@@ -113,21 +116,22 @@ impl Scenario {
         Ok(())
     }
 
-    /// Binds and builds every program in order and places it into the transaction, then binds the witnesses.
+    /// Binds and builds every program in order and places it into the transaction, then binds the witnesses
+    /// and sets the required values. Returns the required value the case violates, if any.
     ///
     /// # Errors
     /// Returns a [`SetupError`] when the values do not fit a program or a binding panics.
     pub(crate) fn build(
         &self,
-        values: Vec<FuzzProgramValues>,
+        values: CombinedValues,
         signer: &Signer,
-    ) -> Result<(Vec<Program>, FinalTransaction), SetupError> {
+    ) -> Result<(Vec<Program>, FinalTransaction, Option<RequiredValue<'_>>), SetupError> {
         let mut programs = Vec::with_capacity(self.program_scenarios.len());
         let mut transaction = self.transaction.clone();
 
-        for (program_scenario, values) in self.program_scenarios.iter().zip(values) {
+        for (program_scenario, values) in self.program_scenarios.iter().zip(values.programs) {
             let FuzzProgramValues {
-                mut arguments,
+                arguments,
                 witness,
                 storage,
             } = values;
@@ -141,13 +145,8 @@ impl Scenario {
                 )));
             }
 
-            // Bind arguments.
-            for binding in &program_scenario.argument_bindings {
-                let case = FuzzCase::new(self, &programs, &transaction, signer);
-
-                arguments = panic::catch_unwind(AssertUnwindSafe(|| binding(&arguments, &case)))
-                    .map_err(|_| SetupError::Binding(name.clone()))?;
-            }
+            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let arguments = program_scenario.run_bindings(&program_scenario.argument_bindings, arguments, &case)?;
 
             let program = (program_scenario.build_program)(&arguments)
                 .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
@@ -175,41 +174,39 @@ impl Scenario {
 
         // Bind witnesses after each program is built.
         for program_scenario in &self.program_scenarios {
-            let name = &program_scenario.name;
-
-            for binding in &program_scenario.witness_bindings {
-                let case = FuzzCase::new(self, &programs, &transaction, signer);
-                let witness = &transaction.inputs()[program_scenario.inputs[0]]
-                    .program_input
-                    .as_ref()
-                    .expect("a spent input runs its program")
-                    .witness;
-
-                let witness = panic::catch_unwind(AssertUnwindSafe(|| binding(witness, &case)))
-                    .map_err(|_| SetupError::Binding(name.clone()))?;
-
-                for &index in &program_scenario.inputs {
-                    let input = transaction.inputs_mut()[index]
-                        .program_input
-                        .as_mut()
-                        .expect("a spent input runs its program");
-
-                    input.witness = witness.clone();
-                }
-            }
-        }
-
-        // Check that custom strategies and bindings don't leave the spending path.
-        for program_scenario in &self.program_scenarios {
-            let Some(&input) = program_scenario.inputs.first() else {
+            let Some(witness) = program_scenario.witness_in(&transaction) else {
                 continue;
             };
 
-            let witness = &transaction.inputs()[input]
-                .program_input
-                .as_ref()
-                .expect("a spent input runs its program")
-                .witness;
+            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let witness = program_scenario.run_bindings(&program_scenario.witness_bindings, witness.clone(), &case)?;
+
+            program_scenario.place_witness(&mut transaction, witness);
+        }
+
+        // Set the required witness values, then violate one of them in some cases.
+        let mut requirements = Requirements::new();
+
+        for program_scenario in &self.program_scenarios {
+            let Some(generated) = program_scenario.witness_in(&transaction).cloned() else {
+                continue;
+            };
+
+            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let required =
+                program_scenario.run_bindings(&program_scenario.witness_requirements, generated.clone(), &case)?;
+
+            requirements.record_diff(program_scenario, &generated, &required);
+            program_scenario.place_witness(&mut transaction, required);
+        }
+
+        let violated = requirements.violate_one(values.violation, &mut transaction);
+
+        // Check that custom strategies, bindings and requirements don't leave the spending path.
+        for program_scenario in &self.program_scenarios {
+            let Some(witness) = program_scenario.witness_in(&transaction) else {
+                continue;
+            };
 
             for (field, path) in &program_scenario.spending_paths {
                 if !witness.get(field).is_some_and(|value| follows_path(value, path)) {
@@ -247,7 +244,7 @@ impl Scenario {
             }
         }
 
-        Ok((programs, transaction))
+        Ok((programs, transaction, violated))
     }
 
     /// # Panics
@@ -328,13 +325,7 @@ impl Scenario {
             .map(|(program_scenario, program)| {
                 let mut description = format!("`{}` arguments: {}", program_scenario.name, program.get_arguments());
 
-                if let Some(&input) = program_scenario.inputs.first() {
-                    let witness = &transaction.inputs()[input]
-                        .program_input
-                        .as_ref()
-                        .expect("an input runs its program")
-                        .witness;
-
+                if let Some(witness) = program_scenario.witness_in(transaction) {
                     description += &format!(" and witness: {witness}");
                 }
 
@@ -415,14 +406,16 @@ impl Default for Scenario {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use proptest::strategy::{Just, Strategy};
 
     use simplicityhl::elements::{OutPoint, Txid};
-    use simplicityhl::{Arguments, TemplateProgramWitness, WitnessValues};
+    use simplicityhl::types::TypeConstructible;
+    use simplicityhl::value::ValueConstructible;
+    use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessValues};
 
     use smplx_sdk::transaction::{PartialOutput, UTXO};
-
-    use crate::fuzz::program_strategy::FuzzProgramStrategy;
 
     use super::*;
 
@@ -446,6 +439,7 @@ mod tests {
             ),
             argument_bindings: Vec::new(),
             witness_bindings: Vec::new(),
+            witness_requirements: Vec::new(),
             build_program: |_| unreachable!(),
             check_witness: |_| unreachable!(),
         }
@@ -526,5 +520,40 @@ mod tests {
 
             assert!(error.contains(reason), "`{error}` does not mention `{reason}`");
         }
+    }
+
+    fn nested_witness(second: u32) -> WitnessValues {
+        let value = Value::right(ResolvedType::u32(), Value::tuple([Value::u32(1), Value::u32(second)]));
+
+        WitnessValues::from_map(HashMap::from([(
+            TemplateProgramWitness::witness_from_str("PATH"),
+            value,
+        )]))
+    }
+
+    #[test]
+    fn violates_a_nested_value() {
+        let program_scenario = program_scenario("program", &[0], &[]);
+        let program = Program::new("fn main() {}", Arguments::default());
+
+        let mut transaction = FinalTransaction::new();
+        transaction.add_program_input(
+            PartialInput::default(),
+            ProgramInput::new(Box::new(program), nested_witness(5)),
+            RequiredSignature::None,
+        );
+
+        let mut requirements = Requirements::new();
+        requirements.record_diff(&program_scenario, &nested_witness(2), &nested_witness(5));
+
+        let violated = requirements
+            .violate_one(Some(0), &mut transaction)
+            .expect("one value is required");
+
+        assert_eq!(
+            violated.to_string(),
+            r#"`program` witness `PATH` at ["Right", "1"] is 2 instead of 5"#
+        );
+        assert_eq!(program_scenario.witness_in(&transaction), Some(&nested_witness(2)));
     }
 }

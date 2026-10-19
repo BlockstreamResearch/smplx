@@ -143,13 +143,13 @@ fn program_bound_to_a_fixed_input_passes(test_context: TestContext<FuzzMode>) {
 }
 
 #[simplex::fuzz]
-fn tapleaf_check_bound_to_its_own_tapleaf_passes(test_context: TestContext<FuzzMode>) {
+fn tapleaf_check_requiring_its_own_tapleaf_passes(test_context: TestContext<FuzzMode>) {
     let mut scenario = Scenario::default();
 
     scenario
         .add::<TapleafCheckProgram>("tapleaf_check")
         .spends(0)
-        .bind_witness(|witness, case| {
+        .requires_witness(|witness, case| {
             witness.program_tapleaf_hash = case
                 .program::<TapleafCheckProgram>("tapleaf_check")
                 .program()
@@ -160,26 +160,32 @@ fn tapleaf_check_bound_to_its_own_tapleaf_passes(test_context: TestContext<FuzzM
 }
 
 /// The counter adds `STEP` to the lowest 64 bits of its state. `extra` makes the modelled transition wrong.
-fn counter(test_context: &TestContext<FuzzMode>, extra: u64) {
+/// `step` requires a step the counter doesn't enforce.
+fn counter(test_context: &TestContext<FuzzMode>, extra: u64, step: Option<u64>) {
     let mut scenario = Scenario::new(one_input_one_output());
 
-    scenario
+    let mut counter = scenario
         .add::<CounterProgram>("counter")
         .storage_capacity(1)
         .spends(0)
-        .bind_witness(|witness, case| {
+        .requires_witness(|witness, case| {
             witness.state = case.program::<CounterProgram>("counter").storage()[0];
-        })
-        .recursive(0, move |counter| {
-            let mut state = counter.storage()[0];
-            let low = u64::from_be_bytes(state[24..].try_into().unwrap())
-                .wrapping_add(counter.witness().step)
-                .wrapping_add(extra);
-
-            state[24..].copy_from_slice(&low.to_be_bytes());
-
-            vec![state]
         });
+
+    if let Some(step) = step {
+        counter = counter.requires_witness(move |witness, _| witness.step = step);
+    }
+
+    counter.recursive(0, move |counter| {
+        let mut state = counter.storage()[0];
+        let low = u64::from_be_bytes(state[24..].try_into().unwrap())
+            .wrapping_add(counter.witness().step)
+            .wrapping_add(extra);
+
+        state[24..].copy_from_slice(&low.to_be_bytes());
+
+        vec![state]
+    });
 
     test_context
         .engine(scenario)
@@ -199,13 +205,21 @@ fn counter(test_context: &TestContext<FuzzMode>, extra: u64) {
 
 #[simplex::fuzz]
 fn counter_with_its_transition_passes(test_context: TestContext<FuzzMode>) {
-    counter(&test_context, 0);
+    counter(&test_context, 0, None);
 }
 
 #[should_panic(expected = "liveness: the contract rejected a spend the spec accepts")]
 #[simplex::fuzz]
 fn counter_with_an_off_by_one_transition_is_live(test_context: TestContext<FuzzMode>) {
-    counter(&test_context, 1);
+    counter(&test_context, 1, None);
+}
+
+#[should_panic(
+    expected = "unsound: the contract accepted a spend that violates a requirement, `counter` witness `STEP`"
+)]
+#[simplex::fuzz]
+fn counter_requiring_a_step_it_does_not_enforce_is_unsound(test_context: TestContext<FuzzMode>) {
+    counter(&test_context, 0, Some(1));
 }
 
 #[should_panic(expected = "lock bypass: output 0 (locked to `unvault`) can be redirected")]

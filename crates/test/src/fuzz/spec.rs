@@ -47,15 +47,12 @@ impl<'a> FuzzCase<'a> {
             .get(index)
             .unwrap_or_else(|| panic!("`{name}` is not built yet, only programs added before a binding can be read"));
 
-        let raw_witness = program_scenario.inputs.first().map(|&input| {
-            &self.transaction.inputs()[input]
-                .program_input
-                .as_ref()
-                .expect("a spent input runs its program")
-                .witness
-        });
-
-        FuzzProgram::new(program_scenario, program, raw_witness, self.signer.get_network())
+        FuzzProgram::new(
+            program_scenario,
+            program,
+            program_scenario.witness_in(self.transaction),
+            self.signer.get_network(),
+        )
     }
 
     /// The initial transaction with every program before signing.

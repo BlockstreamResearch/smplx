@@ -1,12 +1,15 @@
 use std::any::{TypeId, type_name};
 use std::marker::PhantomData;
+use std::panic::{self, AssertUnwindSafe};
 
 use proptest::prelude::Strategy;
 
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValues};
 
 use smplx_sdk::program::Program;
+use smplx_sdk::transaction::FinalTransaction;
 
+use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program::{FuzzProgram, FuzzProgramSchema, FuzzProgramTrait};
 use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues};
 use crate::fuzz::spec::FuzzCase;
@@ -36,6 +39,7 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) strategy: FuzzProgramStrategy,
     pub(crate) argument_bindings: Vec<Binding<Arguments>>,
     pub(crate) witness_bindings: Vec<Binding<WitnessValues>>,
+    pub(crate) witness_requirements: Vec<Binding<WitnessValues>>,
     pub(crate) build_program: fn(&Arguments) -> Result<Program, String>,
     pub(crate) check_witness: fn(&WitnessValues) -> Result<(), String>,
 }
@@ -55,8 +59,44 @@ impl FuzzProgramScenario {
             strategy: FuzzProgramStrategy::Guided(FuzzProgramSchema::of::<P>()),
             argument_bindings: Vec::new(),
             witness_bindings: Vec::new(),
+            witness_requirements: Vec::new(),
             build_program: P::build_program,
             check_witness: P::check_witness,
+        }
+    }
+
+    /// Runs `bindings` of this program on `value` in order.
+    pub(crate) fn run_bindings<T>(
+        &self,
+        bindings: &[Binding<T>],
+        value: T,
+        case: &FuzzCase<'_>,
+    ) -> Result<T, SetupError> {
+        bindings.iter().try_fold(value, |value, binding| {
+            panic::catch_unwind(AssertUnwindSafe(|| binding(&value, case)))
+                .map_err(|_| SetupError::Binding(self.name.clone()))
+        })
+    }
+
+    /// The witness of the inputs this program spends, `None` when it spends nothing.
+    pub(crate) fn witness_in<'t>(&self, transaction: &'t FinalTransaction) -> Option<&'t WitnessValues> {
+        self.inputs.first().map(|&input| {
+            &transaction.inputs()[input]
+                .program_input
+                .as_ref()
+                .expect("a spent input runs its program")
+                .witness
+        })
+    }
+
+    /// Places `witness` into every input this program spends.
+    pub(crate) fn place_witness(&self, transaction: &mut FinalTransaction, witness: WitnessValues) {
+        for &input in &self.inputs {
+            transaction.inputs_mut()[input]
+                .program_input
+                .as_mut()
+                .expect("a spent input runs its program")
+                .witness = witness.clone();
         }
     }
 }
@@ -157,16 +197,28 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
 
     /// Sets witness fields once every program is built and placed before signing.
     pub fn bind_witness(self, bind: impl Fn(&mut P::Witness, &FuzzCase<'_>) + 'static) -> Self {
-        self.program_scenario
-            .witness_bindings
-            .push(Box::new(move |witness, case| {
-                let mut witness =
-                    P::Witness::try_from(witness).unwrap_or_else(|error| panic!("Generated witness: {error}"));
-                bind(&mut witness, case);
-
-                witness.into()
-            }));
+        self.program_scenario.witness_bindings.push(Self::witness_binding(bind));
 
         self
+    }
+
+    /// Sets the only witness values the contract accepts, after the bindings.
+    /// Required witness is fuzzed and the contract should reject the alternatives.
+    pub fn requires_witness(self, require: impl Fn(&mut P::Witness, &FuzzCase<'_>) + 'static) -> Self {
+        self.program_scenario
+            .witness_requirements
+            .push(Self::witness_binding(require));
+
+        self
+    }
+
+    fn witness_binding(bind: impl Fn(&mut P::Witness, &FuzzCase<'_>) + 'static) -> Binding<WitnessValues> {
+        Box::new(move |witness, case| {
+            let mut witness =
+                P::Witness::try_from(witness).unwrap_or_else(|error| panic!("Generated witness: {error}"));
+            bind(&mut witness, case);
+
+            witness.into()
+        })
     }
 }

@@ -151,6 +151,37 @@ pub(crate) fn follows_path(value: &Value, path: &[String]) -> bool {
     }
 }
 
+/// Replaces `value` value with `new` at `path`.
+///
+/// # Panics
+/// Panics when `value` does not take the branches `path` names.
+pub(crate) fn replace_on_path(value: &Value, path: &[String], new: Value) -> Value {
+    let Some((route, path)) = path.split_first() else {
+        return new;
+    };
+
+    match (route.as_str(), value.inner(), value.ty().as_inner()) {
+        ("Left", ValueInner::Either(Either::Left(inner)), TypeInner::Either(_, right)) => {
+            Value::left(replace_on_path(inner, path, new), (**right).clone())
+        }
+        ("Right", ValueInner::Either(Either::Right(inner)), TypeInner::Either(left, _)) => {
+            Value::right((**left).clone(), replace_on_path(inner, path, new))
+        }
+        (index, ValueInner::Tuple(elements), _) => {
+            let index = index.parse::<usize>().expect("a tuple route is an index");
+
+            Value::tuple(elements.iter().enumerate().map(|(at, element)| {
+                if at == index {
+                    replace_on_path(element, path, new.clone())
+                } else {
+                    element.clone()
+                }
+            }))
+        }
+        _ => panic!("{value} does not take the path {path:?}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use simplicityhl::either::Either;
