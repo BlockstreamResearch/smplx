@@ -1,3 +1,5 @@
+use simplicityhl::elements::locktime::LOCK_TIME_THRESHOLD;
+
 use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
@@ -117,6 +119,16 @@ impl<'a> FuzzCase<'a> {
         self.transaction.outputs()[index].amount
     }
 
+    /// The lock height as the jets see it: zero when every input sequence is final or the locktime is a time.
+    pub fn lock_height(&self) -> u32 {
+        self.read_lock(|locktime| locktime < LOCK_TIME_THRESHOLD)
+    }
+
+    /// The lock time as the jets see it: zero when every input sequence is final or the locktime is a height.
+    pub fn lock_time(&self) -> u32 {
+        self.read_lock(|locktime| locktime >= LOCK_TIME_THRESHOLD)
+    }
+
     pub fn network(&self) -> &SimplicityNetwork {
         self.signer.get_network()
     }
@@ -124,5 +136,18 @@ impl<'a> FuzzCase<'a> {
     /// The signer that signs the transaction.
     pub fn signer(&self) -> &Signer {
         self.signer
+    }
+
+    fn read_lock(&self, of_kind: impl Fn(u32) -> bool) -> u32 {
+        let transaction = self
+            .transaction
+            .extract_pst()
+            .0
+            .extract_tx()
+            .expect("the transaction has one kind of locktime");
+        let locktime = transaction.lock_time.to_consensus_u32();
+        let is_final = transaction.input.iter().all(|input| input.sequence.is_final());
+
+        if !is_final && of_kind(locktime) { locktime } else { 0 }
     }
 }

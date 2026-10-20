@@ -1,7 +1,6 @@
 /*
  * Pays the whole input, in its asset, to the unvault at output 0.
  */
-
 fn main() {
     assert!(jet::eq_256(unwrap(jet::output_script_hash(0)), param::UNVAULT_SCRIPT_HASH));
 

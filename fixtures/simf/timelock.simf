@@ -1,0 +1,8 @@
+/*
+ * Spends once the transaction is locked to at least LOCK_HEIGHT.
+ */
+fn main() {
+    let lock_height: u32 = param::LOCK_HEIGHT;
+
+    jet::check_lock_height(lock_height);
+}
