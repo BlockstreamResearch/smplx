@@ -22,6 +22,10 @@ use crate::fuzz::summary::RunSummary;
 
 type Spec = dyn Fn(&FuzzCase<'_>) -> Expect;
 
+/// The smart checks' attacker. Fixed, so a replayed case meets the same attacker.
+pub(crate) const ATTACKER_MNEMONIC: &str =
+    "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
 enum CaseFailure {
     Setup(SetupError),
     Finding(String),
@@ -116,6 +120,12 @@ impl SimplexFuzzEngine {
             Err(error) => panic!("The fuzz setup is broken, the contract was not tested: {error}"),
         };
 
+        let attacker = Signer::from_mnemonic(ATTACKER_MNEMONIC, *self.signer.get_network());
+        assert!(
+            attacker.get_schnorr_public_key() != self.signer.get_schnorr_public_key(),
+            "The fuzz setup is broken, the contract was not tested: the signer uses the smart checks attacker mnemonic"
+        );
+
         let setup_error = Arc::new(Mutex::new(None));
         let summary = RefCell::new(RunSummary::new(
             self.config.test_name.unwrap_or("simplex_fuzz"),
@@ -137,7 +147,7 @@ impl SimplexFuzzEngine {
         let mut runner = TestRunner::new(config);
 
         let result = runner.run(&strategy.no_shrink(), |values| {
-            self.fuzz(&summary, values).map_err(|failure| match failure {
+            self.fuzz(&summary, &attacker, values).map_err(|failure| match failure {
                 CaseFailure::Setup(error) => {
                     let reason = error.to_string();
                     *setup_error.lock().unwrap() = Some(error);
@@ -171,7 +181,7 @@ impl SimplexFuzzEngine {
     }
 
     /// Builds one case, asks the spec, runs it and reports what disagrees.
-    fn fuzz(&self, summary: &RefCell<RunSummary>, values: CaseValues) -> Result<(), CaseFailure> {
+    fn fuzz(&self, summary: &RefCell<RunSummary>, attacker: &Signer, values: CaseValues) -> Result<(), CaseFailure> {
         let mutations = values.change.mutations().to_vec();
 
         let (programs, transaction, violated) =
@@ -211,7 +221,9 @@ impl SimplexFuzzEngine {
         }
 
         if verdict.is_accepted()
-            && let Some(bypass) = self.do_smart_checks(summary, &case).map_err(CaseFailure::Setup)?
+            && let Some(bypass) = self
+                .do_smart_checks(summary, attacker, &case)
+                .map_err(CaseFailure::Setup)?
         {
             return Err(failure(bypass));
         }
@@ -257,12 +269,13 @@ impl SimplexFuzzEngine {
     fn do_smart_checks(
         &self,
         summary: &RefCell<RunSummary>,
+        attacker: &Signer,
         case: &FuzzCase<'_>,
     ) -> Result<Option<String>, SetupError> {
         let transaction = case.transaction();
 
         if self.check_lock
-            && let Some(check) = LockCheck::new(&self.signer, transaction, case.locked_outputs())
+            && let Some(check) = LockCheck::new(&self.signer, attacker, transaction, case.locked_outputs())
         {
             let bypasses = check.run()?;
             summary.borrow_mut().record_lock_check();
@@ -273,7 +286,7 @@ impl SimplexFuzzEngine {
         }
 
         if self.check_auth
-            && let Some(check) = AuthCheck::new(&self.signer, transaction)
+            && let Some(check) = AuthCheck::new(&self.signer, attacker, transaction)
         {
             let bypasses = check.run()?;
             summary.borrow_mut().record_auth_check();

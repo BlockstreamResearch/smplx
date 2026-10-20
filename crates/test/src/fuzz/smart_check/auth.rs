@@ -7,7 +7,6 @@ use simplicityhl::{Value, WitnessNameToValueMap, WitnessValues};
 
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, RequiredSignature, SigMessage};
-use smplx_sdk::utils::random_mnemonic;
 
 use crate::fuzz::execution::SignedTransaction;
 use crate::fuzz::outcome::SetupError;
@@ -15,13 +14,14 @@ use crate::fuzz::outcome::SetupError;
 /// Checks that an accepted spend depends on its signatures.
 pub(crate) struct AuthCheck<'a> {
     signer: &'a Signer,
+    attacker: &'a Signer,
     transaction: &'a FinalTransaction,
     signed_inputs: Vec<(usize, &'a str)>,
 }
 
 impl<'a> AuthCheck<'a> {
     /// `None` when no program input requests a signature. Each signed input comes with its signature's witness name.
-    pub(crate) fn new(signer: &'a Signer, transaction: &'a FinalTransaction) -> Option<Self> {
+    pub(crate) fn new(signer: &'a Signer, attacker: &'a Signer, transaction: &'a FinalTransaction) -> Option<Self> {
         let signed_inputs: Vec<(usize, &str)> = transaction
             .inputs()
             .iter()
@@ -37,6 +37,7 @@ impl<'a> AuthCheck<'a> {
 
         (!signed_inputs.is_empty()).then_some(Self {
             signer,
+            attacker,
             transaction,
             signed_inputs,
         })
@@ -47,9 +48,7 @@ impl<'a> AuthCheck<'a> {
     /// # Errors
     /// Returns a [`SetupError`] when a variant cannot be signed or executed.
     pub(crate) fn run(&self) -> Result<Vec<String>, SetupError> {
-        let attacker_signer = self.attacker_signer();
-
-        let wrong_key = self.accepted_inputs(&attacker_signer, &self.with_attacker_key(&attacker_signer))?;
+        let wrong_key = self.accepted_inputs(self.attacker, &self.with_attacker_key())?;
         let replayed = self.accepted_inputs(self.signer, &self.replayed())?;
 
         let mut bypasses = Vec::new();
@@ -70,14 +69,10 @@ impl<'a> AuthCheck<'a> {
         Ok(bypasses)
     }
 
-    fn attacker_signer(&self) -> Signer {
-        Signer::from_mnemonic(&random_mnemonic(), *self.signer.get_network())
-    }
-
     /// The attacker also swaps any key the contract reads from the witness.
-    fn with_attacker_key(&self, attacker_signer: &Signer) -> FinalTransaction {
+    fn with_attacker_key(&self) -> FinalTransaction {
         let own_key = Self::key_value(self.signer);
-        let attacker_key = Self::key_value(attacker_signer);
+        let attacker_key = Self::key_value(self.attacker);
 
         let mut transaction = self.transaction.clone();
 
@@ -159,6 +154,7 @@ mod tests {
     use smplx_sdk::transaction::{PartialInput, ProgramInput, UTXO};
 
     use crate::config::DEFAULT_TEST_MNEMONIC;
+    use crate::fuzz::core::ATTACKER_MNEMONIC;
 
     use super::*;
 
@@ -172,6 +168,7 @@ mod tests {
     impl Contract {
         fn bypasses(self) -> Vec<String> {
             let signer = Signer::from_mnemonic(DEFAULT_TEST_MNEMONIC, SimplicityNetwork::default_regtest());
+            let attacker = Signer::from_mnemonic(ATTACKER_MNEMONIC, SimplicityNetwork::default_regtest());
             let key = AuthCheck::key_value(&signer);
 
             let arguments = if self.key_argument {
@@ -200,7 +197,7 @@ mod tests {
                 self.required_sig,
             );
 
-            let check = AuthCheck::new(&signer, &transaction).unwrap();
+            let check = AuthCheck::new(&signer, &attacker, &transaction).unwrap();
 
             assert_eq!(
                 check.accepted_inputs(&signer, &transaction).unwrap(),
