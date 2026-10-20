@@ -17,7 +17,7 @@ pub fn random_witness<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> Witness
     WitnessValues::from_map(random_fields(&P::witness_types(), rng))
 }
 
-pub fn random_fields<R: Rng + ?Sized>(
+pub(crate) fn random_fields<R: Rng + ?Sized>(
     types: &[(TemplateProgramWitness, ResolvedType)],
     rng: &mut R,
 ) -> HashMap<TemplateProgramWitness, Value> {

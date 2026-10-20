@@ -1,63 +1,11 @@
-use std::fmt::{Debug, Formatter, Result};
-use std::marker::PhantomData;
-
 use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
-use proptest::prelude::Strategy;
-use proptest::strategy::NewTree;
-use proptest::test_runner::{TestRng, TestRunner};
+use proptest::test_runner::TestRng;
 
 use rand::RngExt;
 
-use smplx_sdk::program::ProgramSchema;
-
-use crate::fuzz::common::FixedValueTree;
-use crate::fuzz::program_strategy::FuzzProgramSchema;
-use crate::fuzz::program_strategy::FuzzProgramValues;
+use crate::fuzz::program_strategy::{FuzzProgramSchema, FuzzProgramValues};
 use crate::fuzz::utils::{generate_random_value_by_ty, random_fields};
-
-/// Draws every value uniformly at random.
-pub struct Random<P> {
-    storage_capacity: usize,
-    _program: PhantomData<fn() -> P>,
-}
-
-impl<P> Random<P> {
-    #[must_use]
-    pub fn with_storage_capacity(mut self, storage_capacity: usize) -> Self {
-        self.storage_capacity = storage_capacity;
-
-        self
-    }
-}
-
-impl<P> Default for Random<P> {
-    fn default() -> Self {
-        Self {
-            storage_capacity: 0,
-            _program: PhantomData,
-        }
-    }
-}
-
-impl<P> Debug for Random<P> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Random")
-            .field("storage_capacity", &self.storage_capacity)
-            .finish()
-    }
-}
-
-impl<P: ProgramSchema> Strategy for Random<P> {
-    type Tree = FixedValueTree<FuzzProgramValues>;
-    type Value = FuzzProgramValues;
-
-    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let schema = FuzzProgramSchema::of::<P>().with_storage_capacity(self.storage_capacity);
-
-        Ok(FixedValueTree(RandomCase::new(&schema, runner.rng()).generate()))
-    }
-}
 
 /// A single randomly generated case.
 pub(crate) struct RandomCase<'a> {
@@ -95,13 +43,13 @@ impl<'a> RandomCase<'a> {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::Strategy;
-    use proptest::strategy::ValueTree;
     use proptest::test_runner::{Config, RngSeed, TestRunner};
 
     use simplicityhl::num::{NonZeroPow2Usize, U256};
     use simplicityhl::types::TypeConstructible;
     use simplicityhl::{ResolvedType, TemplateProgramWitness, WitnessNameToValueMap};
+
+    use smplx_sdk::program::ProgramSchema;
 
     use super::*;
 
@@ -173,16 +121,18 @@ mod tests {
         }
     }
 
+    fn generate(runner: &mut TestRunner) -> FuzzProgramValues {
+        RandomCase::new(&FuzzProgramSchema::of::<RichSchema>(), runner.rng()).generate()
+    }
+
     #[test]
     fn strategy_is_persistent() {
-        let strategy = Random::<RichSchema>::default();
-
         let mut runner_1 = RichSchema::runner();
         let mut runner_2 = RichSchema::runner();
 
         for _ in 0..1024 {
-            let first = strategy.new_tree(&mut runner_1).unwrap().current();
-            let second = strategy.new_tree(&mut runner_2).unwrap().current();
+            let first = generate(&mut runner_1);
+            let second = generate(&mut runner_2);
 
             assert_eq!(first, second, "same seed produced a different random case");
         }
@@ -190,11 +140,10 @@ mod tests {
 
     #[test]
     fn values_match_their_declared_types() {
-        let strategy = Random::<RichSchema>::default();
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let values = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate(&mut runner);
 
             RichSchema::assert_matches(&values.arguments, &values.witness);
         }

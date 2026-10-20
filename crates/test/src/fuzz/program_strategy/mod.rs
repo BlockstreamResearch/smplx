@@ -4,8 +4,9 @@ mod program_schema;
 mod random;
 mod word;
 
-pub use core::*;
-pub use guided::*;
+pub(crate) use core::FuzzProgramStrategy;
+pub use core::FuzzProgramValues;
+pub(crate) use guided::GuidedCase;
 pub(crate) use program_schema::FuzzProgramSchema;
-pub use random::*;
+pub(crate) use random::RandomCase;
 pub(crate) use word::Word;

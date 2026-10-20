@@ -8,7 +8,7 @@ use crate::fuzz::mutations::Mutation;
 use crate::fuzz::outcome::{Outcome, Rejection};
 
 /// A fuzz run summary, printed when the run ends.
-pub struct RunSummary {
+pub(crate) struct RunSummary {
     test_name: &'static str,
     seed: RngSeed,
     layout: String,
@@ -28,7 +28,7 @@ pub struct RunSummary {
 }
 
 impl RunSummary {
-    pub fn new(
+    pub(crate) fn new(
         test_name: &'static str,
         seed: RngSeed,
         layout: String,
@@ -57,7 +57,7 @@ impl RunSummary {
     }
 
     /// `expect` is `None` for a case that violates a requirement.
-    pub fn record(&mut self, expect: Option<Expect>, verdict: Outcome, rejected_by: Option<String>) {
+    pub(crate) fn record(&mut self, expect: Option<Expect>, verdict: Outcome, rejected_by: Option<String>) {
         self.cases += 1;
 
         match expect {
@@ -79,7 +79,7 @@ impl RunSummary {
         }
     }
 
-    pub fn record_mutations(&mut self, mutations: &[Mutation]) {
+    pub(crate) fn record_mutations(&mut self, mutations: &[Mutation]) {
         if !mutations.is_empty() {
             self.mutated += 1;
         }
@@ -96,15 +96,15 @@ impl RunSummary {
         }
     }
 
-    pub fn record_lock_check(&mut self) {
+    pub(crate) fn record_lock_check(&mut self) {
         self.lock_checks += 1;
     }
 
-    pub fn record_auth_check(&mut self) {
+    pub(crate) fn record_auth_check(&mut self) {
         self.auth_checks += 1;
     }
 
-    pub fn is_run_empty(&self, allow_unspendable: bool) -> Option<String> {
+    pub(crate) fn is_run_empty(&self, allow_unspendable: bool) -> Option<String> {
         if self.expectations.get(&Expect::Any) == Some(&(self.cases - self.violations)) {
             return Some(format!(
                 "The spec made no prediction in {} case(s), it returned `Expect::Any` for every run",

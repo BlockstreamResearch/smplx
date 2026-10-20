@@ -6,13 +6,13 @@ use smplx_sdk::program::ProgramError;
 
 /// Result of executing one program input.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Outcome {
+pub(crate) enum Outcome {
     Accepted,
     Rejected(Rejection),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Rejection {
+pub(crate) enum Rejection {
     /// A jet failed, e.g. `assert!`.
     Assertion,
     /// `panic!`.
@@ -27,7 +27,7 @@ pub enum Rejection {
 
 /// A broken fuzz setup. Not a statement about the contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SetupError {
+pub(crate) enum SetupError {
     Scenario(String),
     Arguments(String),
     Witness(String),
@@ -40,13 +40,13 @@ pub enum SetupError {
 }
 
 impl Rejection {
-    pub const ALL: [Self; 5] = [Self::Assertion, Self::Panic, Self::Unwrap, Self::Resource, Self::Budget];
+    pub(crate) const ALL: [Self; 5] = [Self::Assertion, Self::Panic, Self::Unwrap, Self::Resource, Self::Budget];
 }
 
 impl Outcome {
     /// # Errors
     /// Returns a [`SetupError`] when the error comes from the fuzz setup rather than the contract.
-    pub fn classify<T>(result: Result<T, ProgramError>) -> Result<Self, SetupError> {
+    pub(crate) fn classify<T>(result: Result<T, ProgramError>) -> Result<Self, SetupError> {
         let Err(error) = result else {
             return Ok(Self::Accepted);
         };
@@ -77,7 +77,7 @@ impl Outcome {
     }
 
     #[must_use]
-    pub fn is_accepted(&self) -> bool {
+    pub(crate) fn is_accepted(&self) -> bool {
         matches!(self, Self::Accepted)
     }
 }

@@ -1,23 +1,15 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result};
-use std::marker::PhantomData;
 
 use simplicityhl::either::Either;
 use simplicityhl::types::TypeInner;
 use simplicityhl::value::{ValueConstructible, ValueInner};
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
-use proptest::prelude::Strategy;
-use proptest::strategy::NewTree;
-use proptest::test_runner::{TestRng, TestRunner};
+use proptest::test_runner::TestRng;
 
 use rand::RngExt;
 
-use smplx_sdk::program::ProgramSchema;
-
-use crate::fuzz::common::FixedValueTree;
-use crate::fuzz::program_strategy::FuzzProgramSchema;
-use crate::fuzz::program_strategy::{FuzzProgramValues, Word};
+use crate::fuzz::program_strategy::{FuzzProgramSchema, FuzzProgramValues, Word};
 use crate::fuzz::scenario_strategy::FuzzTransactionSchema;
 use crate::fuzz::witness_path::WitnessPath;
 
@@ -27,51 +19,6 @@ const BOUNDARY_WEIGHT: u32 = 20;
 const LITERAL_WEIGHT: u32 = 20;
 const UTXO_WEIGHT: u32 = 40;
 const REUSE_PERCENT: u32 = 20;
-
-/// Draws each integer from uniform random, boundary or literal values, then copies values between
-/// integers of the same case.
-pub struct Guided<P> {
-    storage_capacity: usize,
-    _program: PhantomData<fn() -> P>,
-}
-
-impl<P> Guided<P> {
-    #[must_use]
-    pub fn with_storage_capacity(mut self, storage_capacity: usize) -> Self {
-        self.storage_capacity = storage_capacity;
-
-        self
-    }
-}
-
-impl<P> Default for Guided<P> {
-    fn default() -> Self {
-        Self {
-            storage_capacity: 0,
-            _program: PhantomData,
-        }
-    }
-}
-
-impl<P> Debug for Guided<P> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("Guided")
-            .field("storage_capacity", &self.storage_capacity)
-            .finish()
-    }
-}
-
-impl<P: ProgramSchema> Strategy for Guided<P> {
-    type Tree = FixedValueTree<FuzzProgramValues>;
-    type Value = FuzzProgramValues;
-
-    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let schema = FuzzProgramSchema::of::<P>().with_storage_capacity(self.storage_capacity);
-        let values = GuidedCase::new(&[&schema], runner.rng()).generate();
-
-        Ok(FixedValueTree(values.into_iter().next().expect("one schema")))
-    }
-}
 
 /// State of a single generated case. Programs generated together share literals and values.
 pub(crate) struct GuidedCase<'a> {
@@ -300,12 +247,12 @@ impl<'a> GuidedCase<'a> {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::Strategy;
-    use proptest::strategy::ValueTree;
-    use proptest::test_runner::{Config, RngSeed};
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
 
     use simplicityhl::num::{NonZeroPow2Usize, U256};
     use simplicityhl::types::TypeConstructible;
+
+    use smplx_sdk::program::ProgramSchema;
 
     use super::*;
 
@@ -400,16 +347,23 @@ mod tests {
         }
     }
 
+    fn generate<P: ProgramSchema>(runner: &mut TestRunner) -> FuzzProgramValues {
+        let schema = FuzzProgramSchema::of::<P>();
+
+        GuidedCase::new(&[&schema], runner.rng())
+            .generate()
+            .pop()
+            .expect("one schema")
+    }
+
     #[test]
     fn strategy_is_persistent() {
-        let strategy = Guided::<RichSchema>::default();
-
         let mut runner_1 = RichSchema::runner();
         let mut runner_2 = RichSchema::runner();
 
         for _ in 0..1024 {
-            let first = strategy.new_tree(&mut runner_1).unwrap().current();
-            let second = strategy.new_tree(&mut runner_2).unwrap().current();
+            let first = generate::<RichSchema>(&mut runner_1);
+            let second = generate::<RichSchema>(&mut runner_2);
 
             assert_eq!(first, second, "same seed produced a different guided case");
         }
@@ -417,11 +371,10 @@ mod tests {
 
     #[test]
     fn values_match_their_declared_types() {
-        let strategy = Guided::<RichSchema>::default();
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let values = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate::<RichSchema>(&mut runner);
 
             RichSchema::assert_matches(&values.arguments, &values.witness);
         }
@@ -429,13 +382,12 @@ mod tests {
 
     #[test]
     fn literals_are_reached_quickly() {
-        let strategy = Guided::<MagicSchema>::default();
         let mut runner = RichSchema::runner();
         let magic = Value::u16(1337);
         let name = TemplateProgramWitness::witness_from_str("VALUE");
 
         let found = (0..100).any(|_| {
-            let values = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate::<MagicSchema>(&mut runner);
 
             values.witness.get(&name) == Some(&magic)
         });

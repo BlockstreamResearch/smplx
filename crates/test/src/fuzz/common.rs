@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use proptest::strategy::ValueTree;
 
 /// A generated case that is never shrunk.
-pub struct FixedValueTree<T>(pub T);
+pub(crate) struct FixedValueTree<T>(pub(crate) T);
 
 impl<T: Clone + Debug> ValueTree for FixedValueTree<T> {
     type Value = T;
