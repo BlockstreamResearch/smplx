@@ -1,3 +1,4 @@
+pub mod case;
 pub mod common;
 pub mod core;
 pub mod mutations;
@@ -9,13 +10,13 @@ mod requirement;
 pub mod scenario;
 mod scenario_strategy;
 mod smart_check;
-pub mod spec;
 pub mod summary;
 mod transaction;
 pub mod utils;
 
 pub use proptest;
 
+pub use case::{Expect, FuzzCase};
 pub use core::SimplexFuzzEngine;
 pub use mutations::{Mutation, Mutations};
 pub use outcome::{Outcome, Rejection, SetupError};
@@ -23,5 +24,4 @@ pub use program::{FuzzProgram, FuzzProgramTrait};
 pub use program_scenario::FuzzProgramScenarioBuilder;
 pub use program_strategy::FuzzProgramValues;
 pub use scenario::Scenario;
-pub use spec::{Expect, FuzzCase};
 pub use utils::{generate_random_value_by_ty, random_arguments, random_witness};

@@ -9,13 +9,13 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use crate::fuzz::FuzzProgramTrait;
-use crate::fuzz::mutations::Mutations;
+use crate::fuzz::case::FuzzCase;
+use crate::fuzz::mutations::{Mutation, Mutations, UtxoMap};
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::requirement::{RequiredValue, Requirements};
 use crate::fuzz::scenario_strategy::{CaseValues, CombinedStrategy};
-use crate::fuzz::spec::FuzzCase;
 use crate::fuzz::utils::{fits_path, follows_path};
 
 /// A transaction and the programs being fuzzed.
@@ -43,6 +43,11 @@ impl Scenario {
     /// Returns a [`SetupError`] when `mutations` cannot mutate the transaction.
     pub(crate) fn combined_strategy(&self, mutations: Option<&Mutations>) -> Result<CombinedStrategy, SetupError> {
         CombinedStrategy::new(&self.program_scenarios, &self.transaction, mutations)
+    }
+
+    /// Where each UTXO of the assembled transaction sits after `mutations`.
+    pub(crate) fn utxo_map(&self, mutations: &[Mutation]) -> UtxoMap {
+        UtxoMap::new(&self.transaction, mutations)
     }
 
     /// # Errors
@@ -136,6 +141,7 @@ impl Scenario {
             change,
         } = values;
         let mutations = change.mutations();
+        let map = self.utxo_map(mutations);
         let mut programs = Vec::with_capacity(self.program_scenarios.len());
         let mut transaction = self.transaction.clone();
 
@@ -172,14 +178,14 @@ impl Scenario {
                     .map_err(|error| SetupError::Witness(format!("`{name}`: {error}")))?;
             }
 
-            for &index in &program_scenario.inputs {
+            for index in program_scenario.inputs_in(&map) {
                 let input = &mut transaction.inputs_mut()[index];
 
                 input.partial_input.witness_utxo.script_pubkey = script.clone();
                 input.program_input = Some(ProgramInput::new(Box::new(program.clone()), witness.clone()));
             }
 
-            for &index in &program_scenario.outputs {
+            for index in program_scenario.outputs_in(&map) {
                 transaction.outputs_mut()[index].script_pubkey = script.clone();
             }
 
@@ -188,21 +194,21 @@ impl Scenario {
 
         // Bind witnesses after each program is built.
         for program_scenario in &self.program_scenarios {
-            let Some(witness) = program_scenario.witness_in(&transaction) else {
+            let Some(witness) = program_scenario.witness_in(&transaction, &map) else {
                 continue;
             };
 
             let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
             let witness = program_scenario.run_bindings(&program_scenario.witness_bindings, witness.clone(), &case)?;
 
-            program_scenario.place_witness(&mut transaction, witness);
+            program_scenario.place_witness(&mut transaction, &map, witness);
         }
 
         // Set the required witness values, then violate one of them in some cases.
         let mut requirements = Requirements::new();
 
         for program_scenario in &self.program_scenarios {
-            let Some(generated) = program_scenario.witness_in(&transaction).cloned() else {
+            let Some(generated) = program_scenario.witness_in(&transaction, &map).cloned() else {
                 continue;
             };
 
@@ -211,14 +217,14 @@ impl Scenario {
                 program_scenario.run_bindings(&program_scenario.witness_requirements, generated.clone(), &case)?;
 
             requirements.record_diff(program_scenario, &generated, &required);
-            program_scenario.place_witness(&mut transaction, required);
+            program_scenario.place_witness(&mut transaction, &map, required);
         }
 
-        let violated = requirements.violate_one(change.violation(), &mut transaction);
+        let violated = requirements.violate_one(change.violation(), &mut transaction, &map);
 
         // Check that custom strategies, bindings and requirements don't leave the spending path.
         for program_scenario in &self.program_scenarios {
-            let Some(witness) = program_scenario.witness_in(&transaction) else {
+            let Some(witness) = program_scenario.witness_in(&transaction, &map) else {
                 continue;
             };
 
@@ -256,7 +262,8 @@ impl Scenario {
                 let mut next = program.clone();
                 next.set_storage(storage);
 
-                transaction.outputs_mut()[*index].script_pubkey = next.get_script_pubkey(signer.get_network());
+                transaction.outputs_mut()[map.new_output_position(*index)].script_pubkey =
+                    next.get_script_pubkey(signer.get_network());
             }
         }
 
@@ -283,15 +290,17 @@ impl Scenario {
         (index, program_scenario)
     }
 
-    /// `None` for a fixed input.
-    pub(crate) fn program_scenario_by_input(&self, input: usize) -> Option<&FuzzProgramScenario> {
+    /// The program spending the input at `input` after the mutations, `None` for a fixed or added input.
+    pub(crate) fn program_scenario_by_input(&self, input: usize, map: &UtxoMap) -> Option<&FuzzProgramScenario> {
+        let template = map.old_input_index(input)?;
+
         self.program_scenarios
             .iter()
-            .find(|program_scenario| program_scenario.inputs.contains(&input))
+            .find(|program_scenario| program_scenario.inputs.contains(&template))
     }
 
-    /// Every output the lock check protects, with the name of the program it is locked to.
-    pub(crate) fn locked_outputs(&self) -> Vec<(usize, &str)> {
+    /// Every output the lock check protects after the mutations, with the name of the program it is locked to.
+    pub(crate) fn locked_outputs(&self, map: &UtxoMap) -> Vec<(usize, &str)> {
         self.program_scenarios
             .iter()
             .flat_map(|program_scenario| {
@@ -299,20 +308,20 @@ impl Scenario {
                     .outputs
                     .iter()
                     .filter(|index| !program_scenario.unchecked_outputs.contains(index))
-                    .map(|&index| (index, program_scenario.name.as_str()))
+                    .map(|&index| (map.new_output_position(index), program_scenario.name.as_str()))
             })
             .collect()
     }
 
     /// Each program and the fixed program inputs with their bound values.
-    pub(crate) fn describe(&self, programs: &[Program], transaction: &FinalTransaction) -> String {
+    pub(crate) fn describe(&self, programs: &[Program], transaction: &FinalTransaction, map: &UtxoMap) -> String {
         self.program_scenarios
             .iter()
             .zip(programs)
             .map(|(program_scenario, program)| {
                 let mut description = format!("`{}` arguments: {}", program_scenario.name, program.get_arguments());
 
-                if let Some(witness) = program_scenario.witness_in(transaction) {
+                if let Some(witness) = program_scenario.witness_in(transaction, map) {
                     description += &format!(" and witness: {witness}");
                 }
 
@@ -364,7 +373,13 @@ impl Scenario {
             .inputs()
             .iter()
             .enumerate()
-            .filter(|(index, input)| input.program_input.is_some() && self.program_scenario_by_input(*index).is_none())
+            .filter(|(index, input)| {
+                input.program_input.is_some()
+                    && !self
+                        .program_scenarios
+                        .iter()
+                        .any(|program_scenario| program_scenario.inputs.contains(index))
+            })
             .map(|(index, _)| format!("input {index} is fixed"));
 
         programs.chain(fixed).collect::<Vec<_>>().join(", ")
@@ -522,17 +537,21 @@ mod tests {
             RequiredSignature::None,
         );
 
+        let map = UtxoMap::new(&transaction, &[]);
         let mut requirements = Requirements::new();
         requirements.record_diff(&program_scenario, &nested_witness(2), &nested_witness(5));
 
         let violated = requirements
-            .violate_one(Some(0), &mut transaction)
+            .violate_one(Some(0), &mut transaction, &map)
             .expect("one value is required");
 
         assert_eq!(
             violated.to_string(),
             r#"`program` witness `PATH` at ["Right", "1"] is 2 instead of 5"#
         );
-        assert_eq!(program_scenario.witness_in(&transaction), Some(&nested_witness(2)));
+        assert_eq!(
+            program_scenario.witness_in(&transaction, &map),
+            Some(&nested_witness(2))
+        );
     }
 }

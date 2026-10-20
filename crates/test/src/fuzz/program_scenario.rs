@@ -9,10 +9,11 @@ use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValue
 use smplx_sdk::program::Program;
 use smplx_sdk::transaction::FinalTransaction;
 
+use crate::fuzz::case::FuzzCase;
+use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program::{FuzzProgram, FuzzProgramSchema, FuzzProgramTrait};
 use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues};
-use crate::fuzz::spec::FuzzCase;
 
 type Binding<T> = Box<dyn Fn(&T, &FuzzCase<'_>) -> T>;
 type Transition = Box<dyn Fn(&FuzzCase<'_>) -> Vec<[u8; 32]>>;
@@ -28,7 +29,6 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) name: String,
     pub(crate) inputs: Vec<usize>,
     pub(crate) outputs: Vec<usize>,
-    /// Locked outputs the lock check leaves alone. Also listed in `outputs`.
     pub(crate) unchecked_outputs: Vec<usize>,
     /// Witness fields with the branches the witness must take, e.g. `("PATH", ["Right", "Left"])`.
     pub(crate) spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>,
@@ -87,10 +87,23 @@ impl FuzzProgramScenario {
         })
     }
 
+    /// Where the inputs this program spends sit after the mutations.
+    pub(crate) fn inputs_in(&self, map: &UtxoMap) -> Vec<usize> {
+        self.inputs.iter().map(|&input| map.new_input_position(input)).collect()
+    }
+
+    /// Where the outputs this program locks sit after the mutations.
+    pub(crate) fn outputs_in(&self, map: &UtxoMap) -> Vec<usize> {
+        self.outputs
+            .iter()
+            .map(|&output| map.new_output_position(output))
+            .collect()
+    }
+
     /// The witness of the inputs this program spends, `None` when it spends nothing.
-    pub(crate) fn witness_in<'t>(&self, transaction: &'t FinalTransaction) -> Option<&'t WitnessValues> {
+    pub(crate) fn witness_in<'t>(&self, transaction: &'t FinalTransaction, map: &UtxoMap) -> Option<&'t WitnessValues> {
         self.inputs.first().map(|&input| {
-            &transaction.inputs()[input]
+            &transaction.inputs()[map.new_input_position(input)]
                 .program_input
                 .as_ref()
                 .expect("a spent input runs its program")
@@ -99,8 +112,8 @@ impl FuzzProgramScenario {
     }
 
     /// Places `witness` into every input this program spends.
-    pub(crate) fn place_witness(&self, transaction: &mut FinalTransaction, witness: WitnessValues) {
-        for &input in &self.inputs {
+    pub(crate) fn place_witness(&self, transaction: &mut FinalTransaction, map: &UtxoMap, witness: WitnessValues) {
+        for input in self.inputs_in(map) {
             transaction.inputs_mut()[input]
                 .program_input
                 .as_mut()

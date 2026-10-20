@@ -5,6 +5,8 @@ use simplex::simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, Seque
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
 
 use simplex_fixtures::artifacts::conserving_vault::ConservingVaultProgram;
+use simplex_fixtures::artifacts::paired_output::PairedOutputProgram;
+use simplex_fixtures::artifacts::script_auth::ScriptAuthProgram;
 use simplex_fixtures::artifacts::timelock::TimelockProgram;
 use simplex_fixtures::artifacts::unvault::UnvaultProgram;
 use simplex_fixtures::artifacts::vault::VaultProgram;
@@ -27,13 +29,14 @@ fn vault_scenario(fee: u64) -> Scenario {
     scenario
 }
 
-/// Output 0 pays the whole input, in its asset, to the unvault.
+/// Output 0 pays the vault's whole input, in its asset, to the unvault.
 fn pays_unvault(case: &FuzzCase<'_>) -> Expect {
     let unvault = case.program::<UnvaultProgram>("unvault");
+    let vault = case.input_index(0);
 
     if case.output_script_hash(0) == unvault.script_hash()
-        && case.output_amount(0) == case.input_amount(0)
-        && case.output_asset(0) == case.input_asset(0)
+        && case.output_amount(0) == case.input_amount(vault)
+        && case.output_asset(0) == case.input_asset(vault)
     {
         Expect::Accept
     } else {
@@ -84,7 +87,7 @@ fn conserving_vault_passes(test_context: TestContext<FuzzMode>) {
 
     test_context
         .engine(scenario)
-        .mutations(Mutations::default())
+        .mutations(Mutations::default().layout())
         .spec(pays_unvault)
         .run();
 }
@@ -124,5 +127,62 @@ fn timelock_passes_with_a_spec_on_the_lock_height(test_context: TestContext<Fuzz
                 Expect::Reject
             }
         })
+        .run();
+}
+
+/// Input 0 is the program's and output 0 pays the script it expects.
+#[simplex::fuzz]
+fn paired_output_is_judged_under_layout(test_context: TestContext<FuzzMode>) {
+    let mut transaction = FinalTransaction::new();
+    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_output(PartialOutput::new(
+        Script::new_op_return(b"next"),
+        0,
+        AssetId::default(),
+    ));
+
+    let mut scenario = Scenario::new(transaction);
+    scenario
+        .add::<PairedOutputProgram>("paired_output")
+        .spends(0)
+        .bind_arguments(|arguments, case| arguments.next_script_hash = case.output_script_hash(case.output_index(0)));
+
+    test_context
+        .engine(scenario)
+        .mutations(Mutations::none().layout().everywhere())
+        .spec(|case| {
+            if case.input_index(0) == case.output_index(0) {
+                Expect::Accept
+            } else {
+                Expect::Reject
+            }
+        })
+        .run();
+}
+
+/// Input 1 holds the auth UTXO the witness points at.
+#[simplex::fuzz]
+fn auth_input_requirement_follows_its_utxo(test_context: TestContext<FuzzMode>) {
+    let auth = UTXO::explicit(
+        OutPoint::default(),
+        Script::new_op_return(b"auth"),
+        0,
+        AssetId::default(),
+    );
+
+    let mut transaction = FinalTransaction::new();
+    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_input(PartialInput::new(auth), RequiredSignature::None);
+
+    let mut scenario = Scenario::new(transaction);
+    scenario
+        .add::<ScriptAuthProgram>("script_auth")
+        .spends(0)
+        .bind_arguments(|arguments, case| arguments.auth_script_hash = case.input_script_hash(case.input_index(1)))
+        .requires_witness(|witness, case| witness.auth_input = case.input_index(1) as u32);
+
+    test_context
+        .engine(scenario)
+        .mutations(Mutations::none().layout())
         .run();
 }

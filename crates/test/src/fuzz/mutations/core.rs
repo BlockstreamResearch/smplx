@@ -4,6 +4,7 @@ pub struct Mutations {
     pub(crate) amounts: bool,
     pub(crate) assets: bool,
     pub(crate) timelocks: bool,
+    pub(crate) layout: bool,
     pub(crate) everywhere: bool,
 }
 
@@ -13,6 +14,7 @@ impl Default for Mutations {
             amounts: true,
             assets: true,
             timelocks: true,
+            layout: false,
             everywhere: false,
         }
     }
@@ -25,6 +27,7 @@ impl Mutations {
             amounts: false,
             assets: false,
             timelocks: false,
+            layout: false,
             everywhere: false,
         }
     }
@@ -50,7 +53,14 @@ impl Mutations {
         self
     }
 
-    /// Mutates every UTXO, not only those programs "spend" or "lock".
+    /// Adds attacker UTXOs and reorders existing UTXOs.
+    pub fn layout(mut self) -> Self {
+        self.layout = true;
+
+        self
+    }
+
+    /// Mutates every UTXO, not only programs that "spend" or "lock".
     pub fn everywhere(mut self) -> Self {
         self.everywhere = true;
 

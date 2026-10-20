@@ -10,12 +10,12 @@ use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, Persis
 
 use smplx_sdk::signer::Signer;
 
+use crate::fuzz::case::{Expect, FuzzCase};
 use crate::fuzz::mutations::Mutations;
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::scenario::Scenario;
 use crate::fuzz::scenario_strategy::CaseValues;
 use crate::fuzz::smart_check::{AuthCheck, LockCheck};
-use crate::fuzz::spec::{Expect, FuzzCase};
 use crate::fuzz::summary::RunSummary;
 
 type Spec = dyn Fn(&FuzzCase<'_>) -> Expect;
@@ -175,24 +175,15 @@ impl SimplexFuzzEngine {
 
         let (programs, transaction, violated) =
             self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
+        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &mutations, &self.signer);
 
-        let failure = |reason: String| {
-            let mut values = self.scenario.describe(&programs, &transaction);
-
-            if !mutations.is_empty() {
-                let mutations = mutations.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
-                values += &format!("; mutations: {mutations}");
-            }
-
-            CaseFailure::Finding(format!("Case failed with {values}, reason: `{reason}`"))
-        };
+        let failure =
+            |reason: String| CaseFailure::Finding(format!("Case failed with {}, reason: `{reason}`", case.describe()));
 
         let (pst, signed_witnesses) = self
             .signer
             .sign_witnesses(&transaction)
             .map_err(|error| CaseFailure::Setup(SetupError::Signing(error.to_string())))?;
-
-        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &mutations, &self.signer);
 
         // A generated case that violates a requirement must be rejected.
         let expect = match violated {
@@ -219,6 +210,7 @@ impl SimplexFuzzEngine {
                     .as_ref()
                     .expect("filtered to program inputs")
                     .program;
+                // Execute the program.
                 let result = program.finalize(&pst, &signed_witnesses[&index], index, network);
 
                 Ok((index, Outcome::classify(result).map_err(CaseFailure::Setup)?))
@@ -232,10 +224,8 @@ impl SimplexFuzzEngine {
             expect,
             verdict,
             rejection.map(|(index, _)| {
-                self.scenario.program_scenario_by_input(*index).map_or_else(
-                    || format!("input {index}"),
-                    |program_scenario| program_scenario.name.clone(),
-                )
+                case.spending_program(*index)
+                    .map_or_else(|| format!("input {index}"), ToString::to_string)
             }),
         );
         summary.borrow_mut().record_mutations(&mutations);
@@ -255,12 +245,10 @@ impl SimplexFuzzEngine {
         if let Some(finding) = finding {
             let inputs = outcomes
                 .iter()
-                .map(
-                    |(index, outcome)| match self.scenario.program_scenario_by_input(*index) {
-                        Some(program_scenario) => format!("input {index} `{}` {outcome}", program_scenario.name),
-                        None => format!("input {index} {outcome}"),
-                    },
-                )
+                .map(|(index, outcome)| match case.spending_program(*index) {
+                    Some(name) => format!("input {index} `{name}` {outcome}"),
+                    None => format!("input {index} {outcome}"),
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -285,7 +273,7 @@ impl SimplexFuzzEngine {
         let transaction = case.transaction();
 
         if self.check_lock
-            && let Some(check) = LockCheck::new(&self.signer, transaction, self.scenario.locked_outputs())
+            && let Some(check) = LockCheck::new(&self.signer, transaction, case.locked_outputs())
         {
             let bypasses = check.run()?;
             summary.borrow_mut().record_lock_check();

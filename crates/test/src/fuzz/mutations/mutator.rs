@@ -6,7 +6,7 @@ use simplicityhl::elements::{AssetId, LockTime, Sequence};
 
 use smplx_sdk::transaction::FinalTransaction;
 
-use crate::fuzz::mutations::{Mutation, Mutations};
+use crate::fuzz::mutations::{Mutation, Mutations, UtxoMap};
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
 
@@ -15,7 +15,7 @@ const BOUNDARY_PERCENT: u32 = 50;
 const LITERAL_PERCENT: u32 = 20;
 const FRESH_ASSET_PERCENT: u32 = 50;
 
-type Draw = fn(&Mutator, &FinalTransaction, &mut TestRng) -> Option<Mutation>;
+type Draw = fn(&Mutator, &FinalTransaction, &UtxoMap, &mut TestRng) -> Option<Mutation>;
 
 /// Draws the mutations of a case.
 #[derive(Clone, Debug)]
@@ -56,8 +56,8 @@ impl Mutator {
         let mutator = Self {
             mutations,
             transaction: transaction.clone(),
-            target_outputs: Self::target_outputs(transaction, program_scenarios),
-            target_inputs: Self::target_inputs(transaction, program_scenarios),
+            target_outputs: Self::find_target_outputs(transaction, program_scenarios),
+            target_inputs: Self::find_target_inputs(transaction, program_scenarios),
             literals: Self::literals(program_scenarios),
             locktime: Self::locktime(transaction),
         };
@@ -75,37 +75,42 @@ impl Mutator {
     /// Draws one to `MUTATIONS_MAX` mutations and the transaction they make.
     pub(crate) fn generate(&self, rng: &mut TestRng) -> (Vec<Mutation>, FinalTransaction) {
         let mut transaction = self.transaction.clone();
+        let mut map = UtxoMap::new(&transaction, &[]);
         let mut mutations = Vec::new();
 
         for _ in 0..rng.random_range(1..=MUTATIONS_MAX) {
-            let Some(mutation) = self.draw(&transaction, rng) else {
+            let Some(mutation) = self.draw(&transaction, &map, rng) else {
                 break;
             };
 
             mutation
                 .apply(&mut transaction)
                 .expect("a drawn mutation fits the transaction it was drawn from");
+            map.follow(&mutation);
             mutations.push(mutation);
         }
 
         (mutations, transaction)
     }
 
-    /// Whether an enabled kind applies to `transaction`. Timelocks always do.
+    /// Whether an enabled kind applies to `transaction`. Timelocks and layout always do.
     fn applies(&self, transaction: &FinalTransaction) -> bool {
+        let map = UtxoMap::new(transaction, &[]);
+
         self.mutations.timelocks
-            || (self.mutations.amounts && !self.transfers(transaction).is_empty())
-            || (self.mutations.assets && !self.swaps(transaction).is_empty())
+            || self.mutations.layout
+            || (self.mutations.amounts && !self.transfers(transaction, &map).is_empty())
+            || (self.mutations.assets && !self.funded_outputs(transaction, &map).is_empty())
     }
 
     /// A mutation of a random enabled kind that applies to `transaction`.
-    fn draw(&self, transaction: &FinalTransaction, rng: &mut TestRng) -> Option<Mutation> {
+    fn draw(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
         let mut draws = self.draws();
 
         while !draws.is_empty() {
             let specific_draw = draws.swap_remove(rng.random_range(0..draws.len()));
 
-            if let Some(mutation) = specific_draw(self, transaction, rng) {
+            if let Some(mutation) = specific_draw(self, transaction, map, rng) {
                 return Some(mutation);
             }
         }
@@ -130,11 +135,18 @@ impl Mutator {
             draws.push(Self::draw_sequence);
         }
 
+        if self.mutations.layout {
+            draws.push(Self::draw_add_output);
+            draws.push(Self::draw_add_input);
+            draws.push(Self::draw_swap_inputs);
+            draws.push(Self::draw_swap_outputs);
+        }
+
         draws
     }
 
-    fn draw_transfer(&self, transaction: &FinalTransaction, rng: &mut TestRng) -> Option<Mutation> {
-        let transfers = self.transfers(transaction);
+    fn draw_transfer(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let transfers = self.transfers(transaction, map);
 
         if transfers.is_empty() {
             return None;
@@ -146,32 +158,21 @@ impl Mutator {
         Some(Mutation::TransferValue { from, to, amount })
     }
 
-    /// Another asset of the transaction, or a fresh one.
-    fn draw_swap(&self, transaction: &FinalTransaction, rng: &mut TestRng) -> Option<Mutation> {
-        let swaps = self.swaps(transaction);
+    fn draw_swap(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let swaps = self.funded_outputs(transaction, map);
 
         if swaps.is_empty() {
             return None;
         }
 
         let output = swaps[rng.random_range(0..swaps.len())];
-        let current = transaction.outputs()[output].asset;
-        let others: Vec<AssetId> = Self::assets(transaction)
-            .into_iter()
-            .filter(|asset| *asset != current)
-            .collect();
-
-        let asset = if others.is_empty() || rng.random_range(0..100) < FRESH_ASSET_PERCENT {
-            AssetId::from_byte_array(rng.random())
-        } else {
-            others[rng.random_range(0..others.len())]
-        };
+        let asset = Self::draw_asset(transaction, Some(transaction.outputs()[output].asset), rng);
 
         Some(Mutation::SwapAsset { output, asset })
     }
 
     /// The template's locktime or a program literal, or +- 1.
-    fn draw_locktime(&self, _: &FinalTransaction, rng: &mut TestRng) -> Option<Mutation> {
+    fn draw_locktime(&self, _: &FinalTransaction, _: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
         let bases: Vec<u32> = std::iter::once(self.locktime)
             .chain(self.literals.iter().filter_map(|literal| u32::try_from(*literal).ok()))
             .collect();
@@ -188,9 +189,9 @@ impl Mutator {
     }
 
     /// A final or locktime-enabling sequence, or a relative height from a program literal, or +- 1.
-    fn draw_sequence(&self, transaction: &FinalTransaction, rng: &mut TestRng) -> Option<Mutation> {
+    fn draw_sequence(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
         let inputs: Vec<usize> = (0..transaction.n_inputs())
-            .filter(|index| self.mutations.everywhere || self.target_inputs.contains(index))
+            .filter(|position| self.targets_input(*position, map))
             .collect();
 
         if inputs.is_empty() {
@@ -213,6 +214,79 @@ impl Mutator {
         let sequence = sequences[rng.random_range(0..sequences.len())];
 
         Some(Mutation::SetSequence { input, sequence })
+    }
+
+    /// Takes part of a targeted output for an attacker output.
+    fn draw_add_output(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let sources = self.funded_outputs(transaction, map);
+
+        if sources.is_empty() {
+            return None;
+        }
+
+        let from = sources[rng.random_range(0..sources.len())];
+        let amount = self.draw_amount(transaction.outputs()[from].amount, rng);
+
+        Some(Mutation::AddOutput { from, amount })
+    }
+
+    /// An attacker UTXO in an asset of the transaction or a fresh one, worth up to the largest output.
+    fn draw_add_input(&self, transaction: &FinalTransaction, _: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let largest = transaction
+            .outputs()
+            .iter()
+            .map(|output| output.amount)
+            .max()
+            .unwrap_or(0);
+
+        Some(Mutation::AddInput {
+            asset: Self::draw_asset(transaction, None, rng),
+            amount: self.draw_amount(largest.max(1), rng),
+        })
+    }
+
+    fn draw_swap_inputs(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let (first, second) = Self::draw_pair(
+            transaction.n_inputs(),
+            |position| self.targets_input(position, map),
+            rng,
+        )?;
+
+        Some(Mutation::SwapInputs(first, second))
+    }
+
+    fn draw_swap_outputs(&self, transaction: &FinalTransaction, map: &UtxoMap, rng: &mut TestRng) -> Option<Mutation> {
+        let (first, second) = Self::draw_pair(
+            transaction.n_outputs(),
+            |position| self.targets_output(position, map),
+            rng,
+        )?;
+
+        Some(Mutation::SwapOutputs(first, second))
+    }
+
+    /// Two of `count` positions, at least one of them targeted.
+    fn draw_pair(count: usize, targeted: impl Fn(usize) -> bool, rng: &mut TestRng) -> Option<(usize, usize)> {
+        let pairs: Vec<(usize, usize)> = (0..count)
+            .flat_map(|first| (first + 1..count).map(move |second| (first, second)))
+            .filter(|&(first, second)| targeted(first) || targeted(second))
+            .collect();
+
+        (!pairs.is_empty()).then(|| pairs[rng.random_range(0..pairs.len())])
+    }
+
+    /// An asset of the transaction other than `except`, or a fresh one.
+    fn draw_asset(transaction: &FinalTransaction, except: Option<AssetId>, rng: &mut TestRng) -> AssetId {
+        let others: Vec<AssetId> = Self::assets(transaction)
+            .into_iter()
+            .filter(|asset| Some(*asset) != except)
+            .collect();
+
+        if others.is_empty() || rng.random_range(0..100) < FRESH_ASSET_PERCENT {
+            AssetId::from_byte_array(rng.random())
+        } else {
+            others[rng.random_range(0..others.len())]
+        }
     }
 
     /// Boundaries (1, all, all but 1), program literals, or a random part of `available`.
@@ -240,9 +314,8 @@ impl Mutator {
     }
 
     /// Target output pairs value can be transferred between: the same asset and a nonzero amount.
-    fn transfers(&self, transaction: &FinalTransaction) -> Vec<(usize, usize)> {
+    fn transfers(&self, transaction: &FinalTransaction, map: &UtxoMap) -> Vec<(usize, usize)> {
         let outputs = transaction.outputs();
-        let targeted = |index: &usize| self.mutations.everywhere || self.target_outputs.contains(index);
 
         (0..outputs.len())
             .flat_map(|from| (0..outputs.len()).map(move |to| (from, to)))
@@ -250,17 +323,31 @@ impl Mutator {
                 from != to
                     && outputs[from].asset == outputs[to].asset
                     && outputs[from].amount > 0
-                    && (targeted(&from) || targeted(&to))
+                    && (self.targets_output(from, map) || self.targets_output(to, map))
             })
             .collect()
     }
 
     /// Targeted outputs with something to pay.
-    fn swaps(&self, transaction: &FinalTransaction) -> Vec<usize> {
+    fn funded_outputs(&self, transaction: &FinalTransaction, map: &UtxoMap) -> Vec<usize> {
         (0..transaction.n_outputs())
-            .filter(|index| self.mutations.everywhere || self.target_outputs.contains(index))
-            .filter(|index| transaction.outputs()[*index].amount > 0)
+            .filter(|position| self.targets_output(*position, map))
+            .filter(|position| transaction.outputs()[*position].amount > 0)
             .collect()
+    }
+
+    fn targets_output(&self, position: usize, map: &UtxoMap) -> bool {
+        self.mutations.everywhere
+            || map
+                .old_output_index(position)
+                .is_some_and(|template| self.target_outputs.contains(&template))
+    }
+
+    fn targets_input(&self, position: usize, map: &UtxoMap) -> bool {
+        self.mutations.everywhere
+            || map
+                .old_input_index(position)
+                .is_some_and(|template| self.target_inputs.contains(&template))
     }
 
     /// The assets of the inputs and outputs.
@@ -281,7 +368,7 @@ impl Mutator {
     }
 
     /// Outputs a program locks and the fee outputs.
-    fn target_outputs(transaction: &FinalTransaction, program_scenarios: &[FuzzProgramScenario]) -> Vec<usize> {
+    fn find_target_outputs(transaction: &FinalTransaction, program_scenarios: &[FuzzProgramScenario]) -> Vec<usize> {
         (0..transaction.n_outputs())
             .filter(|index| {
                 transaction.outputs()[*index].script_pubkey.is_empty()
@@ -293,7 +380,7 @@ impl Mutator {
     }
 
     /// Inputs a program spends.
-    fn target_inputs(transaction: &FinalTransaction, program_scenarios: &[FuzzProgramScenario]) -> Vec<usize> {
+    fn find_target_inputs(transaction: &FinalTransaction, program_scenarios: &[FuzzProgramScenario]) -> Vec<usize> {
         (0..transaction.n_inputs())
             .filter(|index| {
                 program_scenarios

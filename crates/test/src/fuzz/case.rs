@@ -6,7 +6,7 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
 use smplx_sdk::utils::hash_script;
 
-use crate::fuzz::mutations::Mutation;
+use crate::fuzz::mutations::{Mutation, UtxoMap};
 use crate::fuzz::program::{FuzzProgram, FuzzProgramTrait};
 use crate::fuzz::scenario::Scenario;
 
@@ -24,6 +24,7 @@ pub struct FuzzCase<'a> {
     programs: &'a [Program],
     transaction: &'a FinalTransaction,
     mutations: &'a [Mutation],
+    map: UtxoMap,
     signer: &'a Signer,
 }
 
@@ -40,6 +41,7 @@ impl<'a> FuzzCase<'a> {
             programs,
             transaction,
             mutations,
+            map: scenario.utxo_map(mutations),
             signer,
         }
     }
@@ -56,7 +58,8 @@ impl<'a> FuzzCase<'a> {
         FuzzProgram::new(
             program_scenario,
             program,
-            program_scenario.witness_in(self.transaction),
+            program_scenario.witness_in(self.transaction, &self.map),
+            &self.map,
             self.signer.get_network(),
         )
     }
@@ -69,6 +72,22 @@ impl<'a> FuzzCase<'a> {
     /// What the case changed in the assembled transaction.
     pub fn mutations(&self) -> &[Mutation] {
         self.mutations
+    }
+
+    /// Where input `old_index` of the assembled transaction sits after the mutations.
+    ///
+    /// # Panics
+    /// Panics when the assembled transaction has no input `old_index`.
+    pub fn input_index(&self, old_index: usize) -> usize {
+        self.map.new_input_position(old_index)
+    }
+
+    /// Where output `old_index` of the assembled transaction sits after the mutations.
+    ///
+    /// # Panics
+    /// Panics when the assembled transaction has no output `old_index`.
+    pub fn output_index(&self, old_index: usize) -> usize {
+        self.map.new_output_position(old_index)
     }
 
     /// # Panics
@@ -136,6 +155,30 @@ impl<'a> FuzzCase<'a> {
     /// The signer that signs the transaction.
     pub fn signer(&self) -> &Signer {
         self.signer
+    }
+
+    /// The name of the program spending input `index`, `None` for a fixed or added input.
+    pub(crate) fn spending_program(&self, index: usize) -> Option<&'a str> {
+        self.scenario
+            .program_scenario_by_input(index, &self.map)
+            .map(|program_scenario| program_scenario.name.as_str())
+    }
+
+    /// Every output the lock check protects, with the name of the program it is locked to.
+    pub(crate) fn locked_outputs(&self) -> Vec<(usize, &'a str)> {
+        self.scenario.locked_outputs(&self.map)
+    }
+
+    /// Each program with its bound values, then the mutations.
+    pub(crate) fn describe(&self) -> String {
+        let mut description = self.scenario.describe(self.programs, self.transaction, &self.map);
+
+        if !self.mutations.is_empty() {
+            let mutations = self.mutations.iter().map(ToString::to_string).collect::<Vec<_>>();
+            description += &format!("; mutations: {}", mutations.join(", "));
+        }
+
+        description
     }
 
     fn read_lock(&self, of_kind: impl Fn(u32) -> bool) -> u32 {

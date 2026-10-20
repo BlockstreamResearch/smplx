@@ -18,6 +18,14 @@ pub enum Mutation {
     SetLocktime(LockTime),
     /// Sets the sequence of input `input`.
     SetSequence { input: usize, sequence: Sequence },
+    /// Appends an attacker output with `amount` taken from output `from`.
+    AddOutput { from: usize, amount: u64 },
+    /// Appends an attacker input of `amount` of `asset` and an attacker output paying it out.
+    AddInput { asset: AssetId, amount: u64 },
+    /// Swaps two inputs.
+    SwapInputs(usize, usize),
+    /// Swaps two outputs.
+    SwapOutputs(usize, usize),
 }
 
 impl Mutation {
@@ -49,17 +57,9 @@ impl Mutation {
                     return Err(unfit());
                 }
 
-                let vout = u32::try_from(transaction.n_inputs()).map_err(|_| unfit())?;
-                let backing = UTXO::explicit(
-                    OutPoint::new(Txid::from_byte_array([0xa7; 32]), vout),
-                    Script::new(),
-                    amount,
-                    asset,
-                );
-
                 transaction.outputs_mut()[output].asset = asset;
-                transaction.add_input(PartialInput::new(backing), RequiredSignature::None);
-                transaction.add_output(PartialOutput::new(Self::attacker_script(), amount, freed));
+
+                Self::add_attacker_utxos(transaction, asset, freed, amount);
             }
             Self::SetLocktime(locktime) => {
                 for input in transaction.inputs_mut() {
@@ -76,6 +76,30 @@ impl Mutation {
                     .partial_input
                     .sequence = sequence;
             }
+            Self::AddOutput { from, amount } => {
+                let source = transaction.outputs_mut().get_mut(from).ok_or_else(unfit)?;
+                source.amount = source.amount.checked_sub(amount).ok_or_else(unfit)?;
+                let asset = source.asset;
+
+                transaction.add_output(PartialOutput::new(Self::attacker_script(), amount, asset));
+            }
+            Self::AddInput { asset, amount } => {
+                Self::add_attacker_utxos(transaction, asset, asset, amount);
+            }
+            Self::SwapInputs(first, second) => {
+                if first == second || first.max(second) >= transaction.n_inputs() {
+                    return Err(unfit());
+                }
+
+                transaction.inputs_mut().swap(first, second);
+            }
+            Self::SwapOutputs(first, second) => {
+                if first == second || first.max(second) >= transaction.n_outputs() {
+                    return Err(unfit());
+                }
+
+                transaction.outputs_mut().swap(first, second);
+            }
         }
 
         Ok(())
@@ -87,7 +111,29 @@ impl Mutation {
             Self::SwapAsset { .. } => "swap asset",
             Self::SetLocktime(_) => "set locktime",
             Self::SetSequence { .. } => "set sequence",
+            Self::AddOutput { .. } => "add output",
+            Self::AddInput { .. } => "add input",
+            Self::SwapInputs(..) => "swap inputs",
+            Self::SwapOutputs(..) => "swap outputs",
         }
+    }
+
+    /// Appends an attacker input of `amount` of `input_asset` and an attacker output of `amount` of `output_asset`.
+    fn add_attacker_utxos(
+        transaction: &mut FinalTransaction,
+        input_asset: AssetId,
+        output_asset: AssetId,
+        amount: u64,
+    ) {
+        let utxo = UTXO::explicit(
+            OutPoint::new(Txid::from_byte_array([0xa7; 32]), transaction.n_inputs() as u32),
+            Script::new(),
+            amount,
+            input_asset,
+        );
+
+        transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+        transaction.add_output(PartialOutput::new(Self::attacker_script(), amount, output_asset));
     }
 
     /// `OP_TRUE`, a script anyone can spend.
@@ -111,6 +157,10 @@ impl Display for Mutation {
                     sequence.to_consensus_u32()
                 )
             }
+            Self::AddOutput { from, amount } => write!(f, "add an output of {amount} from output {from}"),
+            Self::AddInput { asset, amount } => write!(f, "add an input of {amount} in asset {asset}"),
+            Self::SwapInputs(first, second) => write!(f, "swap inputs {first} and {second}"),
+            Self::SwapOutputs(first, second) => write!(f, "swap outputs {first} and {second}"),
         }
     }
 }

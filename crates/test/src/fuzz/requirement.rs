@@ -7,6 +7,7 @@ use simplicityhl::{TemplateProgramWitness, Value, WitnessNameToValueMap, Witness
 
 use smplx_sdk::transaction::FinalTransaction;
 
+use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
 use crate::fuzz::utils::replace_on_path;
 
@@ -57,13 +58,14 @@ impl<'a> Requirements<'a> {
         mut self,
         pick: Option<u64>,
         transaction: &mut FinalTransaction,
+        map: &UtxoMap,
     ) -> Option<RequiredValue<'a>> {
         let pick = pick.filter(|_| !self.values.is_empty())?;
         let violated = self.values.swap_remove((pick % self.values.len() as u64) as usize);
 
         let witness = violated
             .program_scenario
-            .witness_in(transaction)
+            .witness_in(transaction, map)
             .expect("a required value is in the witness of a spent input");
         let mut fields: HashMap<_, _> = witness
             .iter()
@@ -74,7 +76,7 @@ impl<'a> Requirements<'a> {
         fields.insert(violated.field.clone(), value);
         violated
             .program_scenario
-            .place_witness(transaction, WitnessValues::from_map(fields));
+            .place_witness(transaction, map, WitnessValues::from_map(fields));
 
         Some(violated)
     }

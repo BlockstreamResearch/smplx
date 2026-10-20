@@ -3,9 +3,9 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use proptest::test_runner::RngSeed;
 
+use crate::fuzz::case::Expect;
 use crate::fuzz::mutations::Mutation;
 use crate::fuzz::outcome::{Outcome, Rejection};
-use crate::fuzz::spec::Expect;
 
 /// A fuzz tun summary, printed when the run ends.
 pub struct RunSummary {

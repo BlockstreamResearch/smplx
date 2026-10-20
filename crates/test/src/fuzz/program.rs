@@ -5,6 +5,7 @@ use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValue
 use smplx_sdk::program::{Program, ProgramFactory, ProgramSchema};
 use smplx_sdk::provider::SimplicityNetwork;
 
+use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
 
 /// A program the fuzz engine can build, describe and decode. Implemented for every `include_simf!()` program.
@@ -100,6 +101,8 @@ pub struct FuzzProgram<'a, P: FuzzProgramTrait> {
     arguments: P::Arguments,
     witness: Option<P::Witness>,
     raw_witness: Option<&'a WitnessValues>,
+    inputs: Vec<usize>,
+    outputs: Vec<usize>,
 }
 
 impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
@@ -108,6 +111,7 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
         program_scenario: &'a FuzzProgramScenario,
         program: &'a Program,
         raw_witness: Option<&'a WitnessValues>,
+        map: &UtxoMap,
         network: &'a SimplicityNetwork,
     ) -> Self {
         Self {
@@ -118,6 +122,8 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
             witness: raw_witness
                 .map(|witness| P::Witness::try_from(witness).expect("checked when the program was built")),
             raw_witness,
+            inputs: program_scenario.inputs_in(map),
+            outputs: program_scenario.outputs_in(map),
         }
     }
 
@@ -175,13 +181,13 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
         self.program.get_cmr()
     }
 
-    /// Indices of the inputs the program spends.
+    /// Indices of the inputs the program spends, after the mutations.
     pub fn inputs(&self) -> &[usize] {
-        &self.program_scenario.inputs
+        &self.inputs
     }
 
-    /// Indices of the outputs the program locks.
+    /// Indices of the outputs the program locks, after the mutations.
     pub fn outputs(&self) -> &[usize] {
-        &self.program_scenario.outputs
+        &self.outputs
     }
 }
