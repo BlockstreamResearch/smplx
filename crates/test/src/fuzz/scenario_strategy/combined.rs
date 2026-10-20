@@ -46,9 +46,7 @@ impl CombinedStrategy {
                 .map(FuzzProgramScenario::configured_strategy)
                 .collect(),
             transaction: FuzzTransactionSchema::of(transaction),
-            requirements: program_scenarios
-                .iter()
-                .any(|program_scenario| !program_scenario.witness_requirements.is_empty()),
+            requirements: program_scenarios.iter().any(FuzzProgramScenario::has_requirements),
             mutator,
         })
     }

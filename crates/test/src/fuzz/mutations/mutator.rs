@@ -374,7 +374,7 @@ impl Mutator {
                 transaction.outputs()[*index].script_pubkey.is_empty()
                     || program_scenarios
                         .iter()
-                        .any(|program_scenario| program_scenario.outputs.contains(index))
+                        .any(|program_scenario| program_scenario.locks(*index))
             })
             .collect()
     }
@@ -385,7 +385,7 @@ impl Mutator {
             .filter(|index| {
                 program_scenarios
                     .iter()
-                    .any(|program_scenario| program_scenario.inputs.contains(index))
+                    .any(|program_scenario| program_scenario.spends(*index))
             })
             .collect()
     }
@@ -394,8 +394,7 @@ impl Mutator {
     fn literals(program_scenarios: &[FuzzProgramScenario]) -> Vec<u64> {
         program_scenarios
             .iter()
-            .filter_map(|program_scenario| program_scenario.strategy.schema())
-            .flat_map(|schema| &schema.literals)
+            .flat_map(FuzzProgramScenario::literals)
             .filter_map(|literal| {
                 let bytes = literal.to_byte_array();
 

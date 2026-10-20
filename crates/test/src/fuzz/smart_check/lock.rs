@@ -4,7 +4,8 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
 use smplx_sdk::utils::random_mnemonic;
 
-use crate::fuzz::outcome::{Outcome, SetupError};
+use crate::fuzz::execution::SignedTransaction;
+use crate::fuzz::outcome::SetupError;
 
 /// Checks that an accepted spend depends on the outputs it locks.
 pub(crate) struct LockCheck<'a> {
@@ -59,25 +60,6 @@ impl<'a> LockCheck<'a> {
 
     /// Signatures are redone, so a valid signature cannot hide a missing output check.
     fn accepts(&self, transaction: &FinalTransaction) -> Result<bool, SetupError> {
-        let (pst, witnesses) = self
-            .signer
-            .sign_witnesses(transaction)
-            .map_err(|error| SetupError::Signing(error.to_string()))?;
-
-        for (index, input) in transaction.inputs().iter().enumerate() {
-            let Some(program_input) = &input.program_input else {
-                continue;
-            };
-
-            let result = program_input
-                .program
-                .finalize(&pst, &witnesses[&index], index, self.signer.get_network());
-
-            if !Outcome::classify(result)?.is_accepted() {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
+        SignedTransaction::new(self.signer, transaction)?.accepts_all()
     }
 }

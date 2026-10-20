@@ -15,8 +15,7 @@ use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::requirement::{RequiredValue, Requirements};
-use crate::fuzz::scenario_strategy::{CaseValues, CombinedStrategy};
-use crate::fuzz::utils::{fits_path, follows_path};
+use crate::fuzz::scenario_strategy::{CaseChange, CaseValues, CombinedStrategy};
 
 /// A transaction and the programs being fuzzed.
 pub struct Scenario {
@@ -67,9 +66,9 @@ impl Scenario {
             }
 
             for (field, path) in &program_scenario.spending_paths {
-                if !matches!(path.last().map(String::as_str), Some("Left" | "Right")) {
+                if !path.ends_at_branch() {
                     return invalid(format!(
-                        "`{name}` has the spending path {path:?} in `{field}`, which must end at an `Either` branch"
+                        "`{name}` has the spending path {path} in `{field}`, which must end at an `Either` branch"
                     ));
                 }
 
@@ -77,11 +76,11 @@ impl Scenario {
                     .witness_types
                     .iter()
                     .find(|(witness, _)| witness == field)
-                    .is_some_and(|(_, ty)| fits_path(ty, path));
+                    .is_some_and(|(_, ty)| path.fits(ty));
 
                 if !fits {
                     return invalid(format!(
-                        "`{name}` has no witness field `{field}` with the spending path {path:?}"
+                        "`{name}` has no witness field `{field}` with the spending path {path}"
                     ));
                 }
             }
@@ -126,8 +125,8 @@ impl Scenario {
         Ok(())
     }
 
-    /// Binds and builds every program in order and places it into the transaction, then binds the witnesses
-    /// and sets the required values. Returns the required value the case violates, if any.
+    /// Builds one case: applies its mutations, builds and places every program, binds the witnesses,
+    /// sets the required values and locks the recursive outputs. Returns the required value the case violates, if any.
     ///
     /// # Errors
     /// Returns a [`SetupError`] when the values do not fit a program or a binding panics.
@@ -136,138 +135,15 @@ impl Scenario {
         values: CaseValues,
         signer: &Signer,
     ) -> Result<(Vec<Program>, FinalTransaction, Option<RequiredValue<'_>>), SetupError> {
-        let CaseValues {
-            programs: program_values,
-            change,
-        } = values;
-        let mutations = change.mutations();
-        let map = self.utxo_map(mutations);
-        let mut programs = Vec::with_capacity(self.program_scenarios.len());
-        let mut transaction = self.transaction.clone();
+        let mut builder = CaseBuilder::new(self, signer, values.change)?;
 
-        for mutation in mutations {
-            mutation.apply(&mut transaction)?;
-        }
+        builder.place_programs(values.programs)?;
+        builder.bind_witnesses()?;
+        let violated = builder.require_witnesses()?;
+        builder.check_spending_paths()?;
+        builder.lock_recursive_outputs()?;
 
-        for (program_scenario, values) in self.program_scenarios.iter().zip(program_values) {
-            let FuzzProgramValues {
-                arguments,
-                witness,
-                storage,
-            } = values;
-            let name = &program_scenario.name;
-
-            if storage.len() != program_scenario.storage_capacity {
-                return Err(SetupError::Storage(format!(
-                    "`{name}` was generated {} slot(s), but it has {}",
-                    storage.len(),
-                    program_scenario.storage_capacity
-                )));
-            }
-
-            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
-            let arguments = program_scenario.run_bindings(&program_scenario.argument_bindings, arguments, &case)?;
-
-            let mut program = (program_scenario.build_program)(&arguments)
-                .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
-            program.set_storage(storage);
-            let script = program.get_script_pubkey(signer.get_network());
-
-            if !program_scenario.inputs.is_empty() {
-                (program_scenario.check_witness)(&witness)
-                    .map_err(|error| SetupError::Witness(format!("`{name}`: {error}")))?;
-            }
-
-            for index in program_scenario.inputs_in(&map) {
-                let input = &mut transaction.inputs_mut()[index];
-
-                input.partial_input.witness_utxo.script_pubkey = script.clone();
-                input.program_input = Some(ProgramInput::new(Box::new(program.clone()), witness.clone()));
-            }
-
-            for index in program_scenario.outputs_in(&map) {
-                transaction.outputs_mut()[index].script_pubkey = script.clone();
-            }
-
-            programs.push(program);
-        }
-
-        // Bind witnesses after each program is built.
-        for program_scenario in &self.program_scenarios {
-            let Some(witness) = program_scenario.witness_in(&transaction, &map) else {
-                continue;
-            };
-
-            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
-            let witness = program_scenario.run_bindings(&program_scenario.witness_bindings, witness.clone(), &case)?;
-
-            program_scenario.place_witness(&mut transaction, &map, witness);
-        }
-
-        // Set the required witness values, then violate one of them in some cases.
-        let mut requirements = Requirements::new();
-
-        for program_scenario in &self.program_scenarios {
-            let Some(generated) = program_scenario.witness_in(&transaction, &map).cloned() else {
-                continue;
-            };
-
-            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
-            let required =
-                program_scenario.run_bindings(&program_scenario.witness_requirements, generated.clone(), &case)?;
-
-            requirements.record_diff(program_scenario, &generated, &required);
-            program_scenario.place_witness(&mut transaction, &map, required);
-        }
-
-        let violated = requirements.violate_one(change.violation(), &mut transaction, &map);
-
-        // Check that custom strategies, bindings and requirements don't leave the spending path.
-        for program_scenario in &self.program_scenarios {
-            let Some(witness) = program_scenario.witness_in(&transaction, &map) else {
-                continue;
-            };
-
-            for (field, path) in &program_scenario.spending_paths {
-                if !witness.get(field).is_some_and(|value| follows_path(value, path)) {
-                    return Err(SetupError::Witness(format!(
-                        "`{}` leaves its spending path {path:?} in `{field}`",
-                        program_scenario.name
-                    )));
-                }
-            }
-        }
-
-        // Lock recursive outputs to each program with its next storage.
-        for (program_scenario, program) in self.program_scenarios.iter().zip(&programs) {
-            let name = &program_scenario.name;
-
-            for (index, transition) in &program_scenario.transitions {
-                let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
-
-                let storage = panic::catch_unwind(AssertUnwindSafe(|| {
-                    let storage = transition(&case);
-
-                    assert!(
-                        storage.len() == program_scenario.storage_capacity,
-                        "The transition of `{name}` returned {} storage slot(s), but it has {}",
-                        storage.len(),
-                        program_scenario.storage_capacity
-                    );
-
-                    storage
-                }))
-                .map_err(|_| SetupError::Binding(name.clone()))?;
-
-                let mut next = program.clone();
-                next.set_storage(storage);
-
-                transaction.outputs_mut()[map.new_output_position(*index)].script_pubkey =
-                    next.get_script_pubkey(signer.get_network());
-            }
-        }
-
-        Ok((programs, transaction, violated))
+        Ok((builder.programs, builder.transaction, violated))
     }
 
     /// # Panics
@@ -296,7 +172,7 @@ impl Scenario {
 
         self.program_scenarios
             .iter()
-            .find(|program_scenario| program_scenario.inputs.contains(&template))
+            .find(|program_scenario| program_scenario.spends(template))
     }
 
     /// Every output the lock check protects after the mutations, with the name of the program it is locked to.
@@ -378,11 +254,198 @@ impl Scenario {
                     && !self
                         .program_scenarios
                         .iter()
-                        .any(|program_scenario| program_scenario.inputs.contains(index))
+                        .any(|program_scenario| program_scenario.spends(*index))
             })
             .map(|(index, _)| format!("input {index} is fixed"));
 
         programs.chain(fixed).collect::<Vec<_>>().join(", ")
+    }
+}
+
+/// One case being built: the assembled transaction with the case's mutations, filled program by program.
+struct CaseBuilder<'a, 's> {
+    scenario: &'a Scenario,
+    signer: &'s Signer,
+    change: CaseChange,
+    map: UtxoMap,
+    programs: Vec<Program>,
+    transaction: FinalTransaction,
+}
+
+impl<'a, 's> CaseBuilder<'a, 's> {
+    fn new(scenario: &'a Scenario, signer: &'s Signer, change: CaseChange) -> Result<Self, SetupError> {
+        let mut transaction = scenario.transaction.clone();
+
+        for mutation in change.mutations() {
+            mutation.apply(&mut transaction)?;
+        }
+
+        Ok(Self {
+            scenario,
+            signer,
+            map: scenario.utxo_map(change.mutations()),
+            change,
+            programs: Vec::with_capacity(scenario.program_scenarios.len()),
+            transaction,
+        })
+    }
+
+    /// The case as built so far.
+    fn case(&self) -> FuzzCase<'_> {
+        FuzzCase::new(
+            self.scenario,
+            &self.programs,
+            &self.transaction,
+            self.change.mutations(),
+            self.signer,
+        )
+    }
+
+    /// Binds the arguments of every program in order, builds it and places it into the transaction.
+    fn place_programs(&mut self, values: Vec<FuzzProgramValues>) -> Result<(), SetupError> {
+        let scenario = self.scenario;
+
+        for (program_scenario, values) in scenario.program_scenarios.iter().zip(values) {
+            let FuzzProgramValues {
+                arguments,
+                witness,
+                storage,
+            } = values;
+            let name = &program_scenario.name;
+
+            if storage.len() != program_scenario.storage_capacity {
+                return Err(SetupError::Storage(format!(
+                    "`{name}` was generated {} slot(s), but it has {}",
+                    storage.len(),
+                    program_scenario.storage_capacity
+                )));
+            }
+
+            let arguments =
+                program_scenario.run_bindings(&program_scenario.argument_bindings, arguments, &self.case())?;
+
+            let mut program = (program_scenario.build_program)(&arguments)
+                .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
+            program.set_storage(storage);
+            let script = program.get_script_pubkey(self.signer.get_network());
+
+            if !program_scenario.inputs.is_empty() {
+                (program_scenario.check_witness)(&witness)
+                    .map_err(|error| SetupError::Witness(format!("`{name}`: {error}")))?;
+            }
+
+            for index in program_scenario.inputs_in(&self.map) {
+                let input = &mut self.transaction.inputs_mut()[index];
+
+                input.partial_input.witness_utxo.script_pubkey = script.clone();
+                input.program_input = Some(ProgramInput::new(Box::new(program.clone()), witness.clone()));
+            }
+
+            for index in program_scenario.outputs_in(&self.map) {
+                self.transaction.outputs_mut()[index].script_pubkey = script.clone();
+            }
+
+            self.programs.push(program);
+        }
+
+        Ok(())
+    }
+
+    /// Binds the witnesses once every program is built.
+    fn bind_witnesses(&mut self) -> Result<(), SetupError> {
+        let scenario = self.scenario;
+
+        for program_scenario in &scenario.program_scenarios {
+            let Some(witness) = program_scenario.witness_in(&self.transaction, &self.map).cloned() else {
+                continue;
+            };
+
+            let witness = program_scenario.run_bindings(&program_scenario.witness_bindings, witness, &self.case())?;
+
+            program_scenario.place_witness(&mut self.transaction, &self.map, witness);
+        }
+
+        Ok(())
+    }
+
+    /// Sets the required witness values, then violates one of them when the case picks it.
+    fn require_witnesses(&mut self) -> Result<Option<RequiredValue<'a>>, SetupError> {
+        let scenario = self.scenario;
+        let mut requirements = Requirements::new();
+
+        for program_scenario in &scenario.program_scenarios {
+            let Some(generated) = program_scenario.witness_in(&self.transaction, &self.map).cloned() else {
+                continue;
+            };
+
+            let required = program_scenario.run_bindings(
+                &program_scenario.witness_requirements,
+                generated.clone(),
+                &self.case(),
+            )?;
+
+            requirements.record_diff(program_scenario, &generated, &required);
+            program_scenario.place_witness(&mut self.transaction, &self.map, required);
+        }
+
+        Ok(requirements.violate_one(self.change.violation(), &mut self.transaction, &self.map))
+    }
+
+    /// Checks that custom strategies, bindings and requirements don't leave the spending paths.
+    fn check_spending_paths(&self) -> Result<(), SetupError> {
+        for program_scenario in &self.scenario.program_scenarios {
+            let Some(witness) = program_scenario.witness_in(&self.transaction, &self.map) else {
+                continue;
+            };
+
+            for (field, path) in &program_scenario.spending_paths {
+                if !witness.get(field).is_some_and(|value| path.follows(value)) {
+                    return Err(SetupError::Witness(format!(
+                        "`{}` leaves its spending path {path} in `{field}`",
+                        program_scenario.name
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Locks the recursive outputs to each program with its next storage.
+    fn lock_recursive_outputs(&mut self) -> Result<(), SetupError> {
+        let scenario = self.scenario;
+
+        for (program_index, program_scenario) in scenario.program_scenarios.iter().enumerate() {
+            let name = &program_scenario.name;
+
+            for (index, transition) in &program_scenario.transitions {
+                let storage = {
+                    let case = self.case();
+
+                    panic::catch_unwind(AssertUnwindSafe(|| {
+                        let storage = transition(&case);
+
+                        assert!(
+                            storage.len() == program_scenario.storage_capacity,
+                            "The transition of `{name}` returned {} storage slot(s), but it has {}",
+                            storage.len(),
+                            program_scenario.storage_capacity
+                        );
+
+                        storage
+                    }))
+                    .map_err(|_| SetupError::Binding(name.clone()))?
+                };
+
+                let mut next = self.programs[program_index].clone();
+                next.set_storage(storage);
+
+                self.transaction.outputs_mut()[self.map.new_output_position(*index)].script_pubkey =
+                    next.get_script_pubkey(self.signer.get_network());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -410,6 +473,7 @@ mod tests {
     use smplx_sdk::transaction::{PartialOutput, UTXO};
 
     use crate::fuzz::program_strategy::FuzzProgramStrategy;
+    use crate::fuzz::witness_path::WitnessPath;
 
     use super::*;
 
@@ -485,7 +549,7 @@ mod tests {
                     let mut unknown_path = program_scenario("a", &[0], &[]);
                     unknown_path.spending_paths.push((
                         TemplateProgramWitness::witness_from_str("PATH"),
-                        vec!["Left".to_string()],
+                        WitnessPath::new(["Left"]),
                     ));
 
                     vec![unknown_path]
@@ -497,7 +561,7 @@ mod tests {
                     let mut index_last = program_scenario("a", &[0], &[]);
                     index_last.spending_paths.push((
                         TemplateProgramWitness::witness_from_str("PATH"),
-                        vec!["Left".to_string(), "0".to_string()],
+                        WitnessPath::new(["Left", "0"]),
                     ));
 
                     vec![index_last]

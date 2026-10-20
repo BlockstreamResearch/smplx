@@ -14,7 +14,7 @@ use smplx_sdk::program::ProgramSchema;
 use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_strategy::FuzzProgramValues;
-use crate::fuzz::utils::{draw_on_path, generate_random_value_by_ty, random_fields};
+use crate::fuzz::utils::{generate_random_value_by_ty, random_fields};
 
 /// Draws every value uniformly at random.
 pub struct Random<P> {
@@ -78,7 +78,7 @@ impl<'a> RandomCase<'a> {
 
                 (
                     name.clone(),
-                    draw_on_path(ty, path, &mut |ty| generate_random_value_by_ty(ty, self.rng)),
+                    path.draw(ty, &mut |ty| generate_random_value_by_ty(ty, self.rng)),
                 )
             })
             .collect();

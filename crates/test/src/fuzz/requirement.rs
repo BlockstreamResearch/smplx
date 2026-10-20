@@ -9,7 +9,7 @@ use smplx_sdk::transaction::FinalTransaction;
 
 use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
-use crate::fuzz::utils::replace_on_path;
+use crate::fuzz::witness_path::WitnessPath;
 
 /// The witness values the requirements of a case set.
 pub(crate) struct Requirements<'a> {
@@ -20,7 +20,7 @@ pub(crate) struct Requirements<'a> {
 pub(crate) struct RequiredValue<'a> {
     program_scenario: &'a FuzzProgramScenario,
     field: TemplateProgramWitness,
-    path: Vec<String>,
+    path: WitnessPath,
     required: Value,
     generated: Value,
 }
@@ -45,7 +45,7 @@ impl<'a> Requirements<'a> {
                 self.record_value(RequiredValue {
                     program_scenario,
                     field: field.clone(),
-                    path: Vec::new(),
+                    path: WitnessPath::default(),
                     required: required.clone(),
                     generated: generated.clone(),
                 });
@@ -71,7 +71,9 @@ impl<'a> Requirements<'a> {
             .iter()
             .map(|(field, value)| (field.clone(), value.clone()))
             .collect();
-        let value = replace_on_path(&fields[&violated.field], &violated.path, violated.generated.clone());
+        let value = violated
+            .path
+            .replace(&fields[&violated.field], violated.generated.clone());
 
         fields.insert(violated.field.clone(), value);
         violated
@@ -105,13 +107,10 @@ impl<'a> Requirements<'a> {
         };
 
         for (route, generated, required) in routes {
-            let mut path = value.path.clone();
-            path.push(route);
-
             self.record_value(RequiredValue {
                 program_scenario: value.program_scenario,
                 field: value.field.clone(),
-                path,
+                path: value.path.join(route),
                 required,
                 generated,
             });
@@ -121,10 +120,10 @@ impl<'a> Requirements<'a> {
 
 impl Display for RequiredValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "`{}` witness `{}`", self.program_scenario.name, self.field)?;
+        write!(f, "`{}` witness `{}`", self.program_scenario.name(), self.field)?;
 
         if !self.path.is_empty() {
-            write!(f, " at {:?}", self.path)?;
+            write!(f, " at {}", self.path)?;
         }
 
         write!(f, " is {} instead of {}", self.generated, self.required)

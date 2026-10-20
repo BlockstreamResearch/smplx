@@ -161,7 +161,7 @@ impl<'a> FuzzCase<'a> {
     pub(crate) fn spending_program(&self, index: usize) -> Option<&'a str> {
         self.scenario
             .program_scenario_by_input(index, &self.map)
-            .map(|program_scenario| program_scenario.name.as_str())
+            .map(|program_scenario| program_scenario.name())
     }
 
     /// Every output the lock check protects, with the name of the program it is locked to.

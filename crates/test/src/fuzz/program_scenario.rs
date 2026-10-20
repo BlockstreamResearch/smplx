@@ -4,6 +4,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 use proptest::prelude::Strategy;
 
+use simplicityhl::num::U256;
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, WitnessValues};
 
 use smplx_sdk::program::Program;
@@ -14,6 +15,7 @@ use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program::{FuzzProgram, FuzzProgramSchema, FuzzProgramTrait};
 use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues};
+use crate::fuzz::witness_path::WitnessPath;
 
 type Binding<T> = Box<dyn Fn(&T, &FuzzCase<'_>) -> T>;
 type Transition = Box<dyn Fn(&FuzzCase<'_>) -> Vec<[u8; 32]>>;
@@ -31,7 +33,7 @@ pub(crate) struct FuzzProgramScenario {
     pub(crate) outputs: Vec<usize>,
     pub(crate) unchecked_outputs: Vec<usize>,
     /// Witness fields with the branches the witness must take, e.g. `("PATH", ["Right", "Left"])`.
-    pub(crate) spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>,
+    pub(crate) spending_paths: Vec<(TemplateProgramWitness, WitnessPath)>,
     pub(crate) witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
     pub(crate) transitions: Vec<(usize, Transition)>,
     pub(crate) storage_capacity: usize,
@@ -63,6 +65,29 @@ impl FuzzProgramScenario {
             build_program: P::build_program,
             check_witness: P::check_witness,
         }
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Whether the program spends input `index` of the assembled transaction.
+    pub(crate) fn spends(&self, index: usize) -> bool {
+        self.inputs.contains(&index)
+    }
+
+    /// Whether the program locks output `index` of the assembled transaction.
+    pub(crate) fn locks(&self, index: usize) -> bool {
+        self.outputs.contains(&index)
+    }
+
+    pub(crate) fn has_requirements(&self) -> bool {
+        !self.witness_requirements.is_empty()
+    }
+
+    /// The literals of the program's source, empty for a custom strategy.
+    pub(crate) fn literals(&self) -> &[U256] {
+        self.strategy.schema().map_or(&[], |schema| &schema.literals)
     }
 
     /// The strategy generating this program's values, with its storage capacity and spending paths.
@@ -168,10 +193,9 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
-        self.program_scenario.spending_paths.push((
-            TemplateProgramWitness::witness_from_str(name),
-            path.into_iter().map(|route| route.as_ref().to_string()).collect(),
-        ));
+        self.program_scenario
+            .spending_paths
+            .push((TemplateProgramWitness::witness_from_str(name), WitnessPath::new(path)));
 
         self
     }

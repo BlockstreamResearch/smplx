@@ -7,6 +7,7 @@ use smplx_sdk::provider::SimplicityNetwork;
 
 use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
+use crate::fuzz::witness_path::WitnessPath;
 
 /// A program the fuzz engine can build, describe and decode. Implemented for every `include_simf!()` program.
 pub trait FuzzProgramTrait:
@@ -56,7 +57,7 @@ pub(crate) struct FuzzProgramSchema {
     pub(crate) witness_types: Vec<(TemplateProgramWitness, ResolvedType)>,
     pub(crate) literals: Vec<U256>,
     pub(crate) storage_capacity: usize,
-    pub(crate) spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>,
+    pub(crate) spending_paths: Vec<(TemplateProgramWitness, WitnessPath)>,
 }
 
 impl FuzzProgramSchema {
@@ -78,18 +79,18 @@ impl FuzzProgramSchema {
     }
 
     #[must_use]
-    pub(crate) fn with_spending_paths(mut self, spending_paths: Vec<(TemplateProgramWitness, Vec<String>)>) -> Self {
+    pub(crate) fn with_spending_paths(mut self, spending_paths: Vec<(TemplateProgramWitness, WitnessPath)>) -> Self {
         self.spending_paths = spending_paths;
 
         self
     }
 
     /// The spending path of `field`, empty when there is none.
-    pub(crate) fn spending_path(&self, field: &TemplateProgramWitness) -> &[String] {
+    pub(crate) fn spending_path(&self, field: &TemplateProgramWitness) -> &WitnessPath {
         self.spending_paths
             .iter()
             .find(|(pinned, _)| pinned == field)
-            .map_or(&[], |(_, path)| path.as_slice())
+            .map_or(WitnessPath::empty(), |(_, path)| path)
     }
 }
 
@@ -128,7 +129,7 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
     }
 
     pub fn name(&self) -> &str {
-        &self.program_scenario.name
+        self.program_scenario.name()
     }
 
     pub fn arguments(&self) -> &P::Arguments {

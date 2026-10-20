@@ -20,7 +20,7 @@ use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::transaction::FuzzTransactionSchema;
-use crate::fuzz::utils::draw_on_path;
+use crate::fuzz::witness_path::WitnessPath;
 
 // TODO: make the weights configurable.
 const RANDOM_WEIGHT: u32 = 40;
@@ -113,7 +113,7 @@ impl<'a> GuidedCase<'a> {
         let fields: Vec<_> = schemas
             .iter()
             .map(|schema| {
-                let arguments = self.draw_fields(&schema.argument_types, |_| &[]);
+                let arguments = self.draw_fields(&schema.argument_types, |_| WitnessPath::empty());
                 let witness = self.draw_fields(&schema.witness_types, |field| schema.spending_path(field));
 
                 for _ in 0..schema.storage_capacity {
@@ -154,11 +154,11 @@ impl<'a> GuidedCase<'a> {
     fn draw_fields<'p>(
         &mut self,
         types: &[(TemplateProgramWitness, ResolvedType)],
-        path_of: impl Fn(&TemplateProgramWitness) -> &'p [String],
+        path_of: impl Fn(&TemplateProgramWitness) -> &'p WitnessPath,
     ) -> Vec<(TemplateProgramWitness, Value)> {
         types
             .iter()
-            .map(|(name, ty)| (name.clone(), draw_on_path(ty, path_of(name), &mut |ty| self.draw(ty))))
+            .map(|(name, ty)| (name.clone(), path_of(name).draw(ty, &mut |ty| self.draw(ty))))
             .collect()
     }
 

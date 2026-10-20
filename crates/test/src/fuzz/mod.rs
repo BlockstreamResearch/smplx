@@ -1,6 +1,7 @@
 pub mod case;
 pub mod common;
 pub mod core;
+mod execution;
 pub mod mutations;
 pub mod outcome;
 pub mod program;
@@ -13,6 +14,7 @@ mod smart_check;
 pub mod summary;
 mod transaction;
 pub mod utils;
+mod witness_path;
 
 pub use proptest;
 

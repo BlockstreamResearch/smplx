@@ -9,7 +9,8 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, RequiredSignature, SigMessage};
 use smplx_sdk::utils::random_mnemonic;
 
-use crate::fuzz::outcome::{Outcome, SetupError};
+use crate::fuzz::execution::SignedTransaction;
+use crate::fuzz::outcome::SetupError;
 
 /// Checks that an accepted spend depends on its signatures.
 pub(crate) struct AuthCheck<'a> {
@@ -132,21 +133,11 @@ impl<'a> AuthCheck<'a> {
     }
 
     fn accepted_inputs(&self, signer: &Signer, transaction: &FinalTransaction) -> Result<Vec<usize>, SetupError> {
-        let (pst, witnesses) = signer
-            .sign_witnesses(transaction)
-            .map_err(|error| SetupError::Signing(error.to_string()))?;
-
+        let signed = SignedTransaction::new(signer, transaction)?;
         let mut accepted = Vec::new();
 
         for &(index, _) in &self.signed_inputs {
-            let program = &transaction.inputs()[index]
-                .program_input
-                .as_ref()
-                .expect("a signed input runs a program")
-                .program;
-            let result = program.finalize(&pst, &witnesses[&index], index, self.signer.get_network());
-
-            if Outcome::classify(result)?.is_accepted() {
+            if signed.run(index)?.is_accepted() {
                 accepted.push(index);
             }
         }

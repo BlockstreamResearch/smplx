@@ -11,8 +11,10 @@ use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, Persis
 use smplx_sdk::signer::Signer;
 
 use crate::fuzz::case::{Expect, FuzzCase};
+use crate::fuzz::execution::SignedTransaction;
 use crate::fuzz::mutations::Mutations;
 use crate::fuzz::outcome::{Outcome, SetupError};
+use crate::fuzz::requirement::RequiredValue;
 use crate::fuzz::scenario::Scenario;
 use crate::fuzz::scenario_strategy::CaseValues;
 use crate::fuzz::smart_check::{AuthCheck, LockCheck};
@@ -168,9 +170,8 @@ impl SimplexFuzzEngine {
         }
     }
 
-    /// Extracted helper that performs exactly one isolated test run.
+    /// Builds one case, asks the spec, runs it and reports what disagrees.
     fn fuzz(&self, summary: &RefCell<RunSummary>, values: CaseValues) -> Result<(), CaseFailure> {
-        let network = self.signer.get_network();
         let mutations = values.change.mutations().to_vec();
 
         let (programs, transaction, violated) =
@@ -180,43 +181,15 @@ impl SimplexFuzzEngine {
         let failure =
             |reason: String| CaseFailure::Finding(format!("Case failed with {}, reason: `{reason}`", case.describe()));
 
-        let (pst, signed_witnesses) = self
-            .signer
-            .sign_witnesses(&transaction)
-            .map_err(|error| CaseFailure::Setup(SetupError::Signing(error.to_string())))?;
-
-        // A generated case that violates a requirement must be rejected.
+        // A generated case that violates a requirement must be rejected, so the spec is not asked.
         let expect = match violated {
             Some(_) => None,
-            None => Some(
-                // A panicking spec is a bug in the test, not a finding against the contract.
-                panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(&case)))
-                    .map_err(|_| CaseFailure::Setup(SetupError::Spec))?,
-            ),
+            None => Some(self.ask_spec(&case)?),
         };
 
-        let program_inputs: Vec<usize> = transaction
-            .inputs()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, input)| input.program_input.as_ref().map(|_| index))
-            .collect();
-
-        let outcomes = program_inputs
-            .iter()
-            .map(|&index| {
-                let program = &transaction.inputs()[index]
-                    .program_input
-                    .as_ref()
-                    .expect("filtered to program inputs")
-                    .program;
-                // Execute the program.
-                let result = program.finalize(&pst, &signed_witnesses[&index], index, network);
-
-                Ok((index, Outcome::classify(result).map_err(CaseFailure::Setup)?))
-            })
-            .collect::<Result<Vec<_>, CaseFailure>>()?;
-
+        let outcomes = SignedTransaction::new(&self.signer, &transaction)
+            .and_then(|signed| signed.run_all())
+            .map_err(CaseFailure::Setup)?;
         let rejection = outcomes.iter().find(|(_, outcome)| !outcome.is_accepted());
         let verdict = rejection.map_or(Outcome::Accepted, |(_, outcome)| *outcome);
 
@@ -230,29 +203,11 @@ impl SimplexFuzzEngine {
         );
         summary.borrow_mut().record_mutations(&mutations);
 
-        let finding = match (expect, verdict.is_accepted()) {
-            (None, true) => Some(format!(
-                "unsound: the contract accepted a spend that violates a requirement, {}",
-                violated.expect("violating case should have a violation")
-            )),
-            (Some(Expect::Reject), true) => Some("unsound: the contract accepted a spend the spec rejects".to_string()),
-            (Some(Expect::Accept), false) => {
-                Some("liveness: the contract rejected a spend the spec accepts".to_string())
-            }
-            _ => None,
-        };
-
-        if let Some(finding) = finding {
-            let inputs = outcomes
-                .iter()
-                .map(|(index, outcome)| match case.spending_program(*index) {
-                    Some(name) => format!("input {index} `{name}` {outcome}"),
-                    None => format!("input {index} {outcome}"),
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            return Err(failure(format!("{finding} ({inputs})")));
+        if let Some(finding) = Self::finding(expect, verdict, violated.as_ref()) {
+            return Err(failure(format!(
+                "{finding} ({})",
+                Self::describe_outcomes(&case, &outcomes)
+            )));
         }
 
         if verdict.is_accepted()
@@ -262,6 +217,40 @@ impl SimplexFuzzEngine {
         }
 
         Ok(())
+    }
+
+    /// A panicking spec is a bug in the test, not a finding against the contract.
+    fn ask_spec(&self, case: &FuzzCase<'_>) -> Result<Expect, CaseFailure> {
+        panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(case))).map_err(|_| CaseFailure::Setup(SetupError::Spec))
+    }
+
+    /// What the verdict means against the expectation, `None` when they agree. 
+    /// `expect` is `None` for a case that violates a requirement.
+    fn finding(expect: Option<Expect>, verdict: Outcome, violated: Option<&RequiredValue<'_>>) -> Option<String> {
+        match (expect, verdict.is_accepted(), violated) {
+            (None, true, Some(violated)) => Some(format!(
+                "unsound: the contract accepted a spend that violates a requirement, {violated}"
+            )),
+            (Some(Expect::Reject), true, _) => {
+                Some("unsound: the contract accepted a spend the spec rejects".to_string())
+            }
+            (Some(Expect::Accept), false, _) => {
+                Some("liveness: the contract rejected a spend the spec accepts".to_string())
+            }
+            _ => None,
+        }
+    }
+
+    /// Every program input with its outcome, e.g. "input 0 `vault` accepted, input 1 rejected (assertion)".
+    fn describe_outcomes(case: &FuzzCase<'_>, outcomes: &[(usize, Outcome)]) -> String {
+        outcomes
+            .iter()
+            .map(|(index, outcome)| match case.spending_program(*index) {
+                Some(name) => format!("input {index} `{name}` {outcome}"),
+                None => format!("input {index} {outcome}"),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// Runs the smart checks on an accepted case and returns the first bypass they find.
