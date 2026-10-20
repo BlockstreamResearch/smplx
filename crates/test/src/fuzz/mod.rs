@@ -12,7 +12,6 @@ pub mod scenario;
 mod scenario_strategy;
 mod smart_check;
 pub mod summary;
-mod transaction;
 pub mod utils;
 mod witness_path;
 

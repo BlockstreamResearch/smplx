@@ -2,7 +2,7 @@ use simplicityhl::{Arguments, WitnessValues};
 
 use proptest::prelude::BoxedStrategy;
 
-use crate::fuzz::program::FuzzProgramSchema;
+use crate::fuzz::program_strategy::FuzzProgramSchema;
 
 /// The values a program strategy generates for one program of a case.
 #[derive(Clone, Debug, PartialEq)]

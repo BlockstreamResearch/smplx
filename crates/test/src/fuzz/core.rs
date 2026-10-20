@@ -224,7 +224,7 @@ impl SimplexFuzzEngine {
         panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(case))).map_err(|_| CaseFailure::Setup(SetupError::Spec))
     }
 
-    /// What the verdict means against the expectation, `None` when they agree. 
+    /// What the verdict means against the expectation, `None` when they agree.
     /// `expect` is `None` for a case that violates a requirement.
     fn finding(expect: Option<Expect>, verdict: Outcome, violated: Option<&RequiredValue<'_>>) -> Option<String> {
         match (expect, verdict.is_accepted(), violated) {

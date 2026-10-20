@@ -10,11 +10,12 @@ use smplx_sdk::transaction::FinalTransaction;
 use crate::fuzz::common::FixedValueTree;
 use crate::fuzz::mutations::{Mutations, Mutator};
 use crate::fuzz::outcome::SetupError;
-use crate::fuzz::program::FuzzProgramSchema;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
-use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues, GuidedCase, RandomCase};
+use crate::fuzz::program_strategy::{
+    FuzzProgramSchema, FuzzProgramStrategy, FuzzProgramValues, GuidedCase, RandomCase,
+};
+use crate::fuzz::scenario_strategy::FuzzTransactionSchema;
 use crate::fuzz::scenario_strategy::{CaseChange, CaseValues};
-use crate::fuzz::transaction::FuzzTransactionSchema;
 
 const VIOLATION_PERCENT: u32 = 50;
 const MUTATION_PERCENT: u32 = 50;

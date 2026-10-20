@@ -3,8 +3,7 @@ use std::fmt::{Debug, Formatter, Result};
 use std::marker::PhantomData;
 
 use simplicityhl::either::Either;
-use simplicityhl::num::U256;
-use simplicityhl::types::{TypeInner, UIntType};
+use simplicityhl::types::TypeInner;
 use simplicityhl::value::{ValueConstructible, ValueInner};
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
@@ -17,9 +16,9 @@ use rand::RngExt;
 use smplx_sdk::program::ProgramSchema;
 
 use crate::fuzz::common::FixedValueTree;
-use crate::fuzz::program::FuzzProgramSchema;
-use crate::fuzz::program_strategy::FuzzProgramValues;
-use crate::fuzz::transaction::FuzzTransactionSchema;
+use crate::fuzz::program_strategy::FuzzProgramSchema;
+use crate::fuzz::program_strategy::{FuzzProgramValues, Word};
+use crate::fuzz::scenario_strategy::FuzzTransactionSchema;
 use crate::fuzz::witness_path::WitnessPath;
 
 // TODO: make the weights configurable.
@@ -28,9 +27,6 @@ const BOUNDARY_WEIGHT: u32 = 20;
 const LITERAL_WEIGHT: u32 = 20;
 const UTXO_WEIGHT: u32 = 40;
 const REUSE_PERCENT: u32 = 20;
-
-const BOUNDARY_POWERS: &[usize] = &[4, 5, 6, 7, 8, 10, 12, 15, 16, 31, 32, 63, 64, 127, 128, 255];
-const BOUNDARY_SMALL: &[u128] = &[0, 1, 2, 100, 1000];
 
 /// Draws each integer from uniform random, boundary or literal values, then copies values between
 /// integers of the same case.
@@ -59,7 +55,9 @@ impl<P> Default for Guided<P> {
 
 impl<P> Debug for Guided<P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "Guided trees...")
+        f.debug_struct("Guided")
+            .field("storage_capacity", &self.storage_capacity)
+            .finish()
     }
 }
 
@@ -143,7 +141,7 @@ impl<'a> GuidedCase<'a> {
                     arguments: Arguments::from_map(arguments),
                     witness: WitnessValues::from_map(witness),
                     storage: (0..storage_capacity)
-                        .map(|_| words.next().expect("one word per leaf").0)
+                        .map(|_| words.next().expect("one word per leaf").to_byte_array())
                         .collect(),
                 }
             })
@@ -300,130 +298,13 @@ impl<'a> GuidedCase<'a> {
     }
 }
 
-/// Big-endian 256-bit unsigned integer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Word([u8; 32]);
-
-impl From<U256> for Word {
-    fn from(value: U256) -> Self {
-        Self(value.to_byte_array())
-    }
-}
-
-impl Word {
-    fn from_u128(value: u128) -> Self {
-        let mut bytes = [0; 32];
-        bytes[16..].copy_from_slice(&value.to_be_bytes());
-
-        Self(bytes)
-    }
-
-    fn pow2(power: usize) -> Self {
-        let mut bytes = [0; 32];
-        bytes[31 - power / 8] = 1 << (power % 8);
-
-        Self(bytes)
-    }
-
-    fn max(bits: usize) -> Self {
-        Self([0xff; 32]).masked(bits)
-    }
-
-    fn random(bits: usize, rng: &mut TestRng) -> Self {
-        Self(rng.random()).masked(bits)
-    }
-
-    fn boundaries(bits: usize) -> Vec<Self> {
-        let mut words: Vec<Self> = BOUNDARY_SMALL.iter().map(|small| Self::from_u128(*small)).collect();
-
-        for power in BOUNDARY_POWERS.iter().copied().filter(|power| *power < bits) {
-            let word = Self::pow2(power);
-
-            words.push(word);
-            words.extend(word.sub_one());
-        }
-
-        let max = Self::max(bits);
-
-        words.push(max);
-        words.extend(max.sub_one());
-
-        words.retain(|word| word.fits(bits));
-        words.sort_unstable();
-        words.dedup();
-
-        words
-    }
-
-    /// Clears every bit at or above `bits`.
-    fn masked(mut self, bits: usize) -> Self {
-        for (index, byte) in self.0.iter_mut().rev().enumerate() {
-            let low = index * 8;
-
-            if low >= bits {
-                *byte = 0;
-            } else if bits - low < 8 {
-                *byte &= (1 << (bits - low)) - 1;
-            }
-        }
-
-        self
-    }
-
-    fn fits(&self, bits: usize) -> bool {
-        *self <= Self::max(bits)
-    }
-
-    fn add_one(mut self) -> Option<Self> {
-        for byte in self.0.iter_mut().rev() {
-            let (sum, overflow) = byte.overflowing_add(1);
-            *byte = sum;
-
-            if !overflow {
-                return Some(self);
-            }
-        }
-
-        None
-    }
-
-    fn sub_one(mut self) -> Option<Self> {
-        for byte in self.0.iter_mut().rev() {
-            let (difference, underflow) = byte.overflowing_sub(1);
-            *byte = difference;
-
-            if !underflow {
-                return Some(self);
-            }
-        }
-
-        None
-    }
-
-    fn to_value(self, uint: UIntType) -> Value {
-        let low = u128::from_be_bytes(self.0[16..].try_into().expect("16 bytes"));
-
-        match uint {
-            UIntType::U1 => Value::u1(low as u8),
-            UIntType::U2 => Value::u2(low as u8),
-            UIntType::U4 => Value::u4(low as u8),
-            UIntType::U8 => Value::u8(low as u8),
-            UIntType::U16 => Value::u16(low as u16),
-            UIntType::U32 => Value::u32(low as u32),
-            UIntType::U64 => Value::u64(low as u64),
-            UIntType::U128 => Value::u128(low),
-            UIntType::U256 => Value::u256(U256::from_byte_array(self.0)),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use proptest::prelude::Strategy;
     use proptest::strategy::ValueTree;
     use proptest::test_runner::{Config, RngSeed};
 
-    use simplicityhl::num::NonZeroPow2Usize;
+    use simplicityhl::num::{NonZeroPow2Usize, U256};
     use simplicityhl::types::TypeConstructible;
 
     use super::*;
@@ -587,26 +468,6 @@ mod tests {
         }
 
         assert!(copied);
-    }
-
-    #[test]
-    fn boundaries_cover_the_full_width() {
-        let max = Word([0xff; 32]);
-
-        assert!(Word::boundaries(256).contains(&max));
-        assert!(Word::boundaries(256).contains(&Word::pow2(255)));
-        assert_eq!(Word::boundaries(1), vec![Word::from_u128(0), Word::from_u128(1)]);
-        assert!(Word::boundaries(8).iter().all(|word| word.fits(8)));
-    }
-
-    #[test]
-    fn word_arithmetic() {
-        assert_eq!(Word::from_u128(255).add_one(), Some(Word::from_u128(256)));
-        assert_eq!(Word::from_u128(256).sub_one(), Some(Word::from_u128(255)));
-        assert_eq!(Word([0xff; 32]).add_one(), None);
-        assert_eq!(Word::from_u128(0).sub_one(), None);
-        assert!(Word::from_u128(15).fits(4));
-        assert!(!Word::from_u128(16).fits(4));
     }
 
     #[test]

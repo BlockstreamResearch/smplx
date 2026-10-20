@@ -9,6 +9,7 @@ use smplx_sdk::transaction::FinalTransaction;
 use crate::fuzz::mutations::{Mutation, Mutations, UtxoMap};
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::FuzzProgramScenario;
+use crate::fuzz::program_strategy::Word;
 
 const MUTATIONS_MAX: usize = 3;
 const BOUNDARY_PERCENT: u32 = 50;
@@ -395,14 +396,7 @@ impl Mutator {
         program_scenarios
             .iter()
             .flat_map(FuzzProgramScenario::literals)
-            .filter_map(|literal| {
-                let bytes = literal.to_byte_array();
-
-                bytes[..24]
-                    .iter()
-                    .all(|byte| *byte == 0)
-                    .then(|| u64::from_be_bytes(bytes[24..].try_into().expect("8 bytes")))
-            })
+            .filter_map(|literal| Word::from(*literal).to_u64())
             .collect()
     }
 

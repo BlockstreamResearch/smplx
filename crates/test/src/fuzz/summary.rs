@@ -7,7 +7,7 @@ use crate::fuzz::case::Expect;
 use crate::fuzz::mutations::Mutation;
 use crate::fuzz::outcome::{Outcome, Rejection};
 
-/// A fuzz tun summary, printed when the run ends.
+/// A fuzz run summary, printed when the run ends.
 pub struct RunSummary {
     test_name: &'static str,
     seed: RngSeed,

@@ -12,7 +12,7 @@ use rand::RngExt;
 use smplx_sdk::program::ProgramSchema;
 
 use crate::fuzz::common::FixedValueTree;
-use crate::fuzz::program::FuzzProgramSchema;
+use crate::fuzz::program_strategy::FuzzProgramSchema;
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::utils::{generate_random_value_by_ty, random_fields};
 
@@ -42,7 +42,9 @@ impl<P> Default for Random<P> {
 
 impl<P> Debug for Random<P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "Random trees...")
+        f.debug_struct("Random")
+            .field("storage_capacity", &self.storage_capacity)
+            .finish()
     }
 }
 

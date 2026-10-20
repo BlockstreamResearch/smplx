@@ -13,8 +13,8 @@ use smplx_sdk::transaction::FinalTransaction;
 use crate::fuzz::case::FuzzCase;
 use crate::fuzz::mutations::UtxoMap;
 use crate::fuzz::outcome::SetupError;
-use crate::fuzz::program::{FuzzProgram, FuzzProgramSchema, FuzzProgramTrait};
-use crate::fuzz::program_strategy::{FuzzProgramStrategy, FuzzProgramValues};
+use crate::fuzz::program::{FuzzProgram, FuzzProgramTrait};
+use crate::fuzz::program_strategy::{FuzzProgramSchema, FuzzProgramStrategy, FuzzProgramValues};
 use crate::fuzz::witness_path::WitnessPath;
 
 type Binding<T> = Box<dyn Fn(&T, &FuzzCase<'_>) -> T>;
