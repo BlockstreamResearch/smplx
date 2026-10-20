@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use proptest::test_runner::RngSeed;
 
+use crate::fuzz::mutations::Mutation;
 use crate::fuzz::outcome::{Outcome, Rejection};
 use crate::fuzz::spec::Expect;
 
@@ -21,10 +22,20 @@ pub struct RunSummary {
     lock_checks: usize,
     check_auth: bool,
     auth_checks: usize,
+    mutate: bool,
+    mutated: usize,
+    mutation_kinds: Vec<(&'static str, usize)>,
 }
 
 impl RunSummary {
-    pub fn new(test_name: &'static str, seed: RngSeed, layout: String, check_lock: bool, check_auth: bool) -> Self {
+    pub fn new(
+        test_name: &'static str,
+        seed: RngSeed,
+        layout: String,
+        check_lock: bool,
+        check_auth: bool,
+        mutate: bool,
+    ) -> Self {
         Self {
             test_name,
             seed,
@@ -39,6 +50,9 @@ impl RunSummary {
             lock_checks: 0,
             check_auth,
             auth_checks: 0,
+            mutate,
+            mutated: 0,
+            mutation_kinds: Vec::new(),
         }
     }
 
@@ -61,6 +75,23 @@ impl RunSummary {
             match self.rejected_by.iter_mut().find(|(rejector, _)| *rejector == name) {
                 Some((_, count)) => *count += 1,
                 None => self.rejected_by.push((name, 1)),
+            }
+        }
+    }
+
+    pub fn record_mutations(&mut self, mutations: &[Mutation]) {
+        if !mutations.is_empty() {
+            self.mutated += 1;
+        }
+
+        for mutation in mutations {
+            match self
+                .mutation_kinds
+                .iter_mut()
+                .find(|(kind, _)| *kind == mutation.kind())
+            {
+                Some((_, count)) => *count += 1,
+                None => self.mutation_kinds.push((mutation.kind(), 1)),
             }
         }
     }
@@ -144,6 +175,19 @@ impl Display for RunSummary {
                 "  requirements   {} case(s) rejected with a required value violated",
                 self.violations
             )?;
+        }
+
+        if self.mutate {
+            let kinds = self
+                .mutation_kinds
+                .iter()
+                .map(|(kind, count)| format!("{kind} {count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            writeln!(f, "  mutations      {} case(s) mutated ({kinds})", self.mutated)?;
+        } else {
+            writeln!(f, "  mutations      off")?;
         }
 
         if self.check_lock {

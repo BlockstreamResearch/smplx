@@ -4,7 +4,7 @@ use smplx_sdk::transaction::FinalTransaction;
 use smplx_sdk::utils::hash_script;
 
 /// What guided generation draws from the scenario's transaction.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct FuzzTransactionSchema {
     /// Amounts, assets and script hashes of the inputs and outputs.
     pub(crate) literals: Vec<U256>,

@@ -65,6 +65,15 @@ impl FuzzProgramScenario {
         }
     }
 
+    /// The strategy generating this program's values, with its storage capacity and spending paths.
+    pub(crate) fn configured_strategy(&self) -> FuzzProgramStrategy {
+        match &self.strategy {
+            FuzzProgramStrategy::Guided(schema) => FuzzProgramStrategy::Guided(self.configure(schema)),
+            FuzzProgramStrategy::Random(schema) => FuzzProgramStrategy::Random(self.configure(schema)),
+            FuzzProgramStrategy::Other(strategy) => FuzzProgramStrategy::Other(strategy.clone()),
+        }
+    }
+
     /// Runs `bindings` of this program on `value` in order.
     pub(crate) fn run_bindings<T>(
         &self,
@@ -98,6 +107,13 @@ impl FuzzProgramScenario {
                 .expect("a spent input runs its program")
                 .witness = witness.clone();
         }
+    }
+
+    fn configure(&self, schema: &FuzzProgramSchema) -> FuzzProgramSchema {
+        schema
+            .clone()
+            .with_storage_capacity(self.storage_capacity)
+            .with_spending_paths(self.spending_paths.clone())
     }
 }
 

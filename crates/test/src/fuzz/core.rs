@@ -10,9 +10,10 @@ use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, Persis
 
 use smplx_sdk::signer::Signer;
 
+use crate::fuzz::mutations::Mutations;
 use crate::fuzz::outcome::{Outcome, SetupError};
 use crate::fuzz::scenario::Scenario;
-use crate::fuzz::scenario_strategy::CombinedValues;
+use crate::fuzz::scenario_strategy::CaseValues;
 use crate::fuzz::smart_check::{AuthCheck, LockCheck};
 use crate::fuzz::spec::{Expect, FuzzCase};
 use crate::fuzz::summary::RunSummary;
@@ -29,6 +30,7 @@ pub struct SimplexFuzzEngine {
     pub signer: Signer,
     pub scenario: Scenario,
     pub spec: Box<Spec>,
+    pub mutations: Option<Mutations>,
     pub allow_unspendable: bool,
     pub check_lock: bool,
     pub check_auth: bool,
@@ -41,6 +43,7 @@ impl SimplexFuzzEngine {
             signer,
             scenario,
             spec: Box::new(|_| Expect::Accept),
+            mutations: None,
             allow_unspendable: false,
             check_lock: true,
             check_auth: true,
@@ -65,6 +68,14 @@ impl SimplexFuzzEngine {
     #[must_use]
     pub fn spec(mut self, spec: impl Fn(&FuzzCase<'_>) -> Expect + 'static) -> Self {
         self.spec = Box::new(spec);
+
+        self
+    }
+
+    /// Mutates the transaction in half the cases. The spec judges the mutated transaction.
+    #[must_use]
+    pub fn mutations(mut self, mutations: Mutations) -> Self {
+        self.mutations = Some(mutations);
 
         self
     }
@@ -94,9 +105,14 @@ impl SimplexFuzzEngine {
     }
 
     pub fn run(self) {
-        if let Err(error) = self.scenario.validate() {
-            panic!("The fuzz setup is broken, the contract was not tested: {error}");
-        }
+        let strategy = match self
+            .scenario
+            .validate()
+            .and_then(|()| self.scenario.combined_strategy(self.mutations.as_ref()))
+        {
+            Ok(strategy) => strategy,
+            Err(error) => panic!("The fuzz setup is broken, the contract was not tested: {error}"),
+        };
 
         let setup_error = Arc::new(Mutex::new(None));
         let summary = RefCell::new(RunSummary::new(
@@ -105,6 +121,7 @@ impl SimplexFuzzEngine {
             self.scenario.layout(),
             self.check_lock,
             self.check_auth,
+            self.mutations.is_some(),
         ));
 
         let mut config = self.config.clone();
@@ -117,7 +134,7 @@ impl SimplexFuzzEngine {
 
         let mut runner = TestRunner::new(config);
 
-        let result = runner.run(&self.scenario.combined_strategy().no_shrink(), |values| {
+        let result = runner.run(&strategy.no_shrink(), |values| {
             self.fuzz(&summary, values).map_err(|failure| match failure {
                 CaseFailure::Setup(error) => {
                     let reason = error.to_string();
@@ -152,14 +169,20 @@ impl SimplexFuzzEngine {
     }
 
     /// Extracted helper that performs exactly one isolated test run.
-    fn fuzz(&self, summary: &RefCell<RunSummary>, values: CombinedValues) -> Result<(), CaseFailure> {
+    fn fuzz(&self, summary: &RefCell<RunSummary>, values: CaseValues) -> Result<(), CaseFailure> {
         let network = self.signer.get_network();
+        let mutations = values.change.mutations().to_vec();
 
         let (programs, transaction, violated) =
             self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
 
         let failure = |reason: String| {
-            let values = self.scenario.describe(&programs, &transaction);
+            let mut values = self.scenario.describe(&programs, &transaction);
+
+            if !mutations.is_empty() {
+                let mutations = mutations.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+                values += &format!("; mutations: {mutations}");
+            }
 
             CaseFailure::Finding(format!("Case failed with {values}, reason: `{reason}`"))
         };
@@ -169,7 +192,7 @@ impl SimplexFuzzEngine {
             .sign_witnesses(&transaction)
             .map_err(|error| CaseFailure::Setup(SetupError::Signing(error.to_string())))?;
 
-        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &self.signer);
+        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &mutations, &self.signer);
 
         // A generated case that violates a requirement must be rejected.
         let expect = match violated {
@@ -215,6 +238,7 @@ impl SimplexFuzzEngine {
                 )
             }),
         );
+        summary.borrow_mut().record_mutations(&mutations);
 
         let finding = match (expect, verdict.is_accepted()) {
             (None, true) => Some(format!(

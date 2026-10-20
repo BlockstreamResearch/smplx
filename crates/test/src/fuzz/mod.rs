@@ -1,5 +1,6 @@
 pub mod common;
 pub mod core;
+pub mod mutations;
 pub mod outcome;
 pub mod program;
 pub mod program_scenario;
@@ -16,6 +17,7 @@ pub mod utils;
 pub use proptest;
 
 pub use core::SimplexFuzzEngine;
+pub use mutations::{Mutation, Mutations};
 pub use outcome::{Outcome, Rejection, SetupError};
 pub use program::{FuzzProgram, FuzzProgramTrait};
 pub use program_scenario::FuzzProgramScenarioBuilder;

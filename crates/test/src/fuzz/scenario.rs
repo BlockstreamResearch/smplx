@@ -9,14 +9,13 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
 
 use crate::fuzz::FuzzProgramTrait;
+use crate::fuzz::mutations::Mutations;
 use crate::fuzz::outcome::SetupError;
 use crate::fuzz::program_scenario::{FuzzProgramScenario, FuzzProgramScenarioBuilder};
-use crate::fuzz::program_strategy::FuzzProgramStrategy;
 use crate::fuzz::program_strategy::FuzzProgramValues;
 use crate::fuzz::requirement::{RequiredValue, Requirements};
-use crate::fuzz::scenario_strategy::{Combined, CombinedValues};
+use crate::fuzz::scenario_strategy::{CaseValues, CombinedStrategy};
 use crate::fuzz::spec::FuzzCase;
-use crate::fuzz::transaction::FuzzTransactionSchema;
 use crate::fuzz::utils::{fits_path, follows_path};
 
 /// A transaction and the programs being fuzzed.
@@ -38,6 +37,12 @@ impl Scenario {
         self.program_scenarios.push(FuzzProgramScenario::new::<P>(name.into()));
 
         FuzzProgramScenarioBuilder::new(self.program_scenarios.last_mut().expect("just added"))
+    }
+
+    /// # Errors
+    /// Returns a [`SetupError`] when `mutations` cannot mutate the transaction.
+    pub(crate) fn combined_strategy(&self, mutations: Option<&Mutations>) -> Result<CombinedStrategy, SetupError> {
+        CombinedStrategy::new(&self.program_scenarios, &self.transaction, mutations)
     }
 
     /// # Errors
@@ -123,13 +128,22 @@ impl Scenario {
     /// Returns a [`SetupError`] when the values do not fit a program or a binding panics.
     pub(crate) fn build(
         &self,
-        values: CombinedValues,
+        values: CaseValues,
         signer: &Signer,
     ) -> Result<(Vec<Program>, FinalTransaction, Option<RequiredValue<'_>>), SetupError> {
+        let CaseValues {
+            programs: program_values,
+            change,
+        } = values;
+        let mutations = change.mutations();
         let mut programs = Vec::with_capacity(self.program_scenarios.len());
         let mut transaction = self.transaction.clone();
 
-        for (program_scenario, values) in self.program_scenarios.iter().zip(values.programs) {
+        for mutation in mutations {
+            mutation.apply(&mut transaction)?;
+        }
+
+        for (program_scenario, values) in self.program_scenarios.iter().zip(program_values) {
             let FuzzProgramValues {
                 arguments,
                 witness,
@@ -145,12 +159,12 @@ impl Scenario {
                 )));
             }
 
-            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
             let arguments = program_scenario.run_bindings(&program_scenario.argument_bindings, arguments, &case)?;
 
-            let program = (program_scenario.build_program)(&arguments)
+            let mut program = (program_scenario.build_program)(&arguments)
                 .map_err(|error| SetupError::Arguments(format!("`{name}`: {error}")))?;
-            let program = Self::update_program_storage(program, &storage);
+            program.set_storage(storage);
             let script = program.get_script_pubkey(signer.get_network());
 
             if !program_scenario.inputs.is_empty() {
@@ -178,7 +192,7 @@ impl Scenario {
                 continue;
             };
 
-            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
             let witness = program_scenario.run_bindings(&program_scenario.witness_bindings, witness.clone(), &case)?;
 
             program_scenario.place_witness(&mut transaction, witness);
@@ -192,7 +206,7 @@ impl Scenario {
                 continue;
             };
 
-            let case = FuzzCase::new(self, &programs, &transaction, signer);
+            let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
             let required =
                 program_scenario.run_bindings(&program_scenario.witness_requirements, generated.clone(), &case)?;
 
@@ -200,7 +214,7 @@ impl Scenario {
             program_scenario.place_witness(&mut transaction, required);
         }
 
-        let violated = requirements.violate_one(values.violation, &mut transaction);
+        let violated = requirements.violate_one(change.violation(), &mut transaction);
 
         // Check that custom strategies, bindings and requirements don't leave the spending path.
         for program_scenario in &self.program_scenarios {
@@ -223,7 +237,7 @@ impl Scenario {
             let name = &program_scenario.name;
 
             for (index, transition) in &program_scenario.transitions {
-                let case = FuzzCase::new(self, &programs, &transaction, signer);
+                let case = FuzzCase::new(self, &programs, &transaction, mutations, signer);
 
                 let storage = panic::catch_unwind(AssertUnwindSafe(|| {
                     let storage = transition(&case);
@@ -239,8 +253,10 @@ impl Scenario {
                 }))
                 .map_err(|_| SetupError::Binding(name.clone()))?;
 
-                transaction.outputs_mut()[*index].script_pubkey =
-                    Self::update_program_storage(program.clone(), &storage).get_script_pubkey(signer.get_network());
+                let mut next = program.clone();
+                next.set_storage(storage);
+
+                transaction.outputs_mut()[*index].script_pubkey = next.get_script_pubkey(signer.get_network());
             }
         }
 
@@ -272,35 +288,6 @@ impl Scenario {
         self.program_scenarios
             .iter()
             .find(|program_scenario| program_scenario.inputs.contains(&input))
-    }
-
-    pub(crate) fn combined_strategy(&self) -> Combined {
-        Combined::new(
-            self.program_scenarios
-                .iter()
-                .map(|program_scenario| {
-                    let storage_capacity = program_scenario.storage_capacity;
-                    let spending_paths = program_scenario.spending_paths.clone();
-
-                    match &program_scenario.strategy {
-                        FuzzProgramStrategy::Guided(schema) => FuzzProgramStrategy::Guided(
-                            schema
-                                .clone()
-                                .with_storage_capacity(storage_capacity)
-                                .with_spending_paths(spending_paths.clone()),
-                        ),
-                        FuzzProgramStrategy::Random(schema) => FuzzProgramStrategy::Random(
-                            schema
-                                .clone()
-                                .with_storage_capacity(storage_capacity)
-                                .with_spending_paths(spending_paths.clone()),
-                        ),
-                        FuzzProgramStrategy::Other(strategy) => FuzzProgramStrategy::Other(strategy.clone()),
-                    }
-                })
-                .collect(),
-            FuzzTransactionSchema::of(&self.transaction),
-        )
     }
 
     /// Every output the lock check protects, with the name of the program it is locked to.
@@ -382,16 +369,6 @@ impl Scenario {
 
         programs.chain(fixed).collect::<Vec<_>>().join(", ")
     }
-
-    fn update_program_storage(program: Program, storage: &[[u8; 32]]) -> Program {
-        let mut program = program.with_storage_capacity(storage.len());
-
-        for (index, slot) in storage.iter().enumerate() {
-            program.set_storage_at(index, *slot);
-        }
-
-        program
-    }
 }
 
 impl Default for Scenario {
@@ -416,6 +393,8 @@ mod tests {
     use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessValues};
 
     use smplx_sdk::transaction::{PartialOutput, UTXO};
+
+    use crate::fuzz::program_strategy::FuzzProgramStrategy;
 
     use super::*;
 

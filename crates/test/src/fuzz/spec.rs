@@ -4,6 +4,7 @@ use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::FinalTransaction;
 use smplx_sdk::utils::hash_script;
 
+use crate::fuzz::mutations::Mutation;
 use crate::fuzz::program::{FuzzProgram, FuzzProgramTrait};
 use crate::fuzz::scenario::Scenario;
 
@@ -20,6 +21,7 @@ pub struct FuzzCase<'a> {
     scenario: &'a Scenario,
     programs: &'a [Program],
     transaction: &'a FinalTransaction,
+    mutations: &'a [Mutation],
     signer: &'a Signer,
 }
 
@@ -28,12 +30,14 @@ impl<'a> FuzzCase<'a> {
         scenario: &'a Scenario,
         programs: &'a [Program],
         transaction: &'a FinalTransaction,
+        mutations: &'a [Mutation],
         signer: &'a Signer,
     ) -> Self {
         Self {
             scenario,
             programs,
             transaction,
+            mutations,
             signer,
         }
     }
@@ -55,9 +59,14 @@ impl<'a> FuzzCase<'a> {
         )
     }
 
-    /// The initial transaction with every program before signing.
+    /// The transaction with the mutations applied and every program placed, before signing.
     pub fn transaction(&self) -> &FinalTransaction {
         self.transaction
+    }
+
+    /// What the case changed in the assembled transaction.
+    pub fn mutations(&self) -> &[Mutation] {
+        self.mutations
     }
 
     /// # Panics

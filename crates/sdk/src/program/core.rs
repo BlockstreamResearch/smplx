@@ -315,10 +315,25 @@ impl Program {
     /// Sets storage capacity for further usage.
     #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
-        self.storage = vec![vec![0u8; 32]; capacity];
+        self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; capacity];
         self.spend_info = OnceLock::new();
 
         self
+    }
+
+    /// Replaces the storage with `storage`, one value per slot.
+    ///
+    /// # Panics
+    /// Panics if a value is not `STORAGE_SLOT_BYTES` wide.
+    pub fn set_storage(&mut self, storage: impl IntoIterator<Item = impl Into<Vec<u8>>>) {
+        let storage: Vec<Vec<u8>> = storage.into_iter().map(Into::into).collect();
+
+        self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; storage.len()];
+        self.spend_info = OnceLock::new();
+
+        for (index, value) in storage.into_iter().enumerate() {
+            self.set_storage_at(index, value);
+        }
     }
 
     /// Sets a 32-byte value at the specified index in the storage.
