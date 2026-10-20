@@ -208,7 +208,7 @@ fn sequence_mutation_reaches_the_signed_transaction(test_context: TestContext<Fu
             });
 
             if let Some(sequence) = mutated {
-                let signed = case.transaction().extract_pst().0.extract_tx().unwrap();
+                let signed = case.transaction().extract_pst().unwrap().0.extract_tx().unwrap();
 
                 assert_eq!(signed.input[0].sequence, sequence);
                 assert_eq!(case.input_sequence(0), sequence);

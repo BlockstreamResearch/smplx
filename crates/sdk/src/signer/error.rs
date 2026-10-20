@@ -60,6 +60,14 @@ pub enum SignerError {
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
 
+    /// A UTXO is missing its asset or amount and has no unblinding secrets.
+    #[error(transparent)]
+    Utxo(#[from] crate::transaction::UtxoError),
+
+    /// Errors originating from transaction construction or validation.
+    #[error(transparent)]
+    FinalTransaction(#[from] crate::transaction::FinalTransactionError),
+
     /// Error indicating the transaction is not balanced.
     #[error("Transaction is not balanced or malformed")]
     Unbalanced,

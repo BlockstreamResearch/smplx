@@ -242,8 +242,12 @@ impl Signer {
 
         signer_utxos.retain(|utxo| !spent.contains(&utxo.outpoint));
 
-        // Descending sort of both confidential and explicit utxos
-        signer_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount()));
+        // Resolve amounts before sorting so an unreadable UTXO returns an error.
+        let mut signer_utxos = signer_utxos
+            .into_iter()
+            .map(|utxo| utxo.amount().map(|amount| (amount, utxo)))
+            .collect::<Result<Vec<_>, _>>()?;
+        signer_utxos.sort_by_key(|(amount, _)| std::cmp::Reverse(*amount));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
@@ -271,8 +275,8 @@ impl Signer {
             }
         };
 
-        for utxo in signer_utxos {
-            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
+        for (_, utxo) in signer_utxos {
+            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
 
             if policy_amount_delta >= (curr_fee + inputs_since_estimate * input_fee).cast_signed() {
                 inputs_since_estimate = 0;
@@ -289,7 +293,7 @@ impl Signer {
         }
 
         // Need to try one more time after the loop. No UTXO is left to add, so any chance is taken
-        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
+        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
 
         if policy_amount_delta >= curr_fee.cast_signed() {
             inputs_since_estimate = 0;
@@ -313,7 +317,7 @@ impl Signer {
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
         Self::check_known_amounts(tx)?;
 
-        let policy_amount_delta = tx.calculate_fee_delta(&self.network);
+        let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
         if policy_amount_delta < MIN_FEE.cast_signed() {
             return Err(SignerError::DustAmount(policy_amount_delta));
@@ -336,7 +340,7 @@ impl Signer {
     pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
         Self::check_known_amounts(tx)?;
 
-        let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
+        let available_delta = tx.calculate_fee_delta(&self.network)?.max(0).cast_unsigned();
         let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
 
         ProgramLogger::flush_logs();
@@ -390,7 +394,7 @@ impl Signer {
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
         Self::check_known_amounts(tx)?;
 
-        let (mut pst, secrets) = tx.extract_pst();
+        let (mut pst, secrets) = tx.extract_pst()?;
         let inputs = tx.inputs();
         let mut signed_witnesses = HashMap::new();
 
@@ -472,22 +476,24 @@ impl Signer {
         self.address.clone()
     }
 
-    /// Iterates against the network provider to select and unblind all known UTXOs.
+    /// Retrieves UTXOs with known assets and amounts, skipping outputs that cannot be unblinded.
     ///
     /// # Errors
-    /// Returns a `SignerError` if querying the network or unblinding operations fail.
+    /// Returns a `SignerError` if querying the provider fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
         self.get_utxos_filter(&|_| true, &|_| true)
     }
 
-    /// Finds all known UTXOs belonging to the specific `AssetId`.
+    /// Finds usable UTXOs belonging to the specific `AssetId`, skipping unreadable outputs.
     ///
     /// # Errors
-    /// Returns a `SignerError` if network interaction or confidential output decryption fails.
+    /// Returns a `SignerError` if querying the provider fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.asset() == asset, &|utxo| utxo.asset() == asset)
+        self.get_utxos_filter(&|utxo| utxo.asset().is_ok_and(|id| id == asset), &|utxo| {
+            utxo.asset().is_ok_and(|id| id == asset)
+        })
     }
 
     /// Finds all known UTXOs deriving from a targeted `Txid`.
@@ -503,8 +509,12 @@ impl Signer {
     /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
     /// Separate filtering criteria apply explicitly vs confidentially.
     ///
+    /// Outputs with null fields, unresolved partial commitments, or proofs that
+    /// cannot be rewound with the wallet key are skipped. Already supplied secrets
+    /// are preserved. A single unreadable payment must not block usable funds.
+    ///
     /// # Errors
-    /// Returns a `SignerError` if retrieving remote outputs or executing confidential node unblinding throws an error.
+    /// Returns a `SignerError` if retrieving remote outputs fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos_filter(
         &self,
@@ -512,27 +522,39 @@ impl Signer {
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
         // Fetch explicit and confidential utxos
-        let mut all_utxos = self
+        let fetched_utxos = self
             .get_provider()?
             .fetch_address_utxos(&self.get_confidential_address())?;
 
-        // Filter out only confidential utxos and unblind them
-        let mut confidential_utxos = self.unblind(
-            all_utxos
-                .iter()
-                .filter(|utxo| utxo.txout.value.is_confidential())
-                .cloned()
-                .collect(),
-        )?;
-        // Leave only explicit utxos
-        all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
+        let mut all_utxos = Vec::new();
+        let mut confidential_utxos = Vec::new();
+
+        for mut utxo in fetched_utxos {
+            if utxo.txout.asset.is_null() || utxo.txout.value.is_null() {
+                continue;
+            }
+
+            if utxo.txout.asset.is_explicit() && utxo.txout.value.is_explicit() {
+                all_utxos.push(utxo);
+                continue;
+            }
+
+            if utxo.secrets.is_none() {
+                let blinding_key = self.get_blinding_private_key();
+                let Ok(secrets) = utxo.txout.unblind(&self.secp, blinding_key.inner) else {
+                    // Payments to this script may use a foreign blinding key or
+                    // an asset-only commitment. Neither can fund this wallet.
+                    continue;
+                };
+                utxo.secrets = Some(secrets);
+            }
+            confidential_utxos.push(utxo);
+        }
 
         all_utxos.retain(explicit_filter);
         confidential_utxos.retain(confidential_filter);
 
-        // Push unblinded utxos to explicit ones
         all_utxos.extend(confidential_utxos);
-
         Ok(all_utxos)
     }
 
@@ -601,21 +623,6 @@ impl Signer {
         Ok((public_key, signature))
     }
 
-    #[cfg(feature = "provider")]
-    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
-        let mut unblinded: Vec<UTXO> = Vec::new();
-
-        for mut utxo in utxos {
-            let secrets = utxo.txout.unblind(&self.secp, self.blinding_key.inner)?;
-
-            utxo.secrets = Some(secrets);
-
-            unblinded.push(utxo);
-        }
-
-        Ok(unblinded)
-    }
-
     fn estimate_tx(
         &self,
         mut fee_tx: FinalTransaction,
@@ -664,7 +671,7 @@ impl Signer {
             outputs[outputs.len() - 2].amount = available_delta - fee;
             outputs[outputs.len() - 1].amount = fee;
 
-            if !fee_tx.is_balanced() {
+            if !fee_tx.is_balanced()? {
                 return Err(SignerError::Unbalanced);
             }
 
@@ -702,7 +709,7 @@ impl Signer {
         // Change the fee output amount
         outputs[outputs.len() - 1].amount = available_delta;
 
-        if !fee_tx.is_balanced() {
+        if !fee_tx.is_balanced()? {
             return Err(SignerError::Unbalanced);
         }
 
@@ -885,7 +892,11 @@ impl Signer {
 
 #[cfg(test)]
 mod tests {
+    use simplicityhl::elements::confidential::{Asset, AssetBlindingFactor, Value};
+    use simplicityhl::elements::{OutPoint, TxOut, Txid};
+
     use crate::provider::EsploraProvider;
+    use crate::transaction::{FinalTransactionError, PartialInput, UTXO};
     use crate::utils::random_mnemonic;
 
     use super::*;
@@ -1070,5 +1081,72 @@ mod tests {
             signer.sign_tx(&ft),
             Err(SignerError::CovenantExecution { index: 1, .. })
         ));
+    }
+
+    #[test]
+    fn unresolved_inputs_are_rejected_before_signing() {
+        let signer = create_signer();
+        let network = signer.network;
+        let (amount_in, amount_out, fee_rate) = (100_000, 10_000, 100.);
+
+        let script = signer.get_address().script_pubkey();
+        let funding = UTXO {
+            outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 0),
+            txout: TxOut {
+                script_pubkey: script.clone(),
+                ..TxOut::new_fee(amount_in, network.policy_asset())
+            },
+            secrets: None,
+        };
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(PartialInput::new(funding.clone()), Some(NativeSignature::Ecdsa));
+        ft.add_output(PartialOutput::new(script.clone(), amount_out, network.policy_asset()));
+
+        // The signer can finalize valid caller-selected inputs successfully.
+        let (funded, _) = signer.finalize_strict(&ft, fee_rate).unwrap();
+        assert_eq!(funded.input.len(), 1);
+        funded.verify_tx_amt_proofs(&signer.secp, &[funding.txout]).unwrap();
+
+        // Adding a malformed input.
+        let mixed = UTXO {
+            outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 0),
+            txout: TxOut {
+                asset: Asset::new_confidential(
+                    &signer.secp,
+                    network.policy_asset(),
+                    AssetBlindingFactor::new(&mut thread_rng()),
+                ),
+                value: Value::Explicit(600),
+                script_pubkey: script,
+                ..Default::default()
+            },
+            secrets: None,
+        };
+        ft.add_input(PartialInput::new(mixed), Some(NativeSignature::Ecdsa));
+
+        // Direct accounting reports the unresolved input's position.
+        assert_eq!(
+            ft.calculate_fee_delta(&network),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        );
+        assert_eq!(
+            ft.is_balanced(),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        );
+        assert!(matches!(
+            ft.extract_pst(),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        ));
+
+        // Signer entry points preserve the error identifying the unresolved outpoint.
+        for result in [
+            signer.estimate_fee(&ft, 100.0).map(|_| ()),
+            signer.finalize_strict(&ft, 100.0).map(|_| ()),
+            signer.sign_witnesses(&ft).map(|_| ()),
+            signer.sign_tx(&ft).map(|_| ()),
+        ] {
+            assert!(matches!(result, Err(SignerError::UnknownInputAmount(_))));
+        }
     }
 }

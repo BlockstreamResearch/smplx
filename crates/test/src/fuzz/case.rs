@@ -194,6 +194,7 @@ impl<'a> FuzzCase<'a> {
         let transaction = self
             .transaction
             .extract_pst()
+            .expect("fuzz inputs have known assets and amounts")
             .0
             .extract_tx()
             .expect("the transaction has one kind of locktime");

@@ -9,6 +9,7 @@ use simplicityhl::elements::{
 use crate::provider::SimplicityNetwork;
 
 use super::change_output::ChangeOutput;
+use super::error::FinalTransactionError;
 use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, ProgramInput};
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
@@ -101,6 +102,15 @@ impl FinalInput {
         }
 
         pst_input
+    }
+
+    /// Returns the input's asset ID and amount from unblinding secrets, or from
+    /// explicit fields when no secrets are available.
+    ///
+    /// Returns `None` if no secrets are available and either explicit field is missing.
+    #[must_use]
+    pub fn get_unblinded_info(&self) -> Option<(AssetId, u64)> {
+        self.partial_input.asset_and_amount()
     }
 }
 
@@ -306,15 +316,17 @@ impl FinalTransaction {
     /// The function considers the network's policy asset to determine which inputs
     /// and outputs contribute to the calculation.
     ///
-    /// # Panics
-    /// Function will panic if the asset isn't unblinded correctly, and if PST input asset and amount is confidential.
-    #[must_use]
-    pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available. A visible amount
+    /// alone does not identify its asset.
+    pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> Result<i64, FinalTransactionError> {
         let mut available_amount = 0;
 
-        for input in &self.inputs {
-            let (asset, amount) = Self::known_asset_and_amount(input);
-
+        for (input_index, input) in self.inputs.iter().enumerate() {
+            let (asset, amount) = input
+                .get_unblinded_info()
+                .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
             if asset == network.policy_asset() {
                 available_amount += amount;
             }
@@ -326,7 +338,7 @@ impl FinalTransaction {
             .filter(|output| output.asset == network.policy_asset())
             .fold(0_u64, |acc, output| acc + output.amount);
 
-        available_amount.cast_signed() - consumed_amount.cast_signed()
+        Ok(available_amount.cast_signed() - consumed_amount.cast_signed())
     }
 
     /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
@@ -334,15 +346,17 @@ impl FinalTransaction {
     /// Issued and reissued amounts are credited to the input that declares them, so a newly created
     /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
     ///
-    /// # Panics
-    /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
-    #[must_use]
-    pub fn is_balanced(&self) -> bool {
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available.
+    pub fn is_balanced(&self) -> Result<bool, FinalTransactionError> {
         let mut transfers: HashMap<AssetId, i64> = HashMap::new();
 
         // Collecting all inputs
-        for input in &self.inputs {
-            let (asset, amount) = Self::known_asset_and_amount(input);
+        for (input_index, input) in self.inputs.iter().enumerate() {
+            let (asset, amount) = input
+                .get_unblinded_info()
+                .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
             *transfer_entry += amount.cast_signed();
@@ -375,20 +389,25 @@ impl FinalTransaction {
                 Some(value) => {
                     *value -= output.amount.cast_signed();
                 }
-                None => return false,
+                None => return Ok(false),
             }
         }
 
         // All transfers including fee should sum up to 0
-        transfers.values().all(|&value| value == 0)
+        Ok(transfers.values().all(|&value| value == 0))
     }
 
     /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.
     ///
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available.
+    ///
     /// # Panics
-    /// Function will panic if the pst input is a confidential issuance.
-    #[must_use]
-    pub fn extract_pst(&self) -> (PartiallySignedTransaction, HashMap<usize, TxOutSecrets>) {
+    /// Panics if a reissuance input has no blinding secrets.
+    pub fn extract_pst(
+        &self,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, TxOutSecrets>), FinalTransactionError> {
         let mut input_secrets = HashMap::new();
         let mut pst = PartiallySignedTransaction::new_v2();
 
@@ -399,11 +418,13 @@ impl FinalTransaction {
             final_input.partial_input.sequence.get_or_insert(self.sequence);
             final_input.partial_input.locktime.get_or_insert(self.locktime);
 
-            let pst_input = final_input.to_input();
-
-            // An explicit input's secrets are its amounts with zero blinding factors
-            let secrets = final_input.partial_input.secrets.unwrap_or_else(|| {
-                let (asset, value) = Self::known_asset_and_amount(&final_input);
+            let secrets = if let Some(secrets) = final_input.partial_input.secrets {
+                secrets
+            } else {
+                let (asset, value) = final_input
+                    .partial_input
+                    .asset_and_amount()
+                    .ok_or(FinalTransactionError::MissingInputSecrets { input_index: i })?;
 
                 TxOutSecrets {
                     asset,
@@ -411,36 +432,23 @@ impl FinalTransaction {
                     value,
                     value_bf: ValueBlindingFactor::zero(),
                 }
-            });
+            };
 
             input_secrets.insert(i, secrets);
-
-            pst.add_input(pst_input);
+            pst.add_input(final_input.to_input());
         }
 
         self.outputs.iter().for_each(|el| {
             pst.add_output(el.to_output());
         });
 
-        (pst, input_secrets)
-    }
-
-    /// # Panics
-    /// Panics when the input is a confidential UTXO without unblinding secrets.
-    fn known_asset_and_amount(input: &FinalInput) -> (AssetId, u64) {
-        input.partial_input.asset_and_amount().unwrap_or_else(|| {
-            panic!(
-                "The input spending {} has neither an explicit amount nor unblinding secrets",
-                input.partial_input.outpoint
-            )
-        })
+        Ok((pst, input_secrets))
     }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use simplicityhl::elements::{LockTime, OutPoint, Script, TxOut, Txid};
+    use simplicityhl::elements::{AssetEntropy, LockTime, OutPoint, Script, TxOut, Txid};
 
     use crate::transaction::UTXO;
 
@@ -544,7 +552,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 5000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -560,7 +568,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 9000, policy));
         ft.set_locktime(LockTime::from_height(2_580_990).unwrap());
 
-        let (pst, _) = ft.extract_pst();
+        let (pst, _) = ft.extract_pst().unwrap();
 
         assert_eq!(
             pst.locktime().expect("one height, so no conflict"),
@@ -581,7 +589,7 @@ mod tests {
         ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
 
-        let (pst, _) = ft.extract_pst();
+        let (pst, _) = ft.extract_pst().unwrap();
 
         assert_eq!(pst.locktime().unwrap(), LockTime::ZERO);
     }
@@ -607,7 +615,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 3000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -650,7 +658,7 @@ mod tests {
             ),
         ]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -688,7 +696,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 5000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -728,7 +736,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 1000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -743,7 +751,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -755,7 +763,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
         ft.add_output(PartialOutput::new(Script::new(), 1, dummy_asset_id(0xBB)));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -766,7 +774,7 @@ mod tests {
         ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -783,7 +791,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -799,7 +807,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 1_000_000_000, details.asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -816,7 +824,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 42, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -847,7 +855,7 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -858,7 +866,7 @@ mod tests {
         ft.add_input(PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)), None);
         ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -871,6 +879,58 @@ mod tests {
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
         ft.add_output(PartialOutput::new_metadata("burn".as_bytes()));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "Reissuance input must be confidential")]
+    fn reissuance_without_secrets_panics_during_extraction() {
+        let entropy = [0x42; 32];
+        let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
+        let input = PartialInput::new(explicit_utxo(1, 0, 1, token));
+
+        let mut tx = FinalTransaction::new();
+        tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
+        assert_eq!(tx.inputs()[0].get_unblinded_info(), Some((token, 1)));
+
+        // Reproduces the documented panic in FinalInput::to_input.
+        let _ = tx.extract_pst();
+    }
+
+    #[test]
+    fn reissuance_with_secrets_preserves_the_blinding_nonce() {
+        use simplicityhl::elements::confidential::{Asset, Value};
+
+        let entropy = [0x12; 32];
+        let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
+
+        // A nonzero asset blinder distinguishes reissuance from a new issuance.
+        let asset_bf = AssetBlindingFactor::from_slice(&[1; 32]).unwrap();
+        let value_bf = ValueBlindingFactor::from_slice(&[2; 32]).unwrap();
+        let expected_secrets = TxOutSecrets::new(token, asset_bf, 1, value_bf);
+
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+
+        let input = PartialInput::new(UTXO {
+            outpoint: OutPoint::new(dummy_txid(1), 0),
+            txout: TxOut {
+                asset: Asset::new_confidential(&secp, token, asset_bf),
+                value: Value::new_confidential_from_assetid(&secp, 1, token, value_bf, asset_bf),
+                ..Default::default()
+            },
+            secrets: Some(expected_secrets),
+        });
+
+        let mut tx = FinalTransaction::new();
+        tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
+
+        let (pst, secrets) = tx.extract_pst().unwrap();
+
+        assert_eq!(secrets.get(&0), Some(&expected_secrets));
+        assert_eq!(pst.inputs()[0].issuance_value_amount, Some(5_000));
+        assert_eq!(
+            pst.inputs()[0].issuance_blinding_nonce,
+            Some(AssetBlindingNonce::from_blinding_factor(asset_bf))
+        );
     }
 }

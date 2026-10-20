@@ -775,7 +775,10 @@ impl TransactionBuilder {
             .as_ref()
             .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
 
-        let (pst, _secrets) = self.transaction.extract_pst();
+        let (pst, _secrets) = self
+            .transaction
+            .extract_pst()
+            .map_err(|e| JsError::new(&format!("Could not construct the transaction: {e}")))?;
 
         program_input
             .program
@@ -1307,7 +1310,7 @@ mod tests {
 
         // Read the issuance back the way Elements does. A null blinding nonce would make
         // this a new issuance of another asset.
-        let (pst, _) = builder.transaction.extract_pst();
+        let (pst, _) = builder.transaction.extract_pst().unwrap();
         let input = &pst.inputs()[0];
         let (asset, minted_token) = input.issuance_ids();
 
