@@ -446,17 +446,12 @@ impl Program {
         Ok(abi_meta.param_types)
     }
 
-    /// Retrieves the witness types from the compiled program's ABI metadata.
+    /// Retrieves the witness types of the compiled program.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
+    /// Returns a `ProgramError` if compilation fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let abi_meta = self
-            .load()?
-            .generate_abi_meta()
-            .map_err(ProgramError::ProgramGenAbiMeta)?;
-
-        Ok(abi_meta.witness_types)
+        Ok(self.load()?.witness_types().shallow_clone())
     }
 
     /// Compiles program by providing saved `Arguments`.

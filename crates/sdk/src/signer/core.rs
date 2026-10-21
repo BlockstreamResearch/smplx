@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 #[cfg(feature = "provider")]
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -81,12 +82,17 @@ pub trait SignerTrait {
 /// blind, sign and finalize a transaction it is handed, but it cannot discover UTXOs,
 /// look up a fee rate, or broadcast.
 pub struct Signer {
-    mnemonic: Mnemonic,
-    xprv: Xpriv,
     #[cfg(feature = "provider")]
     provider: Option<Box<dyn ProviderTrait>>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
+    /// The account key at `m/84h/{coin}h/0h`, derived once from the seed.
+    account_xprv: Xpriv,
+    /// The signing key at the default path `0/0` under the account.
+    default_key: PrivateKey,
+    address: Address,
+    confidential_address: Address,
+    blinding_key: PrivateKey,
 }
 
 impl SignerTrait for Signer {
@@ -117,19 +123,7 @@ impl SignerTrait for Signer {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
         let tx = pst.extract_tx()?;
 
-        let mut sighash_cache = SighashCache::new(&tx);
-        let genesis_hash = elements_miniscript::elements::BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
-
-        let message = pst
-            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
-            .to_secp_msg();
-
-        let private_key = self.get_private_key_at(derivation_path);
-        let public_key = private_key.public_key(&self.secp);
-
-        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
-
-        Ok((public_key, signature))
+        self.sign_input_with(pst, &mut SighashCache::new(&tx), input_index, derivation_path)
     }
 }
 
@@ -170,15 +164,31 @@ impl Signer {
             .unwrap();
 
         let seed = mnemonic.to_seed("");
-        let xprv = Xpriv::new_master(network, &seed).unwrap();
+        let master_xprv = Xpriv::new_master(network, &seed).unwrap();
+        let master_blinding_key = MasterBlindingKey::from_seed(&seed[..]);
+
+        let account_path = Self::account_path(network);
+        let account_xprv = master_xprv.derive_priv(&secp, &account_path).unwrap();
+        let default_key = Self::derive_key(&secp, &account_xprv, &Self::default_path(), network);
+
+        let wpkh_descriptor = Self::wpkh_descriptor(&secp, &master_xprv, &account_path, &account_xprv);
+        let address = Self::wpkh_address(&wpkh_descriptor, network);
+        let confidential_address = Self::confidential_address(&secp, &wpkh_descriptor, master_blinding_key, network);
+        let blinding_key = PrivateKey::new(
+            master_blinding_key.blinding_private_key(&address.script_pubkey()),
+            network,
+        );
 
         Self {
-            mnemonic,
-            xprv,
             #[cfg(feature = "provider")]
             provider: None,
             network,
             secp,
+            account_xprv,
+            default_key,
+            address,
+            confidential_address,
+            blinding_key,
         }
     }
 
@@ -365,6 +375,13 @@ impl Signer {
             pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
         }
 
+        // Native inputs share one extracted transaction and sighash cache.
+        let mut sighash_cache = if inputs.iter().any(|input| input.program_input.is_none()) {
+            Some(SighashCache::new(Box::new(pst.extract_tx()?)))
+        } else {
+            None
+        };
+
         for (index, input_i) in inputs.iter().enumerate() {
             if let Some(program_input) = &input_i.program_input {
                 let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
@@ -395,10 +412,15 @@ impl Signer {
                 };
 
                 signed_witnesses.insert(index, signed_witness);
-            } else {
+            } else if let Some(sighash_cache) = sighash_cache.as_mut() {
                 // We need to sign the UTXO as is
                 // TODO: do we always sign?
-                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
+                let signed_witness = self.sign_input_with(
+                    &pst,
+                    sighash_cache,
+                    index,
+                    input_i.partial_input.derivation_path.as_ref(),
+                )?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
 
                 pst.inputs_mut()[index].final_script_witness =
@@ -425,41 +447,15 @@ impl Signer {
     }
 
     /// Returns the confidential elements address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_confidential_address(&self) -> Address {
-        let mut descriptor =
-            ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor().unwrap())
-                .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
-                .unwrap();
-
-        // Confidential descriptor doesn't support multipath
-        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
-
-        descriptor
-            .at_derivation_index(0)
-            .unwrap()
-            .address(&self.secp, self.network.address_params())
-            .unwrap()
+        self.confidential_address.clone()
     }
 
     /// Returns the standard unblinded address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_address(&self) -> Address {
-        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
-            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
-            .unwrap();
-
-        descriptor.into_single_descriptors().unwrap()[0]
-            .at_derivation_index(0)
-            .unwrap()
-            .address(self.network.address_params())
-            .unwrap()
+        self.address.clone()
     }
 
     /// Iterates against the network provider to select and unblind all known UTXOs.
@@ -547,13 +543,10 @@ impl Signer {
         self.get_blinding_private_key().public_key(&self.secp)
     }
 
-    /// Internally derives and exposes the wallet's signing active private key.
-    ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
+    /// Exposes the wallet's signing private key at the default path.
     #[must_use]
     pub fn get_private_key(&self) -> PrivateKey {
-        self.get_private_key_at(None)
+        self.default_key
     }
 
     /// Derives the signing key at a path relative to the account path. `None` defaults to `0/0`.
@@ -562,41 +555,38 @@ impl Signer {
     /// Panics if the master private key or derivation path cannot be derived.
     #[must_use]
     pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> PrivateKey {
-        let master_xprv = self.master_xpriv().unwrap();
-        let full_path = self.get_derivation_path().unwrap();
-
-        let default_path;
-        let relative = if let Some(path) = relative {
-            path
-        } else {
-            default_path = DerivationPath::from_str("0/0")
-                .map_err(|e| SignerError::DerivationPath(e.to_string()))
-                .unwrap();
-
-            &default_path
-        };
-
-        let derived = full_path.extend(relative);
-        let ext_derived = master_xprv.derive_priv(&self.secp, &derived).unwrap();
-
-        PrivateKey::new(ext_derived.private_key, self.network)
+        match relative {
+            Some(path) => Self::derive_key(&self.secp, &self.account_xprv, path, self.network),
+            None => self.default_key,
+        }
     }
 
-    /// Generates the private key linked to confidential payload blinding.
-    ///
-    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin/Liquid-mainnet) network kind.
-    /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
-    ///
-    /// # Panics
-    /// Panics if the master SLIP77 key cannot be derived.
+    /// The private key linked to confidential payload blinding, derived from the master SLIP77 key
+    /// and the script public key of the address.
     #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
-        let blinding_key = self
-            .master_slip77()
-            .unwrap()
-            .blinding_private_key(&self.get_address().script_pubkey());
+        self.blinding_key
+    }
 
-        PrivateKey::new(blinding_key, self.network)
+    fn sign_input_with(
+        &self,
+        pst: &PartiallySignedTransaction,
+        sighash_cache: &mut SighashCache<impl Deref<Target = Transaction>>,
+        input_index: usize,
+        derivation_path: Option<&DerivationPath>,
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
+        let genesis_hash = elements_miniscript::elements::BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
+
+        let message = pst
+            .sighash_msg(input_index, sighash_cache, None, genesis_hash)?
+            .to_secp_msg();
+
+        let private_key = self.get_private_key_at(derivation_path);
+        let public_key = private_key.public_key(&self.secp);
+
+        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+
+        Ok((public_key, signature))
     }
 
     #[cfg(feature = "provider")]
@@ -604,8 +594,7 @@ impl Signer {
         let mut unblinded: Vec<UTXO> = Vec::new();
 
         for mut utxo in utxos {
-            let blinding_key = self.get_blinding_private_key();
-            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
+            let secrets = utxo.txout.unblind(&self.secp, self.blinding_key.inner)?;
 
             utxo.secrets = Some(secrets);
 
@@ -767,58 +756,80 @@ impl Signer {
         Ok(WitnessValues::from_map(hm))
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
-        let seed = self.mnemonic.to_seed("");
+    /// The account path, `m/84h/1776h/0h` on mainnet and `m/84h/1h/0h` elsewhere.
+    fn account_path(network: SimplicityNetwork) -> DerivationPath {
+        let coin_type = if network.is_mainnet() { 1776 } else { 1 };
 
-        Ok(MasterBlindingKey::from_seed(&seed[..]))
+        DerivationPath::from_str(&format!("m/84h/{coin_type}h/0h")).expect("the account path is valid")
     }
 
-    fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
-        Ok(self.xprv.derive_priv(&self.secp, &path)?)
+    /// The default signing path under the account.
+    fn default_path() -> DerivationPath {
+        DerivationPath::from_str("0/0").expect("the default path is valid")
     }
 
-    fn master_xpriv(&self) -> Result<Xpriv, SignerError> {
-        self.derive_xpriv(&DerivationPath::master())
+    /// # Panics
+    /// Panics if `path` cannot be derived from `account_xprv`.
+    fn derive_key(
+        secp: &Secp256k1<All>,
+        account_xprv: &Xpriv,
+        path: &DerivationPath,
+        network: SimplicityNetwork,
+    ) -> PrivateKey {
+        PrivateKey::new(account_xprv.derive_priv(secp, path).unwrap().private_key, network)
     }
 
-    fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, SignerError> {
-        let derived = self.derive_xpriv(path)?;
-
-        Ok(Xpub::from_priv(&self.secp, &derived))
-    }
-
-    fn master_xpub(&self) -> Result<Xpub, SignerError> {
-        self.derive_xpub(&DerivationPath::master())
-    }
-
-    fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
-        Ok(self.master_xpub()?.fingerprint())
-    }
-
-    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
-        let wpkh_descriptor = self.get_wpkh_descriptor()?;
-        let blinding_key = self.master_slip77()?;
-
-        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
-    }
-
-    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let mut xpub = self.derive_xpub(&path)?;
+    fn wpkh_descriptor(
+        secp: &Secp256k1<All>,
+        master_xprv: &Xpriv,
+        account_path: &DerivationPath,
+        account_xprv: &Xpriv,
+    ) -> String {
+        let fingerprint = Xpub::from_priv(secp, master_xprv).fingerprint();
+        let mut xpub = Xpub::from_priv(secp, account_xprv);
 
         // TODO: Blockstream app does this. Is this a bug?
         xpub.parent_fingerprint = Fingerprint::default();
 
-        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
+        format!("elwpkh([{fingerprint}/{account_path}]{xpub}/<0;1>/*)")
     }
 
-    fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
-        let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
-        let path = format!("84h/{coin_type}h/0h");
+    /// # Panics
+    /// Panics if the WPKH descriptor cannot be parsed or the address cannot be derived.
+    fn wpkh_address(wpkh_descriptor: &str, network: SimplicityNetwork) -> Address {
+        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(wpkh_descriptor)
+            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
+            .unwrap();
 
-        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
+        descriptor.into_single_descriptors().unwrap()[0]
+            .at_derivation_index(0)
+            .unwrap()
+            .address(network.address_params())
+            .unwrap()
+    }
+
+    /// # Panics
+    /// Panics if the SLIP77 descriptor cannot be parsed or the address cannot be derived.
+    fn confidential_address(
+        secp: &Secp256k1<All>,
+        wpkh_descriptor: &str,
+        master_blinding_key: MasterBlindingKey,
+        network: SimplicityNetwork,
+    ) -> Address {
+        let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&format!(
+            "ct(slip77({master_blinding_key}),{wpkh_descriptor})"
+        ))
+        .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
+        .unwrap();
+
+        // Confidential descriptor doesn't support multipath
+        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
+
+        descriptor
+            .at_derivation_index(0)
+            .unwrap()
+            .address(secp, network.address_params())
+            .unwrap()
     }
 }
 
