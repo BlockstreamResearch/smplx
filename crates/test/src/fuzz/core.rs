@@ -183,9 +183,14 @@ impl SimplexFuzzEngine {
     /// Builds one case, asks the spec, runs it and reports what disagrees.
     fn fuzz(&self, summary: &RefCell<RunSummary>, attacker: &Signer, values: CaseValues) -> Result<(), CaseFailure> {
         let mutations = values.change.mutations().to_vec();
+        let drew_violation = values.change.violation().is_some();
 
         let (programs, transaction, violated) =
             self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
+
+        if drew_violation && violated.is_none() {
+            summary.borrow_mut().record_unviolated();
+        }
         let case = FuzzCase::new(&self.scenario, &programs, &transaction, &mutations, &self.signer);
 
         let failure =

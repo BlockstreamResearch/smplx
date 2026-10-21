@@ -1568,7 +1568,6 @@ dependencies = [
  "minreq 3.0.0",
  "serde",
  "serde_json",
- "sha2",
  "simplicityhl",
  "thiserror",
 ]

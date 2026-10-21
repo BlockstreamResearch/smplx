@@ -2,7 +2,7 @@ use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::Scenario;
 use simplex::fuzz::proptest::test_runner::RngSeed;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, ProgramSignature};
 
 use simplex_example::artifacts::exceptional_contract::ExceptionalContractProgram;
 use simplex_example::artifacts::p2pk::P2pkProgram;
@@ -20,7 +20,7 @@ fn p2pk_fuzz_test(context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     transaction.add_program_input(
         PartialInput::default(),
         ProgramInput::new(Box::new(program), P2pkWitness::default()),
-        RequiredSignature::Witness("SIGNATURE".to_string()),
+        Some(ProgramSignature::new("SIGNATURE")),
     );
 
     let mut scenario = Scenario::new(transaction);

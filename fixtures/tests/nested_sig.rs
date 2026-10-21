@@ -1,6 +1,6 @@
 use simplex::constants::DUMMY_SIGNATURE;
 use simplex::simplicityhl::elements::Script;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, ProgramSignature};
 
 use simplex_fixtures::artifacts::nested_sig::NestedSigProgram;
 use simplex_fixtures::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
@@ -45,7 +45,7 @@ fn spend_nested_sig(
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(program.as_ref().clone()), witness),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", sig_path),
+        Some(ProgramSignature::new("INHERIT_OR_NOT").at_path(sig_path)),
     );
 
     let tx_receipt = signer.broadcast(&ft)?;

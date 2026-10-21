@@ -24,7 +24,8 @@ use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::partial_input::IssuanceInput;
 use smplx_sdk::transaction::{
-    ChangeOutput, FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO,
+    ChangeOutput, FinalTransaction, IssuanceDetails, NativeSignature, PartialInput, PartialOutput, ProgramInput,
+    ProgramSignature, UTXO,
 };
 
 use wasm_bindgen::prelude::*;
@@ -502,7 +503,7 @@ impl TransactionBuilder {
             derivation_path.as_deref(),
         )?;
 
-        self.transaction.add_input(input, RequiredSignature::NativeEcdsa);
+        self.transaction.add_input(input, Some(NativeSignature::Ecdsa));
 
         Ok(())
     }
@@ -546,7 +547,7 @@ impl TransactionBuilder {
         let details = self.transaction.add_issuance_input(
             input,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            RequiredSignature::NativeEcdsa,
+            Some(NativeSignature::Ecdsa),
         );
 
         Ok(IssuanceReport::from_details(&details))
@@ -613,7 +614,7 @@ impl TransactionBuilder {
 
         let details = self
             .transaction
-            .add_issuance_input(input, reissuance, RequiredSignature::NativeEcdsa);
+            .add_issuance_input(input, reissuance, Some(NativeSignature::Ecdsa));
 
         Ok(IssuanceReport::from_details(&details))
     }
@@ -657,7 +658,7 @@ impl TransactionBuilder {
                 extra_leaves_json,
                 include_debug_symbols,
             )?,
-            Self::required_signature(signature_witness.as_deref()),
+            Self::program_signature(signature_witness.as_deref()),
         );
 
         Ok(())
@@ -710,7 +711,7 @@ impl TransactionBuilder {
                 include_debug_symbols,
             )?,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            Self::required_signature(signature_witness.as_deref()),
+            Self::program_signature(signature_witness.as_deref()),
         );
 
         Ok(IssuanceReport::from_details(&details))
@@ -813,24 +814,13 @@ impl TransactionBuilder {
     /// or a withess path if the signature is embedded like `SIGNATURE.Left.Right.1`
     ///
     /// `None` means no signature is required.
-    fn required_signature(signature_witness: Option<&str>) -> RequiredSignature {
-        let Some(raw) = signature_witness.map(str::trim).filter(|name| !name.is_empty()) else {
-            return RequiredSignature::None;
-        };
+    fn program_signature(signature_witness: Option<&str>) -> Option<ProgramSignature> {
+        let mut segments = signature_witness?
+            .split('.')
+            .map(str::trim)
+            .filter(|part| !part.is_empty());
 
-        let mut segments = raw.split('.').map(str::trim).filter(|part| !part.is_empty());
-
-        let Some(name) = segments.next() else {
-            return RequiredSignature::None;
-        };
-
-        let path: Vec<&str> = segments.collect();
-
-        if path.is_empty() {
-            return RequiredSignature::Witness(name.to_string());
-        }
-
-        RequiredSignature::witness_with_path(name, path)
+        Some(ProgramSignature::new(segments.next()?).at_path(segments))
     }
 
     fn input_at(

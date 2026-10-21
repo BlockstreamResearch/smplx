@@ -28,9 +28,7 @@ impl<'a> AuthCheck<'a> {
             .enumerate()
             .filter(|(_, input)| input.program_input.is_some())
             .filter_map(|(index, input)| match &input.required_sig {
-                RequiredSignature::Witness(name)
-                | RequiredSignature::WitnessWithPath(name, _)
-                | RequiredSignature::WitnessWithMessage(name, _, _) => Some((index, name.as_str())),
+                RequiredSignature::Program(signature) => Some((index, signature.name())),
                 RequiredSignature::None | RequiredSignature::NativeEcdsa => None,
             })
             .collect();
@@ -108,20 +106,16 @@ impl<'a> AuthCheck<'a> {
         for &(index, _) in &self.signed_inputs {
             let input = &mut transaction.inputs_mut()[index];
 
-            let (name, path, message) = match &input.required_sig {
-                RequiredSignature::Witness(name) => (name.clone(), Vec::new(), SigMessage::Sighash),
-                RequiredSignature::WitnessWithPath(name, path) => (name.clone(), path.clone(), SigMessage::Sighash),
-                RequiredSignature::WitnessWithMessage(name, path, message) => {
-                    (name.clone(), path.clone(), message.clone())
-                }
-                RequiredSignature::None | RequiredSignature::NativeEcdsa => continue,
+            let RequiredSignature::Program(signature) = &input.required_sig else {
+                continue;
             };
 
+            let message = signature.message().clone();
             let other_message = SigMessage::Custom(Arc::new(move |sighash: [u8; 32]| {
                 message.digest(sighash.map(|byte| !byte))
             }));
 
-            input.required_sig = RequiredSignature::WitnessWithMessage(name, path, other_message);
+            input.required_sig = RequiredSignature::Program(signature.clone().with_message(other_message));
         }
 
         transaction
@@ -151,7 +145,7 @@ mod tests {
 
     use smplx_sdk::program::Program;
     use smplx_sdk::provider::SimplicityNetwork;
-    use smplx_sdk::transaction::{PartialInput, ProgramInput, UTXO};
+    use smplx_sdk::transaction::{PartialInput, ProgramInput, ProgramSignature, UTXO};
 
     use crate::config::DEFAULT_TEST_MNEMONIC;
     use crate::fuzz::core::ATTACKER_MNEMONIC;
@@ -162,7 +156,7 @@ mod tests {
         source: &'static str,
         key_argument: bool,
         key_witness: bool,
-        required_sig: RequiredSignature,
+        required_sig: Option<ProgramSignature>,
     }
 
     impl Contract {
@@ -211,7 +205,7 @@ mod tests {
 
     #[test]
     fn finds_each_kind_of_bypass() {
-        let signature = || RequiredSignature::Witness("SIGNATURE".to_string());
+        let signature = || Some(ProgramSignature::new("SIGNATURE"));
 
         let p2pk = Contract {
             source: "fn main() { jet::bip_0340_verify((param::KEY, jet::sig_all_hash()), witness::SIGNATURE) }",
@@ -241,10 +235,8 @@ mod tests {
             source: "fn main() { jet::bip_0340_verify((param::KEY, 0x0000000000000000000000000000000000000000000000000000000000000000), witness::SIGNATURE) }",
             key_argument: true,
             key_witness: false,
-            required_sig: RequiredSignature::WitnessWithMessage(
-                "SIGNATURE".to_string(),
-                Vec::new(),
-                SigMessage::Custom(Arc::new(|_| [0; 32])),
+            required_sig: Some(
+                ProgramSignature::new("SIGNATURE").with_message(SigMessage::Custom(Arc::new(|_| [0; 32]))),
             ),
         };
         assert!(constant_message.bypasses()[0].contains("can be replayed"));

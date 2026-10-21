@@ -127,7 +127,7 @@ mod tests {
 
     use smplx_sdk::program::{Program, ProgramTrait};
     use smplx_sdk::provider::SimplicityNetwork;
-    use smplx_sdk::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
+    use smplx_sdk::transaction::{FinalTransaction, PartialInput, UTXO};
 
     use super::*;
 
@@ -139,7 +139,7 @@ mod tests {
         utxo.txout.script_pubkey = program.get_script_pubkey(&network);
 
         let mut transaction = FinalTransaction::new();
-        transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+        transaction.add_input(PartialInput::new(utxo), None);
 
         let (pst, _) = transaction.extract_pst();
 

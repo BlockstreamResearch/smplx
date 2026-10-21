@@ -1,124 +1,28 @@
-use std::fmt;
 use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
 
 use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use simplicityhl::WitnessValues;
-use simplicityhl::elements::confidential::{Asset, Value};
 use simplicityhl::elements::pset::Input;
-use simplicityhl::elements::{AssetEntropy, AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets, Txid};
+use simplicityhl::elements::{AssetEntropy, AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets};
 
 use crate::program::ProgramTrait;
-use crate::utils::tagged_hash;
+use crate::utils;
 
 use super::UTXO;
-
-/// Derives the 32-byte message to sign from the input's `sighash_all`.
-pub type SigMessageFn = Arc<dyn Fn([u8; 32]) -> [u8; 32] + Send + Sync>;
-
-/// Defines the 32-byte message a witness signature actually covers.
-#[derive(Clone)]
-pub enum SigMessage {
-    /// Sign `sighash_all` itself.
-    Sighash,
-    /// Sign the BIP-340 tagged hash `sha256(sha256(tag) || sha256(tag) || sighash_all)`.
-    Tagged(String),
-    /// Sign whatever the closure derives from `sighash_all`.
-    Custom(SigMessageFn),
-}
-
-/// Defines the type of signature required for an input.
-#[derive(Debug, Clone)]
-pub enum RequiredSignature {
-    /// No signature is required.
-    None,
-    /// A standard Native ECDSA (WPKH) signature is required.
-    NativeEcdsa,
-    /// A generic witness payload associated with an external name.
-    Witness(String),
-    /// A witness payload requiring traversal through a specified path hierarchy.
-    WitnessWithPath(String, Vec<String>),
-    /// Like `WitnessWithPath`, but over a message derived from `sighash_all`.
-    WitnessWithMessage(String, Vec<String>, SigMessage),
-}
-
-impl SigMessage {
-    /// Derives the message to sign from the input's `sighash_all`.
-    #[must_use]
-    pub fn digest(&self, sighash: [u8; 32]) -> [u8; 32] {
-        match self {
-            Self::Sighash => sighash,
-            Self::Tagged(tag) => tagged_hash(tag, &sighash).to_byte_array(),
-            Self::Custom(derive) => derive(sighash),
-        }
-    }
-}
-
-impl fmt::Debug for SigMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Sighash => f.write_str("Sighash"),
-            Self::Tagged(tag) => f.debug_tuple("Tagged").field(tag).finish(),
-            Self::Custom(_) => f.write_str("Custom(<closure>)"),
-        }
-    }
-}
-
-impl RequiredSignature {
-    /// Creates a `WitnessWithPath` requirement using an iterator of path segments.
-    pub fn witness_with_path<I>(name: &str, path: I) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        RequiredSignature::WitnessWithPath(
-            name.to_string(),
-            path.into_iter().map(|s| s.as_ref().to_string()).collect(),
-        )
-    }
-
-    /// Creates a `WitnessWithMessage` requirement using an iterator of path segments.
-    pub fn witness_with_message<I>(name: &str, path: I, message: SigMessage) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        RequiredSignature::WitnessWithMessage(
-            name.to_string(),
-            path.into_iter().map(|s| s.as_ref().to_string()).collect(),
-            message,
-        )
-    }
-
-    /// Creates a requirement for a BIP-340 tagged signature over `tag` and `sighash_all`.
-    pub fn witness_tagged<I>(name: &str, path: I, tag: &str) -> Self
-    where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
-    {
-        Self::witness_with_message(name, path, SigMessage::Tagged(tag.to_string()))
-    }
-}
 
 /// Represents partially prepared input data for Elements transactions.
 #[derive(Debug, Clone)]
 pub struct PartialInput {
-    /// The transaction ID containing the target UTXO being spent.
-    pub witness_txid: Txid,
-    /// The output index of the UTXO within the transaction being spent.
-    pub witness_output_index: u32,
+    /// The outpoint of the UTXO being spent.
+    pub outpoint: OutPoint,
     /// The native transaction output corresponding to the targeted UTXO.
     pub witness_utxo: TxOut,
     /// The sequence number indicating transaction replaceability or relative timelocking.
-    pub sequence: Sequence,
-    /// Absolute timelock criteria enforced against the input.
-    pub locktime: LockTime,
-    /// The explicit amount value in Satoshis for the input, if available.
-    /// Note: if UTXO is explicit, `amount` and `asset` are `Some`.
-    pub amount: Option<u64>,
-    /// The explicit `AssetId` being spent by the input, if available.
-    pub asset: Option<AssetId>,
+    /// `None` takes the transaction's.
+    pub sequence: Option<Sequence>,
+    /// Absolute timelock criteria enforced against the input. `None` takes the transaction's.
+    pub locktime: Option<LockTime>,
     /// Optional blinding secrets mapping values and asset states into confidential outputs.
     /// Note: if UTXO is confidential, `secrets` are `Some`.
     pub secrets: Option<TxOutSecrets>,
@@ -140,8 +44,21 @@ pub struct ProgramInput {
 
 impl Debug for ProgramInput {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.witness)
+        f.debug_struct("ProgramInput")
+            .field("witness", &self.witness)
+            .finish_non_exhaustive()
     }
+}
+
+/// A structure representing the details of token issuance and related metadata.
+#[derive(Debug, Clone)]
+pub struct IssuanceDetails {
+    /// The unique `AssetId` generated from the provided entropy, representing the issued tokens struct.
+    pub asset_id: AssetId,
+    /// The `AssetId` corresponding to the reissuance (inflation) token, used for minting new tokens.
+    pub inflation_asset_id: AssetId,
+    /// The entropy value that was used to derive both the `asset_id` and `inflation_asset_id`.
+    pub asset_entropy: AssetEntropy,
 }
 
 /// Represents an input designated for asset issuance or reissuance.
@@ -174,26 +91,13 @@ impl Default for PartialInput {
 
 impl PartialInput {
     /// Creates a new `PartialInput` from an existing `UTXO`.
-    /// Extracts explicit value and asset amounts if available.
     #[must_use]
     pub fn new(utxo: UTXO) -> Self {
-        let amount = match utxo.txout.value {
-            Value::Explicit(value) => Some(value),
-            _ => None,
-        };
-        let asset = match utxo.txout.asset {
-            Asset::Explicit(asset) => Some(asset),
-            _ => None,
-        };
-
         Self {
-            witness_txid: utxo.outpoint.txid,
-            witness_output_index: utxo.outpoint.vout,
+            outpoint: utxo.outpoint,
             witness_utxo: utxo.txout,
-            sequence: Sequence::default(),
-            locktime: LockTime::ZERO,
-            amount,
-            asset,
+            sequence: None,
+            locktime: None,
             secrets: utxo.secrets,
             derivation_path: None,
         }
@@ -213,7 +117,7 @@ impl PartialInput {
     /// Sets a specific `Sequence` for the input.
     #[must_use]
     pub fn with_sequence(mut self, sequence: Sequence) -> Self {
-        self.sequence = sequence;
+        self.sequence = Some(sequence);
 
         self
     }
@@ -221,43 +125,57 @@ impl PartialInput {
     /// Sets a specific `LockTime` for the input.
     #[must_use]
     pub fn with_locktime(mut self, locktime: LockTime) -> Self {
-        self.locktime = locktime;
+        self.locktime = Some(locktime);
 
         self
     }
 
-    /// Returns the `OutPoint` corresponding to this input.
+    /// The asset and amount of the spent UTXO, from its explicit value or its unblinding secrets.
+    /// `None` for a confidential UTXO without secrets.
     #[must_use]
-    pub fn outpoint(&self) -> OutPoint {
-        OutPoint {
-            txid: self.witness_txid,
-            vout: self.witness_output_index,
+    pub fn asset_and_amount(&self) -> Option<(AssetId, u64)> {
+        match self.secrets {
+            Some(secrets) => Some((secrets.asset, secrets.value)),
+            None => self.explicit_asset().zip(self.explicit_amount()),
         }
     }
 
     /// Converts this `PartialInput` into a fully formed PSET `Input`.
+    /// An unset sequence is final and an unset locktime is zero.
     #[must_use]
     pub fn to_input(&self) -> Input {
-        let time_locktime = match self.locktime {
+        let locktime = self.locktime.unwrap_or(LockTime::ZERO);
+
+        let time_locktime = match locktime {
             LockTime::Seconds(value) => Some(value),
             LockTime::Blocks(_) => None,
         };
-        let height_locktime = match self.locktime {
+        let height_locktime = match locktime {
             LockTime::Blocks(value) if value.to_consensus_u32() > 0 => Some(value),
             LockTime::Blocks(_) | LockTime::Seconds(_) => None,
         };
 
         Input {
-            previous_txid: self.witness_txid,
-            previous_output_index: self.witness_output_index,
+            previous_txid: self.outpoint.txid,
+            previous_output_index: self.outpoint.vout,
             witness_utxo: Some(self.witness_utxo.clone()),
-            sequence: Some(self.sequence),
+            sequence: Some(self.sequence.unwrap_or_default()),
             required_time_locktime: time_locktime,
             required_height_locktime: height_locktime,
-            amount: self.amount,
-            asset: self.asset,
+            amount: self.explicit_amount(),
+            asset: self.explicit_asset(),
             ..Default::default()
         }
+    }
+
+    /// The amount of the spent UTXO, `None` when it is confidential.
+    fn explicit_amount(&self) -> Option<u64> {
+        self.witness_utxo.value.explicit()
+    }
+
+    /// The asset of the spent UTXO, `None` when it is confidential.
+    fn explicit_asset(&self) -> Option<AssetId> {
+        self.witness_utxo.asset.explicit()
     }
 }
 
@@ -319,55 +237,18 @@ impl IssuanceInput {
             ..Default::default()
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SIGHASH: [u8; 32] = [0x11; 32];
-
-    #[test]
-    fn sighash_message_is_the_sighash() {
-        assert_eq!(SigMessage::Sighash.digest(SIGHASH), SIGHASH);
-    }
-
-    #[test]
-    fn tagged_message_is_the_tagged_hash() {
-        assert_eq!(
-            SigMessage::Tagged("SimplexTag".to_string()).digest(SIGHASH),
-            tagged_hash("SimplexTag", &SIGHASH).to_byte_array()
-        );
-    }
-
-    #[test]
-    fn custom_message_receives_the_sighash() {
-        let message = SigMessage::Custom(Arc::new(|sighash: [u8; 32]| {
-            let mut digest = sighash;
-            digest[0] ^= 0xff;
-
-            digest
-        }));
-
-        let mut expected = SIGHASH;
-        expected[0] ^= 0xff;
-
-        assert_eq!(message.digest(SIGHASH), expected);
-    }
-
-    #[test]
-    fn tagged_constructor_builds_a_tagged_message() {
-        let required = RequiredSignature::witness_tagged("SIGNATURE", ["Left", "1"], "SimplexTag");
-
-        let RequiredSignature::WitnessWithMessage(name, path, message) = required else {
-            panic!("expected a WitnessWithMessage requirement");
+    /// The assets an issuance spending `outpoint` creates, or a reissuance mints again.
+    pub(crate) fn details(&self, outpoint: &OutPoint) -> IssuanceDetails {
+        let asset_entropy = match self {
+            Self::Issuance { asset_entropy, .. } => utils::asset_entropy(outpoint, *asset_entropy),
+            Self::Reissuance { asset_entropy, .. } => AssetEntropy::from_byte_array(*asset_entropy),
         };
 
-        assert_eq!(name, "SIGNATURE");
-        assert_eq!(path, ["Left", "1"]);
-        assert_eq!(
-            message.digest(SIGHASH),
-            tagged_hash("SimplexTag", &SIGHASH).to_byte_array()
-        );
+        IssuanceDetails {
+            asset_id: AssetId::from_entropy(asset_entropy),
+            inflation_asset_id: AssetId::reissuance_token_from_entropy(asset_entropy, false),
+            asset_entropy,
+        }
     }
 }

@@ -3,7 +3,7 @@ use simplex::{FuzzMode, TestContext};
 use simplex::fuzz::{Expect, Scenario};
 use simplex::simplicityhl::WitnessValues;
 use simplex::simplicityhl::elements::{AssetId, OutPoint, Txid};
-use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO};
+use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, UTXO};
 
 use simplex_fixtures::artifacts::counter::CounterProgram;
 use simplex_fixtures::artifacts::dummy_accept::DummyAcceptProgram;
@@ -23,7 +23,7 @@ fn two_inputs() -> FinalTransaction {
             ..UTXO::default()
         };
 
-        transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+        transaction.add_input(PartialInput::new(utxo), None);
     }
 
     transaction
@@ -31,7 +31,7 @@ fn two_inputs() -> FinalTransaction {
 
 fn one_input_one_output() -> FinalTransaction {
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), None);
     transaction.add_output(PartialOutput::default());
 
     transaction
@@ -123,11 +123,11 @@ fn program_bound_to_a_fixed_input_passes(test_context: TestContext<FuzzMode>) {
     );
 
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), None);
     transaction.add_program_input(
         PartialInput::new(fixed_utxo),
         ProgramInput::new(Box::new(fixed.as_ref().clone()), WitnessValues::default()),
-        RequiredSignature::None,
+        None,
     );
 
     let mut scenario = Scenario::new(transaction);

@@ -18,6 +18,7 @@ pub(crate) struct RunSummary {
     rejected_by: Vec<(String, usize)>,
     expectations: HashMap<Expect, usize>,
     violations: usize,
+    unviolated: usize,
     check_lock: bool,
     lock_checks: usize,
     check_auth: bool,
@@ -46,6 +47,7 @@ impl RunSummary {
             rejected_by: Vec::new(),
             expectations: HashMap::new(),
             violations: 0,
+            unviolated: 0,
             check_lock,
             lock_checks: 0,
             check_auth,
@@ -94,6 +96,11 @@ impl RunSummary {
                 None => self.mutation_kinds.push((mutation.kind(), 1)),
             }
         }
+    }
+
+    /// A case drew a violation, but none of its required values differs from the generated one.
+    pub(crate) fn record_unviolated(&mut self) {
+        self.unviolated += 1;
     }
 
     pub(crate) fn record_lock_check(&mut self) {
@@ -169,12 +176,22 @@ impl Display for RunSummary {
             Self::count(&self.expectations, &Expect::Any)
         )?;
 
-        if self.violations > 0 {
-            writeln!(
+        if self.violations > 0 || self.unviolated > 0 {
+            write!(
                 f,
                 "  requirements   {} case(s) rejected with a required value violated",
                 self.violations
             )?;
+
+            if self.unviolated > 0 {
+                write!(
+                    f,
+                    ", {} drew the same violation as the required value and ran plain",
+                    self.unviolated
+                )?;
+            }
+
+            writeln!(f)?;
         }
 
         if self.mutate {

@@ -23,7 +23,7 @@ use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key}
 /// Executes `simplicity` programs at runtime.
 ///
 /// This trait defines a core behavior related to testing and execution.
-pub trait ProgramTrait: DynClone {
+pub trait ProgramTrait: DynClone + Send + Sync {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
     /// # Errors
@@ -390,7 +390,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info().unwrap();
+        let spend_info = self.taproot_spending_info().unwrap_or_else(|error| panic!("{error}"));
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -419,7 +419,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_cmr(&self) -> [u8; 32] {
-        self.cmr().unwrap().to_byte_array()
+        self.cmr().unwrap_or_else(|error| panic!("{error}")).to_byte_array()
     }
 
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
@@ -428,7 +428,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_tapleaf_hash(&self) -> [u8; 32] {
-        let (script, version) = self.script_version().unwrap();
+        let (script, version) = self.script_version().unwrap_or_else(|error| panic!("{error}"));
 
         taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
@@ -446,17 +446,12 @@ impl Program {
         Ok(abi_meta.param_types)
     }
 
-    /// Retrieves the witness types from the compiled program's ABI metadata.
+    /// Retrieves the witness types of the compiled program.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
+    /// Returns a `ProgramError` if compilation fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let abi_meta = self
-            .load()?
-            .generate_abi_meta()
-            .map_err(ProgramError::ProgramGenAbiMeta)?;
-
-        Ok(abi_meta.witness_types)
+        Ok(self.load()?.witness_types().shallow_clone())
     }
 
     /// Compiles program by providing saved `Arguments`.

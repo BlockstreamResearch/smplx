@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, Sequence, Txid};
 
-use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, PartialOutput, UTXO};
 
 use crate::fuzz::outcome::SetupError;
 
@@ -63,7 +63,7 @@ impl Mutation {
             }
             Self::SetLocktime(locktime) => {
                 for input in transaction.inputs_mut() {
-                    input.partial_input.locktime = locktime;
+                    input.partial_input.locktime = Some(locktime);
                 }
 
                 transaction.set_locktime(locktime);
@@ -74,7 +74,7 @@ impl Mutation {
                     .get_mut(input)
                     .ok_or_else(unfit)?
                     .partial_input
-                    .sequence = sequence;
+                    .sequence = Some(sequence);
             }
             Self::AddOutput { from, amount } => {
                 let source = transaction.outputs_mut().get_mut(from).ok_or_else(unfit)?;
@@ -132,7 +132,7 @@ impl Mutation {
             input_asset,
         );
 
-        transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+        transaction.add_input(PartialInput::new(utxo), None);
         transaction.add_output(PartialOutput::new(Self::attacker_script(), amount, output_asset));
     }
 

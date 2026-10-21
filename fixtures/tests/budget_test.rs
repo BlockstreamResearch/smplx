@@ -3,7 +3,7 @@ use simplex::either::Either;
 use simplex::program::ProgramError;
 use simplex::signer::SignerError;
 use simplex::simplicityhl::elements::Script;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, ProgramSignature};
 
 use simplex_fixtures::artifacts::budget::BudgetProgram;
 use simplex_fixtures::artifacts::budget::derived_budget::{BudgetArguments, BudgetWitness};
@@ -42,7 +42,7 @@ fn spend_budget(
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(program.as_ref().clone()), witness),
-        RequiredSignature::witness_with_path("SIGNATURE", [sig_path]),
+        Some(ProgramSignature::new("SIGNATURE").at_path([sig_path])),
     );
 
     Ok(ft)

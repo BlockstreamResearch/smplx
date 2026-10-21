@@ -1,4 +1,5 @@
 use simplicityhl::elements::locktime::LOCK_TIME_THRESHOLD;
+use simplicityhl::elements::{AssetId, Sequence};
 
 use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
@@ -101,23 +102,31 @@ impl<'a> FuzzCase<'a> {
         )
     }
 
+    /// The asset of input `index`, explicit or unblinded.
+    ///
     /// # Panics
-    /// Panics when the transaction has no input `index` or its asset is confidential.
+    /// Panics when the transaction has no input `index` or it is confidential without secrets.
     pub fn input_asset(&self, index: usize) -> [u8; 32] {
-        self.transaction.inputs()[index]
-            .partial_input
-            .asset
-            .expect("the input asset is confidential")
-            .to_byte_array()
+        self.input_asset_and_amount(index).0.to_byte_array()
     }
 
+    /// The amount of input `index`, explicit or unblinded.
+    ///
     /// # Panics
-    /// Panics when the transaction has no input `index` or its amount is confidential.
+    /// Panics when the transaction has no input `index` or it is confidential without secrets.
     pub fn input_amount(&self, index: usize) -> u64 {
+        self.input_asset_and_amount(index).1
+    }
+
+    /// The sequence input `index` is signed with: its own, or the transaction's.
+    ///
+    /// # Panics
+    /// Panics when the transaction has no input `index`.
+    pub fn input_sequence(&self, index: usize) -> Sequence {
         self.transaction.inputs()[index]
             .partial_input
-            .amount
-            .expect("the input amount is confidential")
+            .sequence
+            .unwrap_or(self.transaction.sequence())
     }
 
     /// # Panics
@@ -192,5 +201,12 @@ impl<'a> FuzzCase<'a> {
         let is_final = transaction.input.iter().all(|input| input.sequence.is_final());
 
         if !is_final && of_kind(locktime) { locktime } else { 0 }
+    }
+
+    fn input_asset_and_amount(&self, index: usize) -> (AssetId, u64) {
+        self.transaction.inputs()[index]
+            .partial_input
+            .asset_and_amount()
+            .expect("the input is confidential without unblinding secrets")
     }
 }
