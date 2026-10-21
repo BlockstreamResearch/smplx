@@ -358,8 +358,8 @@ impl Signer {
         Ok(pst)
     }
 
-    /// Blinds the transaction, signs the native inputs and injects signatures into program witnesses,
-    /// without executing or finalizing the programs.
+    /// Blinds the transaction, signs the `NativeEcdsa` inputs and injects signatures into program witnesses,
+    /// without executing or finalizing the programs. Inputs that require no signature stay unsigned.
     ///
     /// # Errors
     /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
@@ -376,7 +376,10 @@ impl Signer {
         }
 
         // Native inputs share one extracted transaction and sighash cache.
-        let mut sighash_cache = if inputs.iter().any(|input| input.program_input.is_none()) {
+        let mut sighash_cache = if inputs
+            .iter()
+            .any(|input| matches!(input.required_sig, RequiredSignature::NativeEcdsa))
+        {
             Some(SighashCache::new(Box::new(pst.extract_tx()?)))
         } else {
             None
@@ -412,9 +415,10 @@ impl Signer {
                 };
 
                 signed_witnesses.insert(index, signed_witness);
-            } else if let Some(sighash_cache) = sighash_cache.as_mut() {
-                // We need to sign the UTXO as is
-                // TODO: do we always sign?
+            } else if matches!(input_i.required_sig, RequiredSignature::NativeEcdsa)
+                && let Some(sighash_cache) = sighash_cache.as_mut()
+            {
+                // An input that requires no signature is left for its owner to satisfy
                 let signed_witness = self.sign_input_with(
                     &pst,
                     sighash_cache,
@@ -575,10 +579,8 @@ impl Signer {
         input_index: usize,
         derivation_path: Option<&DerivationPath>,
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
-        let genesis_hash = elements_miniscript::elements::BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
-
         let message = pst
-            .sighash_msg(input_index, sighash_cache, None, genesis_hash)?
+            .sighash_msg(input_index, sighash_cache, None, self.network.genesis_block_hash())?
             .to_secp_msg();
 
         let private_key = self.get_private_key_at(derivation_path);
