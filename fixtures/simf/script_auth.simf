@@ -1,0 +1,10 @@
+/*
+ * Spends when the input the witness points at has AUTH_SCRIPT_HASH.
+ */
+
+fn main() {
+    let auth_script_hash: u256 = param::AUTH_SCRIPT_HASH;
+    let auth_input: u32 = witness::AUTH_INPUT;
+
+    assert!(jet::eq_256(unwrap(jet::input_script_hash(auth_input)), auth_script_hash));
+}

@@ -1,0 +1,17 @@
+/*
+ * Pays the whole input, in its asset, to the unvault at output 0.
+ */
+fn main() {
+    assert!(jet::eq_256(unwrap(jet::output_script_hash(0)), param::UNVAULT_SCRIPT_HASH));
+
+    let (input_asset, input_amount): (Asset1, Amount1) = jet::current_amount();
+    let (output_asset, output_amount): (Asset1, Amount1) = unwrap(jet::output_amount(0));
+
+    let input_asset: u256 = unwrap_right::<(u1, u256)>(input_asset);
+    let output_asset: u256 = unwrap_right::<(u1, u256)>(output_asset);
+    assert!(jet::eq_256(input_asset, output_asset));
+
+    let input_amount: u64 = unwrap_right::<(u1, u256)>(input_amount);
+    let output_amount: u64 = unwrap_right::<(u1, u256)>(output_amount);
+    assert!(jet::eq_64(input_amount, output_amount));
+}

@@ -8,7 +8,7 @@ use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::num::U256;
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, RedeemNode, Value, leaf_version};
+use simplicityhl::simplicity::{BitMachine, Cmr, RedeemNode, Value, leaf_version};
 use simplicityhl::{Arguments, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes, WitnessValues};
 use simplicityhl::{CompiledProgram, UnstableFeatures};
 
@@ -23,7 +23,7 @@ use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key}
 /// Executes `simplicity` programs at runtime.
 ///
 /// This trait defines a core behavior related to testing and execution.
-pub trait ProgramTrait: DynClone {
+pub trait ProgramTrait: DynClone + Send + Sync {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
     /// # Errors
@@ -82,6 +82,12 @@ pub trait ProgramTrait: DynClone {
 
 /// Static description of a program's inputs and integer literals. Implemented by `include_simf!()`.
 pub trait ProgramSchema {
+    /// Generated arguments struct.
+    type Arguments;
+
+    /// Generated witness struct.
+    type Witness;
+
     /// Parameter names and types.
     fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)>;
 
@@ -101,7 +107,7 @@ pub trait ProgramFactory<P: AsRef<Program> + Sized> {
 }
 
 /// Represents a program structure containing its public key, compiled program, and associated storage.
-/// A compiled program acts as a cache, instantiated during "loading".
+/// The compiled program with its CMR and the taproot spend info act as caches, filled on first use.
 ///
 /// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
 #[derive(Clone)]
@@ -111,7 +117,8 @@ pub struct Program {
     pub_key: XOnlyPublicKey,
     storage: Vec<Vec<u8>>,
     include_debug_symbols: Option<bool>,
-    compiled: Arc<OnceLock<CompiledProgram>>,
+    compiled: Arc<OnceLock<(CompiledProgram, Cmr)>>,
+    spend_info: OnceLock<taproot::TaprootSpendInfo>,
 }
 
 dyn_clone::clone_trait_object!(ProgramTrait);
@@ -132,7 +139,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.cmr()?;
         let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
 
         if utxos.len() <= input_index {
@@ -280,6 +287,7 @@ impl Program {
             storage: Vec::new(),
             include_debug_symbols: None,
             compiled: Arc::new(OnceLock::new()),
+            spend_info: OnceLock::new(),
         }
     }
 
@@ -288,6 +296,7 @@ impl Program {
     #[must_use]
     pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
         self.pub_key = pub_key;
+        self.spend_info = OnceLock::new();
 
         self
     }
@@ -298,6 +307,7 @@ impl Program {
         self.include_debug_symbols = Some(include);
         // This changes the output CMR, so we need to update the cache
         self.compiled = Arc::new(OnceLock::new());
+        self.spend_info = OnceLock::new();
 
         self
     }
@@ -305,9 +315,25 @@ impl Program {
     /// Sets storage capacity for further usage.
     #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
-        self.storage = vec![vec![0u8; 32]; capacity];
+        self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; capacity];
+        self.spend_info = OnceLock::new();
 
         self
+    }
+
+    /// Replaces the storage with `storage`, one value per slot.
+    ///
+    /// # Panics
+    /// Panics if a value is not `STORAGE_SLOT_BYTES` wide.
+    pub fn set_storage(&mut self, storage: impl IntoIterator<Item = impl Into<Vec<u8>>>) {
+        let storage: Vec<Vec<u8>> = storage.into_iter().map(Into::into).collect();
+
+        self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; storage.len()];
+        self.spend_info = OnceLock::new();
+
+        for (index, value) in storage.into_iter().enumerate() {
+            self.set_storage_at(index, value);
+        }
     }
 
     /// Sets a 32-byte value at the specified index in the storage.
@@ -328,6 +354,13 @@ impl Program {
         let slot = self.storage.get_mut(index).expect("Index out of bounds");
 
         *slot = value;
+        self.spend_info = OnceLock::new();
+    }
+
+    /// Returns the arguments the program was created with.
+    #[must_use]
+    pub fn get_arguments(&self) -> &Arguments {
+        &self.arguments
     }
 
     /// Returns the number of storage chunks for a program.
@@ -357,7 +390,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info().unwrap();
+        let spend_info = self.taproot_spending_info().unwrap_or_else(|error| panic!("{error}"));
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -386,7 +419,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_cmr(&self) -> [u8; 32] {
-        self.load().unwrap().commit().cmr().to_byte_array()
+        self.cmr().unwrap_or_else(|error| panic!("{error}")).to_byte_array()
     }
 
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
@@ -395,7 +428,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_tapleaf_hash(&self) -> [u8; 32] {
-        let (script, version) = self.script_version().unwrap();
+        let (script, version) = self.script_version().unwrap_or_else(|error| panic!("{error}"));
 
         taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
@@ -413,17 +446,12 @@ impl Program {
         Ok(abi_meta.param_types)
     }
 
-    /// Retrieves the witness types from the compiled program's ABI metadata.
+    /// Retrieves the witness types of the compiled program.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
+    /// Returns a `ProgramError` if compilation fails.
     pub fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError> {
-        let abi_meta = self
-            .load()?
-            .generate_abi_meta()
-            .map_err(ProgramError::ProgramGenAbiMeta)?;
-
-        Ok(abi_meta.witness_types)
+        Ok(self.load()?.witness_types().shallow_clone())
     }
 
     /// Compiles program by providing saved `Arguments`.
@@ -431,9 +459,17 @@ impl Program {
     /// # Errors
     /// Retruns an error we have problems in a program compilation.
     pub fn load(&self) -> Result<&CompiledProgram, ProgramError> {
+        Ok(&self.load_with_cmr()?.0)
+    }
+
+    fn cmr(&self) -> Result<Cmr, ProgramError> {
+        Ok(self.load_with_cmr()?.1)
+    }
+
+    fn load_with_cmr(&self) -> Result<&(CompiledProgram, Cmr), ProgramError> {
         // Check cache first
-        if let Some(compiled) = self.compiled.get() {
-            return Ok(compiled);
+        if let Some(loaded) = self.compiled.get() {
+            return Ok(loaded);
         }
 
         let compiled = CompiledProgram::new_with_unstable(
@@ -445,13 +481,14 @@ impl Program {
             Box::new(ElementsJetHinter),
         )
         .map_err(ProgramError::Compilation)?;
+        let cmr = compiled.commit().cmr();
 
         // Update the cache
-        Ok(self.compiled.get_or_init(|| compiled))
+        Ok(self.compiled.get_or_init(|| (compiled, cmr)))
     }
 
     fn script_version(&self) -> Result<(Script, taproot::LeafVersion), ProgramError> {
-        let cmr = self.load()?.commit().cmr();
+        let cmr = self.cmr()?;
         let script = Script::from(cmr.as_ref().to_vec());
 
         Ok((script, leaf_version()))
@@ -473,7 +510,11 @@ impl Program {
         depths
     }
 
-    fn taproot_spending_info(&self) -> Result<taproot::TaprootSpendInfo, ProgramError> {
+    fn taproot_spending_info(&self) -> Result<&taproot::TaprootSpendInfo, ProgramError> {
+        if let Some(spend_info) = self.spend_info.get() {
+            return Ok(spend_info);
+        }
+
         let mut builder = taproot::TaprootBuilder::new();
         let (script, version) = self.script_version()?;
         let depths = Self::taproot_leaf_depths(1 + self.get_storage_len());
@@ -491,9 +532,11 @@ impl Program {
                 .expect("tap tree should be valid");
         }
 
-        Ok(builder
+        let spend_info = builder
             .finalize(secp256k1::SECP256K1, self.pub_key)
-            .expect("tap tree should be valid"))
+            .expect("tap tree should be valid");
+
+        Ok(self.spend_info.get_or_init(|| spend_info))
     }
 
     fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {
@@ -552,15 +595,15 @@ mod tests {
 
     #[test]
     fn changing_a_slot_changes_the_address_but_not_the_program() {
-        let mut one = stateful(1);
-        let mut other = stateful(1);
+        let one = stateful(1);
+        let network = SimplicityNetwork::LiquidTestnet;
+        let address = one.get_tr_address(&network);
 
-        one.set_storage_at(0, vec![0x00; Program::STORAGE_SLOT_BYTES]);
+        let mut other = one.clone();
         other.set_storage_at(0, vec![0x01; Program::STORAGE_SLOT_BYTES]);
 
-        let network = SimplicityNetwork::LiquidTestnet;
-
-        assert_ne!(one.get_tr_address(&network), other.get_tr_address(&network));
+        assert_ne!(address, other.get_tr_address(&network));
+        assert_eq!(address, one.get_tr_address(&network));
         assert_eq!(one.get_cmr(), other.get_cmr());
         assert_eq!(one.get_tapleaf_hash(), other.get_tapleaf_hash());
     }

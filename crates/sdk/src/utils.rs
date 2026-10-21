@@ -1,5 +1,3 @@
-use sha2::{Digest, Sha256};
-
 use bip39::{Mnemonic, WordCount};
 
 use simplicityhl::elements::{AssetEntropy, AssetId, ContractHash, OutPoint, Script, encode};
@@ -10,7 +8,7 @@ use simplicityhl::simplicity::hashes::{HashEngine, sha256};
 
 use crate::program::ProgramError;
 
-/// Generates a radom menemonic with 12 words.
+/// Generates a random mnemonic with 12 words.
 ///
 /// # Panics
 /// Panics if the underlying mnemonic generation fails (e.g. invalid word count configuration).
@@ -63,10 +61,7 @@ pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
 /// Computes the SHA-256 hash of a given script and returns the resulting 32-byte array.
 #[must_use]
 pub fn hash_script(script: &Script) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-
-    sha2::digest::Update::update(&mut hasher, script.as_bytes());
-    hasher.finalize().into()
+    sha256::Hash::hash(script.as_bytes()).to_byte_array()
 }
 
 /// Converts Satoshi amount into BTC.
@@ -75,7 +70,7 @@ pub fn sat2btc(sat: u64) -> f64 {
     bitcoin::Amount::from_sat(sat).to_btc()
 }
 
-/// Converts BTC amount into Satoshi.
+/// Converts a whole BTC amount into Satoshi.
 #[must_use]
 pub fn btc2sat(btc: u64) -> u64 {
     bitcoin::Amount::from_int_btc(btc).to_sat()
@@ -123,16 +118,12 @@ mod tests {
     #[test]
     fn tagged_hash_doubles_the_tag_digest() {
         let data = [0x42_u8; 32];
-        let tag_digest = Sha256::digest(b"OracleNetworkV1/Price");
-
-        let mut expected = Sha256::new();
-        expected.update(tag_digest);
-        expected.update(tag_digest);
-        expected.update(data);
+        let tag_digest = sha256::Hash::hash(b"OracleNetworkV1/Price").to_byte_array();
+        let preimage = [tag_digest.as_slice(), &tag_digest, &data].concat();
 
         assert_eq!(
-            tagged_hash("OracleNetworkV1/Price", &data).to_byte_array(),
-            <[u8; 32]>::from(expected.finalize())
+            tagged_hash("OracleNetworkV1/Price", &data),
+            sha256::Hash::hash(&preimage)
         );
     }
 

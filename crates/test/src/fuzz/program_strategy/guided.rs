@@ -1,105 +1,110 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Result};
-use std::marker::PhantomData;
 
 use simplicityhl::either::Either;
-use simplicityhl::num::U256;
-use simplicityhl::types::{TypeInner, UIntType};
+use simplicityhl::types::TypeInner;
 use simplicityhl::value::{ValueConstructible, ValueInner};
 use simplicityhl::{Arguments, ResolvedType, TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
-use proptest::prelude::Strategy;
-use proptest::strategy::NewTree;
-use proptest::test_runner::{TestRng, TestRunner};
+use proptest::test_runner::TestRng;
 
 use rand::RngExt;
 
-use smplx_sdk::program::ProgramSchema;
-
-use crate::fuzz::args_strategy::FixedValueTree;
+use crate::fuzz::program_strategy::{FuzzProgramSchema, FuzzProgramValues, Word};
+use crate::fuzz::scenario_strategy::FuzzTransactionSchema;
+use crate::fuzz::witness_path::WitnessPath;
 
 // TODO: make the weights configurable.
 const RANDOM_WEIGHT: u32 = 40;
 const BOUNDARY_WEIGHT: u32 = 20;
 const LITERAL_WEIGHT: u32 = 20;
+const UTXO_WEIGHT: u32 = 40;
 const REUSE_PERCENT: u32 = 20;
 
-const BOUNDARY_POWERS: &[usize] = &[4, 5, 6, 7, 8, 10, 12, 15, 16, 31, 32, 63, 64, 127, 128, 255];
-const BOUNDARY_SMALL: &[u128] = &[0, 1, 2, 100, 1000];
-
-/// Draws each integer from uniform random, boundary or literal values, then copies values between
-/// integers of the same case.
-pub struct Guided<P> {
-    _program: PhantomData<fn() -> P>,
-}
-
-impl<P> Default for Guided<P> {
-    fn default() -> Self {
-        Self { _program: PhantomData }
-    }
-}
-
-impl<P> Debug for Guided<P> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "Guided trees...")
-    }
-}
-
-impl<P: ProgramSchema> Strategy for Guided<P> {
-    type Tree = FixedValueTree<(Arguments, WitnessValues)>;
-    type Value = (Arguments, WitnessValues);
-
-    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let case = GuidedCase::new(&P::literals(), runner.rng()).generate(&P::argument_types(), &P::witness_types());
-
-        Ok(FixedValueTree(case))
-    }
-}
-
-/// State of a single generated case.
-struct GuidedCase<'a> {
+/// State of a single generated case. Programs generated together share literals and values.
+pub(crate) struct GuidedCase<'a> {
+    schemas: &'a [&'a FuzzProgramSchema],
     literals: Vec<Word>,
+    utxos_max: u32,
     leaves: Vec<(usize, Word)>,
     rng: &'a mut TestRng,
 }
 
 impl<'a> GuidedCase<'a> {
-    fn new(literals: &[U256], rng: &'a mut TestRng) -> Self {
+    pub(crate) fn new(schemas: &'a [&'a FuzzProgramSchema], rng: &'a mut TestRng) -> Self {
         Self {
-            literals: literals.iter().copied().map(Word::from).collect(),
+            schemas,
+            literals: schemas
+                .iter()
+                .flat_map(|schema| schema.literals.iter().copied().map(Word::from))
+                .collect(),
+            utxos_max: 0,
             leaves: Vec::new(),
             rng,
         }
     }
 
-    fn generate(
-        mut self,
-        argument_types: &[(TemplateProgramWitness, ResolvedType)],
-        witness_types: &[(TemplateProgramWitness, ResolvedType)],
-    ) -> (Arguments, WitnessValues) {
-        let arguments = self.draw_fields(argument_types);
-        let witness = self.draw_fields(witness_types);
+    /// Draws from the transaction's values too: its literals join the pool and indices up to `utxos_max` come up often.
+    #[must_use]
+    pub(crate) fn with_transaction_schema(mut self, schema: &FuzzTransactionSchema) -> Self {
+        self.literals.extend(schema.literals.iter().copied().map(Word::from));
+        self.utxos_max = schema.utxos_max;
 
-        let mut words = self.reuse().into_iter();
-        let mut next_word = |uint: UIntType| words.next().expect("one word per leaf").to_value(uint);
-
-        let arguments: HashMap<_, _> = arguments
-            .into_iter()
-            .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
-            .collect();
-        let witness: HashMap<_, _> = witness
-            .into_iter()
-            .map(|(name, value)| (name, Self::map_uints(&value, &mut next_word)))
-            .collect();
-
-        (Arguments::from_map(arguments), WitnessValues::from_map(witness))
+        self
     }
 
-    fn draw_fields(
+    /// The values of each schema, in order. Storage slots are drawn like `u256` leaves.
+    pub(crate) fn generate(mut self) -> Vec<FuzzProgramValues> {
+        let schemas = self.schemas;
+        let fields: Vec<_> = schemas
+            .iter()
+            .map(|schema| {
+                let arguments = self.draw_fields(&schema.argument_types, |_| WitnessPath::empty());
+                let witness = self.draw_fields(&schema.witness_types, |field| schema.spending_path(field));
+
+                for _ in 0..schema.storage_capacity {
+                    let word = self.draw_word(256);
+                    self.leaves.push((256, word));
+                }
+
+                (arguments, witness, schema.storage_capacity)
+            })
+            .collect();
+
+        let mut words = self.reuse().into_iter();
+
+        fields
+            .into_iter()
+            .map(|(arguments, witness, storage_capacity)| {
+                let arguments: HashMap<_, _> = arguments
+                    .into_iter()
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut words)))
+                    .collect();
+                let witness: HashMap<_, _> = witness
+                    .into_iter()
+                    .map(|(name, value)| (name, Self::map_uints(&value, &mut words)))
+                    .collect();
+
+                FuzzProgramValues {
+                    arguments: Arguments::from_map(arguments),
+                    witness: WitnessValues::from_map(witness),
+                    storage: (0..storage_capacity)
+                        .map(|_| words.next().expect("one word per leaf").to_byte_array())
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+
+    /// Each field takes the branches of the given path.
+    fn draw_fields<'p>(
         &mut self,
         types: &[(TemplateProgramWitness, ResolvedType)],
+        path_of: impl Fn(&TemplateProgramWitness) -> &'p WitnessPath,
     ) -> Vec<(TemplateProgramWitness, Value)> {
-        types.iter().map(|(name, ty)| (name.clone(), self.draw(ty))).collect()
+        types
+            .iter()
+            .map(|(name, ty)| (name.clone(), path_of(name).draw(ty, &mut |ty| self.draw(ty))))
+            .collect()
     }
 
     fn draw(&mut self, ty: &ResolvedType) -> Value {
@@ -155,12 +160,19 @@ impl<'a> GuidedCase<'a> {
     fn draw_word(&mut self, bits: usize) -> Word {
         let fitting: Vec<Word> = self.literals.iter().copied().filter(|word| word.fits(bits)).collect();
         let literal_weight = if fitting.is_empty() { 0 } else { LITERAL_WEIGHT };
+        let utxo_weight = if self.utxos_max > 0 && Word::from_u128(self.utxos_max.into()).fits(bits) {
+            UTXO_WEIGHT
+        } else {
+            0
+        };
 
         let roll = self
             .rng
-            .random_range(0..RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight);
+            .random_range(0..RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight + utxo_weight);
 
-        if roll < RANDOM_WEIGHT {
+        if roll >= RANDOM_WEIGHT + BOUNDARY_WEIGHT + literal_weight {
+            Word::from_u128(self.rng.random_range(0..=self.utxos_max).into())
+        } else if roll < RANDOM_WEIGHT {
             Word::random(bits, self.rng)
         } else if roll < RANDOM_WEIGHT + BOUNDARY_WEIGHT {
             let boundaries = Word::boundaries(bits);
@@ -205,26 +217,26 @@ impl<'a> GuidedCase<'a> {
     }
 
     /// Rebuilds `value`, replacing every integer leaf in traversal order.
-    fn map_uints(value: &Value, next: &mut impl FnMut(UIntType) -> Value) -> Value {
+    fn map_uints(value: &Value, words: &mut impl Iterator<Item = Word>) -> Value {
         match (value.inner(), value.ty().as_inner()) {
-            (ValueInner::UInt(_), TypeInner::UInt(uint)) => next(*uint),
+            (ValueInner::UInt(_), TypeInner::UInt(uint)) => words.next().expect("one word per leaf").to_value(*uint),
             (ValueInner::Either(either), TypeInner::Either(left_ty, right_ty)) => match either {
-                Either::Left(left) => Value::left(Self::map_uints(left, next), (**right_ty).clone()),
-                Either::Right(right) => Value::right((**left_ty).clone(), Self::map_uints(right, next)),
+                Either::Left(left) => Value::left(Self::map_uints(left, words), (**right_ty).clone()),
+                Either::Right(right) => Value::right((**left_ty).clone(), Self::map_uints(right, words)),
             },
-            (ValueInner::Option(Some(inner)), _) => Value::some(Self::map_uints(inner, next)),
+            (ValueInner::Option(Some(inner)), _) => Value::some(Self::map_uints(inner, words)),
             (ValueInner::Tuple(elements), _) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::tuple(values)
             }
             (ValueInner::Array(elements), TypeInner::Array(element_ty, _)) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::array(values, (**element_ty).clone())
             }
             (ValueInner::List(elements, bound), TypeInner::List(element_ty, _)) => {
-                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, next)).collect();
+                let values: Vec<_> = elements.iter().map(|el| Self::map_uints(el, words)).collect();
 
                 Value::list(values, (**element_ty).clone(), *bound)
             }
@@ -233,131 +245,14 @@ impl<'a> GuidedCase<'a> {
     }
 }
 
-/// Big-endian 256-bit unsigned integer.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Word([u8; 32]);
-
-impl From<U256> for Word {
-    fn from(value: U256) -> Self {
-        Self(value.to_byte_array())
-    }
-}
-
-impl Word {
-    fn from_u128(value: u128) -> Self {
-        let mut bytes = [0; 32];
-        bytes[16..].copy_from_slice(&value.to_be_bytes());
-
-        Self(bytes)
-    }
-
-    fn pow2(power: usize) -> Self {
-        let mut bytes = [0; 32];
-        bytes[31 - power / 8] = 1 << (power % 8);
-
-        Self(bytes)
-    }
-
-    fn max(bits: usize) -> Self {
-        Self([0xff; 32]).masked(bits)
-    }
-
-    fn random(bits: usize, rng: &mut TestRng) -> Self {
-        Self(rng.random()).masked(bits)
-    }
-
-    fn boundaries(bits: usize) -> Vec<Self> {
-        let mut words: Vec<Self> = BOUNDARY_SMALL.iter().map(|small| Self::from_u128(*small)).collect();
-
-        for power in BOUNDARY_POWERS.iter().copied().filter(|power| *power < bits) {
-            let word = Self::pow2(power);
-
-            words.push(word);
-            words.extend(word.sub_one());
-        }
-
-        let max = Self::max(bits);
-
-        words.push(max);
-        words.extend(max.sub_one());
-
-        words.retain(|word| word.fits(bits));
-        words.sort_unstable();
-        words.dedup();
-
-        words
-    }
-
-    /// Clears every bit at or above `bits`.
-    fn masked(mut self, bits: usize) -> Self {
-        for (index, byte) in self.0.iter_mut().rev().enumerate() {
-            let low = index * 8;
-
-            if low >= bits {
-                *byte = 0;
-            } else if bits - low < 8 {
-                *byte &= (1 << (bits - low)) - 1;
-            }
-        }
-
-        self
-    }
-
-    fn fits(&self, bits: usize) -> bool {
-        *self <= Self::max(bits)
-    }
-
-    fn add_one(mut self) -> Option<Self> {
-        for byte in self.0.iter_mut().rev() {
-            let (sum, overflow) = byte.overflowing_add(1);
-            *byte = sum;
-
-            if !overflow {
-                return Some(self);
-            }
-        }
-
-        None
-    }
-
-    fn sub_one(mut self) -> Option<Self> {
-        for byte in self.0.iter_mut().rev() {
-            let (difference, underflow) = byte.overflowing_sub(1);
-            *byte = difference;
-
-            if !underflow {
-                return Some(self);
-            }
-        }
-
-        None
-    }
-
-    fn to_value(self, uint: UIntType) -> Value {
-        let low = u128::from_be_bytes(self.0[16..].try_into().expect("16 bytes"));
-
-        match uint {
-            UIntType::U1 => Value::u1(low as u8),
-            UIntType::U2 => Value::u2(low as u8),
-            UIntType::U4 => Value::u4(low as u8),
-            UIntType::U8 => Value::u8(low as u8),
-            UIntType::U16 => Value::u16(low as u16),
-            UIntType::U32 => Value::u32(low as u32),
-            UIntType::U64 => Value::u64(low as u64),
-            UIntType::U128 => Value::u128(low),
-            UIntType::U256 => Value::u256(U256::from_byte_array(self.0)),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::Strategy;
-    use proptest::strategy::ValueTree;
-    use proptest::test_runner::{Config, RngSeed};
+    use proptest::test_runner::{Config, RngSeed, TestRunner};
 
-    use simplicityhl::num::NonZeroPow2Usize;
+    use simplicityhl::num::{NonZeroPow2Usize, U256};
     use simplicityhl::types::TypeConstructible;
+
+    use smplx_sdk::program::ProgramSchema;
 
     use super::*;
 
@@ -413,6 +308,9 @@ mod tests {
     }
 
     impl ProgramSchema for RichSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Self::types(TemplateProgramWitness::parameter_from_str)
         }
@@ -433,6 +331,9 @@ mod tests {
     struct MagicSchema;
 
     impl ProgramSchema for MagicSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Vec::new()
         }
@@ -446,16 +347,23 @@ mod tests {
         }
     }
 
+    fn generate<P: ProgramSchema>(runner: &mut TestRunner) -> FuzzProgramValues {
+        let schema = FuzzProgramSchema::of::<P>();
+
+        GuidedCase::new(&[&schema], runner.rng())
+            .generate()
+            .pop()
+            .expect("one schema")
+    }
+
     #[test]
     fn strategy_is_persistent() {
-        let strategy = Guided::<RichSchema>::default();
-
         let mut runner_1 = RichSchema::runner();
         let mut runner_2 = RichSchema::runner();
 
         for _ in 0..1024 {
-            let first = strategy.new_tree(&mut runner_1).unwrap().current();
-            let second = strategy.new_tree(&mut runner_2).unwrap().current();
+            let first = generate::<RichSchema>(&mut runner_1);
+            let second = generate::<RichSchema>(&mut runner_2);
 
             assert_eq!(first, second, "same seed produced a different guided case");
         }
@@ -463,27 +371,25 @@ mod tests {
 
     #[test]
     fn values_match_their_declared_types() {
-        let strategy = Guided::<RichSchema>::default();
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let (arguments, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate::<RichSchema>(&mut runner);
 
-            RichSchema::assert_matches(&arguments, &witness);
+            RichSchema::assert_matches(&values.arguments, &values.witness);
         }
     }
 
     #[test]
     fn literals_are_reached_quickly() {
-        let strategy = Guided::<MagicSchema>::default();
         let mut runner = RichSchema::runner();
         let magic = Value::u16(1337);
         let name = TemplateProgramWitness::witness_from_str("VALUE");
 
         let found = (0..100).any(|_| {
-            let (_, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate::<MagicSchema>(&mut runner);
 
-            witness.get(&name) == Some(&magic)
+            values.witness.get(&name) == Some(&magic)
         });
 
         assert!(found);
@@ -498,7 +404,9 @@ mod tests {
 
         for _ in 0..1024 {
             let words = GuidedCase {
+                schemas: &[],
                 literals: Vec::new(),
+                utxos_max: 0,
                 leaves: leaves.clone(),
                 rng: runner.rng(),
             }
@@ -515,26 +423,6 @@ mod tests {
     }
 
     #[test]
-    fn boundaries_cover_the_full_width() {
-        let max = Word([0xff; 32]);
-
-        assert!(Word::boundaries(256).contains(&max));
-        assert!(Word::boundaries(256).contains(&Word::pow2(255)));
-        assert_eq!(Word::boundaries(1), vec![Word::from_u128(0), Word::from_u128(1)]);
-        assert!(Word::boundaries(8).iter().all(|word| word.fits(8)));
-    }
-
-    #[test]
-    fn word_arithmetic() {
-        assert_eq!(Word::from_u128(255).add_one(), Some(Word::from_u128(256)));
-        assert_eq!(Word::from_u128(256).sub_one(), Some(Word::from_u128(255)));
-        assert_eq!(Word([0xff; 32]).add_one(), None);
-        assert_eq!(Word::from_u128(0).sub_one(), None);
-        assert!(Word::from_u128(15).fits(4));
-        assert!(!Word::from_u128(16).fits(4));
-    }
-
-    #[test]
     fn map_uints_preserves_structure() {
         let ty = ResolvedType::tuple([
             ResolvedType::either(ResolvedType::u8(), ResolvedType::boolean()),
@@ -544,9 +432,7 @@ mod tests {
             Value::left(Value::u8(1), ResolvedType::boolean()),
             Value::some(Value::u16(2)),
         ]);
-        let mut next = |uint: UIntType| Word::from_u128(3).to_value(uint);
-
-        let mapped = GuidedCase::map_uints(&value, &mut next);
+        let mapped = GuidedCase::map_uints(&value, &mut std::iter::repeat(Word::from_u128(3)));
 
         assert!(mapped.is_of_type(&ty));
         assert_eq!(

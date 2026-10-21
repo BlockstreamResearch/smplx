@@ -45,6 +45,12 @@ impl Init {
             manifest["package"]["version"] = toml_edit::value("0.1.0");
             manifest["package"]["edition"] = toml_edit::value("2024");
 
+            // Tests spend most of their time in the dependencies. Optimize them even in dev builds
+            let profile = "\n[profile.dev.package.\"*\"]\nopt-level = 3\n"
+                .parse::<toml_edit::DocumentMut>()
+                .expect("the profile is valid TOML");
+            manifest["profile"] = profile["profile"].clone();
+
             let mut dep_table = toml_edit::Table::default();
             dep_table.insert(
                 SIMPLEX_CRATE_NAME,
@@ -54,6 +60,7 @@ impl Init {
             );
 
             manifest["dependencies"] = toml_edit::Item::Table(dep_table);
+
             manifest
         };
 
