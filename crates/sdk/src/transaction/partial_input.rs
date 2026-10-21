@@ -227,6 +227,16 @@ impl PartialInput {
         self
     }
 
+    /// The asset and amount of the spent UTXO, from its explicit value or its unblinding secrets.
+    /// `None` for a confidential UTXO without secrets.
+    #[must_use]
+    pub fn asset_and_amount(&self) -> Option<(AssetId, u64)> {
+        match self.secrets {
+            Some(secrets) => Some((secrets.asset, secrets.value)),
+            None => self.asset.zip(self.amount),
+        }
+    }
+
     /// Returns the `OutPoint` corresponding to this input.
     #[must_use]
     pub fn outpoint(&self) -> OutPoint {

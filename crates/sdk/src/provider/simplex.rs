@@ -28,9 +28,12 @@ impl SimplexProvider {
     /// Panics if the `ElementsRpc` client fails to initialize.
     #[must_use]
     pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
+        let elements = ElementsRpc::new(elements_url, auth)
+            .unwrap_or_else(|error| panic!("Cannot reach the Elements node: {error}"));
+
         Self {
             esplora: EsploraProvider::new(esplora_url, network),
-            elements: ElementsRpc::new(elements_url, auth).unwrap(),
+            elements,
         }
     }
 }

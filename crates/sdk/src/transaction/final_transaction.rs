@@ -254,7 +254,7 @@ impl FinalTransaction {
         }
 
         self.push_new_input(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input))
-            .unwrap()
+            .expect("an issuance input has issuance details")
     }
 
     /// Adds an issuance program input to the transaction with the specified parameters.
@@ -278,7 +278,7 @@ impl FinalTransaction {
                 .with_program(program_input)
                 .with_issuance(issuance_input),
         )
-        .unwrap()
+        .expect("an issuance input has issuance details")
     }
 
     /// Removes an input from the list of inputs at the specified index.
@@ -389,19 +389,10 @@ impl FinalTransaction {
         let mut available_amount = 0;
 
         for input in &self.inputs {
-            match input.partial_input.secrets {
-                // This is an unblinded confidential input
-                Some(secrets) => {
-                    if secrets.asset == network.policy_asset() {
-                        available_amount += secrets.value;
-                    }
-                }
-                // This is an explicit input
-                None => {
-                    if input.partial_input.asset.unwrap() == network.policy_asset() {
-                        available_amount += input.partial_input.amount.unwrap();
-                    }
-                }
+            let (asset, amount) = Self::known_asset_and_amount(input);
+
+            if asset == network.policy_asset() {
+                available_amount += amount;
             }
         }
 
@@ -427,10 +418,7 @@ impl FinalTransaction {
 
         // Collecting all inputs
         for input in &self.inputs {
-            let (asset, amount) = match input.partial_input.secrets {
-                Some(secrets) => (secrets.asset, secrets.value),
-                None => (input.partial_input.asset.unwrap(), input.partial_input.amount.unwrap()),
-            };
+            let (asset, amount) = Self::known_asset_and_amount(input);
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
             *transfer_entry += amount.cast_signed();
@@ -509,20 +497,19 @@ impl FinalTransaction {
 
             let pst_input = final_input.to_input();
 
-            match final_input.partial_input.secrets {
-                // Insert input secrets if present
-                Some(secrets) => input_secrets.insert(i, secrets),
-                // Else populate input secrets with "explicit" amounts
-                None => input_secrets.insert(
-                    i,
-                    TxOutSecrets {
-                        asset: pst_input.asset.unwrap(),
-                        asset_bf: AssetBlindingFactor::zero(),
-                        value: pst_input.amount.unwrap(),
-                        value_bf: ValueBlindingFactor::zero(),
-                    },
-                ),
-            };
+            // An explicit input's secrets are its amounts with zero blinding factors
+            let secrets = final_input.partial_input.secrets.unwrap_or_else(|| {
+                let (asset, value) = Self::known_asset_and_amount(&final_input);
+
+                TxOutSecrets {
+                    asset,
+                    asset_bf: AssetBlindingFactor::zero(),
+                    value,
+                    value_bf: ValueBlindingFactor::zero(),
+                }
+            });
+
+            input_secrets.insert(i, secrets);
 
             pst.add_input(pst_input);
         }
@@ -532,6 +519,17 @@ impl FinalTransaction {
         });
 
         (pst, input_secrets)
+    }
+
+    /// # Panics
+    /// Panics when the input is a confidential UTXO without unblinding secrets.
+    fn known_asset_and_amount(input: &FinalInput) -> (AssetId, u64) {
+        input.partial_input.asset_and_amount().unwrap_or_else(|| {
+            panic!(
+                "The input spending {} has neither an explicit amount nor unblinding secrets",
+                input.partial_input.outpoint()
+            )
+        })
     }
 
     fn push_new_input(&mut self, new_input: FinalInput) -> Option<IssuanceDetails> {

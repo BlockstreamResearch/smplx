@@ -111,6 +111,10 @@ pub enum SignerError {
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
 
+    /// Error indicating an input whose amount the signer cannot know.
+    #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
+    UnknownInputAmount(simplicityhl::elements::OutPoint),
+
     /// Error indicating an expected witness field could not be found.
     #[error("Missing such witness field: {0}")]
     WtnsFieldNotFound(String),

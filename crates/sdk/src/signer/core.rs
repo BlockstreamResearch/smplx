@@ -163,15 +163,16 @@ impl Signer {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
             .parse()
-            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))
-            .unwrap();
+            .unwrap_or_else(|error: bip39::Error| panic!("{}", SignerError::Mnemonic(error.to_string())));
 
         let seed = mnemonic.to_seed("");
-        let master_xprv = Xpriv::new_master(network, &seed).unwrap();
+        let master_xprv = Xpriv::new_master(network, &seed).expect("a BIP-39 seed derives a master key");
         let master_blinding_key = MasterBlindingKey::from_seed(&seed[..]);
 
         let account_path = Self::account_path(network);
-        let account_xprv = master_xprv.derive_priv(&secp, &account_path).unwrap();
+        let account_xprv = master_xprv
+            .derive_priv(&secp, &account_path)
+            .expect("the account path derives from the master key");
         let default_key = Self::derive_key(&secp, &account_xprv, &Self::default_path(), network);
 
         let wpkh_descriptor = Self::wpkh_descriptor(&secp, &master_xprv, &account_path, &account_xprv);
@@ -228,6 +229,8 @@ impl Signer {
     /// Returns a `SignerError` if the wallet contains insufficient funds to satisfy output values and target fee rates.
     #[cfg(feature = "provider")]
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
+        Self::check_known_amounts(tx)?;
+
         let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
         let mut set = HashSet::new();
 
@@ -309,6 +312,8 @@ impl Signer {
     /// Returns a `SignerError` if the assembled inputs do not meet dust limits or fail to cover the
     /// dynamically estimated required fee.
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
+        Self::check_known_amounts(tx)?;
+
         let policy_amount_delta = tx.calculate_fee_delta(&self.network);
 
         if policy_amount_delta < MIN_FEE.cast_signed() {
@@ -330,6 +335,8 @@ impl Signer {
     /// # Errors
     /// Returns a `SignerError` if the transaction cannot be signed.
     pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
+        Self::check_known_amounts(tx)?;
+
         let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
         let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
 
@@ -382,6 +389,8 @@ impl Signer {
         &self,
         tx: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
+        Self::check_known_amounts(tx)?;
+
         let (mut pst, secrets) = tx.extract_pst();
         let inputs = tx.inputs();
         let mut signed_witnesses = HashMap::new();
@@ -773,6 +782,18 @@ impl Signer {
         Ok(WitnessValues::from_map(hm))
     }
 
+    /// Balancing and signing need the amount of every input.
+    fn check_known_amounts(tx: &FinalTransaction) -> Result<(), SignerError> {
+        match tx
+            .inputs()
+            .iter()
+            .find(|input| input.partial_input.asset_and_amount().is_none())
+        {
+            Some(input) => Err(SignerError::UnknownInputAmount(input.partial_input.outpoint())),
+            None => Ok(()),
+        }
+    }
+
     /// The account path, `m/84h/1776h/0h` on mainnet and `m/84h/1h/0h` elsewhere.
     fn account_path(network: SimplicityNetwork) -> DerivationPath {
         let coin_type = if network.is_mainnet() { 1776 } else { 1 };
@@ -793,7 +814,11 @@ impl Signer {
         path: &DerivationPath,
         network: SimplicityNetwork,
     ) -> PrivateKey {
-        PrivateKey::new(account_xprv.derive_priv(secp, path).unwrap().private_key, network)
+        let derived = account_xprv
+            .derive_priv(secp, path)
+            .unwrap_or_else(|error| panic!("Cannot derive a key at `{path}`: {error}"));
+
+        PrivateKey::new(derived.private_key, network)
     }
 
     fn wpkh_descriptor(
@@ -814,15 +839,16 @@ impl Signer {
     /// # Panics
     /// Panics if the WPKH descriptor cannot be parsed or the address cannot be derived.
     fn wpkh_address(wpkh_descriptor: &str, network: SimplicityNetwork) -> Address {
-        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(wpkh_descriptor)
-            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
-            .unwrap();
+        let descriptor =
+            Descriptor::<DescriptorPublicKey>::from_str(wpkh_descriptor).expect("the wallet's descriptor parses");
 
-        descriptor.into_single_descriptors().unwrap()[0]
+        descriptor
+            .into_single_descriptors()
+            .expect("the wallet's descriptor is single-path")[0]
             .at_derivation_index(0)
-            .unwrap()
+            .expect("index 0 is a valid derivation index")
             .address(network.address_params())
-            .unwrap()
+            .expect("a WPKH descriptor has an address")
     }
 
     /// # Panics
@@ -836,17 +862,20 @@ impl Signer {
         let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&format!(
             "ct(slip77({master_blinding_key}),{wpkh_descriptor})"
         ))
-        .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
-        .unwrap();
+        .expect("the wallet's confidential descriptor parses");
 
         // Confidential descriptor doesn't support multipath
-        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
+        descriptor.descriptor = descriptor
+            .descriptor
+            .into_single_descriptors()
+            .expect("the wallet's descriptor is single-path")[0]
+            .clone();
 
         descriptor
             .at_derivation_index(0)
-            .unwrap()
+            .expect("index 0 is a valid derivation index")
             .address(secp, network.address_params())
-            .unwrap()
+            .expect("a SLIP77 descriptor has an address")
     }
 }
 
@@ -961,6 +990,29 @@ mod tests {
 
         println!("{}", signer.get_address());
         println!("{}", signer.get_confidential_address());
+    }
+
+    #[test]
+    fn input_without_known_amount_is_an_error() {
+        use simplicityhl::elements::TxOut;
+
+        let signer = create_signer();
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x03; 32]), 1);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(UTXO {
+                outpoint,
+                txout: TxOut::default(),
+                secrets: None,
+            }),
+            RequiredSignature::NativeEcdsa,
+        );
+
+        assert!(matches!(
+            signer.sign_witnesses(&ft),
+            Err(SignerError::UnknownInputAmount(unknown)) if unknown == outpoint
+        ));
     }
 
     #[test]

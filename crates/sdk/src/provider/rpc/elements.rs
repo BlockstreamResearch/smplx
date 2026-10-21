@@ -46,7 +46,9 @@ impl ElementsRpc {
 
         let addr: Value = self.inner.call(METHOD, &[label.into(), "bech32".to_string().into()])?;
 
-        Ok(Address::from_str(addr.as_str().unwrap()).unwrap())
+        let addr = addr.as_str().expect("`getnewaddress` returns a string");
+
+        Ok(Address::from_str(addr).unwrap_or_else(|error| panic!("`getnewaddress` returned `{addr}`: {error}")))
     }
 
     /// Instructs the node to transfer funds directly to the target address.
@@ -62,7 +64,7 @@ impl ElementsRpc {
 
         let btc = sat2btc(satoshi);
         let btc = bitcoin::amount::Amount::from_btc(btc)
-            .unwrap()
+            .expect("a satoshi amount is a valid BTC amount")
             .to_string_in(bitcoin::amount::Denomination::Bitcoin);
 
         let r = match asset {
@@ -86,7 +88,9 @@ impl ElementsRpc {
                 .call::<Value>(METHOD, &[address.to_string().into(), btc.into()])?,
         };
 
-        Ok(Txid::from_str(r.as_str().unwrap()).unwrap())
+        let txid = r.as_str().expect("`sendtoaddress` returns a string");
+
+        Ok(Txid::from_str(txid).unwrap_or_else(|error| panic!("`sendtoaddress` returned `{txid}`: {error}")))
     }
 
     /// Instructs the node to rescan the block chain for missed wallet transactions.

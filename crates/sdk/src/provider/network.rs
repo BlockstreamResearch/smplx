@@ -67,7 +67,8 @@ impl SimplicityNetwork {
     /// This function will panic if the provided `LIQUID_DEFAULT_REGTEST_ASSET_STR` cannot be parsed.
     #[must_use]
     pub fn default_regtest() -> Self {
-        let policy_asset = elements::AssetId::from_str(LIQUID_DEFAULT_REGTEST_ASSET_STR).unwrap();
+        let policy_asset =
+            elements::AssetId::from_str(LIQUID_DEFAULT_REGTEST_ASSET_STR).expect("the regtest asset constant parses");
         Self::ElementsRegtest { policy_asset }
     }
 
@@ -78,8 +79,12 @@ impl SimplicityNetwork {
     #[must_use]
     pub fn policy_asset(&self) -> elements::AssetId {
         match self {
-            Self::Liquid => elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).unwrap(),
-            Self::LiquidTestnet => elements::AssetId::from_str(LIQUID_TESTNET_POLICY_ASSET_STR).unwrap(),
+            Self::Liquid => {
+                elements::AssetId::from_str(LIQUID_POLICY_ASSET_STR).expect("the policy asset constant parses")
+            }
+            Self::LiquidTestnet => {
+                elements::AssetId::from_str(LIQUID_TESTNET_POLICY_ASSET_STR).expect("the policy asset constant parses")
+            }
             Self::ElementsRegtest { policy_asset } | Self::ElementsCustom { policy_asset, .. } => *policy_asset,
         }
     }

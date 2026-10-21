@@ -390,7 +390,7 @@ impl Program {
     /// Panics if generating the taproot spending information fails.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
-        let spend_info = self.taproot_spending_info().unwrap();
+        let spend_info = self.taproot_spending_info().unwrap_or_else(|error| panic!("{error}"));
 
         Address::p2tr(
             secp256k1::SECP256K1,
@@ -419,7 +419,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_cmr(&self) -> [u8; 32] {
-        self.cmr().unwrap().to_byte_array()
+        self.cmr().unwrap_or_else(|error| panic!("{error}")).to_byte_array()
     }
 
     /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
@@ -428,7 +428,7 @@ impl Program {
     /// Panics if the `SimplicityHL` compilation fails.
     #[must_use]
     pub fn get_tapleaf_hash(&self) -> [u8; 32] {
-        let (script, version) = self.script_version().unwrap();
+        let (script, version) = self.script_version().unwrap_or_else(|error| panic!("{error}"));
 
         taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
