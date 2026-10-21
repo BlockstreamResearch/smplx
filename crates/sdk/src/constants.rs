@@ -1,5 +1,3 @@
-/// General public blinder key to use
-pub const PUBLIC_SECRET_BLINDER_KEY: [u8; 32] = [1; 32];
 /// Dummy signature, which is used for fee estimation
 pub const DUMMY_SIGNATURE: [u8; 64] = [1; 64];
 
@@ -14,6 +12,3 @@ pub const LIQUID_TESTNET_POLICY_ASSET_STR: &str = "144c654344aa716d6f3abcc1ca90e
 
 /// Policy `AssetId` (hex, BE) for Elements regtest.
 pub const LIQUID_DEFAULT_REGTEST_ASSET_STR: &str = "5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225";
-
-/// Example test `AssetId` (hex, BE) on Liquid testnet.
-pub const LIQUID_TESTNET_TEST_ASSET_ID_STR: &str = "38fca2d939696061a8f76d4e6b5eecd54e3b4221c846f24a6b279e79952850a5";

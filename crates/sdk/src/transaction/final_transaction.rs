@@ -13,9 +13,6 @@ use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, Program
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
 
-/// Constant is defined for fee calculation on transaction sending.
-pub const WITNESS_SCALE_FACTOR: usize = 4;
-
 /// Represents the final input structure put into a `FinalTransaction` for processing.
 #[derive(Clone, Debug)]
 pub struct FinalInput {
@@ -219,13 +216,9 @@ impl FinalTransaction {
         details
     }
 
-    /// Removes an input from the list of inputs at the specified index.
+    /// Removes the input at `index`, `None` when there is none.
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {
-        if self.inputs.get(index).is_some() {
-            return Some(self.inputs.remove(index));
-        }
-
-        None
+        (index < self.inputs.len()).then(|| self.inputs.remove(index))
     }
 
     /// Adds a partial output to the list of outputs.
@@ -233,16 +226,9 @@ impl FinalTransaction {
         self.outputs.push(partial_output);
     }
 
-    /// Removes an output from the `outputs` list at the specified index.
-    ///
-    /// # Panics
-    /// This function does not panic. If the `index` is invalid, it will return `None` instead of causing a panic.
+    /// Removes the output at `index`, `None` when there is none.
     pub fn remove_output(&mut self, index: usize) -> Option<PartialOutput> {
-        if self.outputs.get(index).is_some() {
-            return Some(self.outputs.remove(index));
-        }
-
-        None
+        (index < self.outputs.len()).then(|| self.outputs.remove(index))
     }
 
     /// Where this transaction's change should go, when the caller said.
@@ -395,26 +381,6 @@ impl FinalTransaction {
 
         // All transfers including fee should sum up to 0
         transfers.values().all(|&value| value == 0)
-    }
-
-    /// Computes the transaction fee based on the provided weight and fee rate.
-    ///
-    /// Overall, the function calculates the virtual size (vsize) of the transaction as:
-    /// `weight / WITNESS_SCALE_FACTOR`, rounded up to the nearest whole number.
-    /// Then, the fee is computed as `(vsize * fee_rate / 1000.0)`, also rounded up.
-    ///
-    /// # Returns
-    /// The transaction fee in satoshis, rounded up to the nearest whole number.
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
-    #[must_use]
-    pub fn calculate_fee(&self, weight: usize, fee_rate: f32) -> u64 {
-        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
-
-        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
     /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.

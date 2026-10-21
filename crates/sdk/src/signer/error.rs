@@ -34,7 +34,7 @@ pub enum SignerError {
 
     /// Errors encountered when attempting to inject or wrap witness fields.
     #[error(transparent)]
-    WtnsInjectError(#[from] WtnsWrappingError),
+    WitnessInjectError(#[from] WitnessWrappingError),
 
     /// Error indicating an incorrectly formatted mnemonic phrase.
     #[error("Failed to parse a mnemonic: {0}")]
@@ -62,7 +62,7 @@ pub enum SignerError {
 
     /// Error indicating the transaction is not balanced.
     #[error("Transaction is not balanced or malformed")]
-    Unbalanced(),
+    Unbalanced,
 
     /// Error indicating the transaction inputs cover an amount that is lower than the dust limit.
     #[error("Fee amount is too low: {0}")]
@@ -117,12 +117,12 @@ pub enum SignerError {
 
     /// Error indicating an expected witness field could not be found.
     #[error("Missing such witness field: {0}")]
-    WtnsFieldNotFound(String),
+    WitnessFieldNotFound(String),
 }
 
 /// Errors originating from manipulating witness paths and injecting values.
 #[derive(Debug, thiserror::Error)]
-pub enum WtnsWrappingError {
+pub enum WitnessWrappingError {
     /// Error indicating a failure while parsing the provided witness path string.
     #[error("Failed to parse path")]
     ParsingError,

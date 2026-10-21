@@ -202,6 +202,7 @@ impl<'a> FuzzCase<'a> {
 
         if !is_final && of_kind(locktime) { locktime } else { 0 }
     }
+
     fn input_asset_and_amount(&self, index: usize) -> (AssetId, u64) {
         self.transaction.inputs()[index]
             .partial_input

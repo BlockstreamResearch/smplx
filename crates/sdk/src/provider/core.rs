@@ -14,6 +14,8 @@ use super::error::ProviderError;
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
 /// The standard timeout duration (in seconds) applied to Esplora REST API requests.
 pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
+/// How many times `EsploraProvider::wait` polls for a confirmation by default.
+pub const DEFAULT_CONFIRMATION_ATTEMPTS: u32 = 9;
 
 /// Contains foundational configuration elements required for initializing a generic blockchain provider.
 #[cfg(feature = "provider")]

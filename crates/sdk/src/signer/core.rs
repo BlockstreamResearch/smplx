@@ -37,12 +37,12 @@ use crate::program::logger::ProgramLogger;
 #[cfg(feature = "provider")]
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::signer::wtns_injector::WtnsInjector;
+use crate::signer::witness_injector::WitnessInjector;
 use crate::transaction::{
-    ChangeOutput, FinalTransaction, NativeSignature, PartialOutput, ProgramSignature, RequiredSignature, SigMessage,
+    ChangeOutput, FinalTransaction, PartialOutput, ProgramSignature, RequiredSignature, SigMessage,
 };
 #[cfg(feature = "provider")]
-use crate::transaction::{PartialInput, TxReceipt, UTXO};
+use crate::transaction::{NativeSignature, PartialInput, TxReceipt, UTXO};
 
 use super::error::SignerError;
 
@@ -50,7 +50,11 @@ use super::error::SignerError;
 pub const PLACEHOLDER_FEE: u64 = 1;
 
 /// Discounted weight of a native input with its signature.
+#[cfg(feature = "provider")]
 const NATIVE_INPUT_WEIGHT: usize = 274;
+
+/// Weight units per virtual byte.
+const WITNESS_SCALE_FACTOR: usize = 4;
 
 /// Common signing interface spanning over standard explicit inputs and Simplicity programs.
 pub trait SignerTrait {
@@ -247,7 +251,7 @@ impl Signer {
 
         // Each input added after an estimate makes the transaction heavier, so
         // the next estimate also accounts for the fee of those inputs.
-        let input_fee = fee_tx.calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
+        let input_fee = Self::calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
         let mut inputs_since_estimate: u64 = 0;
 
         let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
@@ -651,7 +655,7 @@ impl Signer {
         ));
 
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta > fee && available_delta - fee >= MIN_FEE {
             // We have enough funds to cover the change UTXO
@@ -661,7 +665,7 @@ impl Signer {
             outputs[outputs.len() - 1].amount = fee;
 
             if !fee_tx.is_balanced() {
-                return Err(SignerError::Unbalanced());
+                return Err(SignerError::Unbalanced);
             }
 
             let final_tx = sign_and_extract_tx(self, &fee_tx)?;
@@ -687,7 +691,7 @@ impl Signer {
         fee_tx.remove_output(change_index);
 
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
             return Ok(Estimate::Failure(fee));
@@ -699,7 +703,7 @@ impl Signer {
         outputs[outputs.len() - 1].amount = available_delta;
 
         if !fee_tx.is_balanced() {
-            return Err(SignerError::Unbalanced());
+            return Err(SignerError::Unbalanced);
         }
 
         // Finalize the tx with fee and without the change
@@ -734,25 +738,25 @@ impl Signer {
             program_signature.message(),
         )?;
 
-        // Inject the signature into the wtns name directly if the path is not provided
+        // Inject the signature into the witness field directly if the path is not provided
         let sig_val = if sig_path.is_empty() {
             Value::byte_array(signature.serialize())
         } else {
             let witness_types = program.get_witness_types()?;
             let witness_type = witness_types
                 .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+                .ok_or(SignerError::WitnessFieldNotFound(witness_name.to_string()))?;
 
             #[allow(clippy::missing_panics_doc)]
-            let local_wtns = Arc::new(
+            let local_witness = Arc::new(
                 witness
                     .get(&TemplateProgramWitness::witness_from_str(witness_name))
                     .expect("checked above")
                     .clone(),
             );
 
-            WtnsInjector::inject_value(
-                &local_wtns,
+            WitnessInjector::inject_value(
+                &local_witness,
                 witness_type,
                 sig_path,
                 Value::byte_array(signature.serialize()),
@@ -768,6 +772,18 @@ impl Signer {
         hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
 
         Ok(WitnessValues::from_map(hm))
+    }
+
+    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
+        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+
+        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
     /// Balancing and signing need the amount of every input.

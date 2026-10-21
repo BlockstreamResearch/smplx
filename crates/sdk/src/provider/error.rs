@@ -15,7 +15,7 @@ pub enum ProviderError {
 
     /// Error indicating the configured timeout to wait for transaction confirmation elapsed without confirmation.
     #[error("Couldn't wait for the transaction to be confirmed")]
-    Confirmation(),
+    Confirmation,
 
     /// Error indicating a provider returned a non-success response explicitly rejecting a broadcasted transaction payload.
     #[error("Broadcast failed with HTTP {status} for {url}: {message}")]
@@ -38,7 +38,7 @@ pub enum ProviderError {
 
     /// Error indicating that the rpc returned a malformed response.
     #[error("Couldn't parse the response")]
-    BadResponse(),
+    BadResponse,
 }
 
 /// Network conversion error.

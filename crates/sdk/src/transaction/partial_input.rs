@@ -44,7 +44,9 @@ pub struct ProgramInput {
 
 impl Debug for ProgramInput {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.witness)
+        f.debug_struct("ProgramInput")
+            .field("witness", &self.witness)
+            .finish_non_exhaustive()
     }
 }
 
