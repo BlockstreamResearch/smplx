@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::str::FromStr;
 use std::time::Duration;
 
 use simplicityhl::elements::hashes::sha256;
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::{Address, OutPoint, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
 
 use serde::Deserialize;
 
@@ -75,40 +75,39 @@ impl EsploraProvider {
         }
     }
 
-    fn esplora_utxo_to_outpoint(utxo: &EsploraUtxo) -> Result<OutPoint, ProviderError> {
-        let txid = Txid::from_str(&utxo.txid).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?;
+    /// The UTXOs of `utxos`, all locked by `script`. Explicit ones are built from the response alone.
+    /// Confidential ones need their transaction for the nonce and range proof.
+    fn to_utxos(&self, utxos: &[EsploraUtxo], script: &Script) -> Result<Vec<UTXO>, ProviderError> {
+        let mut transactions: HashMap<Txid, Transaction> = HashMap::new();
 
-        Ok(OutPoint::new(txid, utxo.vout))
-    }
+        utxos
+            .iter()
+            .map(|utxo| {
+                let txid = Txid::from_str(&utxo.txid).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?;
+                let outpoint = OutPoint::new(txid, utxo.vout);
 
-    fn populate_txouts_from_outpoints(&self, outpoints: &[OutPoint]) -> Result<Vec<UTXO>, ProviderError> {
-        let set: HashSet<_> = outpoints.iter().collect();
-        let mut map = HashMap::new();
+                if let (Some(value), Some(asset)) = (utxo.value, &utxo.asset) {
+                    let asset = AssetId::from_str(asset).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
-        // filter unique transactions
-        for point in set {
-            let tx = self.fetch_transaction(&point.txid)?;
-            map.insert(point.txid, tx);
-        }
+                    return Ok(UTXO::explicit(outpoint, script.clone(), value, asset));
+                }
 
-        let mut utxos = Vec::with_capacity(outpoints.len());
+                if let Entry::Vacant(entry) = transactions.entry(txid) {
+                    entry.insert(self.fetch_transaction(&txid)?);
+                }
 
-        for point in outpoints {
-            let txout = map
-                .get(&point.txid)
-                .unwrap()
-                .output
-                .get(point.vout as usize)
-                .ok_or_else(ProviderError::BadResponse)?;
+                let txout = transactions[&txid]
+                    .output
+                    .get(utxo.vout as usize)
+                    .ok_or_else(ProviderError::BadResponse)?;
 
-            utxos.push(UTXO {
-                outpoint: *point,
-                txout: txout.clone(),
-                secrets: None,
-            });
-        }
-
-        Ok(utxos)
+                Ok(UTXO {
+                    outpoint,
+                    txout: txout.clone(),
+                    secrets: None,
+                })
+            })
+            .collect()
     }
 }
 
@@ -337,12 +336,8 @@ impl ProviderTrait for EsploraProvider {
         }
 
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
-        let outpoints = utxos
-            .iter()
-            .map(Self::esplora_utxo_to_outpoint)
-            .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
-        self.populate_txouts_from_outpoints(&outpoints)
+        self.to_utxos(&utxos, &address.script_pubkey())
     }
 
     fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError> {
@@ -366,12 +361,8 @@ impl ProviderTrait for EsploraProvider {
         }
 
         let utxos: Vec<EsploraUtxo> = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
-        let outpoints = utxos
-            .iter()
-            .map(Self::esplora_utxo_to_outpoint)
-            .collect::<Result<Vec<OutPoint>, ProviderError>>()?;
 
-        self.populate_txouts_from_outpoints(&outpoints)
+        self.to_utxos(&utxos, script)
     }
 
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {

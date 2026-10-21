@@ -44,8 +44,9 @@ impl ProviderTrait for SimplexProvider {
         let tx_receipt = self.esplora.broadcast_transaction(tx)?;
 
         self.elements.generate_blocks(1)?;
+        self.esplora.wait(tx_receipt.as_ref())?;
 
-        Ok(tx_receipt)
+        Ok(TxReceipt::new(self, tx_receipt.txid()))
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
