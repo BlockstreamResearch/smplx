@@ -111,9 +111,10 @@ pub struct PartialInput {
     /// The native transaction output corresponding to the targeted UTXO.
     pub witness_utxo: TxOut,
     /// The sequence number indicating transaction replaceability or relative timelocking.
-    pub sequence: Sequence,
-    /// Absolute timelock criteria enforced against the input.
-    pub locktime: LockTime,
+    /// `None` takes the transaction's.
+    pub sequence: Option<Sequence>,
+    /// Absolute timelock criteria enforced against the input. `None` takes the transaction's.
+    pub locktime: Option<LockTime>,
     /// The explicit amount value in Satoshis for the input, if available.
     /// Note: if UTXO is explicit, `amount` and `asset` are `Some`.
     pub amount: Option<u64>,
@@ -190,8 +191,8 @@ impl PartialInput {
             witness_txid: utxo.outpoint.txid,
             witness_output_index: utxo.outpoint.vout,
             witness_utxo: utxo.txout,
-            sequence: Sequence::default(),
-            locktime: LockTime::ZERO,
+            sequence: None,
+            locktime: None,
             amount,
             asset,
             secrets: utxo.secrets,
@@ -213,7 +214,7 @@ impl PartialInput {
     /// Sets a specific `Sequence` for the input.
     #[must_use]
     pub fn with_sequence(mut self, sequence: Sequence) -> Self {
-        self.sequence = sequence;
+        self.sequence = Some(sequence);
 
         self
     }
@@ -221,7 +222,7 @@ impl PartialInput {
     /// Sets a specific `LockTime` for the input.
     #[must_use]
     pub fn with_locktime(mut self, locktime: LockTime) -> Self {
-        self.locktime = locktime;
+        self.locktime = Some(locktime);
 
         self
     }
@@ -236,13 +237,16 @@ impl PartialInput {
     }
 
     /// Converts this `PartialInput` into a fully formed PSET `Input`.
+    /// An unset sequence is final and an unset locktime is zero.
     #[must_use]
     pub fn to_input(&self) -> Input {
-        let time_locktime = match self.locktime {
+        let locktime = self.locktime.unwrap_or(LockTime::ZERO);
+
+        let time_locktime = match locktime {
             LockTime::Seconds(value) => Some(value),
             LockTime::Blocks(_) => None,
         };
-        let height_locktime = match self.locktime {
+        let height_locktime = match locktime {
             LockTime::Blocks(value) if value.to_consensus_u32() > 0 => Some(value),
             LockTime::Blocks(_) | LockTime::Seconds(_) => None,
         };
@@ -251,7 +255,7 @@ impl PartialInput {
             previous_txid: self.witness_txid,
             previous_output_index: self.witness_output_index,
             witness_utxo: Some(self.witness_utxo.clone()),
-            sequence: Some(self.sequence),
+            sequence: Some(self.sequence.unwrap_or_default()),
             required_time_locktime: time_locktime,
             required_height_locktime: height_locktime,
             amount: self.amount,

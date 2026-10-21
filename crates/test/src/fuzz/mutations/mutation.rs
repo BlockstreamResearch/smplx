@@ -63,7 +63,7 @@ impl Mutation {
             }
             Self::SetLocktime(locktime) => {
                 for input in transaction.inputs_mut() {
-                    input.partial_input.locktime = locktime;
+                    input.partial_input.locktime = Some(locktime);
                 }
 
                 transaction.set_locktime(locktime);
@@ -74,7 +74,7 @@ impl Mutation {
                     .get_mut(input)
                     .ok_or_else(unfit)?
                     .partial_input
-                    .sequence = sequence;
+                    .sequence = Some(sequence);
             }
             Self::AddOutput { from, amount } => {
                 let source = transaction.outputs_mut().get_mut(from).ok_or_else(unfit)?;

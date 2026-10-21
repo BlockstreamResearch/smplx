@@ -158,6 +158,7 @@ impl FinalTransaction {
             locktime: LockTime::ZERO,
         }
     }
+
     /// Sets a specific `Sequence` for the transaction.
     ///
     /// Injects this value into the inputs that don't declare their own sequence.
@@ -170,6 +171,18 @@ impl FinalTransaction {
     /// Injects this value into the inputs that don't declare their own locktime.
     pub fn set_locktime(&mut self, locktime: LockTime) {
         self.locktime = locktime;
+    }
+
+    /// The sequence of the transaction, e.g. inputs that don't declare their own.
+    #[must_use]
+    pub fn sequence(&self) -> Sequence {
+        self.sequence
+    }
+
+    /// The locktime of the the transaction, e.g. inputs that don't declare their own.
+    #[must_use]
+    pub fn locktime(&self) -> LockTime {
+        self.locktime
     }
 
     /// Sets where this transaction's change should go.
@@ -490,15 +503,9 @@ impl FinalTransaction {
         for i in 0..self.inputs.len() {
             let mut final_input = self.inputs[i].clone();
 
-            // Inject sequence if the input has none
-            if final_input.partial_input.sequence == Sequence::default() {
-                final_input.partial_input = final_input.partial_input.with_sequence(self.sequence);
-            }
-
-            // Inject locktime if the input has none
-            if final_input.partial_input.locktime == LockTime::ZERO {
-                final_input.partial_input = final_input.partial_input.with_locktime(self.locktime);
-            }
+            // An input that sets no sequence or locktime takes the transaction's
+            final_input.partial_input.sequence.get_or_insert(self.sequence);
+            final_input.partial_input.locktime.get_or_insert(self.locktime);
 
             let pst_input = final_input.to_input();
 

@@ -1,3 +1,4 @@
+use simplicityhl::elements::Sequence;
 use simplicityhl::elements::locktime::LOCK_TIME_THRESHOLD;
 
 use smplx_sdk::program::Program;
@@ -118,6 +119,17 @@ impl<'a> FuzzCase<'a> {
             .partial_input
             .amount
             .expect("the input amount is confidential")
+    }
+
+    /// The sequence input `index` is signed with: its own, or the transaction's.
+    ///
+    /// # Panics
+    /// Panics when the transaction has no input `index`.
+    pub fn input_sequence(&self, index: usize) -> Sequence {
+        self.transaction.inputs()[index]
+            .partial_input
+            .sequence
+            .unwrap_or(self.transaction.sequence())
     }
 
     /// # Panics

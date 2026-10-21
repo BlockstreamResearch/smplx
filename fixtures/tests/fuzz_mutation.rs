@@ -1,10 +1,11 @@
 use simplex::{FuzzMode, TestContext};
 
-use simplex::fuzz::{Expect, FuzzCase, Mutations, Scenario};
+use simplex::fuzz::{Expect, FuzzCase, Mutation, Mutations, Scenario};
 use simplex::simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, Sequence};
 use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
 
 use simplex_fixtures::artifacts::conserving_vault::ConservingVaultProgram;
+use simplex_fixtures::artifacts::dummy_accept::DummyAcceptProgram;
 use simplex_fixtures::artifacts::paired_output::PairedOutputProgram;
 use simplex_fixtures::artifacts::script_auth::ScriptAuthProgram;
 use simplex_fixtures::artifacts::timelock::TimelockProgram;
@@ -184,5 +185,36 @@ fn auth_input_requirement_follows_its_utxo(test_context: TestContext<FuzzMode>) 
     test_context
         .engine(scenario)
         .mutations(Mutations::none().layout())
+        .run();
+}
+
+/// The transaction enables the locktime, so a final input has to override it.
+#[simplex::fuzz]
+fn sequence_mutation_reaches_the_signed_transaction(test_context: TestContext<FuzzMode>) {
+    let mut transaction = FinalTransaction::new();
+    transaction.set_sequence(Sequence::ENABLE_LOCKTIME_NO_RBF);
+    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+
+    let mut scenario = Scenario::new(transaction);
+    scenario.add::<DummyAcceptProgram>("accepting").spends(0);
+
+    test_context
+        .engine(scenario)
+        .mutations(Mutations::none().timelocks())
+        .spec(|case| {
+            let mutated = case.mutations().iter().rev().find_map(|mutation| match mutation {
+                Mutation::SetSequence { input: 0, sequence } => Some(*sequence),
+                _ => None,
+            });
+
+            if let Some(sequence) = mutated {
+                let signed = case.transaction().extract_pst().0.extract_tx().unwrap();
+
+                assert_eq!(signed.input[0].sequence, sequence);
+                assert_eq!(case.input_sequence(0), sequence);
+            }
+
+            Expect::Accept
+        })
         .run();
 }
