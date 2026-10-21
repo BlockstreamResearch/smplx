@@ -112,6 +112,15 @@ pub enum BuildError {
     #[error("Failed to build dependency map: {0}")]
     DependencyMap(String),
 
+    #[error(
+        "Dependency '{dep_name}' src_dir resolves outside its package: '{source_dir}' (package root: '{package_root}')"
+    )]
+    DependencySourceOutsidePackage {
+        dep_name: String,
+        package_root: PathBuf,
+        source_dir: PathBuf,
+    },
+
     #[error("Failed to flatten program: {0}")]
     Flattening(String),
 

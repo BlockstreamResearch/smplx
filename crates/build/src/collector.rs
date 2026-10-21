@@ -82,6 +82,15 @@ impl DepCollector {
             let loaded_simf_dir = CanonPath::canonicalize(&loaded_context.as_path().join(loaded_src_dir))
                 .map_err(BuildError::PathCanonicalization)?;
 
+            // A dependency may only define import contexts inside its own package.
+            if !loaded_simf_dir.starts_with(&loaded_context) {
+                return Err(BuildError::DependencySourceOutsidePackage {
+                    dep_name: dep_name.clone(),
+                    package_root: loaded_context.as_path().to_path_buf(),
+                    source_dir: loaded_simf_dir.as_path().to_path_buf(),
+                });
+            }
+
             self.builder
                 .add_dependency(simf_dir.clone(), dep_name.clone(), loaded_simf_dir.clone());
 
