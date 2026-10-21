@@ -28,7 +28,7 @@ pub struct ProviderInfo {
 }
 
 /// Baseline traits detailing required interaction methods between the SDK client and the underlying blockchain node or API.
-pub trait ProviderTrait {
+pub trait ProviderTrait: Send + Sync {
     /// Retrieves the network configured for this provider.
     fn get_network(&self) -> &SimplicityNetwork;
 

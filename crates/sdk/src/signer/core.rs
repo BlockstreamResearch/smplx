@@ -38,7 +38,9 @@ use crate::program::logger::ProgramLogger;
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
 use crate::signer::wtns_injector::WtnsInjector;
-use crate::transaction::{ChangeOutput, FinalTransaction, PartialOutput, RequiredSignature, SigMessage};
+use crate::transaction::{
+    ChangeOutput, FinalTransaction, NativeSignature, PartialOutput, ProgramSignature, RequiredSignature, SigMessage,
+};
 #[cfg(feature = "provider")]
 use crate::transaction::{PartialInput, TxReceipt, UTXO};
 
@@ -232,16 +234,9 @@ impl Signer {
         Self::check_known_amounts(tx)?;
 
         let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
-        let mut set = HashSet::new();
+        let spent: HashSet<OutPoint> = tx.inputs().iter().map(|input| input.partial_input.outpoint).collect();
 
-        for input in tx.inputs() {
-            set.insert(OutPoint {
-                txid: input.partial_input.witness_txid,
-                vout: input.partial_input.witness_output_index,
-            });
-        }
-
-        signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
+        signer_utxos.retain(|utxo| !spent.contains(&utxo.outpoint));
 
         // Descending sort of both confidential and explicit utxos
         signer_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount()));
@@ -285,7 +280,7 @@ impl Signer {
 
             // IMPORTANT: must be added to the end of the transaction.
             // Otherwise, the logging of execution traces will be broken
-            fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
+            fee_tx.add_input(PartialInput::new(utxo), Some(NativeSignature::Ecdsa));
             inputs_since_estimate += 1;
         }
 
@@ -411,31 +406,18 @@ impl Signer {
 
         for (index, input_i) in inputs.iter().enumerate() {
             if let Some(program_input) = &input_i.program_input {
-                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
-                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
-                        Some((wtns_name, sig_path, &SigMessage::Sighash))
-                    }
-                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
-                        Some((wtns_name, sig_path, message))
-                    }
-                    _ => None,
-                };
-
-                let signed_witness = match signing_info {
+                let signed_witness = match &input_i.required_sig {
                     // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
+                    RequiredSignature::Program(signature) => self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness,
-                        witness_name,
-                        sig_path,
+                        signature,
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
-                        message,
                     )?,
                     // Just build the witness
-                    None => program_input.witness.shallow_clone(),
+                    _ => program_input.witness.shallow_clone(),
                 };
 
                 signed_witnesses.insert(index, signed_witness);
@@ -730,21 +712,27 @@ impl Signer {
     ///
     /// # Errors
     /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
-    /// retrieved from the program, if `witness_name` is not present among the program's
-    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
-    #[allow(clippy::too_many_arguments)]
+    /// retrieved from the program, if the signature's witness field is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at its path fails.
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
-        witness_name: &str,
-        sig_path: &[String],
+        program_signature: &ProgramSignature,
         index: usize,
         derivation_path: Option<&DerivationPath>,
-        message: &SigMessage,
     ) -> Result<WitnessValues, SignerError> {
-        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
+        let witness_name = program_signature.name();
+        let sig_path = program_signature.path();
+        let signature = self.sign_program(
+            pst,
+            program,
+            index,
+            &self.network,
+            derivation_path,
+            program_signature.message(),
+        )?;
 
         // Inject the signature into the wtns name directly if the path is not provided
         let sig_val = if sig_path.is_empty() {
@@ -789,7 +777,7 @@ impl Signer {
             .iter()
             .find(|input| input.partial_input.asset_and_amount().is_none())
         {
-            Some(input) => Err(SignerError::UnknownInputAmount(input.partial_input.outpoint())),
+            Some(input) => Err(SignerError::UnknownInputAmount(input.partial_input.outpoint)),
             None => Ok(()),
         }
     }
@@ -914,7 +902,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(PartialOutput::new(
             signer.get_address().script_pubkey(),
             50_000,
@@ -933,7 +921,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(
             PartialOutput::new(
                 signer.get_address().script_pubkey(),
@@ -955,7 +943,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(PartialOutput::new(
             signer.get_address().script_pubkey(),
             50_000,
@@ -1006,7 +994,7 @@ mod tests {
                 txout: TxOut::default(),
                 secrets: None,
             }),
-            RequiredSignature::NativeEcdsa,
+            Some(NativeSignature::Ecdsa),
         );
 
         assert!(matches!(
@@ -1036,7 +1024,7 @@ mod tests {
                 1000,
                 signer.network.policy_asset(),
             )),
-            RequiredSignature::NativeEcdsa,
+            Some(NativeSignature::Ecdsa),
         );
         ft.add_program_input(
             PartialInput::new(UTXO::explicit(
@@ -1046,7 +1034,7 @@ mod tests {
                 signer.network.policy_asset(),
             )),
             ProgramInput::new(Box::new(program.clone()), WitnessValues::default()),
-            RequiredSignature::None,
+            None,
         );
 
         let (pst, signed_witnesses) = signer.sign_witnesses(&ft).unwrap();

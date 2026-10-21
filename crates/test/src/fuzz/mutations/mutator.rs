@@ -42,11 +42,10 @@ impl Mutator {
         transaction: &FinalTransaction,
         program_scenarios: &[FuzzProgramScenario],
     ) -> Result<Self, SetupError> {
-        let known = transaction.inputs().iter().all(|input| {
-            let input = &input.partial_input;
-
-            input.secrets.is_some() || (input.asset.is_some() && input.amount.is_some())
-        });
+        let known = transaction
+            .inputs()
+            .iter()
+            .all(|input| input.partial_input.asset_and_amount().is_some());
 
         if !known || !transaction.is_balanced() {
             return Err(SetupError::Transaction(
@@ -353,11 +352,10 @@ impl Mutator {
 
     /// The assets of the inputs and outputs.
     fn assets(transaction: &FinalTransaction) -> Vec<AssetId> {
-        let inputs = transaction.inputs().iter().filter_map(|input| {
-            let input = &input.partial_input;
-
-            input.secrets.map(|secrets| secrets.asset).or(input.asset)
-        });
+        let inputs = transaction
+            .inputs()
+            .iter()
+            .filter_map(|input| input.partial_input.asset_and_amount().map(|(asset, _)| asset));
         let mut assets: Vec<AssetId> = inputs
             .chain(transaction.outputs().iter().map(|output| output.asset))
             .collect();
@@ -414,7 +412,7 @@ mod tests {
     use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
     use simplicityhl::elements::{AssetId, OutPoint, Script, TxOut, TxOutSecrets};
 
-    use smplx_sdk::transaction::{PartialInput, PartialOutput, RequiredSignature, UTXO};
+    use smplx_sdk::transaction::{PartialInput, PartialOutput, UTXO};
 
     use super::*;
 
@@ -430,7 +428,7 @@ mod tests {
                 txout: TxOut::default(),
                 secrets: Some(secrets),
             }),
-            RequiredSignature::None,
+            None,
         );
         transaction.add_output(PartialOutput::new(Script::new(), 10, asset));
         transaction.add_output(PartialOutput::default());

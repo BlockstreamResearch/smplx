@@ -1,7 +1,7 @@
 use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, Scenario};
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, ProgramSignature};
 
 use simplex_fixtures::artifacts::failure_test::FailureTestProgram;
 use simplex_fixtures::artifacts::nested_sig::NestedSigProgram;
@@ -52,7 +52,7 @@ fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Re
             Box::new(P2pkProgram::new(P2pkArguments { public_key }).as_ref().clone()),
             P2pkWitness::default(),
         ),
-        RequiredSignature::Witness("SIGNATURE".to_string()),
+        Some(ProgramSignature::new("SIGNATURE")),
     );
 
     let mut scenario = Scenario::new(transaction);
@@ -82,7 +82,7 @@ fn nested_sig_spends_through_its_hot_path(test_context: TestContext<FuzzMode>) -
             ),
             NestedSigWitness::default(),
         ),
-        RequiredSignature::witness_with_path("INHERIT_OR_NOT", ["Right", "Right", "0"]),
+        Some(ProgramSignature::new("INHERIT_OR_NOT").at_path(["Right", "Right", "0"])),
     );
 
     let mut scenario = Scenario::new(transaction);

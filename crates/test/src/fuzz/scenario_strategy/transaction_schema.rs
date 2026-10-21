@@ -16,8 +16,13 @@ impl FuzzTransactionSchema {
     pub(crate) fn of(transaction: &FinalTransaction) -> Self {
         let inputs = transaction.inputs().iter().map(|input| {
             let input = &input.partial_input;
+            let known = input.asset_and_amount();
 
-            (input.amount, input.asset, &input.witness_utxo.script_pubkey)
+            (
+                known.map(|(_, amount)| amount),
+                known.map(|(asset, _)| asset),
+                &input.witness_utxo.script_pubkey,
+            )
         });
         let outputs = transaction
             .outputs()

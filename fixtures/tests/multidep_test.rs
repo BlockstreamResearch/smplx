@@ -1,6 +1,6 @@
 use simplex::simplicityhl::elements::Script;
 
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput};
 
 use simplex_fixtures::artifacts::imports::multidep::MultidepProgram;
 use simplex_fixtures::artifacts::imports::multidep::derived_multidep::{MultidepArguments, MultidepWitness};
@@ -40,7 +40,7 @@ fn spend_p2pk(context: &simplex::TestContext) -> anyhow::Result<()> {
     ft.add_program_input(
         PartialInput::new(utxos[0].clone()),
         ProgramInput::new(Box::new(program.as_ref().clone()), witness),
-        RequiredSignature::None,
+        None,
     );
 
     let tx_receipt = signer.broadcast(&ft)?;

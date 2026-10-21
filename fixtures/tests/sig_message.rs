@@ -4,7 +4,7 @@ use simplex::constants::DUMMY_SIGNATURE;
 use simplex::either::Either;
 use simplex::simplicityhl::elements::Script;
 use simplex::simplicityhl::simplicity::hashes::sha256;
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature, SigMessage};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, ProgramSignature, SigMessage};
 
 use simplex_fixtures::artifacts::sig_message::SigMessageProgram;
 use simplex_fixtures::artifacts::sig_message::derived_sig_message::{SigMessageArguments, SigMessageWitness};
@@ -38,7 +38,7 @@ fn fund_sig_message(context: &simplex::TestContext) -> anyhow::Result<()> {
 fn spend_sig_message(
     context: &simplex::TestContext,
     witness: SigMessageWitness,
-    required_sig: RequiredSignature,
+    required_sig: Option<ProgramSignature>,
 ) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
@@ -73,7 +73,7 @@ fn test_sighash_message(context: simplex::TestContext) -> anyhow::Result<()> {
     spend_sig_message(
         &context,
         witness,
-        RequiredSignature::witness_with_path("SIGNATURE", ["Left"]),
+        Some(ProgramSignature::new("SIGNATURE").at_path(["Left"])),
     )
 }
 
@@ -89,7 +89,11 @@ fn test_tagged_message(context: simplex::TestContext) -> anyhow::Result<()> {
     spend_sig_message(
         &context,
         witness,
-        RequiredSignature::witness_tagged("SIGNATURE", ["Right", "Left"], TAG),
+        Some(
+            ProgramSignature::new("SIGNATURE")
+                .at_path(["Right", "Left"])
+                .tagged(TAG),
+        ),
     )
 }
 
@@ -110,6 +114,10 @@ fn test_custom_message(context: simplex::TestContext) -> anyhow::Result<()> {
     spend_sig_message(
         &context,
         witness,
-        RequiredSignature::witness_with_message("SIGNATURE", ["Right", "Right"], message),
+        Some(
+            ProgramSignature::new("SIGNATURE")
+                .at_path(["Right", "Right"])
+                .with_message(message),
+        ),
     )
 }

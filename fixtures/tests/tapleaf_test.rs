@@ -1,4 +1,4 @@
-use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use simplex::transaction::{FinalTransaction, PartialInput, ProgramInput};
 
 use simplex_fixtures::artifacts::tapleaf_check::TapleafCheckProgram;
 use simplex_fixtures::artifacts::tapleaf_check::derived_tapleaf_check::{TapleafCheckArguments, TapleafCheckWitness};
@@ -25,7 +25,7 @@ fn program_tapleaf_test(context: simplex::TestContext) -> anyhow::Result<()> {
     ft.add_program_input(
         PartialInput::new(tapleaf_check_utxo),
         ProgramInput::new(Box::new(tapleaf_check.as_ref().clone()), witness),
-        RequiredSignature::None,
+        None,
     );
 
     let tx_receipt = signer.broadcast(&ft)?;

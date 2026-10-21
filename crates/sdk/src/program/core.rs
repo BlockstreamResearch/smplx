@@ -23,7 +23,7 @@ use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key}
 /// Executes `simplicity` programs at runtime.
 ///
 /// This trait defines a core behavior related to testing and execution.
-pub trait ProgramTrait: DynClone {
+pub trait ProgramTrait: DynClone + Send + Sync {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
     /// # Errors

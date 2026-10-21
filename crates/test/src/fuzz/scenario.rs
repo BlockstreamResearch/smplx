@@ -6,7 +6,7 @@ use simplicityhl::WitnessNameToValueMap;
 
 use smplx_sdk::program::Program;
 use smplx_sdk::signer::Signer;
-use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput, RequiredSignature};
+use smplx_sdk::transaction::{FinalTransaction, PartialInput, ProgramInput};
 
 use crate::fuzz::FuzzProgramTrait;
 use crate::fuzz::case::FuzzCase;
@@ -453,7 +453,7 @@ impl Default for Scenario {
     /// A transaction with one default input.
     fn default() -> Self {
         let mut transaction = FinalTransaction::new();
-        transaction.add_input(PartialInput::default(), RequiredSignature::None);
+        transaction.add_input(PartialInput::default(), None);
 
         Self::new(transaction)
     }
@@ -512,7 +512,7 @@ mod tests {
                 ..UTXO::default()
             };
 
-            transaction.add_input(PartialInput::new(utxo), RequiredSignature::None);
+            transaction.add_input(PartialInput::new(utxo), None);
         }
 
         transaction.add_output(PartialOutput::default());
@@ -598,7 +598,7 @@ mod tests {
         transaction.add_program_input(
             PartialInput::default(),
             ProgramInput::new(Box::new(program), nested_witness(5)),
-            RequiredSignature::None,
+            None,
         );
 
         let map = UtxoMap::new(&transaction, &[]);

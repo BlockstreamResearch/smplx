@@ -2,7 +2,7 @@ use simplex::{FuzzMode, TestContext};
 
 use simplex::fuzz::{Expect, FuzzCase, Mutation, Mutations, Scenario};
 use simplex::simplicityhl::elements::{AssetId, LockTime, OutPoint, Script, Sequence};
-use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, RequiredSignature, UTXO};
+use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, UTXO};
 
 use simplex_fixtures::artifacts::conserving_vault::ConservingVaultProgram;
 use simplex_fixtures::artifacts::dummy_accept::DummyAcceptProgram;
@@ -19,7 +19,7 @@ fn vault_scenario(fee: u64) -> Scenario {
     let mut transaction = FinalTransaction::new();
     transaction.add_input(
         PartialInput::new(UTXO::explicit(OutPoint::default(), Script::new(), 1000, asset)),
-        RequiredSignature::None,
+        None,
     );
     transaction.add_output(PartialOutput::new(Script::new(), 1000 - fee, asset));
     transaction.add_output(PartialOutput::new(Script::new(), 0, asset));
@@ -108,7 +108,7 @@ fn timelock_passes_with_a_spec_on_the_lock_height(test_context: TestContext<Fuzz
     let mut transaction = FinalTransaction::new();
     transaction.add_input(
         PartialInput::default().with_sequence(Sequence::ENABLE_LOCKTIME_NO_RBF),
-        RequiredSignature::None,
+        None,
     );
     transaction.set_locktime(LockTime::from_consensus(100));
 
@@ -135,7 +135,7 @@ fn timelock_passes_with_a_spec_on_the_lock_height(test_context: TestContext<Fuzz
 #[simplex::fuzz]
 fn paired_output_is_judged_under_layout(test_context: TestContext<FuzzMode>) {
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), None);
     transaction.add_output(PartialOutput::new(
         Script::new_op_return(b"next"),
         0,
@@ -172,8 +172,8 @@ fn auth_input_requirement_follows_its_utxo(test_context: TestContext<FuzzMode>) 
     );
 
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(PartialInput::default(), RequiredSignature::None);
-    transaction.add_input(PartialInput::new(auth), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), None);
+    transaction.add_input(PartialInput::new(auth), None);
 
     let mut scenario = Scenario::new(transaction);
     scenario
@@ -193,7 +193,7 @@ fn auth_input_requirement_follows_its_utxo(test_context: TestContext<FuzzMode>) 
 fn sequence_mutation_reaches_the_signed_transaction(test_context: TestContext<FuzzMode>) {
     let mut transaction = FinalTransaction::new();
     transaction.set_sequence(Sequence::ENABLE_LOCKTIME_NO_RBF);
-    transaction.add_input(PartialInput::default(), RequiredSignature::None);
+    transaction.add_input(PartialInput::default(), None);
 
     let mut scenario = Scenario::new(transaction);
     scenario.add::<DummyAcceptProgram>("accepting").spends(0);
