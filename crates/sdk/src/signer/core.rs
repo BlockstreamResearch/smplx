@@ -47,6 +47,9 @@ use super::error::SignerError;
 /// A placeholder dummy fee amount used during transaction estimation.
 pub const PLACEHOLDER_FEE: u64 = 1;
 
+/// Discounted weight of a native input with its signature.
+const NATIVE_INPUT_WEIGHT: usize = 274;
+
 /// Common signing interface spanning over standard explicit inputs and Simplicity programs.
 pub trait SignerTrait {
     /// Generates a Schnorr signature to satisfy a target Simplicity program input.
@@ -244,6 +247,11 @@ impl Signer {
         let mut curr_fee = MIN_FEE;
         let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
 
+        // Each input added after an estimate makes the transaction heavier, so
+        // the next estimate also accounts for the fee of those inputs.
+        let input_fee = fee_tx.calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
+        let mut inputs_since_estimate: u64 = 0;
+
         let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
             .estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
         {
@@ -264,27 +272,34 @@ impl Signer {
         for utxo in signer_utxos {
             let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-            if policy_amount_delta >= curr_fee.cast_signed()
-                && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
-            {
-                return Ok(result);
+            if policy_amount_delta >= (curr_fee + inputs_since_estimate * input_fee).cast_signed() {
+                inputs_since_estimate = 0;
+
+                if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                    return Ok(result);
+                }
             }
 
             // IMPORTANT: must be added to the end of the transaction.
             // Otherwise, the logging of execution traces will be broken
             fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
+            inputs_since_estimate += 1;
         }
 
-        // need to try one more time after the loop
+        // Need to try one more time after the loop. No UTXO is left to add, so any chance is taken
         let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
 
-        if policy_amount_delta >= curr_fee.cast_signed()
-            && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
-        {
-            return Ok(result);
+        if policy_amount_delta >= curr_fee.cast_signed() {
+            inputs_since_estimate = 0;
+
+            if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                return Ok(result);
+            }
         }
 
-        Err(SignerError::NotEnoughFunds(curr_fee))
+        Err(SignerError::NotEnoughFunds(
+            curr_fee + inputs_since_estimate * input_fee,
+        ))
     }
 
     /// Verifies and finalizes a transaction against a strict target confirmation window (in blocks).
