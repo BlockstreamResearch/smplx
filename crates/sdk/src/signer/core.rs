@@ -546,8 +546,10 @@ impl Signer {
                     // an asset-only commitment. Neither can fund this wallet.
                     continue;
                 };
+
                 utxo.secrets = Some(secrets);
             }
+
             confidential_utxos.push(utxo);
         }
 

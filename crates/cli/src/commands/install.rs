@@ -199,12 +199,12 @@ impl Install {
             Some(GitRef::Rev(rev)) => rev.as_ref(),
             Some(GitRef::Tag(name)) => {
                 let qualified_name = format!("refs/tags/{name}");
-                clone.args(["--depth", "1", "--rev", &qualified_name]);
+                clone.args(["--depth", "1", "--revision", &qualified_name]);
                 "HEAD"
             }
             Some(GitRef::Branch(name)) => {
                 let qualified_name = format!("refs/heads/{name}");
-                clone.args(["--depth", "1", "--rev", &qualified_name]);
+                clone.args(["--depth", "1", "--revision", &qualified_name]);
                 "HEAD"
             }
             None => {
@@ -335,7 +335,7 @@ mod tests {
                     "--no-checkout",
                     "--depth",
                     "1",
-                    "--rev",
+                    "--revision",
                     qualified_name,
                     "--",
                     URL,

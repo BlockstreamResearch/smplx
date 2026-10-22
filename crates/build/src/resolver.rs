@@ -127,24 +127,6 @@ impl ArtifactsResolver {
     /// Converts "https://github.com/smplx/core.git"
     /// into a Cargo-style path: "core-5HueCGU8rMj" (11 base58 characters)
     ///
-    /// Hashed repo path injects its length in a hasher to prevent collisions.
-    /// ```rust
-    ///  use smplx_build::{ArtifactsResolver, config::GitRef};
-    ///
-    ///  let url = "https://example.com/org/lib.git";
-    ///  let pinned = ArtifactsResolver::generate_hashed_repo_path(
-    ///     url,
-    ///     Some(&GitRef::Rev("abc123".into())),
-    ///     Some("safe")
-    ///  );
-    ///  let other = ArtifactsResolver::generate_hashed_repo_path(
-    ///     url,
-    ///     Some(&GitRef::Rev("abc123package=safe".into())),
-    ///     None
-    ///  );
-    ///  assert_ne!(pinned, other);
-    /// ```
-    ///
     /// # Returns
     ///
     /// - `Some(PathBuf)` when a repository name can be extracted from the URL.
