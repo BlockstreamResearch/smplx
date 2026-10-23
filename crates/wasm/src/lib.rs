@@ -418,6 +418,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block height this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `height` is `500_000_000` or greater, which Elements reads as a time.
@@ -427,6 +428,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block time this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `time` is below `500_000_000`, which Elements reads as a height.
@@ -435,7 +437,7 @@ impl TransactionBuilder {
         self.transaction.set_locktime(LockTime::from_time(time).unwrap());
     }
 
-    /// Sets the sequence of for this transaction.
+    /// Sets the sequence of the inputs that don't declare their own.
     #[wasm_bindgen(js_name = setSequence)]
     pub fn set_sequence(&mut self, sequence: u32) {
         self.transaction.set_sequence(Sequence::from_consensus(sequence));

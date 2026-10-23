@@ -120,7 +120,7 @@ pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
     change: Option<ChangeOutput>,
-    sequence: Sequence,
+    sequence: Option<Sequence>,
     locktime: LockTime,
 }
 
@@ -133,7 +133,7 @@ impl FinalTransaction {
             inputs: Vec::new(),
             outputs: Vec::new(),
             change: None,
-            sequence: Sequence::default(),
+            sequence: None,
             locktime: LockTime::ZERO,
         }
     }
@@ -142,7 +142,7 @@ impl FinalTransaction {
     ///
     /// Injects this value into the inputs that don't declare their own sequence.
     pub fn set_sequence(&mut self, sequence: Sequence) {
-        self.sequence = sequence;
+        self.sequence = Some(sequence);
     }
 
     /// Sets a specific `LockTime` for the transaction.
@@ -152,10 +152,15 @@ impl FinalTransaction {
         self.locktime = locktime;
     }
 
-    /// The sequence of the transaction, e.g. inputs that don't declare their own.
+    /// The sequence of the inputs that don't declare their own. The one set with `set_sequence`,
+    /// or `ENABLE_LOCKTIME_NO_RBF` when a locktime is set to be enforced, and `MAX` otherwise.
     #[must_use]
     pub fn sequence(&self) -> Sequence {
-        self.sequence
+        self.sequence.unwrap_or(if self.has_locktime() {
+            Sequence::ENABLE_LOCKTIME_NO_RBF
+        } else {
+            Sequence::MAX
+        })
     }
 
     /// The locktime of the the transaction, e.g. inputs that don't declare their own.
@@ -410,12 +415,13 @@ impl FinalTransaction {
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, TxOutSecrets>), FinalTransactionError> {
         let mut input_secrets = HashMap::new();
         let mut pst = PartiallySignedTransaction::new_v2();
+        let sequence = self.sequence();
 
         for i in 0..self.inputs.len() {
             let mut final_input = self.inputs[i].clone();
 
             // An input that sets no sequence or locktime takes the transaction's
-            final_input.partial_input.sequence.get_or_insert(self.sequence);
+            final_input.partial_input.sequence.get_or_insert(sequence);
             final_input.partial_input.locktime.get_or_insert(self.locktime);
 
             let secrets = if let Some(secrets) = final_input.partial_input.secrets {
@@ -443,6 +449,17 @@ impl FinalTransaction {
         });
 
         Ok((pst, input_secrets))
+    }
+
+    /// If the transaction or any of its inputs sets a non-zero locktime.
+    fn has_locktime(&self) -> bool {
+        self.locktime != LockTime::ZERO
+            || self.inputs.iter().any(|input| {
+                input
+                    .partial_input
+                    .locktime
+                    .is_some_and(|locktime| locktime != LockTime::ZERO)
+            })
     }
 }
 
@@ -574,11 +591,24 @@ mod tests {
             pst.locktime().expect("one height, so no conflict"),
             LockTime::from_height(2_580_990).unwrap()
         );
-        assert!(
-            pst.inputs()
-                .iter()
-                .all(|input| input.required_height_locktime.is_some())
-        );
+        assert!(pst.inputs().iter().all(|input| {
+            input.required_height_locktime.is_some() && input.sequence == Some(Sequence::ENABLE_LOCKTIME_NO_RBF)
+        }));
+    }
+
+    #[test]
+    fn explicit_final_sequence_is_kept_under_a_locktime() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+        ft.set_locktime(LockTime::from_height(100).unwrap());
+        ft.set_sequence(Sequence::MAX);
+
+        let (pst, _) = ft.extract_pst().unwrap();
+
+        assert_eq!(pst.inputs()[0].sequence, Some(Sequence::MAX));
     }
 
     #[test]
@@ -592,6 +622,7 @@ mod tests {
         let (pst, _) = ft.extract_pst().unwrap();
 
         assert_eq!(pst.locktime().unwrap(), LockTime::ZERO);
+        assert_eq!(pst.inputs()[0].sequence, Some(Sequence::MAX));
     }
 
     #[test]

@@ -102,14 +102,11 @@ fn unbalanced_transaction_is_a_setup_error(test_context: TestContext<FuzzMode>) 
     test_context.engine(scenario).mutations(Mutations::default()).run();
 }
 
-/// Input 0 enables the locktime, which the template sets to 100.
+/// The template sets the locktime to 100, which makes input 0 enforce it.
 #[simplex::fuzz]
 fn timelock_passes_with_a_spec_on_the_lock_height(test_context: TestContext<FuzzMode>) {
     let mut transaction = FinalTransaction::new();
-    transaction.add_input(
-        PartialInput::default().with_sequence(Sequence::ENABLE_LOCKTIME_NO_RBF),
-        None,
-    );
+    transaction.add_input(PartialInput::default(), None);
     transaction.set_locktime(LockTime::from_consensus(100));
 
     let mut scenario = Scenario::new(transaction);
