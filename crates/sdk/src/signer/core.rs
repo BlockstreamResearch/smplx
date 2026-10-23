@@ -557,6 +557,7 @@ impl Signer {
         confidential_utxos.retain(confidential_filter);
 
         all_utxos.extend(confidential_utxos);
+
         Ok(all_utxos)
     }
 

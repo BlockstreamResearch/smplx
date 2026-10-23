@@ -68,6 +68,15 @@ impl FinalInput {
             .map(|issuance_input| issuance_input.details(&self.partial_input.outpoint))
     }
 
+    /// Returns the input's asset ID and amount from unblinding secrets, or from
+    /// explicit fields when no secrets are available.
+    ///
+    /// Returns `None` if no secrets are available and either explicit field is missing.
+    #[must_use]
+    pub fn get_asset_and_amount(&self) -> Option<(AssetId, u64)> {
+        self.partial_input.asset_and_amount()
+    }
+
     /// Converts the current object into an `Input` representation, including any
     /// issuance input and partial input details.
     ///
@@ -102,15 +111,6 @@ impl FinalInput {
         }
 
         pst_input
-    }
-
-    /// Returns the input's asset ID and amount from unblinding secrets, or from
-    /// explicit fields when no secrets are available.
-    ///
-    /// Returns `None` if no secrets are available and either explicit field is missing.
-    #[must_use]
-    pub fn get_unblinded_info(&self) -> Option<(AssetId, u64)> {
-        self.partial_input.asset_and_amount()
     }
 }
 
@@ -325,7 +325,7 @@ impl FinalTransaction {
 
         for (input_index, input) in self.inputs.iter().enumerate() {
             let (asset, amount) = input
-                .get_unblinded_info()
+                .get_asset_and_amount()
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
             if asset == network.policy_asset() {
                 available_amount += amount;
@@ -355,7 +355,7 @@ impl FinalTransaction {
         // Collecting all inputs
         for (input_index, input) in self.inputs.iter().enumerate() {
             let (asset, amount) = input
-                .get_unblinded_info()
+                .get_asset_and_amount()
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
@@ -891,7 +891,7 @@ mod tests {
 
         let mut tx = FinalTransaction::new();
         tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
-        assert_eq!(tx.inputs()[0].get_unblinded_info(), Some((token, 1)));
+        assert_eq!(tx.inputs()[0].get_asset_and_amount(), Some((token, 1)));
 
         // Reproduces the documented panic in FinalInput::to_input.
         let _ = tx.extract_pst();

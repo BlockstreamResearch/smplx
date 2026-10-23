@@ -1,5 +1,6 @@
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
+use crate::transaction::{FinalTransactionError, UtxoError};
 
 /// Core error types for the Signer component.
 #[derive(Debug, thiserror::Error)]
@@ -26,6 +27,14 @@ pub enum SignerError {
     /// Errors originating from provider network interactions.
     #[error(transparent)]
     Provider(#[from] ProviderError),
+
+    /// A UTXO is missing its asset or amount and has no unblinding secrets.
+    #[error(transparent)]
+    Utxo(#[from] UtxoError),
+
+    /// Errors originating from transaction construction or validation.
+    #[error(transparent)]
+    FinalTransaction(#[from] FinalTransactionError),
 
     /// Error indicating a provider-backed operation was requested on a signer built without one.
     #[cfg(feature = "provider")]
@@ -59,14 +68,6 @@ pub enum SignerError {
     /// Error indicating failure to construct sighash for input spending.
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
-
-    /// A UTXO is missing its asset or amount and has no unblinding secrets.
-    #[error(transparent)]
-    Utxo(#[from] crate::transaction::UtxoError),
-
-    /// Errors originating from transaction construction or validation.
-    #[error(transparent)]
-    FinalTransaction(#[from] crate::transaction::FinalTransactionError),
 
     /// Error indicating the transaction is not balanced.
     #[error("Transaction is not balanced or malformed")]
