@@ -1,5 +1,7 @@
 /// Represents outputs under construction before transaction finalization.
 pub mod change_output;
+/// Errors for transaction accounting and UTXO data access.
+pub mod error;
 /// Represents a fully finalized target transaction schema ready for signing and broadcasting.
 pub mod final_transaction;
 /// Represents inputs under construction before transaction finalization.
@@ -13,6 +15,7 @@ pub mod tx_receipt;
 pub mod utxo;
 
 pub use change_output::ChangeOutput;
+pub use error::{FinalTransactionError, UtxoError};
 pub use final_transaction::{FinalInput, FinalTransaction};
 pub use partial_input::{IssuanceDetails, PartialInput, ProgramInput};
 pub use partial_output::PartialOutput;

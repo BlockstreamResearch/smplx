@@ -418,6 +418,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block height this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `height` is `500_000_000` or greater, which Elements reads as a time.
@@ -427,6 +428,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block time this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `time` is below `500_000_000`, which Elements reads as a height.
@@ -435,7 +437,7 @@ impl TransactionBuilder {
         self.transaction.set_locktime(LockTime::from_time(time).unwrap());
     }
 
-    /// Sets the sequence of for this transaction.
+    /// Sets the sequence of the inputs that don't declare their own.
     #[wasm_bindgen(js_name = setSequence)]
     pub fn set_sequence(&mut self, sequence: u32) {
         self.transaction.set_sequence(Sequence::from_consensus(sequence));
@@ -775,7 +777,10 @@ impl TransactionBuilder {
             .as_ref()
             .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
 
-        let (pst, _secrets) = self.transaction.extract_pst();
+        let (pst, _secrets) = self
+            .transaction
+            .extract_pst()
+            .map_err(|e| JsError::new(&format!("Could not construct the transaction: {e}")))?;
 
         program_input
             .program
@@ -1307,7 +1312,7 @@ mod tests {
 
         // Read the issuance back the way Elements does. A null blinding nonce would make
         // this a new issuance of another asset.
-        let (pst, _) = builder.transaction.extract_pst();
+        let (pst, _) = builder.transaction.extract_pst().unwrap();
         let input = &pst.inputs()[0];
         let (asset, minted_token) = input.issuance_ids();
 

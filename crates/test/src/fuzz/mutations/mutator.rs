@@ -47,7 +47,7 @@ impl Mutator {
             .iter()
             .all(|input| input.partial_input.asset_and_amount().is_some());
 
-        if !known || !transaction.is_balanced() {
+        if !known || transaction.is_balanced() != Ok(true) {
             return Err(SetupError::Transaction(
                 "mutations need a balanced transaction of explicit or unblinded UTXOs".to_string(),
             ));
@@ -401,6 +401,7 @@ impl Mutator {
     fn locktime(transaction: &FinalTransaction) -> u32 {
         transaction
             .extract_pst()
+            .expect("mutation inputs have known assets and amounts")
             .0
             .extract_tx()
             .map_or(0, |transaction| transaction.lock_time.to_consensus_u32())

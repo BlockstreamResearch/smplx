@@ -141,7 +141,7 @@ mod tests {
         let mut transaction = FinalTransaction::new();
         transaction.add_input(PartialInput::new(utxo), None);
 
-        let (pst, _) = transaction.extract_pst();
+        let (pst, _) = transaction.extract_pst().unwrap();
 
         Outcome::classify(program.finalize(&pst, &WitnessValues::default(), 0, &network))
     }

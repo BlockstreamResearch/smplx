@@ -196,9 +196,15 @@ impl Install {
         clone.args(["clone", "--filter=blob:none", "--no-checkout"]);
 
         let checkout_target = match reference {
-            Some(GitRef::Rev(rev)) => rev.as_str(),
-            Some(GitRef::Tag(name) | GitRef::Branch(name)) => {
-                clone.args(["--depth", "1", "--branch", name]);
+            Some(GitRef::Rev(rev)) => rev.as_ref(),
+            Some(GitRef::Tag(name)) => {
+                let qualified_name = format!("refs/tags/{name}");
+                clone.args(["--depth", "1", "--revision", &qualified_name]);
+                "HEAD"
+            }
+            Some(GitRef::Branch(name)) => {
+                let qualified_name = format!("refs/heads/{name}");
+                clone.args(["--depth", "1", "--revision", &qualified_name]);
                 "HEAD"
             }
             None => {
@@ -224,7 +230,7 @@ impl Install {
         checkout
             .arg("-C")
             .arg(target_dir)
-            .args(["checkout", checkout_target, "--"]);
+            .args(["checkout", "--detach", checkout_target, "--"]);
         commands.push(checkout);
 
         commands
@@ -253,6 +259,137 @@ impl Display for InstalledRepos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const URL: &str = "https://example.invalid/org/repo.git";
+    const TARGET: &str = r#"/unused/"git fixture""#;
+
+    fn assert_command(command: &Command, args: &[&str]) {
+        assert_eq!(command.get_program(), "git");
+
+        let actual: Vec<_> = command.get_args().map(|arg| arg.to_str().unwrap()).collect();
+
+        assert_eq!(actual, args);
+    }
+
+    #[test]
+    fn git_commands_revisions_appended_correctly() {
+        for rev in [
+            "dae86e1950b1277e545cee180551750029cfe735",
+            "dae86e",
+            "v1.7.4.2-679-g3bee7fb",
+            "master",
+            "refs/heads/master",
+            "HEAD",
+            "@",
+            "master@{yesterday}",
+            "HEAD@{5 minutes ago}",
+            "master@{1}",
+            "@{1}",
+            "@{-1}",
+            "master@{upstream}",
+            "@{push}",
+            "HEAD^",
+            "v1.5.1^0",
+            "master~3",
+            "v0.99.8^{commit}",
+            "v0.99.8^{object}",
+            "v0.99.8^{tag}",
+            "v0.99.8^{}",
+            "HEAD^{/fix nasty bug}",
+            ":/fix nasty bug",
+            ":/^foo",
+            ":/!-foo",
+            ":/!!foo",
+        ] {
+            let reference = GitRef::Rev(rev.into());
+            let commands = Install::git_commands(URL, Some(&reference), None, Path::new(TARGET));
+
+            assert_eq!(commands.len(), 2, "revision: {rev}");
+            let (clone, checkout) = (&commands[0], &commands[1]);
+
+            assert_command(
+                clone,
+                &["clone", "--filter=blob:none", "--no-checkout", "--", URL, TARGET],
+            );
+            assert_command(checkout, &["-C", TARGET, "checkout", "--detach", rev, "--"]);
+        }
+    }
+
+    #[test]
+    fn git_commands_tag_and_branch_are_nonoverlapping() {
+        // An identically named branch must not substitute for a requested tag.
+        for (reference, qualified_name) in [
+            (GitRef::Tag("release".into()), "refs/tags/release"),
+            (GitRef::Branch("release".into()), "refs/heads/release"),
+        ] {
+            let commands = Install::git_commands(URL, Some(&reference), None, Path::new(TARGET));
+
+            assert_eq!(commands.len(), 2);
+            let (clone, checkout) = (&commands[0], &commands[1]);
+
+            assert_command(
+                clone,
+                &[
+                    "clone",
+                    "--filter=blob:none",
+                    "--no-checkout",
+                    "--depth",
+                    "1",
+                    "--revision",
+                    qualified_name,
+                    "--",
+                    URL,
+                    TARGET,
+                ],
+            );
+            assert_command(checkout, &["-C", TARGET, "checkout", "--detach", "HEAD", "--"]);
+        }
+    }
+
+    #[test]
+    fn git_commands_using_shallow_clone_by_default() {
+        let commands = Install::git_commands(URL, None, None, Path::new(TARGET));
+
+        assert_eq!(commands.len(), 2);
+        let (clone, checkout) = (&commands[0], &commands[1]);
+
+        assert_command(
+            clone,
+            &[
+                "clone",
+                "--filter=blob:none",
+                "--no-checkout",
+                "--depth",
+                "1",
+                "--",
+                URL,
+                TARGET,
+            ],
+        );
+        assert_command(checkout, &["-C", TARGET, "checkout", "--detach", "HEAD", "--"]);
+    }
+
+    #[test]
+    fn sparse_checkout_is_before_checking_out_the_revision() {
+        let reference = GitRef::Rev(":/fix nasty bug".into());
+        let commands = Install::git_commands(URL, Some(&reference), Some("libs/math"), Path::new(TARGET));
+
+        assert_eq!(commands.len(), 3);
+        let (clone, sparse_checkout, checkout) = (&commands[0], &commands[1], &commands[2]);
+
+        assert_command(
+            clone,
+            &["clone", "--filter=blob:none", "--no-checkout", "--", URL, TARGET],
+        );
+        assert_command(
+            sparse_checkout,
+            &["-C", TARGET, "sparse-checkout", "set", "--no-cone", "/libs/math/"],
+        );
+        assert_command(
+            checkout,
+            &["-C", TARGET, "checkout", "--detach", ":/fix nasty bug", "--"],
+        );
+    }
 
     fn git(dir: &Path, args: &[&str]) {
         let status = Command::new("git")

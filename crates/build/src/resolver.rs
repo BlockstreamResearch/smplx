@@ -148,8 +148,7 @@ impl ArtifactsResolver {
         let key = std::iter::once(url.to_owned())
             .chain(reference)
             .chain(package)
-            .collect::<Vec<_>>()
-            .join("@");
+            .collect::<Vec<_>>();
 
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
