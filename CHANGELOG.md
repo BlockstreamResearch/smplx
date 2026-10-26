@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- Programs and generated bindings can commit executable sibling hashes before storage leaves.
+- WASM covenants can commit executable sibling branches with `Covenant.withExecutableSiblings`. Spend them with `TransactionBuilder.addCompiledCovenantInput` or `addCompiledCovenantIssuanceInput`. `extraLeavesJson` still fills the covenant's storage.
+
 ## [0.1.1]
 
 - Fixed broken dependencies.
