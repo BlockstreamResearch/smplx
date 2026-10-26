@@ -608,7 +608,7 @@ impl Signer {
     /// Derives the signing key at a path relative to the account path. `None` defaults to `0/0`.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `0/n` or `1/n`.
+    /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `m/n`.
     pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> Result<PrivateKey, SignerError> {
         match relative {
             Some(path) => {
