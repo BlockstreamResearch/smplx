@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 
 use clap::Parser;
 
@@ -18,10 +17,8 @@ use crate::error::CliError;
 
 #[derive(Debug, Parser)]
 #[command(name = "Simplex")]
-#[command(version, about = "A blazingly-fast, ux-first simplicity development framework")]
+#[command(version, about = "A blazingly-fast, ux-first Simplicity development framework")]
 pub struct Cli {
-    pub config: Option<PathBuf>,
-
     #[command(subcommand)]
     pub command: Command,
 }
@@ -94,7 +91,7 @@ impl Cli {
                 let config_path = Config::get_default_path()?;
                 let loaded_config = Config::load(&config_path)?;
 
-                Ok(Clean::run(&root_dir, &loaded_config.build.out_dir, flags)?)
+                Ok(Clean::run(&root_dir, &loaded_config.build, flags)?)
             }
         }
     }

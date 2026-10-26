@@ -86,6 +86,12 @@ pub enum BuildError {
     #[error("Invalid generation path: '{0}'")]
     GenerationPath(String),
 
+    #[error("out_dir '{0}' holds the project or its src_dir")]
+    OutDirHoldsSources(PathBuf),
+
+    #[error("Directory '{name}' in '{path}' must be a Rust identifier to become a module of the bindings")]
+    InvalidModuleName { name: String, path: PathBuf },
+
     #[error("Failed to extract content from path, err: '{0}'")]
     FailedToExtractContent(io::Error),
 

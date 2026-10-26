@@ -1,6 +1,6 @@
 use std::fs;
 use std::hash::{DefaultHasher, Hash as _, Hasher as _};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[cfg(feature = "full")]
 use globwalk::FileType;
@@ -46,8 +46,10 @@ impl ArtifactsResolver {
             let path = img.path().to_path_buf().canonicalize()?;
             let content = std::fs::read_to_string(&path)?;
 
-            if Self::contains_main(&content) {
-                paths.push(path);
+            match parse::Program::parse_from_str(&content) {
+                Ok(program) if Self::rec_main_checker(program.items(), &FunctionName::main()) => paths.push(path),
+                Ok(_) => {}
+                Err(error) => eprintln!("warning: skipping '{}' as it doesn't parse: {error}", path.display()),
             }
         }
 
@@ -74,6 +76,25 @@ impl ArtifactsResolver {
 
         // TODO: canonicalize? but this path may not exist
         Ok(path_outer)
+    }
+
+    /// Resolves `out_dir` like [`Self::resolve_local_dir`], refusing one that holds the project or its sources.
+    pub fn resolve_out_dir(
+        root_dir: &Path,
+        out_dir: &impl AsRef<Path>,
+        src_dir: &impl AsRef<Path>,
+    ) -> Result<PathBuf, BuildError> {
+        let resolved = Self::resolve_local_dir(root_dir, out_dir)?;
+
+        let out = Self::normalize(&resolved);
+        let root = Self::normalize(root_dir);
+        let src = Self::normalize(&root_dir.join(src_dir));
+
+        if root.starts_with(&out) || src.starts_with(&out) {
+            return Err(BuildError::OutDirHoldsSources(resolved));
+        }
+
+        Ok(resolved)
     }
 
     /// Builds a [`ValidatedDeps`] by recursively walking the dependency tree
@@ -159,6 +180,23 @@ impl ArtifactsResolver {
         Some(PathBuf::from(dir_name))
     }
 
+    /// Resolves `.` and `..` without touching the filesystem, as `path` may not exist yet.
+    fn normalize(path: &Path) -> PathBuf {
+        let mut normalized = PathBuf::new();
+
+        for component in path.components() {
+            match component {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    normalized.pop();
+                }
+                other => normalized.push(other),
+            }
+        }
+
+        normalized
+    }
+
     /// Encodes `value` in base58, left-padded to a fixed [`BASE58_U64_LEN`] characters.
     fn encode_base58(mut value: u64) -> String {
         let mut digits = [BASE58_ALPHABET[0]; BASE58_U64_LEN];
@@ -172,24 +210,33 @@ impl ArtifactsResolver {
     }
 
     #[cfg(feature = "full")]
-    /// Checks whether the source declares a `fn main(...)`,
-    /// finding it even when nested inside `mod { ... }` blocks.
-    fn contains_main(source: &str) -> bool {
-        let Ok(parsed_program) = parse::Program::parse_from_str(source) else {
-            return false;
-        };
-
-        Self::rec_main_checker(parsed_program.items(), &FunctionName::main())
-    }
-
-    #[cfg(feature = "full")]
     /// Recursively searches `items` (descending into nested modules) for a
-    /// function named `main`.
+    /// function named `main`, finding it even when nested inside `mod { ... }` blocks.
     fn rec_main_checker(items: &[parse::Item], main_name: &FunctionName) -> bool {
         items.iter().any(|item| match item {
             parse::Item::Function(func) => func.name() == main_name,
             parse::Item::Module(module) => Self::rec_main_checker(module.items(), main_name),
             _ => false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn out_dir_cannot_hold_the_project_or_its_sources() {
+        let root = Path::new("/project");
+
+        assert!(ArtifactsResolver::resolve_out_dir(root, &"src/artifacts", &"simf").is_ok());
+
+        for out_dir in ["", ".", "..", "simf", "./simf/../simf", "/"] {
+            assert!(
+                ArtifactsResolver::resolve_out_dir(root, &out_dir, &"simf").is_err(),
+                "{out_dir}"
+            );
+        }
+        assert!(ArtifactsResolver::resolve_out_dir(root, &"contracts", &"contracts/simf").is_err());
     }
 }
