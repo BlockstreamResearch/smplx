@@ -1,3 +1,5 @@
+use elements_miniscript::bitcoin::bip32::DerivationPath;
+
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
 use crate::transaction::{FinalTransactionError, UtxoError};
@@ -99,6 +101,14 @@ pub enum SignerError {
     /// which the node would reject as `bad-txns-in-ne-out`.
     #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
     ConfidentialInputWithoutBlindedOutput,
+
+    /// Error indicating a derivation path isn't `m/n`.
+    #[error("The derivation path `{0}` is not of the form m/n")]
+    InvalidDerivationPath(DerivationPath),
+
+    /// Error indicating the key an input is signed with doesn't own the output it spends.
+    #[error("Input {0} is locked to another key than its derivation path gives")]
+    KeyMismatch(usize),
 
     /// Error indicating an invalid upstream `secp256k1` secret key.
     #[error("Invalid secret key")]

@@ -112,6 +112,28 @@ impl FinalInput {
 
         pst_input
     }
+
+    fn check_issuance(&self, input_index: usize) -> Result<(), FinalTransactionError> {
+        match &self.issuance_input {
+            Some(
+                IssuanceInput::Issuance {
+                    issuance_amount: 0,
+                    inflation_amount: 0,
+                    ..
+                }
+                | IssuanceInput::Reissuance { issuance_amount: 0, .. },
+            ) => Err(FinalTransactionError::EmptyIssuance { input_index }),
+            Some(IssuanceInput::Reissuance { .. })
+                if self
+                    .partial_input
+                    .secrets
+                    .is_none_or(|secrets| secrets.asset_bf == AssetBlindingFactor::zero()) =>
+            {
+                Err(FinalTransactionError::UnblindedReissuanceToken { input_index })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// A struct representing a final (but not yet signed) transaction.
@@ -409,8 +431,8 @@ impl FinalTransaction {
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
     /// amount is unknown and no unblinding secrets are available.
     ///
-    /// # Panics
-    /// Panics if a reissuance input has no blinding secrets.
+    /// Returns [`FinalTransactionError::EmptyIssuance`] if an issuance input doesn't issue anything, and
+    /// [`FinalTransactionError::UnblindedReissuanceToken`] if a reissuance spends a token that isn't blinded.
     pub fn extract_pst(
         &self,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, TxOutSecrets>), FinalTransactionError> {
@@ -440,6 +462,8 @@ impl FinalTransaction {
                     value_bf: ValueBlindingFactor::zero(),
                 }
             };
+
+            final_input.check_issuance(i)?;
 
             input_secrets.insert(i, secrets);
             pst.add_input(final_input.to_input());
@@ -740,7 +764,16 @@ mod tests {
         let entropy = [0x42u8; 32];
         let issuance_amount = 1_000_000u64;
 
-        let conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        // A reissuance token needs a non-zero asset blinding factor
+        let token_secrets = TxOutSecrets::new(
+            policy,
+            AssetBlindingFactor::from_slice(&[1; 32]).unwrap(),
+            1000,
+            ValueBlindingFactor::zero(),
+        );
+        let mut conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        conf_utxo.secrets = Some(token_secrets);
+
         let partial_input = PartialInput::new(conf_utxo);
         let reissuance_input = IssuanceInput::new_reissuance(issuance_amount, entropy);
         let partial_output = PartialOutput::new(Script::new(), 1000, policy);
@@ -763,10 +796,7 @@ mod tests {
         expected_pst.add_input(expected_input);
         expected_pst.add_output(partial_output.to_output());
 
-        let expected_secrets = HashMap::from([(
-            0,
-            TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 1000, ValueBlindingFactor::zero()),
-        )]);
+        let expected_secrets = HashMap::from([(0, token_secrets)]);
 
         let (pst, secrets) = ft.extract_pst().unwrap();
 
@@ -931,18 +961,45 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Reissuance input must be confidential")]
-    fn reissuance_without_secrets_panics_during_extraction() {
+    fn reissuance_with_an_explicit_token_is_rejected() {
         let entropy = [0x42; 32];
         let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
-        let input = PartialInput::new(explicit_utxo(1, 0, 1, token));
 
         let mut tx = FinalTransaction::new();
-        tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
-        assert_eq!(tx.inputs()[0].get_asset_and_amount(), Some((token, 1)));
+        tx.add_issuance_input(
+            PartialInput::new(explicit_utxo(1, 0, 1, token)),
+            IssuanceInput::new_reissuance(5_000, entropy),
+            None,
+        );
 
-        // Reproduces the documented panic in FinalInput::to_input.
-        let _ = tx.extract_pst();
+        assert!(matches!(
+            tx.extract_pst(),
+            Err(FinalTransactionError::UnblindedReissuanceToken { input_index: 0 })
+        ));
+    }
+
+    #[test]
+    fn token_only_issuance_has_a_null_amount_and_an_empty_one_is_rejected() {
+        let policy = dummy_asset_id(0xAA);
+        let issuance = |issuance_amount, inflation_amount| {
+            let mut tx = FinalTransaction::new();
+            tx.add_issuance_input(
+                PartialInput::new(explicit_utxo(1, 0, 1000, policy)),
+                IssuanceInput::new_issuance(issuance_amount, inflation_amount, [0x42; 32]),
+                None,
+            );
+
+            tx.extract_pst()
+        };
+
+        let (pst, _) = issuance(0, 1).unwrap();
+
+        assert_eq!(pst.inputs()[0].issuance_value_amount, None);
+        assert_eq!(pst.inputs()[0].issuance_inflation_keys, Some(1));
+        assert!(matches!(
+            issuance(0, 0),
+            Err(FinalTransactionError::EmptyIssuance { input_index: 0 })
+        ));
     }
 
     #[test]

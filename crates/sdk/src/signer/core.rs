@@ -19,7 +19,10 @@ use bip39::rand::thread_rng;
 
 use elements_miniscript::{
     ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
-    bitcoin::{PrivateKey, PublicKey, bip32::DerivationPath},
+    bitcoin::{
+        PrivateKey, PublicKey,
+        bip32::{ChildNumber, DerivationPath},
+    },
     elements::{
         EcdsaSighashType,
         bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
@@ -117,7 +120,7 @@ impl SignerTrait for Signer {
         let sighash = env.c_tx_env().sighash_all().to_byte_array();
         let msg = Message::from_digest(message.digest(sighash));
 
-        let private_key = self.get_private_key_at(derivation_path);
+        let private_key = self.get_private_key_at(derivation_path)?;
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
         Ok(self.secp.sign_schnorr(&msg, &keypair))
@@ -604,13 +607,16 @@ impl Signer {
 
     /// Derives the signing key at a path relative to the account path. `None` defaults to `0/0`.
     ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
-    #[must_use]
-    pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> PrivateKey {
+    /// # Errors
+    /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `0/n` or `1/n`.
+    pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> Result<PrivateKey, SignerError> {
         match relative {
-            Some(path) => Self::derive_key(&self.secp, &self.account_xprv, path, self.network),
-            None => self.default_key,
+            Some(path) => {
+                Self::check_derivation_path(path)?;
+
+                Ok(Self::derive_key(&self.secp, &self.account_xprv, path, self.network))
+            }
+            None => Ok(self.default_key),
         }
     }
 
@@ -619,6 +625,17 @@ impl Signer {
     #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
         self.blinding_key
+    }
+
+    /// Checks that `path` is in correct form of `m/n`.
+    ///
+    /// # Errors
+    /// Returns `SignerError::InvalidDerivationPath` otherwise.
+    pub fn check_derivation_path(path: &DerivationPath) -> Result<(), SignerError> {
+        match path.as_ref() {
+            [ChildNumber::Normal { .. }, ChildNumber::Normal { .. }] => Ok(()),
+            _ => Err(SignerError::InvalidDerivationPath(path.clone())),
+        }
     }
 
     fn sign_input_with(
@@ -632,8 +649,19 @@ impl Signer {
             .sighash_msg(input_index, sighash_cache, None, self.network.genesis_block_hash())?
             .to_secp_msg();
 
-        let private_key = self.get_private_key_at(derivation_path);
+        let private_key = self.get_private_key_at(derivation_path)?;
         let public_key = private_key.public_key(&self.secp);
+
+        let script_pubkey = pst.inputs()[input_index]
+            .witness_utxo
+            .as_ref()
+            .map(|utxo| &utxo.script_pubkey);
+
+        if let Some(script_pubkey) = script_pubkey.filter(|script| script.is_v0_p2wpkh())
+            && *script_pubkey != Script::new_v0_wpkh(&public_key.wpubkey_hash().expect("the key is compressed"))
+        {
+            return Err(SignerError::KeyMismatch(input_index));
+        }
 
         let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
 
@@ -1398,5 +1426,36 @@ mod tests {
             signer.finalize_strict(&ft, 100.0),
             Err(SignerError::NotEnoughFeeAmount(..))
         ));
+    }
+
+    #[test]
+    fn only_wallet_paths_owning_the_input_sign_it() {
+        let signer = create_signer();
+        let path = |path: &str| DerivationPath::from_str(path).unwrap();
+
+        for valid in ["0/0", "0/7", "1/3", "2/7"] {
+            assert!(Signer::check_derivation_path(&path(valid)).is_ok(), "{valid}");
+        }
+        for invalid in ["", "m", "7", "0/7h", "84h/1h/0h/0/7"] {
+            assert!(Signer::check_derivation_path(&path(invalid)).is_err(), "{invalid}");
+        }
+
+        let sign_with = |relative: &str| {
+            let mut ft = FinalTransaction::new();
+            ft.add_input(
+                PartialInput::new(explicit_coin(&signer, 0, 100_000)).with_derivation_path(path(relative)),
+                Some(NativeSignature::Ecdsa),
+            );
+            ft.add_output(PartialOutput::new(
+                Script::new(),
+                100_000,
+                signer.network.policy_asset(),
+            ));
+
+            signer.sign_tx(&ft)
+        };
+
+        assert!(sign_with("0/0").is_ok());
+        assert!(matches!(sign_with("0/7"), Err(SignerError::KeyMismatch(0))));
     }
 }

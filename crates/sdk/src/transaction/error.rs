@@ -9,6 +9,18 @@ pub enum FinalTransactionError {
         /// The index of the unresolved input in the transaction.
         input_index: usize,
     },
+    /// An issuance is invalid.
+    #[error("Input {input_index} doesn't issue anything")]
+    EmptyIssuance {
+        /// The index of the issuance input in the transaction.
+        input_index: usize,
+    },
+    /// A reissuance spends a token without a non-zero asset blinding factor.
+    #[error("Input {input_index} reissues with a token that isn't blinded")]
+    UnblindedReissuanceToken {
+        /// The index of the reissuance input in the transaction.
+        input_index: usize,
+    },
     /// The difference of the policy asset amounts of the inputs and outputs overflows `i64`.
     #[error("The policy asset amounts overflow the fee delta")]
     AmountOverflow,
