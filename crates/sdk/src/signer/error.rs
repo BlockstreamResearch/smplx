@@ -81,6 +81,14 @@ pub enum SignerError {
     #[error("Not enough fee amount {0} to cover transaction costs: {1}")]
     NotEnoughFeeAmount(i64, u64),
 
+    /// Error indicating a fee rate that is not a finite, non-negative number of sats/kvb.
+    #[error("Invalid fee rate: {0} sats/kvb")]
+    InvalidFeeRate(f32),
+
+    /// Error indicating the transaction spends the same outpoint more than once.
+    #[error("The transaction spends {0} more than once")]
+    DuplicateInput(simplicityhl::elements::OutPoint),
+
     /// Error indicating that the available UTXO funds are not enough to cover total costs.
     #[error("Not enough funds on account to cover transaction costs: {0}")]
     NotEnoughFunds(u64),

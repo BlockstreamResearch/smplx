@@ -9,6 +9,9 @@ pub enum FinalTransactionError {
         /// The index of the unresolved input in the transaction.
         input_index: usize,
     },
+    /// The difference of the policy asset amounts of the inputs and outputs overflows `i64`.
+    #[error("The policy asset amounts overflow the fee delta")]
+    AmountOverflow,
 }
 
 /// Errors encountered when reading a UTXO's asset or amount.

@@ -323,27 +323,28 @@ impl FinalTransaction {
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
-    /// amount is unknown and no unblinding secrets are available. A visible amount
-    /// alone does not identify its asset.
+    /// amount is unknown and no unblinding secrets are available.
+    /// Returns [`FinalTransactionError::AmountOverflow`] if the delta doesn't fit `i64`.
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> Result<i64, FinalTransactionError> {
-        let mut available_amount = 0;
+        let mut available_amount: i128 = 0;
 
         for (input_index, input) in self.inputs.iter().enumerate() {
             let (asset, amount) = input
                 .get_asset_and_amount()
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
             if asset == network.policy_asset() {
-                available_amount += amount;
+                available_amount += i128::from(amount);
             }
         }
 
-        let consumed_amount = self
+        let consumed_amount: i128 = self
             .outputs
             .iter()
             .filter(|output| output.asset == network.policy_asset())
-            .fold(0_u64, |acc, output| acc + output.amount);
+            .map(|output| i128::from(output.amount))
+            .sum();
 
-        Ok(available_amount.cast_signed() - consumed_amount.cast_signed())
+        i64::try_from(available_amount - consumed_amount).map_err(|_| FinalTransactionError::AmountOverflow)
     }
 
     /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
@@ -355,7 +356,7 @@ impl FinalTransaction {
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
     /// amount is unknown and no unblinding secrets are available.
     pub fn is_balanced(&self) -> Result<bool, FinalTransactionError> {
-        let mut transfers: HashMap<AssetId, i64> = HashMap::new();
+        let mut transfers: HashMap<AssetId, i128> = HashMap::new();
 
         // Collecting all inputs
         for (input_index, input) in self.inputs.iter().enumerate() {
@@ -364,7 +365,7 @@ impl FinalTransaction {
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
-            *transfer_entry += amount.cast_signed();
+            *transfer_entry += i128::from(amount);
 
             // Issuance brings new assets into the transaction, so the declared amounts count as inputs.
             // A reissuance mints no new inflation tokens
@@ -380,8 +381,8 @@ impl FinalTransaction {
                     IssuanceInput::Reissuance { issuance_amount, .. } => (*issuance_amount, 0),
                 };
 
-                *transfers.entry(issuance_details.asset_id).or_insert(0) += issuance_amount.cast_signed();
-                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += inflation_amount.cast_signed();
+                *transfers.entry(issuance_details.asset_id).or_insert(0) += i128::from(issuance_amount);
+                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += i128::from(inflation_amount);
             }
         }
 
@@ -392,7 +393,7 @@ impl FinalTransaction {
 
             match transfers.get_mut(&output.asset) {
                 Some(value) => {
-                    *value -= output.amount.cast_signed();
+                    *value -= i128::from(output.amount);
                 }
                 None => return Ok(false),
             }
@@ -911,6 +912,22 @@ mod tests {
         ft.add_output(PartialOutput::new_metadata("burn".as_bytes()));
 
         assert!(ft.is_balanced().unwrap());
+    }
+
+    #[test]
+    fn amounts_beyond_i64_do_not_wrap() {
+        let policy = dummy_asset_id(0xAA);
+        let network = SimplicityNetwork::ElementsRegtest { policy_asset: policy };
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 100_000, policy)), None);
+        ft.add_output(PartialOutput::new(Script::new(), u64::MAX, policy));
+
+        assert_eq!(
+            ft.calculate_fee_delta(&network),
+            Err(FinalTransactionError::AmountOverflow)
+        );
+        assert_eq!(ft.is_balanced(), Ok(false));
     }
 
     #[test]
