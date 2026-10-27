@@ -83,8 +83,8 @@ pub enum InstallError {
     #[error("Invalid Git repository URL (cannot extract name): '{0}'")]
     InvalidUrl(String),
 
-    #[error("Failed to remove the incomplete install at '{1}': {0}")]
-    RemoveIncomplete(std::io::Error, PathBuf),
+    #[error("Dependency at '{0}' is incomplete, remove the directory and run install again")]
+    Incomplete(PathBuf),
 
     #[error("Failed to execute git process for '{1}': {0}")]
     GitExecution(std::io::Error, String),

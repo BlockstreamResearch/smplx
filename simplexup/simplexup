@@ -27,10 +27,16 @@ RELEASE_BINS=()
 # The ones taken from the release archive
 ARCHIVE_BINS=()
 
+# Set by `install_version`, removed on exit
+WORK_DIR=""
+
 # Set by `fetch_attestation`
 ATTESTATION_FOUND=false
-HASH_NAMES=()
-HASH_VALUES=()
+ATTESTATION_BUNDLE=""
+# The statement, listing each binary's name and SHA-256
+ATTESTATION_STATEMENT=""
+# If the GitHub CLI also checks who signed the attestation
+GH_VERIFY=false
 
 main() {
   need_cmd git
@@ -74,33 +80,28 @@ main() {
 install_version() {
   resolve_install
 
+  WORK_DIR="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  trap 'rm -rf "${WORK_DIR:?}"' EXIT
+
   if fetch_attestation && [[ -z "$SIMPLEX_COMMIT" ]] && verify_bins "$VERSION_DIR"; then
     say "version $SIMPLEX_VERSION already installed and verified, activating..."
     touch "$VERSION_DIR/$COMPLETE_MARKER"
     use "$(basename "$VERSION_DIR")"
   fi
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-
-  download_release "$tmp_dir"
+  local release_dir="$WORK_DIR/release"
+  download_release "$release_dir"
 
   if $ATTESTATION_FOUND; then
     say "verifying downloaded binaries against the attestation"
-
-    if ! verify_bins "$tmp_dir" verbose; then
-      rm -rf "${tmp_dir:?}"
-      err "one or more binaries failed verification"
-    fi
+    verify_bins "$release_dir" verbose || err "one or more binaries failed verification"
   fi
 
   if [[ -n "$SIMPLEX_COMMIT" ]]; then
-    build_from_commit "$tmp_dir"
+    build_from_commit "$release_dir"
   fi
 
-  store_version "$tmp_dir"
-  rm -rf "${tmp_dir:?}"
-
+  store_version "$release_dir"
   use "$(basename "$VERSION_DIR")"
 }
 
@@ -258,8 +259,8 @@ resolve_install() {
   fi
 }
 
-# Loads the release's attested hashes. Returns non-zero, with no hashes loaded, when `--force` skips verification
-# or the release has no attestation.
+# Loads the release's attestation. Returns non-zero if nothing is loaded or when `--force` skips verification,
+# or if the release has no attestation.
 fetch_attestation() {
   if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = true ]; then
     say "skipping SHA verification due to --force flag"
@@ -270,41 +271,33 @@ fetch_attestation() {
 
   say "checking the attestation for $SIMPLEX_VERSION version"
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  # The first line of the attestation file links to the attestation bundle
+  local link_file="$WORK_DIR/attestation.txt"
+  download "$ATTESTATION_URL" "$link_file" || : > "$link_file"
 
-  # The first line of the attestation file links to the attestation artifact
-  download "$ATTESTATION_URL" "$tmp_dir/attestation.txt" || : > "$tmp_dir/attestation.txt"
-  local artifact_link
-  artifact_link="$(head -n1 "$tmp_dir/attestation.txt" | tr -d '\r')"
+  local bundle_link
+  bundle_link="$(head -n1 "$link_file" | tr -d '\r')"
 
-  if [ -z "$artifact_link" ] || grep -q 'Not Found' "$tmp_dir/attestation.txt"; then
-    rm -rf "${tmp_dir:?}"
+  if [ -z "$bundle_link" ] || grep -q 'Not Found' "$link_file"; then
     say "no attestation found for this release, skipping SHA verification"
     return 1
   fi
 
-  say "found attestation for $SIMPLEX_VERSION version, downloading attestation artifact, checking..."
-  ensure download "${artifact_link}/download" "$tmp_dir/attestation.json"
+  say "found attestation for $SIMPLEX_VERSION version, downloading attestation bundle, checking..."
 
-  # The artifact's payload is a JSON array of objects with "name" and "sha256" fields
-  local payload_b64 payload_json
-  payload_b64=$(awk '/"payload":/ {gsub(/[",]/, "", $2); print $2; exit}' "$tmp_dir/attestation.json")
-  payload_json=$(printf '%s' "$payload_b64" | base64 -d 2>/dev/null || printf '%s' "$payload_b64" | base64 -D)
+  ATTESTATION_BUNDLE="$WORK_DIR/attestation.json"
+  ensure download "${bundle_link}/download" "$ATTESTATION_BUNDLE"
 
-  while read -r name_line && read -r sha_line; do
-    local name sha
-    name=$(echo "$name_line" | sed -nE 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-    sha=$(echo "$sha_line" | sed -nE 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-
-    if [ -n "$name" ] && [ -n "$sha" ]; then
-      HASH_NAMES+=("$name")
-      HASH_VALUES+=("$sha")
-    fi
-  done < <(echo "$payload_json" | tr '{}' '\n' | grep -E '"name"|sha256')
-
-  rm -rf "${tmp_dir:?}"
+  ATTESTATION_STATEMENT=$(jq -r '.dsseEnvelope.payload | @base64d' "$ATTESTATION_BUNDLE") \
+    || err "attestation bundle is malformed"
   ATTESTATION_FOUND=true
+
+  # Checking the signer needs GitHub's API. Done only if gh exists and is logged in
+  if check_cmd gh && gh auth status &>/dev/null; then
+    GH_VERIFY=true
+  else
+    say "gh not found or not logged in, checking the attested hashes only"
+  fi
 }
 
 # Downloads the release archive and extracts its binaries into $1
@@ -314,6 +307,7 @@ download_release() {
 
   say "downloading $(form_str_list "${ARCHIVE_BINS[@]}") for $SIMPLEX_VERSION version"
 
+  ensure mkdir -p "$out_dir"
   ensure download "$BIN_ARCHIVE_URL" "$archive"
   # Make sure it's a valid tar archive.
   ensure tar tf "$archive" 1> /dev/null
@@ -334,26 +328,42 @@ verify_bins() {
     if [ -z "$expected" ]; then
       [ -n "$verbose" ] && say "no expected hash for $bin"
       verified=false
-    elif [ ! -x "$path" ]; then
+      continue
+    fi
+
+    if [ ! -x "$path" ]; then
       [ -n "$verbose" ] && say "binary $bin not found at $path"
       verified=false
-    else
-      actual=$(compute_sha256 "$path")
+      continue
+    fi
 
-      if [ "$actual" != "$expected" ]; then
-        if [ -n "$verbose" ]; then
-          say "$bin hash verification failed:"
-          say "  expected: $expected"
-          say "  actual:   $actual"
-        fi
-        verified=false
-      elif [ -n "$verbose" ]; then
-        say "$bin verified ✓"
+    actual=$(compute_sha256 "$path")
+
+    if [ "$actual" != "$expected" ]; then
+      if [ -n "$verbose" ]; then
+        say "$bin hash verification failed:"
+        say "  expected: $expected"
+        say "  actual:   $actual"
       fi
+      verified=false
+    elif $GH_VERIFY && ! gh_verify "$path"; then
+      [ -n "$verbose" ] && say "$bin attestation is not signed by the $SIMPLEX_REPO release workflow"
+      verified=false
+    elif [ -n "$verbose" ]; then
+      say "$bin verified ✓"
     fi
   done
 
   $verified
+}
+
+# Checks with the GitHub CLI that the attestation bundle attests binary $1 and that the release workflow signed the bundle
+gh_verify() {
+  gh attestation verify "$1" \
+    --bundle "$ATTESTATION_BUNDLE" \
+    --repo "$SIMPLEX_REPO" \
+    --signer-workflow "$SIMPLEX_REPO/.github/workflows/release.yml" \
+    &>/dev/null
 }
 
 # Builds simplex at SIMPLEX_COMMIT into dir $1, in place of the release's
@@ -361,16 +371,13 @@ build_from_commit() {
   need_cmd cargo
 
   local out_dir=$1
-  local src_dir
-  src_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  local src_dir="$WORK_DIR/source"
 
   say "building simplex from commit ${SIMPLEX_COMMIT} of ${GITHUB_REPO_URL}"
 
   ensure git clone --revision="${SIMPLEX_COMMIT}" --depth=1 "${GITHUB_REPO_URL}" "${src_dir}"
   ensure cargo build --release --manifest-path "${src_dir}/Cargo.toml"
   ensure mv "${src_dir}/target/release/${SMPLX_BIN_NAME}" "${out_dir}/${SMPLX_BIN_NAME}"
-
-  rm -rf "${src_dir:?}"
 }
 
 # Moves the binaries from dir $1 into the version dir, which is marked complete once they are all in
@@ -499,14 +506,9 @@ set_release_bins() {
   fi
 }
 
-# Prints the attested SHA-256 of binary $1, nothing when the attestation lacks one
+# Prints the attested SHA-256 of binary $1 or an empty string when the attestation lacks one
 attested_hash() {
-  for i in "${!HASH_NAMES[@]}"; do
-    if [ "${HASH_NAMES[$i]}" = "$1" ]; then
-      echo "${HASH_VALUES[$i]}"
-      return 0
-    fi
-  done
+  jq -r --arg name "$1" '.subject[]? | select(.name == $name) | .digest.sha256' <<< "$ATTESTATION_STATEMENT"
 }
 
 latest_tag() {

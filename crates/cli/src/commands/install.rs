@@ -188,8 +188,7 @@ impl Install {
         }
 
         if target_dir.exists() {
-            fs::remove_dir_all(target_dir)
-                .map_err(|err| InstallError::RemoveIncomplete(err, target_dir.to_path_buf()))?;
+            return Err(InstallError::Incomplete(target_dir.to_path_buf()));
         }
 
         Ok(false)
@@ -443,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_install_is_installed_again() {
+    fn incomplete_install_is_reported() {
         let root = std::env::temp_dir().join(format!("smplx-install-incomplete-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
 
@@ -457,11 +456,11 @@ mod tests {
         // An install killed after `git clone --no-checkout` left only the repository's `.git`
         fs::create_dir_all(target_dir.join(".git")).unwrap();
 
-        let mut installed_repos = Vec::new();
-        Install::install_repos(&deps, &deps_dir, &mut installed_repos).unwrap();
-
-        assert_eq!(installed_repos, vec![target_dir.clone()]);
-        assert!(target_dir.join(smplx_build::CONFIG_FILENAME).is_file());
+        assert!(matches!(
+            Install::install_repos(&deps, &deps_dir, &mut Vec::new()),
+            Err(InstallError::Incomplete(path)) if path == target_dir
+        ));
+        assert!(target_dir.join(".git").is_dir(), "nothing is removed");
 
         fs::remove_dir_all(root).unwrap();
     }

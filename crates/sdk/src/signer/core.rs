@@ -251,8 +251,8 @@ impl Signer {
 
         // An explicit change target can't balance a confidential input unless another output is confidential
         if tx.change().is_some_and(|change| change.blinding_key.is_none()) && !tx.needs_blinding() {
-            // Ratain only explicit UTXOs
-            signer_utxos.retain(|utxo| utxo.txout.value.is_explicit() && utxo.txout.asset.is_explicit());
+            // Retain only explicit UTXOs
+            signer_utxos.retain(UTXO::is_explicit);
         }
 
         // Resolve amounts before sorting so an unreadable UTXO returns an error.
@@ -551,7 +551,7 @@ impl Signer {
                 continue;
             }
 
-            if utxo.txout.asset.is_explicit() && utxo.txout.value.is_explicit() {
+            if utxo.is_explicit() {
                 all_utxos.push(utxo);
                 continue;
             }
