@@ -17,9 +17,13 @@ name = "simplex"
 [lints]
 workspace = true
 
+[features]
+default = ["test"]
+test = ["dep:smplx-test", "smplx-macros/test"]
+
 [dependencies]
 smplx-macros = { workspace = true }
-smplx-test = { workspace = true }
+smplx-test = { workspace = true, optional = true }
 smplx-sdk = { workspace = true, features = ["provider"] }
 
 serde = { workspace = true }
@@ -31,3 +35,8 @@ either = { version = "1.19.0", features = ["serde"] }
 
 [dev-dependencies]
 trybuild = { version = "1.0.122" }
+
+[[test]]
+name = "compile_test"
+path = "tests/compile_test.rs"
+required-features = ["test"]
