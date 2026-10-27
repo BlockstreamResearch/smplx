@@ -112,6 +112,28 @@ impl FinalInput {
 
         pst_input
     }
+
+    fn check_issuance(&self, input_index: usize) -> Result<(), FinalTransactionError> {
+        match &self.issuance_input {
+            Some(
+                IssuanceInput::Issuance {
+                    issuance_amount: 0,
+                    inflation_amount: 0,
+                    ..
+                }
+                | IssuanceInput::Reissuance { issuance_amount: 0, .. },
+            ) => Err(FinalTransactionError::EmptyIssuance { input_index }),
+            Some(IssuanceInput::Reissuance { .. })
+                if self
+                    .partial_input
+                    .secrets
+                    .is_none_or(|secrets| secrets.asset_bf == AssetBlindingFactor::zero()) =>
+            {
+                Err(FinalTransactionError::UnblindedReissuanceToken { input_index })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// A struct representing a final (but not yet signed) transaction.
@@ -323,27 +345,28 @@ impl FinalTransaction {
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
-    /// amount is unknown and no unblinding secrets are available. A visible amount
-    /// alone does not identify its asset.
+    /// amount is unknown and no unblinding secrets are available.
+    /// Returns [`FinalTransactionError::AmountOverflow`] if the delta doesn't fit `i64`.
     pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> Result<i64, FinalTransactionError> {
-        let mut available_amount = 0;
+        let mut available_amount: i128 = 0;
 
         for (input_index, input) in self.inputs.iter().enumerate() {
             let (asset, amount) = input
                 .get_asset_and_amount()
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
             if asset == network.policy_asset() {
-                available_amount += amount;
+                available_amount += i128::from(amount);
             }
         }
 
-        let consumed_amount = self
+        let consumed_amount: i128 = self
             .outputs
             .iter()
             .filter(|output| output.asset == network.policy_asset())
-            .fold(0_u64, |acc, output| acc + output.amount);
+            .map(|output| i128::from(output.amount))
+            .sum();
 
-        Ok(available_amount.cast_signed() - consumed_amount.cast_signed())
+        i64::try_from(available_amount - consumed_amount).map_err(|_| FinalTransactionError::AmountOverflow)
     }
 
     /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
@@ -355,7 +378,7 @@ impl FinalTransaction {
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
     /// amount is unknown and no unblinding secrets are available.
     pub fn is_balanced(&self) -> Result<bool, FinalTransactionError> {
-        let mut transfers: HashMap<AssetId, i64> = HashMap::new();
+        let mut transfers: HashMap<AssetId, i128> = HashMap::new();
 
         // Collecting all inputs
         for (input_index, input) in self.inputs.iter().enumerate() {
@@ -364,7 +387,7 @@ impl FinalTransaction {
                 .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
-            *transfer_entry += amount.cast_signed();
+            *transfer_entry += i128::from(amount);
 
             // Issuance brings new assets into the transaction, so the declared amounts count as inputs.
             // A reissuance mints no new inflation tokens
@@ -380,8 +403,8 @@ impl FinalTransaction {
                     IssuanceInput::Reissuance { issuance_amount, .. } => (*issuance_amount, 0),
                 };
 
-                *transfers.entry(issuance_details.asset_id).or_insert(0) += issuance_amount.cast_signed();
-                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += inflation_amount.cast_signed();
+                *transfers.entry(issuance_details.asset_id).or_insert(0) += i128::from(issuance_amount);
+                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += i128::from(inflation_amount);
             }
         }
 
@@ -392,7 +415,7 @@ impl FinalTransaction {
 
             match transfers.get_mut(&output.asset) {
                 Some(value) => {
-                    *value -= output.amount.cast_signed();
+                    *value -= i128::from(output.amount);
                 }
                 None => return Ok(false),
             }
@@ -408,8 +431,8 @@ impl FinalTransaction {
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
     /// amount is unknown and no unblinding secrets are available.
     ///
-    /// # Panics
-    /// Panics if a reissuance input has no blinding secrets.
+    /// Returns [`FinalTransactionError::EmptyIssuance`] if an issuance input doesn't issue anything, and
+    /// [`FinalTransactionError::UnblindedReissuanceToken`] if a reissuance spends a token that isn't blinded.
     pub fn extract_pst(
         &self,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, TxOutSecrets>), FinalTransactionError> {
@@ -439,6 +462,8 @@ impl FinalTransaction {
                     value_bf: ValueBlindingFactor::zero(),
                 }
             };
+
+            final_input.check_issuance(i)?;
 
             input_secrets.insert(i, secrets);
             pst.add_input(final_input.to_input());
@@ -739,7 +764,16 @@ mod tests {
         let entropy = [0x42u8; 32];
         let issuance_amount = 1_000_000u64;
 
-        let conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        // A reissuance token needs a non-zero asset blinding factor
+        let token_secrets = TxOutSecrets::new(
+            policy,
+            AssetBlindingFactor::from_slice(&[1; 32]).unwrap(),
+            1000,
+            ValueBlindingFactor::zero(),
+        );
+        let mut conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        conf_utxo.secrets = Some(token_secrets);
+
         let partial_input = PartialInput::new(conf_utxo);
         let reissuance_input = IssuanceInput::new_reissuance(issuance_amount, entropy);
         let partial_output = PartialOutput::new(Script::new(), 1000, policy);
@@ -762,10 +796,7 @@ mod tests {
         expected_pst.add_input(expected_input);
         expected_pst.add_output(partial_output.to_output());
 
-        let expected_secrets = HashMap::from([(
-            0,
-            TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 1000, ValueBlindingFactor::zero()),
-        )]);
+        let expected_secrets = HashMap::from([(0, token_secrets)]);
 
         let (pst, secrets) = ft.extract_pst().unwrap();
 
@@ -914,18 +945,61 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Reissuance input must be confidential")]
-    fn reissuance_without_secrets_panics_during_extraction() {
+    fn amounts_beyond_i64_do_not_wrap() {
+        let policy = dummy_asset_id(0xAA);
+        let network = SimplicityNetwork::ElementsRegtest { policy_asset: policy };
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 100_000, policy)), None);
+        ft.add_output(PartialOutput::new(Script::new(), u64::MAX, policy));
+
+        assert_eq!(
+            ft.calculate_fee_delta(&network),
+            Err(FinalTransactionError::AmountOverflow)
+        );
+        assert_eq!(ft.is_balanced(), Ok(false));
+    }
+
+    #[test]
+    fn reissuance_with_an_explicit_token_is_rejected() {
         let entropy = [0x42; 32];
         let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
-        let input = PartialInput::new(explicit_utxo(1, 0, 1, token));
 
         let mut tx = FinalTransaction::new();
-        tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
-        assert_eq!(tx.inputs()[0].get_asset_and_amount(), Some((token, 1)));
+        tx.add_issuance_input(
+            PartialInput::new(explicit_utxo(1, 0, 1, token)),
+            IssuanceInput::new_reissuance(5_000, entropy),
+            None,
+        );
 
-        // Reproduces the documented panic in FinalInput::to_input.
-        let _ = tx.extract_pst();
+        assert!(matches!(
+            tx.extract_pst(),
+            Err(FinalTransactionError::UnblindedReissuanceToken { input_index: 0 })
+        ));
+    }
+
+    #[test]
+    fn token_only_issuance_has_a_null_amount_and_an_empty_one_is_rejected() {
+        let policy = dummy_asset_id(0xAA);
+        let issuance = |issuance_amount, inflation_amount| {
+            let mut tx = FinalTransaction::new();
+            tx.add_issuance_input(
+                PartialInput::new(explicit_utxo(1, 0, 1000, policy)),
+                IssuanceInput::new_issuance(issuance_amount, inflation_amount, [0x42; 32]),
+                None,
+            );
+
+            tx.extract_pst()
+        };
+
+        let (pst, _) = issuance(0, 1).unwrap();
+
+        assert_eq!(pst.inputs()[0].issuance_value_amount, None);
+        assert_eq!(pst.inputs()[0].issuance_inflation_keys, Some(1));
+        assert!(matches!(
+            issuance(0, 0),
+            Err(FinalTransactionError::EmptyIssuance { input_index: 0 })
+        ));
     }
 
     #[test]

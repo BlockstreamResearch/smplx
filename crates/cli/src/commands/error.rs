@@ -83,11 +83,8 @@ pub enum InstallError {
     #[error("Invalid Git repository URL (cannot extract name): '{0}'")]
     InvalidUrl(String),
 
-    #[error("Failed to create directory at '{1}': {0}")]
-    CreateDir(std::io::Error, PathBuf),
-
-    #[error("Failed to read directory at '{1}': {0}")]
-    ReadDir(std::io::Error, PathBuf),
+    #[error("Dependency at '{0}' is incomplete, remove the directory and run install again")]
+    Incomplete(PathBuf),
 
     #[error("Failed to execute git process for '{1}': {0}")]
     GitExecution(std::io::Error, String),
@@ -98,6 +95,6 @@ pub enum InstallError {
     #[error("Package directory '{0}' not found in repository: '{1}'")]
     PackageNotFound(String, String),
 
-    #[error("Failed to move package into '{1}': {0}")]
-    MovePackage(std::io::Error, PathBuf),
+    #[error("Failed to move the checkout into '{1}': {0}")]
+    MoveCheckout(std::io::Error, PathBuf),
 }

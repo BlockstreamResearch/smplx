@@ -28,6 +28,19 @@ pub enum ProviderError {
         message: String,
     },
 
+    /// Error indicating the provider answered with another transaction.
+    #[error("Expected transaction {expected}, the provider returned {returned}")]
+    UnexpectedTxid {
+        /// The transaction asked for or broadcast.
+        expected: simplicityhl::elements::Txid,
+        /// The transaction the provider returned.
+        returned: simplicityhl::elements::Txid,
+    },
+
+    /// Error indicating the provider listed an output that isn't locked by the queried script.
+    #[error("The provider listed {0}, which the queried script doesn't lock")]
+    UnexpectedScript(simplicityhl::elements::OutPoint),
+
     /// Error indicating that a provider's raw response body was unable to be correctly deserialized into native structs or types.
     #[error("Failed to deserialize response: {0}")]
     Deserialize(String),

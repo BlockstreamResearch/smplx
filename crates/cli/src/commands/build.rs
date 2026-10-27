@@ -13,7 +13,7 @@ impl Build {
     /// # Errors
     /// Returns a `CommandError` if it fails to resolve directories or files, or if artifact generation encounters an error.
     pub fn run(root_dir: &Path, config: &BuildConfig, deps: &DependencyConfig) -> Result<(), CommandError> {
-        let output_dir = ArtifactsResolver::resolve_local_dir(root_dir, &config.out_dir)?;
+        let output_dir = ArtifactsResolver::resolve_out_dir(root_dir, &config.out_dir, &config.src_dir)?;
         let src_dir = ArtifactsResolver::resolve_local_dir(root_dir, &config.src_dir)?;
 
         // NOTE: Assumes that remappings are already installed

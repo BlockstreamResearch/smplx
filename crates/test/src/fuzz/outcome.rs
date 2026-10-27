@@ -67,7 +67,8 @@ impl Outcome {
                 return Err(SetupError::Arguments(error.to_string()));
             }
             ProgramError::WitnessSatisfaction(_) => return Err(SetupError::Witness(error.to_string())),
-            ProgramError::UtxoIndexOutOfBounds { .. }
+            ProgramError::MissingWitnessUtxo { .. }
+            | ProgramError::UtxoIndexOutOfBounds { .. }
             | ProgramError::ScriptPubkeyMismatch { .. }
             | ProgramError::TxExtraction(_)
             | ProgramError::InputIndexOverflow(_) => return Err(SetupError::Transaction(error.to_string())),

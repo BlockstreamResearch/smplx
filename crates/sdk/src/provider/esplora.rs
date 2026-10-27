@@ -122,6 +122,10 @@ impl EsploraProvider {
                     .get(utxo.vout as usize)
                     .ok_or(ProviderError::BadResponse)?;
 
+                if txout.script_pubkey != *script {
+                    return Err(ProviderError::UnexpectedScript(outpoint));
+                }
+
                 Ok(UTXO {
                     outpoint,
                     txout: txout.clone(),
@@ -160,9 +164,16 @@ impl ProviderTrait for EsploraProvider {
             });
         }
 
-        Txid::from_str(&body)
-            .map_err(|e| ProviderError::InvalidTxid(e.to_string()))
-            .map(|tx_id| TxReceipt::new(self, tx_id))
+        let returned = Txid::from_str(&body).map_err(|e| ProviderError::InvalidTxid(e.to_string()))?;
+
+        if returned != tx.txid() {
+            return Err(ProviderError::UnexpectedTxid {
+                expected: tx.txid(),
+                returned,
+            });
+        }
+
+        Ok(TxReceipt::new(self, returned))
     }
 
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError> {
@@ -218,8 +229,17 @@ impl ProviderTrait for EsploraProvider {
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
         let response = self.get(&format!("/tx/{txid}/raw"))?;
+        let transaction: Transaction =
+            encode::deserialize(response.as_bytes()).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
-        encode::deserialize(response.as_bytes()).map_err(|e| ProviderError::Deserialize(e.to_string()))
+        if transaction.txid() != *txid {
+            return Err(ProviderError::UnexpectedTxid {
+                expected: *txid,
+                returned: transaction.txid(),
+            });
+        }
+
+        Ok(transaction)
     }
 
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError> {

@@ -99,10 +99,6 @@ impl Install {
                 continue;
             }
 
-            if !target_dir.exists() {
-                fs::create_dir_all(&target_dir).map_err(|e| InstallError::CreateDir(e, target_dir.clone()))?;
-            }
-
             Self::clone_repo(
                 git_repo_url,
                 reference.as_ref(),
@@ -120,6 +116,9 @@ impl Install {
     /// Clones `url` into `target_dir`, checking out `reference`.
     /// When `package` is set, only that directory is downloaded and `target_dir` holds
     /// its contents directly, without the rest of the repository or its `.git`.
+    ///
+    /// Git works in a staging directory that becomes `target_dir` only once the checkout is complete,
+    /// so an interrupted or concurrent install doesn't leave a partial `target_dir` that looks installed.
     fn clone_repo(
         url: &str,
         reference: Option<&GitRef>,
@@ -127,62 +126,72 @@ impl Install {
         target_dir: &Path,
         installed_repos: &mut Vec<PathBuf>,
     ) -> Result<(), InstallError> {
-        let is_empty = fs::read_dir(target_dir)
-            .map_err(|err| InstallError::ReadDir(err, target_dir.to_path_buf()))?
-            .next()
-            .is_none();
-
-        // Consider it installed and skip cloning.
-        if !is_empty {
+        if Self::is_installed(target_dir)? {
             return Ok(());
         }
 
-        // Git keeps a package at its in-repo path, so it is cloned into a sibling
-        // staging dir first and then moved out of it.
-        let clone_dir = match package {
-            Some(_) => {
-                let mut staging = target_dir.as_os_str().to_owned();
-                staging.push(".tmp");
-                let staging = PathBuf::from(staging);
+        // Each process stages separately, so concurrent installs don't clone over each other
+        let mut staging_name = std::ffi::OsString::from(".");
+        staging_name.push(target_dir.file_name().unwrap_or_default());
+        staging_name.push(format!(".{}.tmp", std::process::id()));
+        let staging = target_dir.with_file_name(staging_name);
 
-                let _ = fs::remove_dir_all(&staging);
-                staging
-            }
-            None => target_dir.to_path_buf(),
-        };
+        let _ = fs::remove_dir_all(&staging);
+        let installed = Self::stage_and_move(url, reference, package, &staging, target_dir);
+        let _ = fs::remove_dir_all(&staging);
 
-        for mut command in Self::git_commands(url, reference, package, &clone_dir) {
+        if installed? {
+            installed_repos.push(target_dir.to_path_buf());
+        }
+
+        Ok(())
+    }
+
+    /// Clones into `staging` and moves the checkout, or its `package`, to `target_dir`.
+    /// `false` when a concurrent install got there first.
+    fn stage_and_move(
+        url: &str,
+        reference: Option<&GitRef>,
+        package: Option<&str>,
+        staging: &Path,
+        target_dir: &Path,
+    ) -> Result<bool, InstallError> {
+        for mut command in Self::git_commands(url, reference, package, staging) {
             let output = command
                 .output()
                 .map_err(|err| InstallError::GitExecution(err, url.to_owned()))?;
 
             if !output.status.success() {
-                // Force to remove file, if something went wrong
-                let _ = std::fs::remove_dir_all(&clone_dir);
                 return Err(InstallError::GitCloneFailed(url.to_owned()));
             }
         }
 
-        if let Some(package) = package {
-            let package_dir = clone_dir.join(package);
-
+        let checkout = match package {
             // Git succeeds even if `package` doesn't exist at this ref, leaving an empty checkout.
-            let moved = if package_dir.is_dir() {
-                // `target_dir` is still empty; `rename` can't replace a directory on every platform.
-                fs::remove_dir(target_dir)
-                    .and_then(|()| fs::rename(&package_dir, target_dir))
-                    .map_err(|err| InstallError::MovePackage(err, target_dir.to_path_buf()))
-            } else {
-                Err(InstallError::PackageNotFound(package.to_owned(), url.to_owned()))
-            };
+            Some(package) if !staging.join(package).is_dir() => {
+                return Err(InstallError::PackageNotFound(package.to_owned(), url.to_owned()));
+            }
+            Some(package) => staging.join(package),
+            None => staging.to_path_buf(),
+        };
 
-            let _ = fs::remove_dir_all(&clone_dir);
-            moved?;
+        match fs::rename(&checkout, target_dir) {
+            Ok(()) => Ok(true),
+            Err(_) if Self::is_installed(target_dir)? => Ok(false),
+            Err(err) => Err(InstallError::MoveCheckout(err, target_dir.to_path_buf())),
+        }
+    }
+
+    fn is_installed(target_dir: &Path) -> Result<bool, InstallError> {
+        if target_dir.join(smplx_build::CONFIG_FILENAME).is_file() {
+            return Ok(true);
         }
 
-        installed_repos.push(target_dir.to_path_buf());
+        if target_dir.exists() {
+            return Err(InstallError::Incomplete(target_dir.to_path_buf()));
+        }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Builds the git commands, in execution order, that clone `url` into `target_dir`
@@ -409,6 +418,51 @@ mod tests {
         git(dir, &["init", "--quiet"]);
         git(dir, &["add", "."]);
         git(dir, &["commit", "--quiet", "-m", "init"]);
+    }
+
+    #[test]
+    fn failed_install_leaves_nothing_behind() {
+        let root = std::env::temp_dir().join(format!("smplx-install-failed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let deps_dir = root.join("deps");
+        fs::create_dir_all(&deps_dir).unwrap();
+
+        let url = format!("file://{}", root.join("missing").display());
+        let deps =
+            DependencyConfig::from_source(&format!("[dependencies]\nmissing = {{ git = \"{url}\" }}\n")).unwrap();
+
+        assert!(Install::install_repos(&deps, &deps_dir, &mut Vec::new()).is_err());
+        assert_eq!(
+            fs::read_dir(&deps_dir).unwrap().count(),
+            0,
+            "neither a target nor a staging dir is left"
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn incomplete_install_is_reported() {
+        let root = std::env::temp_dir().join(format!("smplx-install-incomplete-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let url = format!("file://{}", root.join("a").display());
+        init_repo(&root.join("a"), "");
+
+        let deps = DependencyConfig::from_source(&format!("[dependencies]\na = {{ git = \"{url}\" }}\n")).unwrap();
+        let deps_dir = root.join("deps");
+        let target_dir = deps_dir.join(ArtifactsResolver::generate_hashed_repo_path(&url, None, None).unwrap());
+
+        // An install killed after `git clone --no-checkout` left only the repository's `.git`
+        fs::create_dir_all(target_dir.join(".git")).unwrap();
+
+        assert!(matches!(
+            Install::install_repos(&deps, &deps_dir, &mut Vec::new()),
+            Err(InstallError::Incomplete(path)) if path == target_dir
+        ));
+        assert!(target_dir.join(".git").is_dir(), "nothing is removed");
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

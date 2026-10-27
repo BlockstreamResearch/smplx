@@ -33,6 +33,18 @@ impl UTXO {
         }
     }
 
+    /// Checks if both the asset and the amount are explicit.
+    #[must_use]
+    pub fn is_explicit(&self) -> bool {
+        self.txout.asset.is_explicit() && self.txout.value.is_explicit()
+    }
+
+    /// Checks if the asset or the amount is blinded.
+    #[must_use]
+    pub fn is_confidential(&self) -> bool {
+        self.txout.asset.is_confidential() || self.txout.value.is_confidential()
+    }
+
     /// Retrieves the explicit `AssetId` from the transaction output (`txout`).
     ///
     /// # Panics

@@ -3,7 +3,7 @@ set -eo pipefail
 
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
-SIMPLEXUP_INSTALLER_VERSION="0.0.6"
+SIMPLEXUP_INSTALLER_VERSION="0.0.7"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -11,14 +11,32 @@ SIMPLEX_VERSIONS_DIR="$SIMPLEX_DIR/versions"
 SIMPLEX_BIN_DIR="$SIMPLEX_DIR/bin"
 SIMPLEX_BIN_URL="https://raw.githubusercontent.com/BlockstreamResearch/smplx/master/simplexup/simplexup"
 SIMPLEX_BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
-SIMPLEXUP_IGNORE_VERIFICATION=false
 DEFAULT_SIMPLEX_REPO="BlockstreamResearch/smplx"
+SIMPLEXUP_IGNORE_VERIFICATION=false
 
 SMPLX_BIN_NAME="simplex"
-DEP_BINS=()
-BINS=("${SMPLX_BIN_NAME}")
-HASH_NAMES=()
-HASH_VALUES=()
+# Every binary a release may ship
+ALL_BINS=("${SMPLX_BIN_NAME}" elementsd electrs smplx-nextest)
+# Written last into a version dir, so an interrupted or rejected install is never used
+COMPLETE_MARKER=".complete"
+
+# Set by `resolve_install`
+VERSION_DIR=""
+# The binaries the installed version is made of
+RELEASE_BINS=()
+# The ones taken from the release archive
+ARCHIVE_BINS=()
+
+# Set by `install_version`, removed on exit
+WORK_DIR=""
+
+# Set by `fetch_attestation`
+ATTESTATION_FOUND=false
+ATTESTATION_BUNDLE=""
+# The statement, listing each binary's name and SHA-256
+ATTESTATION_STATEMENT=""
+# If the GitHub CLI also checks who signed the attestation
+GH_VERIFY=false
 
 main() {
   need_cmd git
@@ -35,7 +53,7 @@ main() {
       -r|--repo)        shift; SIMPLEX_REPO=$1;;
       -i|--install)     shift; SIMPLEX_VERSION=$1;;
       -l|--list)        shift; list;;
-      -u|--use)         shift; SIMPLEX_VERSION=$1; use;;
+      -u|--use)         shift; use "$1";;
       -f|--force)       SIMPLEXUP_IGNORE_VERIFICATION=true;;
       --arch)           shift; SIMPLEX_ARCH=$1;;
       --platform)       shift; SIMPLEX_PLATFORM=$1;;
@@ -53,220 +71,131 @@ main() {
   # Print the banner after successfully parsing args
   banner
 
-  # Check if the simplexup installer is up to date, warn the user if not
   check_installer_up_to_date
+  install_version
+}
 
-  # Default to Simplex repo
-  SIMPLEX_REPO=${SIMPLEX_REPO:-$DEFAULT_SIMPLEX_REPO}
+# Installs the requested release, or the latest one. The binaries are verified before any of them
+# enters the version dir, and the version is activated once they are all in.
+install_version() {
+  resolve_install
 
-  # Install by downloading binaries
-  LATEST_TAG=$(latest_tag)
-  SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION:-$LATEST_TAG}")
+  WORK_DIR="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
+  trap 'rm -rf "${WORK_DIR:?}"' EXIT
 
-  # Resolve dependency binaries based on the version (populates DEP_BINS and BINS)
-  local trimmed_version=${SIMPLEX_VERSION#v}
-  resolve_dep_bins "$trimmed_version"
-
-  check_bins_in_use
-
-  # Check if the requested version exists
-  if [[ "${SIMPLEX_VERSION}" != "${LATEST_TAG}" ]]; then
-    validate_tag_version "${SIMPLEX_VERSION}" "${SIMPLEX_REPO}"
+  if fetch_attestation && [[ -z "$SIMPLEX_COMMIT" ]] && verify_bins "$VERSION_DIR"; then
+    say "version $SIMPLEX_VERSION already installed and verified, activating..."
+    touch "$VERSION_DIR/$COMPLETE_MARKER"
+    use "$(basename "$VERSION_DIR")"
   fi
 
-  say "installing simplex (version ${SIMPLEX_VERSION})"
+  local release_dir="$WORK_DIR/release"
+  download_release "$release_dir"
 
-  # Detect platform and architecture.
-  detect_platform_arch
-
-  # Compute the URL of the release tarball in the Simplex repository.
-  GITHUB_REPO_URL="https://github.com/${SIMPLEX_REPO}"
-  RELEASE_URL="${GITHUB_REPO_URL}/releases/download/${SIMPLEX_VERSION}/"
-  ATTESTATION_URL="${RELEASE_URL}simplex-${SIMPLEX_VERSION}-${PLATFORM}-${ARCHITECTURE}.attestation.txt"
-  BIN_ARCHIVE_URL="${RELEASE_URL}simplex-${SIMPLEX_VERSION}-${PLATFORM}-${ARCHITECTURE}.tar.gz"
-
-  version_dir="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_VERSION}"
-  ensure mkdir -p "$version_dir"
-
-  local BINS_TO_DOWNLOAD=("${SMPLX_BIN_NAME}" "${DEP_BINS[@]}")
+  if $ATTESTATION_FOUND; then
+    say "verifying downloaded binaries against the attestation"
+    verify_bins "$release_dir" verbose || err "one or more binaries failed verification"
+  fi
 
   if [[ -n "$SIMPLEX_COMMIT" ]]; then
-    local author="$(echo "${SIMPLEX_REPO}" | cut -d'/' -f1 -)"
-    BINS_TO_DOWNLOAD=("${DEP_BINS[@]}")
-
-    install_simplex_from_commit "${SIMPLEX_COMMIT}" "${author}" "${GITHUB_REPO_URL}" "${version_dir}"
-    say "Successfully compiled simplex from commit: ${SIMPLEX_COMMIT} in repo: ${GITHUB_REPO_URL}"
+    build_from_commit "$release_dir"
   fi
 
-  BINS_LIST_UX=$(form_str_list "${BINS_TO_DOWNLOAD[@]}")
+  store_version "$release_dir"
+  use "$(basename "$VERSION_DIR")"
+}
 
-  # If `--force` is set, skip the SHA verification.
-  if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = false ]; then
-    # Check if the version is already installed by downloading the attestation file.
-    say "checking if $BINS_LIST_UX for $SIMPLEX_VERSION version are already installed"
+# Activates installed version $1. Every binary is replaced and the ones $1 doesn't ship are removed,
+# so no two versions mix.
+use() {
+  [ -z "$1" ] && err "no version provided"
 
-    # Create a temporary directory to store the attestation link and artifact.
-    tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-    tmp="$tmp_dir/attestation.txt"
-    ensure download "$ATTESTATION_URL" "$tmp"
+  local name
+  name=$(add_v_prefix "$1")
+  local dir="$SIMPLEX_VERSIONS_DIR/$name"
 
-    # Read the first line of the attestation file to get the artifact link.
-    # The first line should contain the link to the attestation artifact.
-    attestation_artifact_link="$(head -n1 "$tmp" | tr -d '\r')"
-    attestation_missing=false
+  [ -f "$dir/$COMPLETE_MARKER" ] || err "version $name not installed"
 
-    # If the attestation artifact link is empty or the file contains 'Not Found',
-    # we consider the attestation missing and skip the SHA verification.
-    if [ -z "$attestation_artifact_link" ] || grep -q 'Not Found' "$tmp"; then
-      attestation_missing=true
+  check_bins_in_use "${ALL_BINS[@]}"
+  ensure mkdir -p "$SIMPLEX_BIN_DIR"
+
+  for bin in "${ALL_BINS[@]}"; do
+    local bin_path="$SIMPLEX_BIN_DIR/$bin"
+
+    if [ ! -f "$dir/$bin" ]; then
+      rm -f "${bin_path:?}"
+      continue
     fi
 
-    # Clean up the temporary attestation file.
-    rm -f "$tmp"
+    ensure cp "$dir/$bin" "$bin_path"
 
-    if $attestation_missing; then
-      say "no attestation found for this release, skipping SHA verification"
-    else
-      say "found attestation for $SIMPLEX_VERSION version, downloading attestation artifact, checking..."
-
-      # Download the attestation artifact JSON file.
-      tmp="$tmp_dir/simplex-attestation.sigstore.json"
-      ensure download "${attestation_artifact_link}/download" "$tmp"
-
-      # Extract the payload from the JSON file.
-      payload_b64=$(awk '/"payload":/ {gsub(/[",]/, "", $2); print $2; exit}' "$tmp")
-      payload_json=$(printf '%s' "$payload_b64" | base64 -d 2>/dev/null || printf '%s' "$payload_b64" | base64 -D)
-
-      # Extract the names and hashes from the payload JSON.
-      # The payload is expected to be a JSON array of objects with "name" and "sha256" fields.
-      while read -r name_line && read -r sha_line; do
-        name=$(echo "$name_line" | sed -nE 's/.*"name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-        sha=$(echo "$sha_line" | sed -nE 's/.*"sha256"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p')
-
-        if [ -n "$name" ] && [ -n "$sha" ]; then
-          HASH_NAMES+=("$name")
-          HASH_VALUES+=("$sha")
-        fi
-      done < <(echo "$payload_json" | tr '{}' '\n' | grep -E '"name"|sha256')
-
-      # Clean up the temporary attestation artifact.
-      # The hashes are now stored in the HASHES associative array.
-      rm -f "$tmp"
-
-      # Check if the binaries are already installed and match the expected hashes.
-      # If they do, skip the download.
-      all_match=true
-
-      for bin in "${BINS_TO_DOWNLOAD[@]}"; do
-        expected=""
-
-        for i in "${!HASH_NAMES[@]}"; do
-          if [ "${HASH_NAMES[$i]}" = "$bin" ]; then
-            expected="${HASH_VALUES[$i]}"
-            break
-          fi
-        done
-
-        path="$version_dir/$bin"
-
-        if [ -z "$expected" ] || [ ! -x "$path" ]; then
-          all_match=false
-          break
-        fi
-
-        actual=$(compute_sha256 "$path")
-
-        if [ "$actual" != "$expected" ]; then
-          all_match=false
-          break
-        fi
-      done
-
-      if $all_match; then
-        say "version $SIMPLEX_VERSION already installed and verified (for $BINS_LIST_UX), activating..."
-        use
-        say "done!"
-        exit 0
-      fi
+    if [ "$bin" = "$SMPLX_BIN_NAME" ]; then
+      say "- $(ensure "$bin_path" -V)"
     fi
 
-    # If we reach here, we need to download the binaries.
-    say "binaries not found or do not match expected hashes, downloading new binaries"
-  fi
-
-  # Download and extract the binaries archive
-  say "downloading $BINS_LIST_UX for $SIMPLEX_VERSION version"
-
-  tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-  tmp_tar="$tmp_dir/simplex.tar.gz"
-
-  ensure download "$BIN_ARCHIVE_URL" "$tmp_tar"
-  # Make sure it's a valid tar archive.
-  ensure tar tf "$tmp_tar" 1> /dev/null
-  ensure tar -C "$tmp_dir" -xvf "$tmp_tar"
-
-  for bin in "${BINS_TO_DOWNLOAD[@]}"; do
-    mv "$tmp_dir/$bin" "$version_dir/$bin"
+    warn_if_shadowed "$bin" "$bin_path"
   done
-  rm -rf "$tmp_dir"
-
-  if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = true ]; then
-    say "skipped SHA verification for downloaded binaries due to --force flag"
-  else
-    # Verify the downloaded binaries against the attestation file.
-    # If the attestation file was not found or is empty, we skip the verification.
-    if $attestation_missing; then
-      say "no attestation found for these binaries, skipping SHA verification for downloaded binaries"
-    else
-      say "verifying downloaded binaries against the attestation file"
-
-      failed=false
-
-      for bin in "${BINS_TO_DOWNLOAD[@]}"; do
-        expected=""
-
-        for i in "${!HASH_NAMES[@]}"; do
-          if [ "${HASH_NAMES[$i]}" = "$bin" ]; then
-            expected="${HASH_VALUES[$i]}"
-            break
-          fi
-        done
-
-        path="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION/$bin"
-
-        if [ -z "$expected" ]; then
-          say "no expected hash for $bin"
-          failed=true
-          continue
-        fi
-
-        if [ ! -x "$path" ]; then
-          say "binary $bin not found at $path"
-          failed=true
-          continue
-        fi
-
-        actual=$(compute_sha256 "$path")
-
-        if [ "$actual" != "$expected" ]; then
-          say "$bin hash verification failed:"
-          say "  expected: $expected"
-          say "  actual:   $actual"
-          failed=true
-        else
-          say "$bin verified ✓"
-        fi
-      done
-
-      if $failed; then
-        err "one or more binaries failed post-installation verification"
-      fi
-    fi
-  fi
-
-  use
 
   say "done!"
+  exit 0
+}
+
+list() {
+  if [ -d "$SIMPLEX_VERSIONS_DIR" ]; then
+    for dir in "$SIMPLEX_VERSIONS_DIR"/*; do
+      say "${dir##*/}"
+
+      if [ -f "$dir/$COMPLETE_MARKER" ]; then
+        say "- $(ensure "$dir/$SMPLX_BIN_NAME" -V)"
+      else
+        say "- incomplete install"
+      fi
+
+      printf "\n"
+    done
+  else
+    say "- $(ensure "$SIMPLEX_BIN_DIR/$SMPLX_BIN_NAME" -V)"
+  fi
+
+  exit 0
+}
+
+update() {
+  say "updating simplexup..."
+
+  local current_version="$SIMPLEXUP_INSTALLER_VERSION"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  ensure download "$SIMPLEX_BIN_URL" "$tmp_file"
+
+  local new_version
+  new_version=$(extract_installer_version < "$tmp_file" || true)
+
+  # An empty or invalid version is never installed
+  if [ -z "$new_version" ]; then
+    warn "could not determine the new simplexup version"
+    rm -f "$tmp_file"
+    exit 0
+  fi
+
+  # Neither a downgrade nor a reinstall of the same version
+  if ! version_gt "$new_version" "$current_version"; then
+    say "simplexup is already up to date (installed: $current_version, remote: $new_version)"
+    rm -f "$tmp_file"
+    exit 0
+  fi
+
+  ensure mv "$tmp_file" "$SIMPLEX_BIN_PATH"
+  ensure chmod +x "$SIMPLEX_BIN_PATH"
+
+  say "updated simplexup: $current_version → $new_version"
+  exit 0
+}
+
+version() {
+  say "$SIMPLEXUP_INSTALLER_VERSION"
+  exit 0
 }
 
 usage() {
@@ -283,7 +212,7 @@ USAGE:
 OPTIONS:
     -h, --help      Print help information
     -v, --version   Print the version of simplexup
-    -C, --commit,   Install specific simplex revision from repository
+    -C, --commit    Install specific Simplex revision from repository
     -U, --update    Update simplexup to the latest version
     -i, --install   Install a specific version from built binaries
     -l, --list      List versions installed from built binaries
@@ -295,212 +224,184 @@ OPTIONS:
 EOF
 }
 
-version() {
-  say "$SIMPLEXUP_INSTALLER_VERSION"
-  exit 0
-}
+# Settles the version to install, where its binaries come from, and where they go.
+# A commit build gets its own version dir, so a release's binaries are never replaced.
+resolve_install() {
+  SIMPLEX_REPO=${SIMPLEX_REPO:-$DEFAULT_SIMPLEX_REPO}
 
-update() {
-  say "updating simplexup..."
+  local latest_tag
+  latest_tag=$(latest_tag)
+  SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION:-$latest_tag}")
 
-  current_version="$SIMPLEXUP_INSTALLER_VERSION"
+  set_release_bins "${SIMPLEX_VERSION#v}"
+  check_bins_in_use "${RELEASE_BINS[@]}"
 
-  # Download the new version.
-  tmp_file="$(mktemp)"
-  ensure download "$SIMPLEX_BIN_URL" "$tmp_file"
-
-  # Extract new version from downloaded file.
-  new_version=$(cat "$tmp_file" | extract_installer_version)
-
-  # If the new version could not be determined, exit gracefully.
-  # This prevents from upgrading to an empty or invalid version.
-  if [ -z "$new_version" ]; then
-    warn "could not determine new simplexup version. Exiting."
-    rm -f "$tmp_file"
-    exit 0
+  if [[ "$SIMPLEX_VERSION" != "$latest_tag" ]]; then
+    validate_tag_version
   fi
 
-  # If the new version is not greater than the current version, skip the update.
-  # This is to prevent downgrades or unnecessary updates.
-  if ! version_gt "$new_version" "$current_version"; then
-    say "simplexup is already up to date (installed: $current_version, remote: $new_version)."
-    rm -f "$tmp_file"
-    exit 0
-  fi
+  say "installing simplex (version ${SIMPLEX_VERSION})"
 
-  # Overwrite existing simplexup
-  ensure mv "$tmp_file" "$SIMPLEX_BIN_PATH"
-  ensure chmod +x "$SIMPLEX_BIN_PATH"
+  detect_platform_arch
 
-  say "successfully updated simplexup: $current_version → $new_version"
-  exit 0
-}
+  GITHUB_REPO_URL="https://github.com/${SIMPLEX_REPO}"
 
-list() {
-  if [ -d "$SIMPLEX_VERSIONS_DIR" ]; then
-    for VERSION in $SIMPLEX_VERSIONS_DIR/*; do
-      say "${VERSION##*/}"
+  local release_url="${GITHUB_REPO_URL}/releases/download/${SIMPLEX_VERSION}/simplex-${SIMPLEX_VERSION}-${PLATFORM}-${ARCHITECTURE}"
+  ATTESTATION_URL="${release_url}.attestation.txt"
+  BIN_ARCHIVE_URL="${release_url}.tar.gz"
 
-      for bin in "${BINS[@]}"; do
-        case $bin in
-          simplex)
-            bin_path="$VERSION/$bin"
-            say "- $(ensure "$bin_path" -V)"
-          ;;
-        esac
-      done
-
-      printf "\n"
-    done
+  if [[ -n "$SIMPLEX_COMMIT" ]]; then
+    VERSION_DIR="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_REPO%%/*}-${SIMPLEX_COMMIT}"
+    ARCHIVE_BINS=("${RELEASE_BINS[@]:1}")
   else
-    for bin in "${BINS[@]}"; do
-      case $bin in
-        simplex)
-          bin_path="$SIMPLEX_BIN_DIR/$bin"
-          say "- $(ensure "$bin_path" -V)"
-        ;;
-      esac
-    done
+    VERSION_DIR="${SIMPLEX_VERSIONS_DIR}/${SIMPLEX_VERSION}"
+    ARCHIVE_BINS=("${RELEASE_BINS[@]}")
   fi
-  exit 0
 }
 
-use() {
-  [ -z "$SIMPLEX_VERSION" ] && err "no version provided"
+# Loads the release's attestation. Returns non-zero if nothing is loaded or when `--force` skips verification,
+# or if the release has no attestation.
+fetch_attestation() {
+  if [ "$SIMPLEXUP_IGNORE_VERIFICATION" = true ]; then
+    say "skipping SHA verification due to --force flag"
+    return 1
+  fi
 
-  SIMPLEX_VERSION=$(add_v_prefix "${SIMPLEX_VERSION}")
+  check_cmd sha256sum || check_cmd shasum || err "need 'sha256sum' or 'shasum' (command not found)"
 
-  SIMPLEX_VERSION_DIR="$SIMPLEX_VERSIONS_DIR/$SIMPLEX_VERSION"
+  say "checking the attestation for $SIMPLEX_VERSION version"
 
-  if [ -d "$SIMPLEX_VERSION_DIR" ]; then
-    check_bins_in_use
-    ensure mkdir -p "$SIMPLEX_BIN_DIR"
+  # The first line of the attestation file links to the attestation bundle
+  local link_file="$WORK_DIR/attestation.txt"
+  download "$ATTESTATION_URL" "$link_file" || : > "$link_file"
 
-    for bin in "${BINS[@]}"; do
-      bin_path="$SIMPLEX_BIN_DIR/$bin"
-      cp "$SIMPLEX_VERSION_DIR/$bin" "$bin_path"
+  local bundle_link
+  bundle_link="$(head -n1 "$link_file" | tr -d '\r')"
 
-      # Print usage msg
-      case $bin in
-        simplex)
-          say "- $(ensure "$bin_path" -V)"
-        ;;
-      esac
+  if [ -z "$bundle_link" ] || grep -q 'Not Found' "$link_file"; then
+    say "no attestation found for this release, skipping SHA verification"
+    return 1
+  fi
 
-      # Check if the default path of the binary is not in SIMPLEX_BIN_DIR
-      which_path="$(command -v "$bin" || true)"
+  say "found attestation for $SIMPLEX_VERSION version, downloading attestation bundle, checking..."
 
-      if [ -n "$which_path" ] && [ "$which_path" != "$bin_path" ]; then
-        warn ""
-        cat 1>&2 <<EOF
-There are multiple binaries with the name '$bin' present in your 'PATH'.
+  ATTESTATION_BUNDLE="$WORK_DIR/attestation.json"
+  ensure download "${bundle_link}/download" "$ATTESTATION_BUNDLE"
 
-This may be the result of installing '$bin' using another method, like Cargo or other package managers.
+  ATTESTATION_STATEMENT=$(jq -r '.dsseEnvelope.payload | @base64d' "$ATTESTATION_BUNDLE") \
+    || err "attestation bundle is malformed"
+  ATTESTATION_FOUND=true
 
-You may need to run 'rm $which_path' or move '$SIMPLEX_BIN_DIR' in your 'PATH'
-to allow the newly installed version to take precedence!
-
-EOF
-      fi
-    done
-    exit 0
+  # Checking the signer needs GitHub's API. Done only if gh exists and is logged in
+  if check_cmd gh && gh auth status &>/dev/null; then
+    GH_VERIFY=true
   else
-    err "version $SIMPLEX_VERSION not installed"
+    say "gh not found or not logged in, checking the attested hashes only"
   fi
 }
 
-say() {
-  printf "simplexup: %s\n" "$1"
+# Downloads the release archive and extracts its binaries into $1
+download_release() {
+  local out_dir=$1
+  local archive="$out_dir/simplex.tar.gz"
+
+  say "downloading $(form_str_list "${ARCHIVE_BINS[@]}") for $SIMPLEX_VERSION version"
+
+  ensure mkdir -p "$out_dir"
+  ensure download "$BIN_ARCHIVE_URL" "$archive"
+  # Make sure it's a valid tar archive.
+  ensure tar tf "$archive" 1> /dev/null
+  ensure tar -C "$out_dir" -xf "$archive"
 }
 
-warn() {
-  say "warning: ${1}" >&2
-}
+# Checks the archive binaries in dir $1 against the attestation. With $2 set, reports on each of them.
+verify_bins() {
+  local dir=$1
+  local verbose=$2
+  local verified=true
 
-err() {
-  say "$1" >&2
-  exit 1
-}
+  for bin in "${ARCHIVE_BINS[@]}"; do
+    local path="$dir/$bin"
+    local expected actual
+    expected=$(attested_hash "$bin")
 
-tolower() {
-  echo "$1" | awk '{print tolower($0)}'
-}
-
-compute_sha256() {
-  shasum -a 256 "$1" | awk '{print $1}'
-}
-
-need_cmd() {
-  if ! check_cmd "$1"; then
-    err "need '$1' (command not found)"
-  fi
-}
-
-check_cmd() {
-  command -v "$1" &>/dev/null
-}
-
-latest_tag() {
-  # Fetch the latest Simplex release tag name
-  LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$SIMPLEX_REPO/releases/latest" | jq -r .tag_name)
-
-  echo $LATEST_TAG
-}
-
-validate_tag_version() {
-  local current_version=$1
-  local simplex_repo=$2
-
-  say "Checking if version ${current_version} exists..."
-
-  if ! curl -IfsSL "https://github.com/${simplex_repo}/releases/tag/${current_version}" >/dev/null; then
-    err "Error: version '${current_version}' not found in ${simplex_repo} releases."
-  fi
-}
-
-detect_platform_arch() {
-  uname_s=$(uname -s)
-  PLATFORM=$(tolower "${SIMPLEX_PLATFORM:-$uname_s}")
-
-  case $PLATFORM in
-    linux) ;;
-    darwin|mac*)
-      PLATFORM="darwin"
-      ;;
-    *)
-      err "unsupported platform: $PLATFORM"
-      ;;
-  esac
-
-  uname_m=$(uname -m)
-  ARCHITECTURE=$(tolower "${SIMPLEX_ARCH:-$uname_m}")
-
-  if [ "${ARCHITECTURE}" = "x86_64" ]; then
-    # Redirect stderr to /dev/null to avoid printing errors if non Rosetta.
-    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
-      ARCHITECTURE="arm64" # Rosetta.
-    else
-      ARCHITECTURE="x86_64" # Intel.
+    if [ -z "$expected" ]; then
+      [ -n "$verbose" ] && say "no expected hash for $bin"
+      verified=false
+      continue
     fi
-  elif [ "${ARCHITECTURE}" = "arm64" ] || [ "${ARCHITECTURE}" = "aarch64" ] ; then
-    ARCHITECTURE="arm64" # Arm.
-  else
-    ARCHITECTURE="x86_64" # Amd.
-  fi
+
+    if [ ! -x "$path" ]; then
+      [ -n "$verbose" ] && say "binary $bin not found at $path"
+      verified=false
+      continue
+    fi
+
+    actual=$(compute_sha256 "$path")
+
+    if [ "$actual" != "$expected" ]; then
+      if [ -n "$verbose" ]; then
+        say "$bin hash verification failed:"
+        say "  expected: $expected"
+        say "  actual:   $actual"
+      fi
+      verified=false
+    elif $GH_VERIFY && ! gh_verify "$path"; then
+      [ -n "$verbose" ] && say "$bin attestation is not signed by the $SIMPLEX_REPO release workflow"
+      verified=false
+    elif [ -n "$verbose" ]; then
+      say "$bin verified ✓"
+    fi
+  done
+
+  $verified
 }
 
-# Extracts the simplexup installer version from standard input.
-extract_installer_version() {
-  grep -Eo 'SIMPLEXUP_INSTALLER_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' | cut -d'"' -f2
+# Checks with the GitHub CLI that the attestation bundle attests binary $1 and that the release workflow signed the bundle
+gh_verify() {
+  gh attestation verify "$1" \
+    --bundle "$ATTESTATION_BUNDLE" \
+    --repo "$SIMPLEX_REPO" \
+    --signer-workflow "$SIMPLEX_REPO/.github/workflows/release.yml" \
+    &>/dev/null
+}
+
+# Builds simplex at SIMPLEX_COMMIT into dir $1, in place of the release's
+build_from_commit() {
+  need_cmd cargo
+
+  local out_dir=$1
+  local src_dir="$WORK_DIR/source"
+
+  say "building simplex from commit ${SIMPLEX_COMMIT} of ${GITHUB_REPO_URL}"
+
+  ensure git clone --revision="${SIMPLEX_COMMIT}" --depth=1 "${GITHUB_REPO_URL}" "${src_dir}"
+  ensure cargo build --release --manifest-path "${src_dir}/Cargo.toml"
+  ensure mv "${src_dir}/target/release/${SMPLX_BIN_NAME}" "${out_dir}/${SMPLX_BIN_NAME}"
+}
+
+# Moves the binaries from dir $1 into the version dir, which is marked complete once they are all in
+store_version() {
+  local from_dir=$1
+
+  ensure mkdir -p "$VERSION_DIR"
+  rm -f "${VERSION_DIR:?}/${COMPLETE_MARKER:?}"
+
+  for bin in "${RELEASE_BINS[@]}"; do
+    ensure mv "$from_dir/$bin" "$VERSION_DIR/$bin"
+  done
+
+  touch "$VERSION_DIR/$COMPLETE_MARKER"
 }
 
 check_installer_up_to_date() {
   say "checking if simplexup is up to date..."
 
-  remote_version=$(curl -fsSL "$SIMPLEX_BIN_URL" | extract_installer_version)
+  local remote_version
+  remote_version=$(curl -fsSL "$SIMPLEX_BIN_URL" | extract_installer_version || true)
 
   if [ -z "$remote_version" ]; then
-    warn "Could not determine remote simplexup version. Skipping version check."
+    warn "could not determine the remote simplexup version, skipping the check"
     return 0
   fi
 
@@ -518,8 +419,110 @@ Updating is highly recommended as it gives you access to the latest features and
 
 ' "$SIMPLEXUP_INSTALLER_VERSION" "$remote_version" >&2
   else
-    say "simplexup is up to date."
+    say "simplexup is up to date"
   fi
+}
+
+validate_tag_version() {
+  say "checking if version ${SIMPLEX_VERSION} exists..."
+
+  if ! curl -IfsSL "https://github.com/${SIMPLEX_REPO}/releases/tag/${SIMPLEX_VERSION}" >/dev/null; then
+    err "version ${SIMPLEX_VERSION} not found in ${SIMPLEX_REPO} releases"
+  fi
+}
+
+# Fails while one of the binaries $@ is running
+check_bins_in_use() {
+  if ! check_cmd pgrep; then
+    warn "make sure no simplex process runs during the install"
+    return 0
+  fi
+
+  for bin in "$@"; do
+    if pgrep -x "$bin" >/dev/null; then
+      err "'$bin' is running, stop the process and try again"
+    fi
+  done
+}
+
+# Warns when another binary named $1 takes precedence over the installed $2 in PATH
+warn_if_shadowed() {
+  local bin=$1
+  local bin_path=$2
+  local which_path
+  which_path="$(command -v "$bin" || true)"
+
+  if [ -z "$which_path" ] || [ "$which_path" = "$bin_path" ]; then
+    return 0
+  fi
+
+  warn ""
+  cat 1>&2 <<EOF
+There are multiple binaries with the name '$bin' present in your 'PATH'.
+
+This may be the result of installing '$bin' using another method, like Cargo or other package managers.
+
+You may need to run 'rm $which_path' or move '$SIMPLEX_BIN_DIR' in your 'PATH'
+to allow the newly installed version to take precedence!
+
+EOF
+}
+
+detect_platform_arch() {
+  PLATFORM=$(tolower "${SIMPLEX_PLATFORM:-$(uname -s)}")
+
+  case $PLATFORM in
+    linux) ;;
+    darwin|mac*)
+      PLATFORM="darwin"
+      ;;
+    *)
+      err "unsupported platform: $PLATFORM"
+      ;;
+  esac
+
+  ARCHITECTURE=$(tolower "${SIMPLEX_ARCH:-$(uname -m)}")
+
+  if [ "${ARCHITECTURE}" = "x86_64" ]; then
+    # Redirect stderr to /dev/null to avoid printing errors if non Rosetta.
+    if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+      ARCHITECTURE="arm64" # Rosetta.
+    else
+      ARCHITECTURE="x86_64" # Intel.
+    fi
+  elif [ "${ARCHITECTURE}" = "arm64" ] || [ "${ARCHITECTURE}" = "aarch64" ] ; then
+    ARCHITECTURE="arm64" # Arm.
+  else
+    ARCHITECTURE="x86_64" # Amd.
+  fi
+}
+
+# Sets RELEASE_BINS to the binaries release $1 ships. Releases ship `smplx-nextest` since 0.0.6.
+set_release_bins() {
+  if version_gt "0.0.6" "$1"; then
+    RELEASE_BINS=("${SMPLX_BIN_NAME}" elementsd electrs)
+  else
+    RELEASE_BINS=("${SMPLX_BIN_NAME}" elementsd electrs smplx-nextest)
+  fi
+}
+
+# Prints the attested SHA-256 of binary $1 or an empty string when the attestation lacks one
+attested_hash() {
+  jq -r --arg name "$1" '.subject[]? | select(.name == $name) | .digest.sha256' <<< "$ATTESTATION_STATEMENT"
+}
+
+latest_tag() {
+  curl -fsSL "https://api.github.com/repos/$SIMPLEX_REPO/releases/latest" | jq -r .tag_name
+}
+
+add_v_prefix() {
+  local version="${1}"
+
+  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    version="v${version}"
+  fi
+
+  echo "${version}"
 }
 
 # Compares two version strings in the format "major.minor.patch".
@@ -553,117 +556,84 @@ EOF
   return 1
 }
 
-check_bins_in_use() {
-  if check_cmd pgrep; then
-    for bin in "${BINS[@]}"; do
-      if pgrep -x "$bin" >/dev/null; then
-        err "Error: '$bin' is currently running. Please stop the process and try again."
-      fi
-    done
+# Extracts the simplexup installer version from standard input.
+extract_installer_version() {
+  grep -Eo 'SIMPLEXUP_INSTALLER_VERSION="[0-9]+\.[0-9]+\.[0-9]+"' | cut -d'"' -f2
+}
+
+compute_sha256() {
+  if check_cmd sha256sum; then
+    sha256sum "$1" | awk '{print $1}'
   else
-    warn "Make sure no simplex process is running during the install process!"
+    shasum -a 256 "$1" | awk '{print $1}'
   fi
 }
 
-# Run a command that should never fail. If the command fails execution
-# will immediately terminate with an error showing the failing command.
-ensure() {
-  if ! "$@"; then err "command failed: $*"; fi
-}
-
-# Downloads $1 into $2 or stdout
+# Downloads $1 into $2 or stdout, failing on an HTTP error
 download() {
   if [ -n "$2" ]; then
-    # output into $2
     if check_cmd curl; then
-      curl -#o "$2" -L "$1"
+      curl -f -# -L -o "$2" "$1"
     else
       wget --show-progress -qO "$2" "$1"
     fi
   else
-    # output to stdout
     if check_cmd curl; then
-      curl -#L "$1"
+      curl -f -# -L "$1"
     else
       wget --show-progress -qO- "$1"
     fi
   fi
 }
 
-install_simplex_from_commit() {
-  need_cmd cargo
-
-  local commit=$1
-  local author=$2
-  local repo_url=$3
-  local out_dir=$4
-
-  local simplex_version="simplex-${author}-${commit}"
-  local tmp_dir="$(mktemp -d 2>/dev/null)" || err "failed to create temp dir"
-  ensure git clone --revision="${commit}" --depth=1 "${repo_url}" "${tmp_dir}"
-
-  say "Installing Simplex version $simplex_version"
-
-  ensure cargo build --release --manifest-path "${tmp_dir}/Cargo.toml"
-  ensure mv "${tmp_dir}/target/release/${SMPLX_BIN_NAME}" "${out_dir}/${SMPLX_BIN_NAME}"
-
-  say "Removing temporary directory..."
-  rm -rf "${tmp_dir}"
-}
-
-# Form a comma separated list with 'and' for user experience
+# Joins $@ into "a, b and c"
 form_str_list() {
-  local STR_LIST=("$@")
+  local items=("$@")
+  local count=${#items[@]}
 
-  local LAST_EL="${STR_LIST[*]: -1}"
-  local REST_ELS=("${STR_LIST[@]:0:${#STR_LIST[@]}-1}")
-  local EL_STRING=""
-
-  if [ ${#STR_LIST[@]} -eq 1 ]; then
-    EL_STRING="${STR_LIST[0]}"
-  elif [ ${#STR_LIST[@]} -eq 2 ]; then
-    EL_STRING="${STR_LIST[0]} and ${STR_LIST[1]}"
-  else
-    SAVE_IFS="$IFS"
-    IFS=","
-    EL_STRING="${REST_ELS[*]}"
-    IFS="$SAVE_IFS"
-
-    EL_STRING="${EL_STRING//,/, } and ${LAST_EL}"
-  fi
-
-  echo "$EL_STRING"
-}
-
-# Resolves and sets variables (DEP_BINS, BINS) with an appropriate values
-resolve_dep_bins() {
-  local version="${1}"
-
-  if [ -z "$version" ]; then
-    warn "No version specified for resolving the current binary list."
+  if [ "$count" -le 1 ]; then
+    echo "${items[*]}"
     return 0
   fi
 
-  # The first version with `smplx-nextest` binary
-  local simplex_turning_point="0.0.6"
+  local head=("${items[@]:0:count-1}")
+  local joined
+  joined=$(IFS=","; echo "${head[*]}")
 
-  if version_gt "${simplex_turning_point}" "$version"; then
-      DEP_BINS=(elementsd electrs)
-    else
-      DEP_BINS=(elementsd electrs smplx-nextest)
-  fi
-
-  BINS=("${BINS[@]}" "${DEP_BINS[@]}")
+  echo "${joined//,/, } and ${items[count-1]}"
 }
 
-add_v_prefix() {
-  local version="${1}"
+tolower() {
+  echo "$1" | awk '{print tolower($0)}'
+}
 
-  if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      version="v${version}"
+say() {
+  printf "simplexup: %s\n" "$1"
+}
+
+warn() {
+  say "warning: ${1}" >&2
+}
+
+err() {
+  say "$1" >&2
+  exit 1
+}
+
+need_cmd() {
+  if ! check_cmd "$1"; then
+    err "need '$1' (command not found)"
   fi
+}
 
-  echo "${version}"
+check_cmd() {
+  command -v "$1" &>/dev/null
+}
+
+# Run a command that should never fail. If the command fails execution
+# will immediately terminate with an error showing the failing command.
+ensure() {
+  if ! "$@"; then err "command failed: $*"; fi
 }
 
 # Banner prompt for Simplex
@@ -682,7 +652,7 @@ banner() {
              _ :_:..\ |||||                            |_|
                 _ :..\ |||
                    _ .\ ||                 A blazingly-fast, ux-first
-                     - \ |              simplicity development framework
+                     - \ |              Simplicity development framework
                        -.
 
 -~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-

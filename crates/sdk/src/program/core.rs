@@ -140,7 +140,17 @@ impl ProgramTrait for Program {
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         let genesis_hash = network.genesis_block_hash();
         let cmr = self.cmr()?;
-        let utxos: Vec<TxOut> = pst.inputs().iter().filter_map(|x| x.witness_utxo.clone()).collect();
+        let utxos: Vec<TxOut> = pst
+            .inputs()
+            .iter()
+            .enumerate()
+            .map(|(input_index, input)| {
+                input
+                    .witness_utxo
+                    .clone()
+                    .ok_or(ProgramError::MissingWitnessUtxo { input_index })
+            })
+            .collect::<Result<_, _>>()?;
 
         if utxos.len() <= input_index {
             return Err(ProgramError::UtxoIndexOutOfBounds {
@@ -277,6 +287,9 @@ impl Program {
     /// The width of a storage slot.
     pub const STORAGE_SLOT_BYTES: usize = 32;
 
+    /// Each slot deepens the taproot tree by one and the tree is at most 128 layers deep.
+    pub const MAX_STORAGE_SLOTS: usize = 128;
+
     /// Creates a new instance of the struct with the provided source string and arguments.
     #[must_use]
     pub fn new(source: impl Into<Arc<str>>, arguments: impl Into<Arguments>) -> Self {
@@ -313,8 +326,13 @@ impl Program {
     }
 
     /// Sets storage capacity for further usage.
+    ///
+    /// # Panics
+    /// Panics if `capacity` exceeds `MAX_STORAGE_SLOTS`.
     #[must_use]
     pub fn with_storage_capacity(mut self, capacity: usize) -> Self {
+        Self::check_storage_capacity(capacity);
+
         self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; capacity];
         self.spend_info = OnceLock::new();
 
@@ -324,9 +342,11 @@ impl Program {
     /// Replaces the storage with `storage`, one value per slot.
     ///
     /// # Panics
-    /// Panics if a value is not `STORAGE_SLOT_BYTES` wide.
+    /// Panics if a value is not `STORAGE_SLOT_BYTES` wide, or if there are more than `MAX_STORAGE_SLOTS`.
     pub fn set_storage(&mut self, storage: impl IntoIterator<Item = impl Into<Vec<u8>>>) {
         let storage: Vec<Vec<u8>> = storage.into_iter().map(Into::into).collect();
+
+        Self::check_storage_capacity(storage.len());
 
         self.storage = vec![vec![0u8; Self::STORAGE_SLOT_BYTES]; storage.len()];
         self.spend_info = OnceLock::new();
@@ -494,10 +514,6 @@ impl Program {
         Ok((script, leaf_version()))
     }
 
-    /// Depths of a left-folded tap tree, in the order `TaprootBuilder` wants them.
-    ///
-    /// The tree is `tapbranch(tapbranch(tapbranch(cmr, e1), e2), e3)`: the program's own leaf
-    /// and the first extra leaf sit deepest, and each further leaf is one level shallower.
     fn taproot_leaf_depths(total_leaves: usize) -> Vec<usize> {
         assert!(total_leaves > 0, "Taproot tree must contain at least one leaf");
 
@@ -544,6 +560,14 @@ impl Program {
         let script_ver = self.script_version()?;
 
         Ok(info.control_block(&script_ver).expect("control block should exist"))
+    }
+
+    fn check_storage_capacity(capacity: usize) {
+        assert!(
+            capacity <= Self::MAX_STORAGE_SLOTS,
+            "A program holds at most {} storage slots, and this one asks for {capacity}",
+            Self::MAX_STORAGE_SLOTS
+        );
     }
 }
 
@@ -704,6 +728,40 @@ mod tests {
         ));
 
         assert!(program.get_env(&pst, 1, &network).is_ok());
+    }
+
+    #[test]
+    fn input_without_its_utxo_is_an_error() {
+        let network = SimplicityNetwork::default_regtest();
+        let program = stateful(0);
+        let mut pst = PartiallySignedTransaction::new_v2();
+
+        pst.add_input(Input::default());
+        pst.add_input(Input {
+            witness_utxo: Some(TxOut {
+                script_pubkey: program.get_script_pubkey(&network),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        assert!(matches!(
+            program.get_env(&pst, 1, &network).unwrap_err(),
+            ProgramError::MissingWitnessUtxo { input_index: 0 }
+        ));
+    }
+
+    #[test]
+    fn storage_is_at_most_as_deep_as_the_taproot_tree() {
+        let network = SimplicityNetwork::default_regtest();
+
+        let _ = stateful(Program::MAX_STORAGE_SLOTS).get_tr_address(&network);
+    }
+
+    #[test]
+    #[should_panic(expected = "A program holds at most 128 storage slots, and this one asks for 129")]
+    fn storage_beyond_the_taproot_tree_is_refused() {
+        let _ = stateful(Program::MAX_STORAGE_SLOTS + 1);
     }
 
     #[test]

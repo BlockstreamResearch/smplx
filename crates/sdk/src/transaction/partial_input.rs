@@ -106,7 +106,7 @@ impl PartialInput {
     /// Sets the derivation path, relative to the account path, of the key that spends this input.
     ///
     /// Relative means it is appended to `m/84h/{coin}h/0h`.
-    /// Should be in the form of "m/n".
+    /// Should be in the form of `m/n`.
     #[must_use]
     pub fn with_derivation_path(mut self, derivation_path: DerivationPath) -> Self {
         self.derivation_path = Some(derivation_path);
@@ -230,7 +230,8 @@ impl IssuanceInput {
         };
 
         Input {
-            issuance_value_amount: Some(issuance_amount),
+            // Elements encodes a zero amount as null, an explicit zero is invalid
+            issuance_value_amount: (issuance_amount > 0).then_some(issuance_amount),
             issuance_asset_entropy: Some(AssetEntropy::from_byte_array(asset_entropy)),
             issuance_inflation_keys: inflation_amount,
             blinded_issuance: Some(0x00),

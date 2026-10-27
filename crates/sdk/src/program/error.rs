@@ -43,6 +43,13 @@ pub enum ProgramError {
     #[error("Failed to execute program on the Bit Machine: {0}")]
     Execution(simplicityhl::simplicity::bit_machine::ExecutionError),
 
+    /// Error indicating an input that doesn't carry the output it spends.
+    #[error("Input {input_index} has no witness UTXO")]
+    MissingWitnessUtxo {
+        /// The index of the input without one.
+        input_index: usize,
+    },
+
     /// Error indicating an input index points past the bounds of available inputs/UTXOs.
     #[error("UTXO index {input_index} out of bounds (have {utxo_count} UTXOs)")]
     UtxoIndexOutOfBounds {
