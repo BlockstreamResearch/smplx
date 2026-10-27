@@ -14,7 +14,6 @@ pub mod program;
 pub mod provider;
 /// Traits and mechanisms for signing transactions and satisfying witness requirements.
 pub mod signer;
-/// Constructs and builders for assembling, tracking, and managing Elements transactions.
 pub mod transaction;
 /// General utility functions, conversions, and helper tools.
 pub mod utils;

@@ -14,21 +14,25 @@ use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, Program
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
 
-/// Represents the final input structure put into a `FinalTransaction` for processing.
+/// One input of a [`FinalTransaction`]: the output it spends, and optionally the program that
+/// locks that output and an asset issuance, together with the signature the signer adds.
+///
+/// [`FinalTransaction::inputs`] returns these. All fields are public, so they can be changed
+/// through [`FinalTransaction::inputs_mut`].
 #[derive(Clone, Debug)]
 pub struct FinalInput {
-    /// Holds the base input data required for the operation.
+    /// The output this input spends.
     pub partial_input: PartialInput,
-    /// Holds program inputs, which are used for program witness finalization.
+    /// The program that locks the spent output and its witness, for a program input.
     pub program_input: Option<ProgramInput>,
-    /// Contains optional issuance-related information.
+    /// The asset this input issues or reissues, if any.
     pub issuance_input: Option<IssuanceInput>,
-    /// Required signature for finalizing the transaction.
+    /// The signature the signer adds to this input.
     pub required_sig: RequiredSignature,
 }
 
 impl FinalInput {
-    /// Creates a new instance of the type with the specified `partial_input` and `required_sig`.
+    /// Creates an input without a program or an issuance.
     #[must_use]
     pub fn new(partial_input: PartialInput, required_sig: RequiredSignature) -> Self {
         Self {
@@ -39,7 +43,7 @@ impl FinalInput {
         }
     }
 
-    /// Sets the `program_input` field with the given `ProgramInput` and returns the modified `FinalInput`.
+    /// Sets the program that locks the spent output.
     #[must_use]
     pub fn with_program(mut self, program_input: ProgramInput) -> Self {
         self.program_input = Some(program_input);
@@ -47,7 +51,7 @@ impl FinalInput {
         self
     }
 
-    /// Sets the `issuance_input` field of the current instance and returns the updated `FinalInput`.
+    /// Sets the asset this input issues or reissues.
     #[must_use]
     pub fn with_issuance(mut self, issuance_input: IssuanceInput) -> Self {
         self.issuance_input = Some(issuance_input);
@@ -55,12 +59,8 @@ impl FinalInput {
         self
     }
 
-    /// Retrieves the issuance details associated with the current instance.
-    ///
-    /// # Errors
-    ///
-    /// This method does not explicitly return errors but returns `None` if no issuance
-    /// input is available.
+    /// The asset IDs and entropy of this input's issuance or reissuance, or `None` if it doesn't
+    /// issue anything.
     #[must_use]
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
         self.issuance_input
@@ -77,14 +77,14 @@ impl FinalInput {
         self.partial_input.asset_and_amount()
     }
 
-    /// Converts the current object into an `Input` representation, including any
-    /// issuance input and partial input details.
+    /// Converts this input, with its issuance, into a PSET input.
+    ///
+    /// The input's own sequence and locktime are used as they are. [`FinalTransaction::extract_pst`]
+    /// fills in the transaction-wide ones first and checks the issuance, so prefer it.
     ///
     /// # Panics
-    ///
-    /// This function will panic if the `issuance_input` is of type `Reissuance`
-    /// and the `partial_input.secrets` field is `None` or does not contain the necessary
-    /// confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
+    /// Panics if the input reissues an asset and `partial_input.secrets` is `None`, because the
+    /// reissuance needs the asset blinding factor of the token it spends.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
@@ -136,7 +136,17 @@ impl FinalInput {
     }
 }
 
-/// A struct representing a final (but not yet signed) transaction.
+/// A transaction under construction: inputs, outputs, an optional change target, and the
+/// transaction-wide sequence and locktime.
+///
+/// Build one with [`FinalTransaction::new`] and the `add_*` methods, then hand it to a
+/// [`Signer`](crate::signer::Signer). The signer can add wallet inputs to pay the fee, appends a
+/// fee output and, unless the change is too small to keep, a change output before it, then
+/// blinds, signs, and runs every program input. Inputs and outputs keep the order in which they
+/// were added, and anything the signer adds comes after them.
+///
+/// The policy-asset amounts are what pay the fee. Every other asset must already balance: add an
+/// output for every non-policy asset the inputs bring in.
 #[derive(Clone, Debug)]
 pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
@@ -147,7 +157,8 @@ pub struct FinalTransaction {
 }
 
 impl FinalTransaction {
-    /// Creates a new instance of the final transaction with default values.
+    /// Creates an empty transaction with no change target, no transaction-wide sequence, and a
+    /// zero locktime.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -160,22 +171,27 @@ impl FinalTransaction {
         }
     }
 
-    /// Sets a specific `Sequence` for the transaction.
-    ///
-    /// Injects this value into the inputs that don't declare their own sequence.
+    /// Sets the sequence of every input that doesn't set its own with
+    /// [`PartialInput::with_sequence`].
     pub fn set_sequence(&mut self, sequence: Sequence) {
         self.sequence = Some(sequence);
     }
 
-    /// Sets a specific `LockTime` for the transaction.
+    /// Sets the locktime of every input that doesn't set its own with
+    /// [`PartialInput::with_locktime`].
     ///
-    /// Injects this value into the inputs that don't declare their own locktime.
+    /// A non-zero locktime also makes [`FinalTransaction::sequence`] default to
+    /// `Sequence::ENABLE_LOCKTIME_NO_RBF`, because nodes ignore the locktime of a transaction whose
+    /// inputs all have the final sequence.
     pub fn set_locktime(&mut self, locktime: LockTime) {
         self.locktime = locktime;
     }
 
-    /// The sequence of the inputs that don't declare their own. The one set with `set_sequence`,
-    /// or `ENABLE_LOCKTIME_NO_RBF` when a locktime is set to be enforced, and `MAX` otherwise.
+    /// The sequence of the inputs that don't set their own.
+    ///
+    /// This is the value given to [`FinalTransaction::set_sequence`]. Without one, it is
+    /// `Sequence::ENABLE_LOCKTIME_NO_RBF` if the transaction or any input sets a non-zero locktime,
+    /// so that the locktime is enforced, and `Sequence::MAX` otherwise.
     #[must_use]
     pub fn sequence(&self) -> Sequence {
         self.sequence.unwrap_or(if self.has_locktime() {
@@ -185,15 +201,18 @@ impl FinalTransaction {
         })
     }
 
-    /// The locktime of the the transaction, e.g. inputs that don't declare their own.
+    /// The locktime of the inputs that don't set their own, as given to
+    /// [`FinalTransaction::set_locktime`].
     #[must_use]
     pub fn locktime(&self) -> LockTime {
         self.locktime
     }
 
-    /// Sets where this transaction's change should go.
+    /// Sets where the signer sends this transaction's change.
     ///
-    /// Left unset, the signer sends change to the single address it derives internally.
+    /// Without a change target, change goes to the signer's own address, blinded with the
+    /// signer's blinding key. An explicit target works only if the transaction has another
+    /// blinded output or doesn't spend any confidential input.
     pub fn add_change(&mut self, change: ChangeOutput) {
         self.change = Some(change);
     }
@@ -203,12 +222,22 @@ impl FinalTransaction {
         self.change = None;
     }
 
-    /// Adds a native input to the transaction.
+    /// Adds an input that spends an output not locked by a Simplicity program, such as a wallet
+    /// UTXO.
+    ///
+    /// With `Some(NativeSignature::Ecdsa)`, the signer signs it as a P2WPKH input with the key at
+    /// the input's derivation path. With `None`, the signer leaves it unsigned, for its owner to
+    /// sign.
     pub fn add_input(&mut self, partial_input: PartialInput, signature: Option<NativeSignature>) {
         self.inputs.push(FinalInput::new(partial_input, signature.into()));
     }
 
-    /// Adds a program input to the transaction, with the signature the signer injects into its witness, if any.
+    /// Adds an input that spends an output locked by a Simplicity program.
+    ///
+    /// With `Some(signature)`, the signer signs the input and puts the signature into the witness
+    /// field that `signature` names. It replaces the field's value supplied in `program_input`,
+    /// or only the value at the end of the path given to [`ProgramSignature::at_path`]. With
+    /// `None`, the witness is used as supplied.
     pub fn add_program_input(
         &mut self,
         partial_input: PartialInput,
@@ -219,7 +248,11 @@ impl FinalTransaction {
             .push(FinalInput::new(partial_input, signature.into()).with_program(program_input));
     }
 
-    /// Adds a native issuance (or reissuance) input to the transaction.
+    /// Adds a native input, as [`FinalTransaction::add_input`] does, that also issues or reissues
+    /// an asset.
+    ///
+    /// Returns the IDs of the issued asset and its reissuance token, and the asset entropy that a
+    /// later reissuance needs.
     pub fn add_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -234,7 +267,11 @@ impl FinalTransaction {
         details
     }
 
-    /// Adds a program issuance (or reissuance) input to the transaction.
+    /// Adds a program input, as [`FinalTransaction::add_program_input`] does, that also issues or
+    /// reissues an asset.
+    ///
+    /// Returns the IDs of the issued asset and its reissuance token, and the asset entropy that a
+    /// later reissuance needs.
     pub fn add_program_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -258,7 +295,7 @@ impl FinalTransaction {
         (index < self.inputs.len()).then(|| self.inputs.remove(index))
     }
 
-    /// Adds a partial output to the list of outputs.
+    /// Appends an output.
     pub fn add_output(&mut self, partial_output: PartialOutput) {
         self.outputs.push(partial_output);
     }
@@ -268,56 +305,53 @@ impl FinalTransaction {
         (index < self.outputs.len()).then(|| self.outputs.remove(index))
     }
 
-    /// Where this transaction's change should go, when the caller said.
+    /// The change target set with [`FinalTransaction::add_change`], if any.
     #[must_use]
     pub fn change(&self) -> Option<&ChangeOutput> {
         self.change.as_ref()
     }
 
-    /// Where this transaction's change should go, for a caller that needs to amend it.
+    /// The change target set with [`FinalTransaction::add_change`], if any, for changing it.
     #[must_use]
     pub fn change_mut(&mut self) -> Option<&mut ChangeOutput> {
         self.change.as_mut()
     }
 
-    /// Provides a slice reference to the collection of `FinalInput` elements.
+    /// The inputs, in the order they were added.
     #[must_use]
     pub fn inputs(&self) -> &[FinalInput] {
         &self.inputs
     }
 
-    /// Provides mutable access to the `inputs` field.
-    ///
-    /// This method returns a mutable slice of `FinalInput` elements,
-    /// allowing the caller to modify the elements in the `inputs` field.
+    /// The inputs, for changing them in place.
     pub fn inputs_mut(&mut self) -> &mut [FinalInput] {
         &mut self.inputs
     }
 
-    /// Returns a reference to the slice of `PartialOutput` elements contained within the struct.
+    /// The outputs, in the order they were added.
     #[must_use]
     pub fn outputs(&self) -> &[PartialOutput] {
         &self.outputs
     }
 
-    /// Provides mutable access to the `outputs` field of the current struct.
+    /// The outputs, for changing them in place.
     pub fn outputs_mut(&mut self) -> &mut [PartialOutput] {
         &mut self.outputs
     }
 
-    /// Returns the number of inputs associated with the current instance.
+    /// The number of inputs.
     #[must_use]
     pub fn n_inputs(&self) -> usize {
         self.inputs.len()
     }
 
-    /// Returns the number of outputs associated with the object.
+    /// The number of outputs.
     #[must_use]
     pub fn n_outputs(&self) -> usize {
         self.outputs.len()
     }
 
-    /// Checks if any of the outputs require blinding, determines if at least one of them has a `blinding_key` specified.
+    /// Whether any output has a blinding key, so that the signer blinds the transaction.
     #[must_use]
     pub fn needs_blinding(&self) -> bool {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
@@ -336,12 +370,10 @@ impl FinalTransaction {
         })
     }
 
-    /// Calculates the fee delta for a transaction based on the inputs and outputs.
+    /// The amount of `network`'s policy asset that the inputs bring in, minus the amount the
+    /// outputs pay. This is what remains for the fee and change.
     ///
-    /// The fee delta represents the net difference between the available asset amount
-    /// from the transaction's inputs and the consumed asset amount by its outputs.
-    /// The function considers the network's policy asset to determine which inputs
-    /// and outputs contribute to the calculation.
+    /// Only the outputs the inputs spend count. Amounts an input issues don't.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
@@ -369,10 +401,14 @@ impl FinalTransaction {
         i64::try_from(available_amount - consumed_amount).map_err(|_| FinalTransactionError::AmountOverflow)
     }
 
-    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
+    /// Whether, for every asset, the inputs bring in exactly what the outputs pay.
     ///
-    /// Issued and reissued amounts are credited to the input that declares them, so a newly created
-    /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
+    /// Issued and reissued amounts count as inputs, so a newly created asset is balanced against
+    /// its declared `issuance_amount` and `inflation_amount`. Zero-value `OP_RETURN` outputs are
+    /// skipped. An output paying an asset that no input brings in makes the transaction
+    /// unbalanced.
+    ///
+    /// The fee is an output, so a transaction is balanced only once its fee output is present.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
@@ -425,7 +461,15 @@ impl FinalTransaction {
         Ok(transfers.values().all(|&value| value == 0))
     }
 
-    /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.
+    /// Converts the transaction into an unsigned PSET, and returns it with each input's secrets,
+    /// by input index.
+    ///
+    /// Each input without its own sequence or locktime gets [`FinalTransaction::sequence`] and
+    /// [`FinalTransaction::locktime`]. An explicit input gets secrets with zero blinding
+    /// factors, so that blinding can balance against it. Outputs are converted as they are: this
+    /// doesn't add any change or fee output.
+    ///
+    /// This is where code that signs outside the [`Signer`](crate::signer::Signer) takes over.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or

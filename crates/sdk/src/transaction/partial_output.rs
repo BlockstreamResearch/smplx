@@ -3,16 +3,20 @@ use elements_miniscript::bitcoin::PublicKey;
 use simplicityhl::elements::pset::Output;
 use simplicityhl::elements::{AssetId, Script};
 
-/// Represents partially prepared output data for Elements transactions.
+/// An output of a [`FinalTransaction`](super::FinalTransaction), with an explicit amount and asset
+/// that the signer blinds if it has a blinding key.
+///
+/// A fee output is `PartialOutput::new(Script::new(), fee, network.policy_asset())`. The signer's
+/// `finalize`, `finalize_strict` and `estimate_fee` add one.
 #[derive(Debug, Clone)]
 pub struct PartialOutput {
-    /// Represents a bound `ScriptPubKey` for arbitrary output.
+    /// The script the output pays to.
     pub script_pubkey: Script,
-    /// Amount of a certain transaction output
+    /// The amount, in the asset's base units: satoshis for the policy asset.
     pub amount: u64,
-    /// Amount of a certain transaction output
+    /// The asset.
     pub asset: AssetId,
-    /// Public key of a blinding key
+    /// The blinding public key. With one, the signer blinds this output's amount and asset.
     pub blinding_key: Option<PublicKey>,
 }
 
@@ -24,7 +28,7 @@ impl Default for PartialOutput {
 }
 
 impl PartialOutput {
-    /// Creates a new `PartialOutput` assigning a base script, amount, and `AssetId`.
+    /// Creates an explicit output paying `amount` of `asset` to `script`.
     #[must_use]
     pub fn new(script: Script, amount: u64, asset: AssetId) -> Self {
         Self {
@@ -35,7 +39,7 @@ impl PartialOutput {
         }
     }
 
-    /// Creates a new `PartialOutput` representing an `OP_RETURN` data metadata output.
+    /// Creates a zero-value `OP_RETURN` output carrying `data`.
     #[must_use]
     pub fn new_metadata(data: &[u8]) -> Self {
         Self {
@@ -46,7 +50,7 @@ impl PartialOutput {
         }
     }
 
-    /// Attaches an optional blinding public key to the partial output.
+    /// Sets the blinding public key, so that the signer blinds this output.
     #[must_use]
     pub fn with_blinding_key(mut self, blinding_key: PublicKey) -> Self {
         self.blinding_key = Some(blinding_key);
@@ -54,7 +58,7 @@ impl PartialOutput {
         self
     }
 
-    /// Converts this `PartialOutput` into a fully formed PSET `Output`.
+    /// Converts this output into a PSET output.
     #[must_use]
     pub fn to_output(&self) -> Output {
         let mut output = Output::new_explicit(self.script_pubkey.clone(), self.amount, self.asset, self.blinding_key);

@@ -11,34 +11,41 @@ use crate::utils;
 
 use super::UTXO;
 
-/// Represents partially prepared input data for Elements transactions.
+/// The output an input spends, with the input's own sequence, locktime and signing key.
+///
+/// Create one from a [`UTXO`] with [`PartialInput::new`].
 #[derive(Debug, Clone)]
 pub struct PartialInput {
     /// The outpoint of the UTXO being spent.
     pub outpoint: OutPoint,
-    /// The native transaction output corresponding to the targeted UTXO.
+    /// The output being spent.
     pub witness_utxo: TxOut,
-    /// The sequence number indicating transaction replaceability or relative timelocking.
-    /// `None` takes the transaction's.
+    /// This input's sequence. `None` takes the transaction's,
+    /// [`FinalTransaction::sequence`](super::FinalTransaction::sequence).
     pub sequence: Option<Sequence>,
-    /// Absolute timelock criteria enforced against the input. `None` takes the transaction's.
+    /// This input's locktime. `None` takes the transaction's,
+    /// [`FinalTransaction::locktime`](super::FinalTransaction::locktime).
     pub locktime: Option<LockTime>,
-    /// Optional blinding secrets mapping values and asset states into confidential outputs.
-    /// Note: if UTXO is confidential, `secrets` are `Some`.
-    pub secrets: Option<TxOutSecrets>,
-    /// Derivation path of the key that can spend this input, relative to the account path.
+    /// The unblinded asset, amount and blinding factors of a confidential output.
     ///
-    /// `None` means the signer's default path. A wallet whose UTXOs sit across many
-    /// derivation indices must set this per input, or the signer will sign with the wrong key.
+    /// A confidential input needs these, because the signer must know every input's asset and
+    /// amount. `Signer::get_utxos` and its siblings return wallet UTXOs with them already set.
+    pub secrets: Option<TxOutSecrets>,
+    /// The path of the key that signs this input, relative to the signer's account path
+    /// `m/84h/{coin}h/0h`. `None` means the default path, `0/0`.
+    ///
+    /// A wallet whose UTXOs sit at different derivation indices must set this on each input, or
+    /// the signer signs with the wrong key.
     pub derivation_path: Option<DerivationPath>,
 }
 
-/// Represents an input that runs a specific Simplicity program with an associated witness.
+/// The Simplicity program that locks an input's spent output, and the witness that satisfies it.
 #[derive(Clone)]
 pub struct ProgramInput {
-    /// The compiled program interface associated with the input.
+    /// The program. Its address must be the spent output's script.
     pub program: Box<dyn ProgramTrait>,
-    /// The witness values required to satisfy the program.
+    /// The witness. A field that a [`ProgramSignature`](super::ProgramSignature) names holds a
+    /// placeholder, which the signer replaces with the signature.
     pub witness: WitnessValues,
 }
 
@@ -50,34 +57,41 @@ impl Debug for ProgramInput {
     }
 }
 
-/// A structure representing the details of token issuance and related metadata.
+/// The assets an issuance creates, or a reissuance mints again.
+///
+/// Returned by [`FinalTransaction::add_issuance_input`](super::FinalTransaction::add_issuance_input)
+/// and [`FinalTransaction::add_program_issuance_input`](super::FinalTransaction::add_program_issuance_input).
 #[derive(Debug, Clone)]
 pub struct IssuanceDetails {
-    /// The unique `AssetId` generated from the provided entropy, representing the issued tokens struct.
+    /// The issued asset.
     pub asset_id: AssetId,
-    /// The `AssetId` corresponding to the reissuance (inflation) token, used for minting new tokens.
+    /// The reissuance token, which a later reissuance of the asset must spend.
     pub inflation_asset_id: AssetId,
-    /// The entropy value that was used to derive both the `asset_id` and `inflation_asset_id`.
+    /// The asset entropy both IDs derive from. Pass its bytes to
+    /// [`IssuanceInput::new_reissuance`] to reissue the asset.
     pub asset_entropy: AssetEntropy,
 }
 
-/// Represents an input designated for asset issuance or reissuance.
+/// An asset issuance or reissuance carried by an input.
+///
+/// Issued amounts are always explicit.
 #[derive(Clone, Debug)]
 pub enum IssuanceInput {
-    /// Represents a completely new asset issuance.
+    /// Issues a new asset, whose ID derives from the input's outpoint and `asset_entropy`.
     Issuance {
-        /// The initial issuance amount for the asset.
+        /// The amount of the asset to issue.
         issuance_amount: u64,
-        /// The initial issuance amount for the inflation key.
+        /// The amount of reissuance tokens to issue. With 0, the asset can't be reissued.
         inflation_amount: u64,
-        /// The contract hash or entropy used to derive the generated `AssetId`.
+        /// The contract hash.
         asset_entropy: [u8; 32],
     },
-    /// Represents a reissuance of an existing asset.
+    /// Mints more of an existing asset. The input must spend a confidential output that holds the
+    /// asset's reissuance token.
     Reissuance {
-        /// The amount of the generated asset to issue.
+        /// The amount of the asset to mint.
         issuance_amount: u64,
-        /// The original asset's entropy used to tie this reissuance back to the parent issuance.
+        /// The asset entropy, from [`IssuanceDetails::asset_entropy`].
         asset_entropy: [u8; 32],
     },
 }
@@ -90,7 +104,8 @@ impl Default for PartialInput {
 }
 
 impl PartialInput {
-    /// Creates a new `PartialInput` from an existing `UTXO`.
+    /// Creates an input that spends `utxo`, keeping its secrets, with no sequence, locktime or
+    /// derivation path of its own.
     #[must_use]
     pub fn new(utxo: UTXO) -> Self {
         Self {
@@ -103,10 +118,11 @@ impl PartialInput {
         }
     }
 
-    /// Sets the derivation path, relative to the account path, of the key that spends this input.
+    /// Sets the path of the key that signs this input, relative to the signer's account path
+    /// `m/84h/{coin}h/0h`.
     ///
-    /// Relative means it is appended to `m/84h/{coin}h/0h`.
-    /// Should be in the form of `m/n`.
+    /// The path must have exactly two unhardened steps, such as `0/5`. The signer returns
+    /// `SignerError::InvalidDerivationPath` for any other path when it signs the input.
     #[must_use]
     pub fn with_derivation_path(mut self, derivation_path: DerivationPath) -> Self {
         self.derivation_path = Some(derivation_path);
@@ -114,7 +130,7 @@ impl PartialInput {
         self
     }
 
-    /// Sets a specific `Sequence` for the input.
+    /// Sets this input's sequence, overriding the transaction's.
     #[must_use]
     pub fn with_sequence(mut self, sequence: Sequence) -> Self {
         self.sequence = Some(sequence);
@@ -122,7 +138,7 @@ impl PartialInput {
         self
     }
 
-    /// Sets a specific `LockTime` for the input.
+    /// Sets this input's locktime, overriding the transaction's.
     #[must_use]
     pub fn with_locktime(mut self, locktime: LockTime) -> Self {
         self.locktime = Some(locktime);
@@ -140,8 +156,11 @@ impl PartialInput {
         }
     }
 
-    /// Converts this `PartialInput` into a fully formed PSET `Input`.
-    /// An unset sequence is final and an unset locktime is zero.
+    /// Converts this input into a PSET input.
+    ///
+    /// An unset sequence becomes `Sequence::MAX` and an unset locktime becomes zero. The
+    /// transaction-wide values aren't applied here;
+    /// [`FinalTransaction::extract_pst`](super::FinalTransaction::extract_pst) applies them.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let locktime = self.locktime.unwrap_or(LockTime::ZERO);
@@ -180,7 +199,7 @@ impl PartialInput {
 }
 
 impl ProgramInput {
-    /// Creates a new `ProgramInput` from a `ProgramTrait` and its associated `WitnessTrait`.
+    /// Pairs a program with its witness.
     #[must_use]
     pub fn new(program: Box<dyn ProgramTrait>, witness: impl Into<WitnessValues>) -> Self {
         Self {
@@ -191,7 +210,10 @@ impl ProgramInput {
 }
 
 impl IssuanceInput {
-    /// Creates a new `IssuanceInput` for creating a new asset issuance.
+    /// Issues `issuance_amount` of a new asset and `inflation_amount` of its reissuance token.
+    ///
+    /// `asset_entropy` is the contract hash. The asset's entropy derives from it and the
+    /// outpoint of the input that carries the issuance.
     #[must_use]
     pub fn new_issuance(issuance_amount: u64, inflation_amount: u64, asset_entropy: [u8; 32]) -> Self {
         Self::Issuance {
@@ -201,7 +223,10 @@ impl IssuanceInput {
         }
     }
 
-    /// Creates a new `IssuanceInput` for reissuing an existing asset.
+    /// Mints `issuance_amount` more of the asset whose entropy is `asset_entropy`.
+    ///
+    /// `asset_entropy` is the already derived entropy, such as
+    /// `details.asset_entropy.to_byte_array()` for the [`IssuanceDetails`] of the first issuance.
     #[must_use]
     pub fn new_reissuance(issuance_amount: u64, asset_entropy: [u8; 32]) -> Self {
         Self::Reissuance {
@@ -210,7 +235,7 @@ impl IssuanceInput {
         }
     }
 
-    /// Converts this `IssuanceInput` into a partial PSET `Input` configured for issuance or reissuance.
+    /// The issuance fields of a PSET input. The other fields are left at their defaults.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let (issuance_amount, asset_entropy, inflation_amount) = match self {

@@ -5,7 +5,9 @@ use simplicityhl::elements::Txid;
 
 use crate::provider::{ProviderError, ProviderTrait};
 
-/// A receipt for a broadcast transaction, containing the provider context and the transaction ID.
+/// The ID of a broadcast transaction, with the provider it was broadcast through.
+///
+/// `Display` and `Debug` print the transaction ID.
 #[derive(Clone, Copy)]
 pub struct TxReceipt<'a> {
     provider: &'a dyn ProviderTrait,
@@ -31,7 +33,7 @@ impl AsRef<Txid> for TxReceipt<'_> {
 }
 
 impl<'a> TxReceipt<'a> {
-    /// Creates a new `TxReceipt` associated with a specific provider and transaction ID.
+    /// Creates a receipt for `tx_id`, broadcast through `provider`.
     pub fn new(provider: &'a dyn ProviderTrait, tx_id: Txid) -> Self {
         Self { provider, tx_id }
     }
@@ -42,10 +44,11 @@ impl<'a> TxReceipt<'a> {
         self.tx_id
     }
 
-    /// Blocks and waits for the transaction to be confirmed by the provider.
+    /// Blocks until the transaction has one confirmation, using [`ProviderTrait::wait`].
     ///
     /// # Errors
-    /// Returns a `ProviderError` if the provider encounters an error while tracking the transaction state.
+    /// Returns `ProviderError::Confirmation` if the transaction doesn't confirm before the provider
+    /// stops waiting, or another `ProviderError` if a request fails.
     #[inline]
     pub fn wait(&self) -> Result<(), ProviderError> {
         self.provider.wait(&self.tx_id)
