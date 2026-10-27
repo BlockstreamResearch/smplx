@@ -1,23 +1,27 @@
 #[cfg(feature = "provider")]
 use crate::provider::rpc::error::RpcError;
 
-/// Defines standard errors possible when using a blockchain interaction provider.
+/// Errors from a [`ProviderTrait`](super::ProviderTrait) implementation.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
-    /// Wrapper around an RPC-level error representing transport or network-level connectivity failures to the inner node.
+    /// An [`ElementsRpc`](super::ElementsRpc) call failed.
     #[cfg(feature = "provider")]
     #[error(transparent)]
     Rpc(#[from] RpcError),
 
-    /// Error indicating that a standard HTTP request to a provider (such as an Esplora REST instance) encountered a failure.
+    /// An HTTP request failed or timed out, or a query answered with a status other than 200.
     #[error("HTTP request failed: {0}")]
     Request(String),
 
-    /// Error indicating the configured timeout to wait for transaction confirmation elapsed without confirmation.
+    /// `wait` stopped polling before the transaction confirmed.
     #[error("Couldn't wait for the transaction to be confirmed")]
     Confirmation,
 
-    /// Error indicating a provider returned a non-success response explicitly rejecting a broadcasted transaction payload.
+    /// The provider answered a broadcast with an HTTP status outside 200 to 299.
+    ///
+    /// This is how a node's refusal arrives, for consensus or policy reasons such as
+    /// `non-BIP68-final` for a relative timelock that hasn't passed, with the node's reason in
+    /// `message`. A rate limit or a server error arrives the same way, so check `status`.
     #[error("Broadcast failed with HTTP {status} for {url}: {message}")]
     BroadcastRejected {
         /// The HTTP status code indicating the failure.

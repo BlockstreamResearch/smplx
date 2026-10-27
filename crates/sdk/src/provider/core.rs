@@ -10,40 +10,52 @@ use crate::transaction::{TxReceipt, UTXO};
 
 use super::error::ProviderError;
 
-/// The fallback default fee rate (in sats/kvb) to use when dynamic estimates fail.
+/// The fee rate, in sats/kvb, that [`ProviderTrait::fetch_fee_rate`] returns when the provider
+/// doesn't report any estimate.
 pub const DEFAULT_FEE_RATE: f32 = 100.0;
-/// The standard timeout duration (in seconds) applied to Esplora REST API requests.
+/// The default timeout, in seconds, of each request an `EsploraProvider` makes.
 pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
 /// How many times `EsploraProvider::wait` polls for a confirmation by default.
 pub const DEFAULT_CONFIRMATION_ATTEMPTS: u32 = 9;
 
-/// Contains foundational configuration elements required for initializing a generic blockchain provider.
+/// The endpoints of a provider: an Esplora URL, and for a regtest node, its RPC URL and
+/// credentials. Neither the SDK nor the test framework reads it.
 #[cfg(feature = "provider")]
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     /// URL of the target Esplora REST service.
     pub esplora_url: String,
-    /// URL of the target direct `elementsd` or `bitcoind` RPC interface.
+    /// URL of the `elementsd` JSON-RPC interface.
     pub elements_url: Option<String>,
     /// Authentication settings (e.g. cookie or username/password) for the RPC backend.
     pub auth: Option<Auth>,
 }
 
-/// Baseline traits detailing required interaction methods between the SDK client and the underlying blockchain node or API.
+/// Access to a Liquid or Elements network: broadcasting, confirmation, chain queries and UTXO
+/// lookups.
+///
+/// All methods block. `EsploraProvider` and `SimplexProvider` implement it with the `provider`
+/// feature. The trait itself doesn't need the feature, so a host without it can implement it.
+///
+/// UTXOs come back as the chain has them: a confidential output has `secrets: None`. A
+/// [`Signer`](crate::signer::Signer) unblinds its own outputs.
 pub trait ProviderTrait: Send + Sync {
-    /// Retrieves the network configured for this provider.
+    /// The network this provider talks to.
     fn get_network(&self) -> &SimplicityNetwork;
 
-    /// Attempts to broadcast a fully compiled transaction to the configured backend.
+    /// Broadcasts `tx` and returns a receipt for it.
     ///
     /// # Errors
-    /// Returns a `ProviderError` if network transmission fails, or if the backend explicitly rejects the transaction.
+    /// Returns `ProviderError::BroadcastRejected` if the provider answers with an error status,
+    /// as it does when the node refuses the transaction, and `ProviderError::Request` if the
+    /// request fails.
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError>;
 
-    /// Blocks and repeatedly polls the network until the specified transaction receives its first confirmation.
+    /// Blocks until transaction `txid` has one confirmation.
     ///
     /// # Errors
-    /// Returns a `ProviderError` if the network fails or the designated timeout elapses without confirmation.
+    /// Returns `ProviderError::Confirmation` if the transaction doesn't confirm before the
+    /// provider stops waiting, and another `ProviderError` if a request fails.
     fn wait(&self, txid: &Txid) -> Result<(), ProviderError>;
 
     /// Retrieves the current block height of the network tip.
@@ -52,55 +64,65 @@ pub trait ProviderTrait: Send + Sync {
     /// Returns a `ProviderError` if the backend request fails or the returned height cannot be parsed.
     fn fetch_tip_height(&self) -> Result<u32, ProviderError>;
 
-    /// Retrieves the current block hash of the network tip.
+    /// The hash of the tip block, as a hex string.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the backend request fails or the returned block hash cannot be parsed.
     fn fetch_tip_block_hash(&self) -> Result<String, ProviderError>;
 
-    /// Retrieves the block timestamp representing network consensus clock tip.
+    /// The timestamp of the tip block, in seconds since the Unix epoch.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the hash query, subsequent block query, or block parsing fails.
     fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError>;
 
-    /// Retrieves the block hash at a specific block height.
+    /// The hash of the block at `block_height`, as a hex string.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the passed block height does not exist or the returned hash cannot be parsed.
     fn fetch_block_hash_at_height(&self, block_height: u32) -> Result<String, ProviderError>;
 
-    /// Retrieves the transaction IDs for a specific block hash.
+    /// The IDs of the transactions in the block with hex hash `block_hash`.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the passed block hash does not exist or the returned data cannot be parsed.
     fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError>;
 
-    /// Retrieves the serialized transaction payload given its hex transaction ID.
+    /// The transaction with ID `txid`.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the node fails to locate the transaction or serialization fails.
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError>;
 
-    /// Fetches all active unspent transaction outputs correlated to a particular public `Address`.
+    /// The unspent outputs paying to `address`'s script, confidential ones not unblinded.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the backend request fails or if UTXO parsing fails.
     fn fetch_address_utxos(&self, address: &Address) -> Result<Vec<UTXO>, ProviderError>;
 
-    /// Fetches all active unspent transaction outputs correlated to a given custom `Script` mapping.
+    /// The unspent outputs locked by `script`, confidential ones not unblinded.
+    ///
+    /// This finds the outputs a program controls, given its
+    /// [`get_script_pubkey`](crate::program::Program::get_script_pubkey), which nobody holds a
+    /// key for.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the backend request fails or if UTXO parsing fails.
     fn fetch_scripthash_utxos(&self, script: &Script) -> Result<Vec<UTXO>, ProviderError>;
 
-    /// Fetches network fee estimation models based on varying target confirmation block delays.
+    /// The provider's fee estimates: keys are confirmation targets in blocks, as strings, and
+    /// values are fee rates in sat/vB.
     ///
     /// # Errors
     /// Returns a `ProviderError` if the REST request fails or the resulting mappings fail to parse cleanly.
     fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError>;
 
-    /// Attempts to extract the specific fee rate (in sats/kvb) necessary for the transaction to be confirmed within `target_blocks`.
+    /// The fee rate, in sats/kvb, for confirmation within `target_blocks`.
+    ///
+    /// Uses the estimate for `target_blocks` if there is one. Otherwise it looks only at the
+    /// targets 1 to 25, 144, 504 and 1008: the smallest of them that is at least `target_blocks`
+    /// and has an estimate, else the smallest that has one. Without any, it returns
+    /// [`DEFAULT_FEE_RATE`].
     ///
     /// # Errors
     /// Passes along `ProviderError` if `fetch_fee_estimates` fails.
