@@ -45,6 +45,10 @@ Optionally, initialize a new project:
 simplex init <name>
 ```
 
+### Feature flags
+
+- `test`: re-exports `smplx-test` helpers and the `test`/`fuzz` macros.
+
 ## Usage
 
 Simplex is a zero-config framework. However, it requires a `simplex.toml` file to exist in the project root. The default configuration is the following:
