@@ -20,7 +20,8 @@ use crate::fuzz::witness_path::WitnessPath;
 type Binding<T> = Box<dyn Fn(&T, &FuzzCase<'_>) -> T>;
 type Transition = Box<dyn Fn(&FuzzCase<'_>) -> Vec<[u8; 32]>>;
 
-/// A builder to configure what each FuzzProgram does.
+/// Configures one program of a [`Scenario`](crate::fuzz::Scenario), as returned by
+/// `Scenario::add`.
 pub struct FuzzProgramScenarioBuilder<'a, P> {
     program_scenario: &'a mut FuzzProgramScenario,
     _program: PhantomData<fn() -> P>,
@@ -186,8 +187,11 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
         self
     }
 
-    /// Specifies the spending path of the program to fuzz. The path must exist in witness
-    /// and end with "Left" or "Right".
+    /// Fuzzes only the spending path at `path` in witness field `name`: every generated witness
+    /// takes those `Either` branches.
+    ///
+    /// The steps are those of [`ProgramSignature::at_path`](smplx_sdk::transaction::ProgramSignature::at_path),
+    /// and the last step must be `"Left"` or `"Right"`.
     pub fn spending_path<I>(self, name: &str, path: I) -> Self
     where
         I: IntoIterator,
@@ -256,7 +260,9 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
     }
 
     /// Sets the only witness values the contract accepts, after the bindings.
-    /// Required witness is fuzzed and the contract should reject the alternatives.
+    ///
+    /// In about half the cases, the engine keeps a generated value that differs from a required
+    /// one instead. The contract must reject those cases, and the spec isn't asked about them.
     pub fn requires_witness(self, require: impl Fn(&mut P::Witness, &FuzzCase<'_>) + 'static) -> Self {
         self.program_scenario
             .witness_requirements

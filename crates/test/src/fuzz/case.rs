@@ -11,15 +11,25 @@ use crate::fuzz::mutations::{Mutation, UtxoMap};
 use crate::fuzz::program::{FuzzProgram, FuzzProgramTrait};
 use crate::fuzz::scenario::Scenario;
 
-/// What is expected to happen to the spend.
+/// What a spec expects to happen to a case's spend.
+///
+/// The spend is accepted when every program input of the transaction accepts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Expect {
+    /// Every program input must accept. A rejection is a liveness finding.
     Accept,
+    /// Some program input must reject. Acceptance is an unsoundness finding.
     Reject,
+    /// Either outcome is fine. A run where the spec returns this for every case fails.
     Any,
 }
 
 /// Read-only view of one fuzz case, given to bindings while it is built and to the spec before it executes.
+///
+/// The transaction getters return what the program's jets read, so a spec can compute the
+/// contract's expected decision the way the contract does. The exception is an output with a
+/// blinding key: `output_asset` and `output_amount` return its explicit values, while the jets
+/// see commitments.
 pub struct FuzzCase<'a> {
     scenario: &'a Scenario,
     programs: &'a [Program],
@@ -91,6 +101,8 @@ impl<'a> FuzzCase<'a> {
         self.map.new_output_position(old_index)
     }
 
+    /// The SHA-256 hash of the script of the output input `index` spends.
+    ///
     /// # Panics
     /// Panics when the transaction has no input `index`.
     pub fn input_script_hash(&self, index: usize) -> [u8; 32] {
@@ -129,18 +141,24 @@ impl<'a> FuzzCase<'a> {
             .unwrap_or(self.transaction.sequence())
     }
 
+    /// The SHA-256 hash of the script of output `index`.
+    ///
     /// # Panics
     /// Panics when the transaction has no output `index`.
     pub fn output_script_hash(&self, index: usize) -> [u8; 32] {
         hash_script(&self.transaction.outputs()[index].script_pubkey)
     }
 
+    /// The asset of output `index`.
+    ///
     /// # Panics
     /// Panics when the transaction has no output `index`.
     pub fn output_asset(&self, index: usize) -> [u8; 32] {
         self.transaction.outputs()[index].asset.to_byte_array()
     }
 
+    /// The amount of output `index`.
+    ///
     /// # Panics
     /// Panics when the transaction has no output `index`.
     pub fn output_amount(&self, index: usize) -> u64 {
@@ -157,6 +175,7 @@ impl<'a> FuzzCase<'a> {
         self.read_lock(|locktime| locktime >= LOCK_TIME_THRESHOLD)
     }
 
+    /// The network the case is built for.
     pub fn network(&self) -> &SimplicityNetwork {
         self.signer.get_network()
     }

@@ -277,7 +277,8 @@ impl TestContext<FuzzMode> {
         &self.mode.proptest_config
     }
 
-    /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
+    /// Builds a fuzz engine for `scenario` with this context's proptest configuration and a fresh
+    /// copy of the default signer, so it can be called repeatedly.
     pub fn engine(&self, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine::new(
             self.mode.proptest_config.clone(),
