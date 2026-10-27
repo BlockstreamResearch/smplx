@@ -19,7 +19,8 @@ pub fn random_mnemonic() -> String {
     mnemonic.to_string()
 }
 
-/// Generates a hardcoded "unspendable" Taproot public key.
+/// The fixed Taproot internal key that [`Program`](crate::program::Program) uses by default,
+/// which nobody has the private key for.
 ///
 /// # Panics
 /// Panics if the hardcoded byte slice is not exactly 32 bytes or cannot be parsed into a valid `XOnlyPublicKey` (which should never happen statically).
@@ -32,7 +33,7 @@ pub fn tr_unspendable_key() -> secp256k1::XOnlyPublicKey {
     .expect("key should be valid")
 }
 
-/// Calculates new sha256 midstate and binds generated entropy to the specific outpoint.
+/// The entropy of an asset issued by the input spending `outpoint`, with contract hash `entropy`.
 #[must_use]
 pub fn asset_entropy(outpoint: &OutPoint, entropy: [u8; 32]) -> AssetEntropy {
     let contract_hash = ContractHash::from_byte_array(entropy);
@@ -52,13 +53,14 @@ pub fn tagged_hash(tag: &str, data: &[u8]) -> sha256::Hash {
     sha256::Hash::from_engine(eng)
 }
 
-/// Hashes arbitrary data with and additional `TapData` and tags.
+/// `tagged_hash("TapData", data)`, the hash of a storage slot's hidden leaf in a program's
+/// Taproot tree.
 #[must_use]
 pub fn tap_data_hash(data: &[u8]) -> sha256::Hash {
     tagged_hash("TapData", data)
 }
 
-/// Computes the SHA-256 hash of a given script and returns the resulting 32-byte array.
+/// The SHA-256 hash of the script's bytes, the `scripthash` that Esplora indexes outputs by.
 #[must_use]
 pub fn hash_script(script: &Script) -> [u8; 32] {
     sha256::Hash::hash(script.as_bytes()).to_byte_array()
@@ -70,7 +72,7 @@ pub fn sat2btc(sat: u64) -> f64 {
     bitcoin::Amount::from_sat(sat).to_btc()
 }
 
-/// Converts a whole BTC amount into Satoshi.
+/// Converts a whole number of coins into satoshis.
 #[must_use]
 pub fn btc2sat(btc: u64) -> u64 {
     bitcoin::Amount::from_int_btc(btc).to_sat()

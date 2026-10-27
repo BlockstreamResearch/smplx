@@ -32,10 +32,14 @@ pub struct ProgramInfo {
     pub trace_buffer: Vec<String>,
 }
 
-/// Logger state for buffering execution output.
+/// Buffers program execution output, per input and per thread, until it is printed.
 ///
-/// Buffers are flushed to stderr only on successful transaction finalization,
-/// discarding output from intermediate estimation passes.
+/// With [`Verbosity`](crate::global::Verbosity) `Debug` or `Trace`, every
+/// [`ProgramTrait::execute`](super::ProgramTrait::execute) replaces its input's buffer, so only
+/// the last run's output is kept. `Signer::finalize` and `estimate_fee` print the buffers after
+/// their last signing pass, and `finalize_strict` does when it succeeds. Code that calls
+/// `ProgramTrait::execute` or `Signer::sign_tx` directly must call [`ProgramLogger::flush_logs`]
+/// to see the output. `Signer::sign_witnesses` doesn't run any program.
 pub struct ProgramLogger {
     /// A mapping of program ids to program logs
     pub logs: HashMap<usize, ProgramInfo>,

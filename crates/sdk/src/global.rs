@@ -6,18 +6,19 @@ use crate::program::TrackerLogLevel;
 
 static GLOBAL_CONFIG: OnceLock<GlobalConfig> = OnceLock::new();
 
-/// A structure to represent the global configuration settings for the application.
+/// The process-wide verbosity of program execution.
+///
+/// Verbosity `Debug` or `Trace` also compiles programs with debug symbols, which changes their
+/// CMRs and addresses. An application that works with contracts deployed by others should leave
+/// verbosity at `None`, or set [`Program::with_debug_symbols`](crate::program::Program::with_debug_symbols)
+/// on each program.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalConfig {
     verbosity: Verbosity,
 }
 
 impl GlobalConfig {
-    /// Sets the global configuration for the SDK.
-    ///
-    /// This function allows setting a global configuration which includes
-    /// the logging level for `simplicity` contracts execution.
-    /// It must be called exactly once during the application's lifetime.
+    /// Sets the process-wide verbosity. It can be set only once per process.
     ///
     /// # Errors
     /// Returns an error containing the newly created `GlobalConfig` if the global configuration has already been initialized.
@@ -25,7 +26,8 @@ impl GlobalConfig {
         GLOBAL_CONFIG.set(GlobalConfig { verbosity })
     }
 
-    /// Returns the default log level if `GLOBAL_CONFIG` is not initialized
+    /// The tracker log level for the configured verbosity, or `TrackerLogLevel::None` if it was
+    /// never set.
     pub fn get_log_level() -> TrackerLogLevel {
         GLOBAL_CONFIG
             .get()
