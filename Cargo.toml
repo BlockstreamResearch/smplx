@@ -8,7 +8,7 @@ license = "MIT"
 edition = "2024"
 
 [workspace.dependencies]
-smplx-macros = { path = "./crates/macros", version = "=0.2.0" }
+smplx-macros = { path = "./crates/macros", version = "=0.2.0", default-features = false }
 smplx-build = { path = "./crates/build", version = "=0.2.0" }
 smplx-test = { path = "./crates/test", version = "=0.2.0" }
 smplx-regtest = { path = "./crates/regtest", version = "=0.2.0" }
