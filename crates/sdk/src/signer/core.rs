@@ -48,7 +48,8 @@ use crate::transaction::{NativeSignature, PartialInput, TxReceipt, UTXO};
 
 use super::error::SignerError;
 
-/// A placeholder dummy fee amount used during transaction estimation.
+/// The amount the signer gives the change and fee outputs while it measures a transaction's
+/// weight.
 pub const PLACEHOLDER_FEE: u64 = 1;
 
 /// Discounted weight of a native input with its signature.
@@ -58,12 +59,22 @@ const NATIVE_INPUT_WEIGHT: usize = 274;
 /// Weight units per virtual byte.
 const WITNESS_SCALE_FACTOR: usize = 4;
 
-/// Common signing interface spanning over standard explicit inputs and Simplicity programs.
+/// The two signatures a [`Signer`] makes: Schnorr for a program input, ECDSA for a native one.
+///
+/// [`Signer::sign_witnesses`] and [`Signer::sign_tx`] make the same signatures for every input
+/// that needs one. Call these methods directly to sign a PSET built some other way.
 pub trait SignerTrait {
-    /// Generates a Schnorr signature to satisfy a target Simplicity program input.
+    /// Signs, with Schnorr, the message `message` derives from the Simplicity `sighash_all` of
+    /// input `input_index`, using the key at `derivation_path`. Pass `&SigMessage::Sighash` to
+    /// sign `sighash_all` itself.
+    ///
+    /// This is Simplicity's `sighash_all`, the value a contract reads with `jet::sig_all_hash()`,
+    /// not a BIP-341 sighash.
     ///
     /// # Errors
-    /// Returns a `SignerError` if the elements environment fails to build or if the message digest fails to construct.
+    /// Returns `SignerError::Program` if the input doesn't spend `program`'s address or the
+    /// transaction can't be extracted, and `SignerError::InvalidDerivationPath` for a malformed
+    /// `derivation_path`.
     fn sign_program(
         &self,
         pst: &PartiallySignedTransaction,
@@ -74,10 +85,14 @@ pub trait SignerTrait {
         message: &SigMessage,
     ) -> Result<schnorr::Signature, SignerError>;
 
-    /// Generates an ECDSA signature to spend a standard transaction input.
+    /// Signs input `input_index` as a P2WPKH input with a low-R ECDSA signature over its
+    /// `SIGHASH_ALL` message, using the key at `derivation_path`. Returns the public key and
+    /// the signature for the input's witness.
     ///
     /// # Errors
-    /// Returns a `SignerError` if the transaction formatting or sighash msg extraction fails.
+    /// Returns `SignerError::KeyMismatch` if the spent output is P2WPKH but locked to another key,
+    /// `SignerError::InvalidDerivationPath` for a malformed `derivation_path`, and
+    /// `SignerError::SighashConstruction` or `SignerError::TxExtraction` if the PSET is incomplete.
     fn sign_input(
         &self,
         pst: &PartiallySignedTransaction,
@@ -86,12 +101,52 @@ pub trait SignerTrait {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError>;
 }
 
-/// Core interface responsible for managing keys, interfacing with the blockchain provider,
-/// assembling descriptors, estimating fees, and finalizing/signing transactions.
+/// A wallet that completes, signs and broadcasts [`FinalTransaction`]s.
+///
+/// The keys derive from a BIP-39 mnemonic with an empty passphrase. The account path is
+/// `m/84h/1776h/0h` on Liquid mainnet and `m/84h/1h/0h` on other networks. The wallet has one
+/// address, the P2WPKH address at `0/0` under the account, with a SLIP-77 blinding key.
+/// [`PartialInput::with_derivation_path`](crate::transaction::PartialInput::with_derivation_path)
+/// can sign an input with another key, but the signer only finds and spends its own funds at
+/// that one address.
 ///
 /// Without the `provider` feature the signer has no blockchain access: it can assemble,
 /// blind, sign and finalize a transaction it is handed, but it cannot discover UTXOs,
 /// look up a fee rate, or broadcast.
+///
+/// # Completing a transaction
+///
+/// The methods differ in what they add to the transaction:
+///
+/// | Method | Adds wallet inputs | Fetches a fee rate | Adds change and fee outputs | Broadcasts |
+/// | --- | --- | --- | --- | --- |
+/// | `send` | yes | yes | yes | yes |
+/// | `broadcast` | yes | yes | yes | yes |
+/// | `finalize` | yes | yes | yes | no |
+/// | [`finalize_strict`](Signer::finalize_strict) | no | no | yes | no |
+/// | [`estimate_fee`](Signer::estimate_fee) | no | no | only to measure | no |
+/// | [`sign_tx`](Signer::sign_tx) | no | no | no | no |
+/// | [`sign_witnesses`](Signer::sign_witnesses) | no | no | no | no |
+///
+/// Fee rates are in sats/kvb. Every method except `sign_witnesses` runs each program input
+/// locally, so a contract that rejects the spend fails with `SignerError::CovenantExecution`
+/// before anything is broadcast.
+///
+/// # Fees and change
+///
+/// `finalize`, `finalize_strict` and `estimate_fee` append a change output and then a fee
+/// output, which has an empty script. The change goes to the transaction's
+/// [`change`](FinalTransaction::change) target, or to the signer's own address, blinded, if it
+/// has none. The signer signs once to measure the weight, sets the fee for that weight, pays the
+/// rest of the policy-asset surplus as change, and signs again. Each signing runs every program
+/// input, so a program runs at least twice.
+///
+/// Change below [`MIN_FEE`] (blinded) or [`DUST_THRESHOLD`] (explicit) is dropped, and the whole
+/// surplus becomes the fee. Blinded change is kept, and more funds are needed instead, when it is
+/// the only blinded output of a transaction that spends a confidential input, or when the
+/// transaction doesn't spend any confidential input and exactly one other output is blinded.
+///
+/// Change is paid only in the policy asset. Every other asset must already balance.
 pub struct Signer {
     #[cfg(feature = "provider")]
     provider: Option<Box<dyn ProviderTrait>>,
@@ -145,7 +200,8 @@ enum Estimate {
 
 // TODO: refactor descriptors to be a standalone object to specify custom derivation paths.
 impl Signer {
-    /// Creates a new `Signer` instance seeded from the provided mnemonic and paired with the specified provider.
+    /// Creates a signer from a mnemonic, with `provider` for network access. The network is the
+    /// provider's.
     ///
     /// # Panics
     /// Panics if the mnemonic fails to parse, or if deriving the master private key fails.
@@ -204,10 +260,13 @@ impl Signer {
         }
     }
 
-    /// Composes, funds, and broadcasts a standard network transaction sending the specified value of the primary policy asset.
+    /// Sends `amount` of the network's policy asset to `to`, from the wallet's funds, and
+    /// broadcasts the transaction.
+    ///
+    /// This is [`Signer::broadcast`] on a transaction with that one output.
     ///
     /// # Errors
-    /// Returns a `SignerError` if compiling the inputs fails, there are insufficient funds/fees, or broadcast is rejected.
+    /// Returns the errors of [`Signer::broadcast`].
     // TODO: add an ability to send arbitrary assets
     #[cfg(feature = "provider")]
     pub fn send(&self, to: Script, amount: u64) -> Result<TxReceipt<'_>, SignerError> {
@@ -220,10 +279,14 @@ impl Signer {
         Ok(self.get_provider()?.broadcast_transaction(&tx)?)
     }
 
-    /// Evaluates, funds, and broadcasts an already assembled `FinalTransaction`.
+    /// Completes `tx` with [`Signer::finalize`] and broadcasts it through the provider.
+    ///
+    /// Returns only the receipt. To learn the fee, call [`Signer::finalize`] and broadcast with
+    /// [`ProviderTrait::broadcast_transaction`].
     ///
     /// # Errors
-    /// Returns a `SignerError` if finalizing the payload fails or if the network rejects the broadcast.
+    /// Returns the errors of [`Signer::finalize`], and `SignerError::Provider` if the broadcast
+    /// fails. A node's rejection is `ProviderError::BroadcastRejected` inside it.
     #[cfg(feature = "provider")]
     pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
         let (tx, _fee) = self.finalize(tx)?;
@@ -231,10 +294,26 @@ impl Signer {
         Ok(self.get_provider()?.broadcast_transaction(&tx)?)
     }
 
-    /// Evaluates the input components of a `FinalTransaction`, iteratively selecting available wallet UTXOs to cover outputs and estimated fees.
+    /// Completes `tx` with wallet inputs, a change output and a fee output, and signs it, without
+    /// broadcasting. Returns the transaction and its fee.
+    ///
+    /// Fetches the fee rate for a one-block target. If the inputs already in `tx` don't cover the
+    /// outputs and the fee, adds the wallet's policy-asset UTXOs as native inputs after `tx`'s own,
+    /// largest first, until they do. Skips UTXOs that `tx` already spends. If `tx` has an explicit
+    /// change target and no blinded output, adds only explicit UTXOs. See
+    /// [Fees and change](Signer#fees-and-change).
     ///
     /// # Errors
-    /// Returns a `SignerError` if the wallet contains insufficient funds to satisfy output values and target fee rates.
+    /// - `SignerError::NotEnoughFunds` if the wallet runs out before the fee is covered.
+    /// - `SignerError::UnknownInputAmount` if an input is confidential and has no unblinding secrets.
+    /// - `SignerError::DuplicateInput` if `tx` spends an outpoint twice.
+    /// - `SignerError::ConfidentialInputWithoutBlindedOutput` if `tx` spends a confidential input,
+    ///   has an explicit change target, and doesn't have any blinded output.
+    /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
+    /// - `SignerError::InvalidFeeRate` if the provider's fee rate isn't a finite, non-negative number.
+    /// - `SignerError::Provider` or `SignerError::ProviderUnavailable` for provider failures.
+    /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`], including
+    ///   `SignerError::CovenantExecution` if a program rejects the spend.
     #[cfg(feature = "provider")]
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
         Self::check_known_amounts(tx)?;
@@ -348,10 +427,17 @@ impl Signer {
         }
     }
 
-    /// Reports what an assembled transaction would cost in fees at the given rate.
+    /// The fee `tx` would pay at `fee_rate` sats/kvb with a change output and a fee output added,
+    /// as [`Signer::finalize_strict`] would add them. Doesn't add any wallet inputs.
+    ///
+    /// Returns the fee even if `tx`'s inputs can't pay it. If the change is blinded and can't be
+    /// dropped, and the surplus is too small for it, this returns the fee plus [`MIN_FEE`] instead:
+    /// the smallest surplus that pays both the fee and the change.
     ///
     /// # Errors
-    /// Returns a `SignerError` if the transaction cannot be signed.
+    /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
+    /// `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`] does,
+    /// and the errors of [`Signer::sign_tx`].
     pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
         Self::check_known_amounts(tx)?;
         Self::check_unique_inputs(tx)?;
@@ -367,13 +453,17 @@ impl Signer {
         })
     }
 
-    /// Signs transaction in raw format for easy processing later in a format of `PartiallySignedTransaction`.
+    /// Blinds and signs exactly the transaction it is given, and finalizes every program input.
     ///
-    /// Every program input is executed and finalized with its signed witness.
+    /// Doesn't add any input, change output or fee output, and doesn't check that `tx` balances.
+    /// The node rejects a transaction that doesn't balance, including its fee output. Runs
+    /// [`Signer::sign_witnesses`], then executes each program input with its signed witness and
+    /// sets the input's final witness. Call `extract_tx()` on the result for a [`Transaction`].
     ///
     /// # Errors
-    /// Returns a `SignerError` if we have an error in singing and constructing program witness,
-    /// or if a program fails to execute.
+    /// Returns `SignerError::CovenantExecution` if a program rejects the spend, with the input's
+    /// index and the locktime and sequence it ran with, and the errors of
+    /// [`Signer::sign_witnesses`].
     pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
         let (mut pst, signed_witnesses) = self.sign_witnesses(tx)?;
 
@@ -402,6 +492,14 @@ impl Signer {
 
     /// Blinds the transaction, signs the `NativeEcdsa` inputs and injects signatures into program witnesses,
     /// without executing or finalizing the programs. Inputs that require no signature stay unsigned.
+    ///
+    /// Returns the PSET, with the native inputs finalized, and each program input's witness with
+    /// its signature inserted, by input index. Blinding is random, so when `tx` has blinded
+    /// outputs, every call produces different output commitments and so a different
+    /// `sighash_all`.
+    ///
+    /// Running a program input with [`ProgramTrait::execute`] on the result is a dry run: it
+    /// checks the program with its real signature without finalizing anything.
     ///
     /// # Errors
     /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
@@ -481,19 +579,23 @@ impl Signer {
         self.provider.as_deref().ok_or(SignerError::ProviderUnavailable)
     }
 
-    /// Returns the confidential elements address matching the local wallet logic.
+    /// The wallet's address with its SLIP-77 blinding key. Funds sent here arrive confidential.
     #[must_use]
     pub fn get_confidential_address(&self) -> Address {
         self.confidential_address.clone()
     }
 
-    /// Returns the standard unblinded address matching the local wallet logic.
+    /// The wallet's P2WPKH address, at `0/0` under the account, without a blinding key.
     #[must_use]
     pub fn get_address(&self) -> Address {
         self.address.clone()
     }
 
-    /// Retrieves UTXOs with known assets and amounts, skipping outputs that cannot be unblinded.
+    /// The wallet's UTXOs, with confidential ones unblinded. Skips outputs that can't be
+    /// unblinded with the wallet's key.
+    ///
+    /// Only finds outputs at the wallet's one address. To find outputs locked by a program, use
+    /// [`ProviderTrait::fetch_scripthash_utxos`] with the program's script.
     ///
     /// # Errors
     /// Returns a `SignerError` if querying the provider fails.
@@ -513,7 +615,7 @@ impl Signer {
         })
     }
 
-    /// Finds all known UTXOs deriving from a targeted `Txid`.
+    /// The wallet's UTXOs that transaction `txid` created.
     ///
     /// # Errors
     /// Returns a `SignerError` if querying the network fails.
@@ -523,8 +625,8 @@ impl Signer {
         self.get_utxos_filter(&|utxo| utxo.outpoint.txid == txid, &|utxo| utxo.outpoint.txid == txid)
     }
 
-    /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
-    /// Separate filtering criteria apply explicitly vs confidentially.
+    /// The wallet's explicit UTXOs that pass `explicit_filter`, followed by its unblinded
+    /// confidential UTXOs that pass `confidential_filter`.
     ///
     /// Outputs with null fields, unresolved partial commitments, or proofs that
     /// cannot be rewound with the wallet key are skipped. Already supplied secrets
@@ -578,7 +680,8 @@ impl Signer {
         Ok(all_utxos)
     }
 
-    /// Derives the X-Only public key specifically used for Schnorr and Taproot structures.
+    /// The x-only public key at the default path, for a contract that checks the signer's
+    /// Schnorr signatures.
     #[must_use]
     pub fn get_schnorr_public_key(&self) -> XOnlyPublicKey {
         let private_key = self.get_private_key();
@@ -587,13 +690,13 @@ impl Signer {
         keypair.x_only_public_key().0
     }
 
-    /// Resolves the standard format ECDSA public key.
+    /// The public key at the default path, for ECDSA.
     #[must_use]
     pub fn get_ecdsa_public_key(&self) -> PublicKey {
         self.get_private_key().public_key(&self.secp)
     }
 
-    /// Resolves the corresponding blinding public key.
+    /// The public key of [`Signer::get_blinding_private_key`].
     #[must_use]
     pub fn get_blinding_public_key(&self) -> PublicKey {
         self.get_blinding_private_key().public_key(&self.secp)
@@ -605,7 +708,8 @@ impl Signer {
         self.default_key
     }
 
-    /// Derives the signing key at a path relative to the account path. `None` defaults to `0/0`.
+    /// The private key at a path relative to the account path. `None` is the default path,
+    /// `0/0`.
     ///
     /// # Errors
     /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `m/n`.
@@ -627,7 +731,8 @@ impl Signer {
         self.blinding_key
     }
 
-    /// Checks that `path` is in correct form of `m/n`.
+    /// Checks that `path` has exactly two unhardened steps, such as `0/5`, as the paths of
+    /// [`Signer::get_private_key_at`] and `PartialInput::derivation_path` must.
     ///
     /// # Errors
     /// Returns `SignerError::InvalidDerivationPath` otherwise.

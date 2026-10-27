@@ -4,14 +4,30 @@ use crate::program::ProgramError;
 use crate::provider::ProviderError;
 use crate::transaction::{FinalTransactionError, UtxoError};
 
-/// Core error types for the Signer component.
+/// Errors from a [`Signer`](super::Signer).
+///
+/// A contract that rejects a spend fails with `CovenantExecution` before anything is broadcast.
+/// A transaction that is broadcast and refused fails with
+/// `Provider(ProviderError::BroadcastRejected { .. })`.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    /// Errors originating from Simplicity program evaluation and state.
+    /// A program failed while the signer signed for it, before running it: in
+    /// [`SignerTrait::sign_program`](super::SignerTrait::sign_program), or in
+    /// [`Signer::sign_witnesses`](super::Signer::sign_witnesses) for an input with a
+    /// [`ProgramSignature`](crate::transaction::ProgramSignature). The program doesn't compile,
+    /// the input doesn't spend its address, or its witness types can't be read. For an input
+    /// without a signature, the same failures are `CovenantExecution`.
     #[error(transparent)]
     Program(#[from] ProgramError),
 
-    /// Error indicating that a Simplicity program failed to satisfy, prune or execute.
+    /// Running a program input failed, so the transaction wasn't finalized.
+    ///
+    /// Raised before broadcast, by [`Signer::sign_tx`](super::Signer::sign_tx) and the methods
+    /// built on it. `source` says why: `ProgramError::Pruning` when the contract rejects the spend,
+    /// and other variants, such as `ProgramError::WitnessSatisfaction`,
+    /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
+    /// program can't run on this input or its witness doesn't pay for it. The locktime and
+    /// sequence identify most timelock failures.
     #[error(
         "Covenant input {index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
     )]
@@ -102,11 +118,12 @@ pub enum SignerError {
     #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
     ConfidentialInputWithoutBlindedOutput,
 
-    /// Error indicating a derivation path isn't `m/n`.
+    /// A derivation path doesn't have exactly two unhardened steps, such as `0/5`.
     #[error("The derivation path `{0}` is not of the form m/n")]
     InvalidDerivationPath(DerivationPath),
 
-    /// Error indicating the key an input is signed with doesn't own the output it spends.
+    /// A native input spends a P2WPKH output locked to another key than the one at its
+    /// derivation path.
     #[error("Input {0} is locked to another key than its derivation path gives")]
     KeyMismatch(usize),
 
@@ -142,7 +159,8 @@ pub enum SignerError {
     #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
     UnknownInputAmount(simplicityhl::elements::OutPoint),
 
-    /// Error indicating an expected witness field could not be found.
+    /// A [`ProgramSignature`](crate::transaction::ProgramSignature) with a path names a field
+    /// that the program's witness doesn't have.
     #[error("Missing such witness field: {0}")]
     WitnessFieldNotFound(String),
 }
@@ -150,23 +168,24 @@ pub enum SignerError {
 /// Errors originating from manipulating witness paths and injecting values.
 #[derive(Debug, thiserror::Error)]
 pub enum WitnessWrappingError {
-    /// Error indicating a failure while parsing the provided witness path string.
+    /// A path step isn't `Left`, `Right` or a decimal index.
     #[error("Failed to parse path")]
     ParsingError,
 
-    /// Error pointing to the use of a path type that is currently not supported.
+    /// A path step doesn't fit the type it steps into: an index into a type that isn't an array or
+    /// tuple, or `Left` or `Right` into a type that isn't an `Either`.
     #[error("Unsupported path type: {0}")]
     UnsupportedPathType(String),
 
-    /// Error thrown during path traversal when an index exceeds the inner array lengths.
+    /// An index is past the end of an array or tuple: `(length, index)`.
     #[error("Path index out of bounds: len is {0}, got {1}")]
     IdxOutOfBounds(usize, usize),
 
-    /// Error indicating that the runtime type at the path root expected one type but encountered another.
+    /// The type at the end of the path isn't the signature's type: `(expected, signature type)`.
     #[error("Root type mismatch: expected {0}, got {1}")]
     RootTypeMismatch(String, String),
 
-    /// Error indicating that a path traversal attempted to reach an undefined or mismatched Either branch.
+    /// The supplied witness value takes the other branch of an `Either` than the path does.
     #[error("Path reached undefined branch of Either")]
     EitherBranchMismatch,
 }
