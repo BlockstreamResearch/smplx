@@ -31,7 +31,11 @@ pub enum ProgramError {
     #[error("Failed to satisfy witness: {0}")]
     WitnessSatisfaction(String),
 
-    /// Error indicating pruning the node tree during execution failed safely.
+    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet, and
+    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`.
+    ///
+    /// [`Program`](super::Program) reports both a failure during pruning and a failure in the Bit
+    /// Machine run after pruning with this variant.
     #[error("Failed to prune program: {0}")]
     Pruning(#[from] simplicityhl::simplicity::bit_machine::ExecutionError),
 
@@ -39,7 +43,8 @@ pub enum ProgramError {
     #[error("Failed to construct a Bit Machine with enough space: {0}")]
     BitMachineCreation(#[from] simplicityhl::simplicity::bit_machine::LimitError),
 
-    /// Error thrown during bit machine execution due to underlying logical or environment validation errors.
+    /// The Bit Machine rejected the pruned program. [`Program`](super::Program) doesn't return
+    /// this variant; it reports such failures as `Pruning`.
     #[error("Failed to execute program on the Bit Machine: {0}")]
     Execution(simplicityhl::simplicity::bit_machine::ExecutionError),
 
@@ -59,12 +64,13 @@ pub enum ProgramError {
         utxo_count: usize,
     },
 
-    /// Error indicating the script pubkey present on the targeted UTXO differs from the expectation.
+    /// The input spends an output whose script isn't the program's.
     #[error("Script pubkey mismatch: expected hash {expected_hash}, got {actual_hash}")]
     ScriptPubkeyMismatch {
-        /// The expected CMR (Commitment Merkle Root) hash.
+        /// The HASH160 of the script of the program's address, not the SHA-256 that
+        /// [`Program::get_script_hash`](super::Program::get_script_hash) returns.
         expected_hash: String,
-        /// The actual CMR hash present in the script pubkey.
+        /// The HASH160 of the script of the spent output.
         actual_hash: String,
     },
 
