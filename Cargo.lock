@@ -1666,8 +1666,6 @@ dependencies = [
  "elements-miniscript",
  "hex",
  "minreq 3.0.0",
- "rand 0.10.3",
- "rand_core 0.10.1",
  "serde",
  "serde_json",
  "sha2",

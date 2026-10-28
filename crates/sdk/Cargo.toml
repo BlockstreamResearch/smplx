@@ -15,7 +15,6 @@ default = ["provider"]
 provider = ["dep:minreq", "dep:bitcoincore-rpc"]
 
 [dependencies]
-rand_core = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 minreq = { workspace = true, optional = true }
@@ -28,6 +27,3 @@ serde_json = { version = "1.0.154" }
 elements-miniscript = { version = "0.5.0", features = ["base64", "serde"] }
 bip39 = { version = "3.0.0", features = ["rand"] }
 dyn-clone = { version = "1.0.20" }
-
-[dev-dependencies]
-rand = { workspace = true }
