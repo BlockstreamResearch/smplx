@@ -5,6 +5,7 @@ use simplicityhl::{AbiMeta, Parameters, ResolvedType, TemplateProgramWitness, Wi
 
 use crate::macros::literals::LiteralExtractor;
 use crate::macros::parse::SimfContent;
+use crate::macros::safe_types::SafeType;
 use crate::macros::types::{AllocationType, RustType};
 
 pub struct SimfContractMeta {
@@ -37,12 +38,14 @@ pub struct WitnessField {
     witness_simf_name: String,
     struct_rust_field: Ident,
     rust_type: RustType,
+    safe_type: SafeType,
     key_constructor: Ident,
 }
 
 pub struct WitnessStruct {
     pub struct_name: Ident,
-    pub witness_values: Vec<WitnessField>,
+    witness_values: Vec<WitnessField>,
+    has_aliases: bool,
 }
 
 impl SimfContractMeta {
@@ -130,11 +133,13 @@ impl WitnessField {
         };
 
         let rust_type = RustType::from_resolved_type(resolved_type)?;
+        let safe_type = SafeType::from_resolved_type(resolved_type)?;
 
         Ok(Self {
             witness_simf_name,
             struct_rust_field,
             rust_type,
+            safe_type,
             key_constructor: key_constructor.clone(),
         })
     }
@@ -159,16 +164,31 @@ impl WitnessField {
 }
 
 impl WitnessStruct {
+    fn new(struct_name: Ident, witness_values: Vec<WitnessField>) -> Self {
+        let has_aliases = witness_values.iter().any(|field| field.safe_type.contains_alias());
+
+        Self {
+            struct_name,
+            witness_values,
+            has_aliases,
+        }
+    }
+
     /// Generate the implementation for the arguments struct.
     ///
     /// # Errors
     /// Returns a `syn::Result` with an error if the conversion from arguments map fails.
     pub fn generate_arguments_impl(&self) -> syn::Result<GeneratedArgumentTokens> {
         let generated_struct = self.generate_struct_token_stream();
+        let (safe_struct, safe_helpers) = self
+            .generate_safe_struct(quote! { simplex::simplicityhl::Arguments })
+            .unzip();
+
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
         let copied_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Copy);
         let moved_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Move);
+
         let (arguments_conversion_from_args_map, struct_to_return): (TokenStream, TokenStream) =
             self.generate_from_args_conversion_with_param_name("args");
         let default_mapping: TokenStream = self.generate_default_mapping();
@@ -185,6 +205,7 @@ impl WitnessStruct {
             },
             struct_token_stream: quote! {
                 #generated_struct
+                #safe_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
@@ -241,6 +262,8 @@ impl WitnessStruct {
                         ]))
                     }
                 }
+
+                #safe_helpers
             },
         })
     }
@@ -251,10 +274,15 @@ impl WitnessStruct {
     /// Returns a `syn::Result` with an error if the conversion from witness values fails.
     pub fn generate_witness_impl(&self) -> syn::Result<GeneratedWitnessTokens> {
         let generated_struct = self.generate_struct_token_stream();
+        let (safe_struct, safe_helpers) = self
+            .generate_safe_struct(quote! { simplex::simplicityhl::WitnessValues })
+            .unzip();
+
         let struct_name = &self.struct_name;
         let struct_param = format_ident!("val");
         let copied_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Copy);
         let moved_tuples: Vec<TokenStream> = self.construct_witness_tuples(&struct_param, AllocationType::Move);
+
         let (arguments_conversion_from_args_map, struct_to_return): (TokenStream, TokenStream) =
             self.generate_from_args_conversion_with_param_name("witness");
         let default_mapping: TokenStream = self.generate_default_mapping();
@@ -271,6 +299,7 @@ impl WitnessStruct {
             },
             struct_token_stream: quote! {
                 #generated_struct
+                #safe_struct
             },
             struct_impl: quote! {
                 impl #struct_name {
@@ -327,6 +356,8 @@ impl WitnessStruct {
                         ]))
                     }
                 }
+
+                #safe_helpers
             },
         })
     }
@@ -334,19 +365,18 @@ impl WitnessStruct {
     fn generate_args_struct(contract_name: &str, meta: &Parameters) -> syn::Result<WitnessStruct> {
         let base_name = convert_contract_name_to_struct_name(contract_name);
 
-        Ok(WitnessStruct {
-            struct_name: format_ident!("{}Arguments", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("parameter_from_str"))?,
-        })
+        Ok(Self::new(
+            format_ident!("{}Arguments", base_name),
+            Self::generate_witness_fields(meta.iter(), &format_ident!("parameter_from_str"))?,
+        ))
     }
 
     fn generate_witness_struct(contract_name: &str, meta: &WitnessTypes) -> syn::Result<WitnessStruct> {
         let base_name = convert_contract_name_to_struct_name(contract_name);
-
-        Ok(WitnessStruct {
-            struct_name: format_ident!("{}Witness", base_name),
-            witness_values: WitnessStruct::generate_witness_fields(meta.iter(), &format_ident!("witness_from_str"))?,
-        })
+        Ok(Self::new(
+            format_ident!("{}Witness", base_name),
+            Self::generate_witness_fields(meta.iter(), &format_ident!("witness_from_str"))?,
+        ))
     }
 
     fn generate_witness_fields<'a>(
@@ -376,6 +406,75 @@ impl WitnessStruct {
                 #(#fields),*
             }
         }
+    }
+
+    fn generate_safe_struct(&self, convert_to_type: TokenStream) -> Option<(TokenStream, TokenStream)> {
+        if !self.has_aliases {
+            return None;
+        }
+
+        let name = &self.struct_name;
+        let safe_name = format_ident!("{name}Safe");
+
+        let fields = self.witness_values.iter().map(|field| {
+            let field_name = &field.struct_rust_field;
+            let field_type = field.safe_type.to_type_token_stream();
+            quote! { pub #field_name: #field_type }
+        });
+
+        let conversions = self.witness_values.iter().map(|field| {
+            let field_name = &field.struct_rust_field;
+            let conversion = field.safe_type.to_concrete_value(&quote! { &value.#field_name });
+            quote! { #field_name: #conversion }
+        });
+
+        let defaults = self.witness_values.iter().map(|field| {
+            let field_name = &field.struct_rust_field;
+            let default = field.safe_type.get_default_value();
+            quote! { #field_name: #default }
+        });
+
+        let (struct_tokens, helper_tokens) = (
+            quote! {
+                #[derive(Debug, Clone, PartialEq, Eq)]
+                pub struct #safe_name {
+                    #(#fields),*
+                }
+            },
+            quote! {
+                impl core::default::Default for #safe_name {
+                    fn default() -> Self {
+                        Self { #(#defaults),* }
+                    }
+                }
+
+                impl From<&#safe_name> for #name {
+                    fn from(value: &#safe_name) -> Self {
+                        Self { #(#conversions),* }
+                    }
+                }
+
+                impl From<#safe_name> for #name {
+                    fn from(value: #safe_name) -> Self {
+                        Self::from(&value)
+                    }
+                }
+
+                impl From<&#safe_name> for #convert_to_type {
+                    fn from(value: &#safe_name) -> Self {
+                        Self::from(#name::from(value))
+                    }
+                }
+
+                impl From<#safe_name> for #convert_to_type {
+                    fn from(value: #safe_name) -> Self {
+                        Self::from(#name::from(value))
+                    }
+                }
+            },
+        );
+
+        Some((struct_tokens, helper_tokens))
     }
 
     fn generate_schema(&self) -> Vec<TokenStream> {
@@ -522,10 +621,10 @@ mod tests {
         let key_constructor = quote::format_ident!("witness_from_str");
         let iter = metadata.iter().map(|(name, ty)| (name, ty));
 
-        let mut fields = WitnessStruct {
-            struct_name: quote::format_ident!("SeededFields"),
-            witness_values: WitnessStruct::generate_witness_fields(iter, &key_constructor).unwrap(),
-        };
+        let mut fields = WitnessStruct::new(
+            quote::format_ident!("SeededFields"),
+            WitnessStruct::generate_witness_fields(iter, &key_constructor).unwrap(),
+        );
 
         let schema = |fields: &WitnessStruct| -> String {
             fields

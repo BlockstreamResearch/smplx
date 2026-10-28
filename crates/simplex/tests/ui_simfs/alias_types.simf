@@ -1,0 +1,53 @@
+fn main() {
+    // All supported alias types from `simplicityhl::types::aliased::BuiltinAlias`.
+    let wit_Ctx8: Ctx8 = witness::CTX8;
+    let wit_Pubkey: Pubkey = witness::PUBKEY;
+    let wit_Message: Message = witness::MESSAGE;
+    let wit_Message64: Message64 = witness::MESSAGE64;
+    let wit_Signature: Signature = witness::SIGNATURE;
+    let wit_Scalar: Scalar = witness::SCALAR;
+    let wit_Fe: Fe = witness::FE;
+    let wit_Ge: Ge = witness::GE;
+    let wit_Gej: Gej = witness::GEJ;
+    let wit_Point: Point = witness::POINT;
+    let wit_Height: Height = witness::HEIGHT;
+    let wit_Time: Time = witness::TIME;
+    let wit_Distance: Distance = witness::DISTANCE;
+    let wit_Duration: Duration = witness::DURATION;
+    let wit_Lock: Lock = witness::LOCK;
+    let wit_Outpoint: Outpoint = witness::OUTPOINT;
+    let wit_Confidential1: Confidential1 = witness::CONFIDENTIAL1;
+    let wit_ExplicitAsset: ExplicitAsset = witness::EXPLICIT_ASSET;
+    let wit_Asset1: Asset1 = witness::ASSET1;
+    let wit_ExplicitAmount: ExplicitAmount = witness::EXPLICIT_AMOUNT;
+    let wit_Amount1: Amount1 = witness::AMOUNT1;
+    let wit_ExplicitNonce: ExplicitNonce = witness::EXPLICIT_NONCE;
+    let wit_Nonce: Nonce = witness::NONCE;
+    let wit_TokenAmount1: TokenAmount1 = witness::TOKEN_AMOUNT1;
+
+    // Concrete types, including nested sum and product types.
+    let wit_Bool: bool = witness::BOOL;
+    let wit_U1: u1 = witness::U1;
+    let wit_U2: u2 = witness::U2;
+    let wit_U4: u4 = witness::U4;
+    let wit_U8: u8 = witness::U8;
+    let wit_U16: u16 = witness::U16;
+    let wit_U32: u32 = witness::U32;
+    let wit_U64: u64 = witness::U64;
+    let wit_U128: u128 = witness::U128;
+    let wit_U256: u256 = witness::U256;
+    let wit_Unit: () = witness::UNIT;
+    let wit_Tuple: (u8, u16) = witness::TUPLE;
+    let wit_Array: [u8; 3] = witness::ARRAY;
+    let wit_List: List<u8, 8> = witness::LIST;
+    let wit_Option: Option<u16> = witness::OPTION;
+    let wit_Either: Either<(Either<u1, u2>, u8), (u16, u32)> = witness::EITHER;
+
+    // Aliases nested in every supported container, alongside concrete types.
+    let wit_AliasTuple: (Pubkey, (Height, u8)) = witness::ALIAS_TUPLE;
+    let wit_AliasSingle: (Scalar,) = witness::ALIAS_SINGLE;
+    let wit_AliasArray: [Either<Asset1, Amount1>; 2] = witness::ALIAS_ARRAY;
+    let wit_AliasList: List<(Ctx8, [ExplicitNonce; 2]), 4> = witness::ALIAS_LIST;
+    let wit_AliasOption: Option<(Outpoint, [Message; 2])> = witness::ALIAS_OPTION;
+    let wit_AliasEither: Either<(Option<TokenAmount1>, u16), List<(Nonce, bool), 4>> = witness::ALIAS_EITHER;
+}

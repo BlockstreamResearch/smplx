@@ -28,6 +28,15 @@ You will see that Simplex has generated a new `artifacts` directory in the `src`
 
 Please note that this new module gets declared in the `lib.rs` file.
 
+### Safe alias conversion
+
+The `safe_aliases` example constructs generated named argument and witness structs with SDK alias types, then converts them into the ordinary resolved type generated structs with `.into()`. 
+Nested aliases inside options, tuples, and arrays convert recursively.
+
+```bash
+cargo run --example safe_aliases
+```
+
 ### Test
 
 Once the artifacts are generated, let's run Simplex test "basic_test" inside `basic_test.rs`:

@@ -1573,8 +1573,7 @@ dependencies = [
 [[package]]
 name = "simplicityhl"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e110f12190a4df92970b50d701f7da979638a60c5bf8294d55e4a55aceebf3e"
+source = "git+https://github.com/BlockstreamResearch/SimplicityHL.git?rev=ec8eca7#ec8eca789b1b27f5bdd9478d60a6c56158817405"
 dependencies = [
  "ariadne",
  "base64 0.21.7",
@@ -1667,6 +1666,8 @@ dependencies = [
  "elements-miniscript",
  "hex",
  "minreq 3.0.0",
+ "rand 0.10.3",
+ "rand_core 0.10.1",
  "serde",
  "serde_json",
  "sha2",

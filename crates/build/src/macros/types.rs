@@ -60,8 +60,11 @@ impl Display for RustTypeContext {
 impl RustTypeContext {
     fn is_deref_needed(&self) -> bool {
         match self {
-            RustTypeContext::Array | RustTypeContext::Tuple | RustTypeContext::List | RustTypeContext::Root => false,
-            RustTypeContext::EitherLeft | RustTypeContext::EitherRight | RustTypeContext::Option => true,
+            RustTypeContext::Array | RustTypeContext::Tuple | RustTypeContext::Root => false,
+            RustTypeContext::EitherLeft
+            | RustTypeContext::EitherRight
+            | RustTypeContext::Option
+            | RustTypeContext::List => true,
         }
     }
 }
@@ -85,7 +88,7 @@ impl RustType {
             }
             RustType::Tuple(elements) => {
                 let element_types: Vec<_> = elements.iter().map(RustType::get_default_value).collect();
-                quote! { (#(#element_types),*) }
+                quote! { (#(#element_types,)*) }
             }
             RustType::Either(left, _) => {
                 let left_ty = left.get_default_value();
@@ -163,7 +166,7 @@ impl RustType {
             }
             RustType::Tuple(elements) => {
                 let element_types: Vec<_> = elements.iter().map(RustType::to_type_token_stream).collect();
-                quote! { (#(#element_types),*) }
+                quote! { (#(#element_types,)*) }
             }
             RustType::Either(left, right) => {
                 let left_ty = left.to_type_token_stream();
@@ -349,7 +352,7 @@ impl RustType {
                 let elem_ty_generation = element.generate_simplicity_type_construction();
                 let iter_expression = match alloc_type {
                     AllocationType::Copy => quote! {
-                        #value_expr.iter().map(|& #iter_tmp_var_name| #element_conversion).collect::<Vec<_>>()
+                        #value_expr.iter().map(|#iter_tmp_var_name| #element_conversion).collect::<Vec<_>>()
                     },
                     AllocationType::Move => quote! {
                         #value_expr.into_iter().map(|#iter_tmp_var_name| #element_conversion).collect::<Vec<_>>()
@@ -559,7 +562,7 @@ impl RustType {
                                 return Err(format!("Wrong tuple length for {}", #context));
                             }
 
-                            (#(#elem_extractions),*)
+                            (#(#elem_extractions,)*)
                         }
                         _ => return Err(format!("Wrong type for {}: expected Tuple", #context)),
                     }
