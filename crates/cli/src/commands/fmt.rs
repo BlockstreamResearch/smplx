@@ -30,7 +30,7 @@ impl Format {
     /// Returns a [`CommandError`] if the options or project configuration are
     /// invalid, source discovery fails, no source files match, or `simfmt` cannot
     /// be executed.
-    pub fn run(opts: &FormatOpts) -> Result<i32, CommandError> {
+    pub fn run(opts: &FormatOpts) -> Result<(), CommandError> {
         let verbosity = Self::verbosity(opts)?;
 
         let files = if Self::is_info_request(opts) {
@@ -52,7 +52,9 @@ impl Format {
 
         let args = Self::build_simfmt_args(opts, &files);
 
-        Ok(Self::run_simfmt(&args, verbosity)?)
+        let signal = Self::run_simfmt(&args, verbosity)?;
+
+        Self::flush(signal)
     }
 
     fn is_info_request(opts: &FormatOpts) -> bool {
@@ -140,12 +142,23 @@ impl Format {
         Ok(Self::normalize_status(status))
     }
 
+    /// Flushes the STDOUT buffer and exits with the formatter's exit status.
+    fn flush(status: i32) -> Result<(), CommandError> {
+        use std::io::Write;
+
+        // Flush buffered standard output before exiting.
+        std::io::stdout().flush()?;
+
+        // Exit with the formatter's success or failure status.
+        std::process::exit(status);
+    }
+
     /// Resolves the file path to the `simfmt` binary in the same directory where `simplex` is situated.
     /// Given that `simfmt` would be placed in one directory with `simplex`, this is suitable for our usecase.
     ///
     /// # Warning
     /// Can fail to search for binary when env isn't set and `simfmt` binary lies in the other directory.
-    /// Even when `simfmt` is visible through PATH
+    /// Even when `simfmt` is visible through PATH.
     #[inline]
     fn simfmt_binary() -> Result<PathBuf, FmtError> {
         Ok(env::current_exe()

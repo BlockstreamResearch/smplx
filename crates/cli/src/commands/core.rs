@@ -34,7 +34,7 @@ pub enum Command {
         #[command(flatten)]
         flags: CleanFlags,
     },
-    /// Formats the configured Simplex source files using simfmt
+    /// Formats the configured Simplex source files using simfmt.
     Fmt {
         #[command(flatten)]
         opts: FormatOpts,
@@ -96,23 +96,23 @@ pub struct FormatOpts {
     #[arg(value_hint = clap::ValueHint::FilePath, value_name = "PATH", num_args(1..))]
     pub files: Vec<std::path::PathBuf>,
 
-    /// Run simfmt in check mode
+    /// Run simfmt in check mode.
     #[arg(long = "check")]
     pub check: bool,
 
-    /// No output printed to stdout
+    /// No output printed to stdout.
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
 
-    /// Use verbose output
+    /// Use verbose output.
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 
-    /// List files with differences instead of showing the diff
+    /// List files with differences instead of showing the diff.
     #[arg(long = "short")]
     pub short: bool,
 
-    /// Options passed to simfmt
+    /// Options passed to simfmt.
     // `raw = true` makes the `--` separator explicit.
     #[arg(id = "simfmt_options", raw = true)]
     pub simfmt_options: Vec<String>,

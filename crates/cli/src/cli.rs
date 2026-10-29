@@ -94,17 +94,7 @@ impl Cli {
 
                 Ok(Clean::run(&root_dir, &loaded_config.build, flags)?)
             }
-            Command::Fmt { opts } => {
-                use std::io::Write;
-
-                let exit_status = Format::run(opts)?;
-
-                // Flush buffered standard output before exiting.
-                std::io::stdout().flush()?;
-
-                // Exit with the formatter's success or failure status.
-                std::process::exit(exit_status);
-            }
+            Command::Fmt { opts } => Ok(Format::run(opts)?),
         }
     }
 }
