@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 
 use clap::Parser;
 
@@ -8,7 +7,6 @@ use smplx_build::DependencyConfig;
 use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
-use crate::commands::error::{CommandError, FmtError};
 use crate::commands::fmt::Format;
 use crate::commands::init::Init;
 use crate::commands::install::Install;
@@ -99,34 +97,12 @@ impl Cli {
             Command::Fmt { opts } => {
                 use std::io::Write;
 
-                let exit_status = if Format::is_info_request(opts) {
-                    Format::run_info(opts)?
-                } else {
-                    let files = if opts.files.is_empty() {
-                        let config_path = Format::manifest_path().map_err(CommandError::from)?;
-                        let project_root = config_path
-                            .parent()
-                            .ok_or_else(|| FmtError::InvalidManifestPath(config_path.clone()))
-                            .map_err(CommandError::from)?;
-                        let loaded_config = Config::load(&config_path)?;
+                let exit_status = Format::run(opts)?;
 
-                        Format::resolve_files(&loaded_config.build, project_root)?
-                            .into_iter()
-                            .collect::<Vec<_>>()
-                    } else {
-                        opts.files
-                            .iter()
-                            .map(|s| {
-                                let p = PathBuf::from(s);
-                                p.canonicalize().unwrap_or(p)
-                            })
-                            .collect::<Vec<_>>()
-                    };
-
-                    Format::run(opts, &files)?
-                };
-
+                // Flush buffered standard output before exiting.
                 std::io::stdout().flush()?;
+
+                // Exit with the formatter's success or failure status.
                 std::process::exit(exit_status);
             }
         }

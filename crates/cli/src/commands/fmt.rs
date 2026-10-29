@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -8,10 +8,9 @@ use smplx_build::{ArtifactsResolver, BuildConfig};
 
 use crate::commands::FormatOpts;
 use crate::commands::error::{CommandError, FmtError};
-use crate::config::CONFIG_FILENAME;
+use crate::config::Config;
 
 const SIMFMT_BIN_NAME: &str = "simfmt";
-const SIMFMT_BIN_PATH_VAR_ENV: &str = "SIMFMT";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verbosity {
@@ -23,76 +22,56 @@ enum Verbosity {
 pub struct Format;
 
 impl Format {
-    /// Returns whether the request only asks `simfmt` for information and does not
-    /// need a Simplex project to be loaded first.
-    #[must_use]
-    pub fn is_info_request(opts: &FormatOpts) -> bool {
+    /// Formats every configured `.simf` source file in one `simfmt` process.
+    ///
+    /// Explicit files and informational requests do not require a manifest.
+    ///
+    /// # Errors
+    /// Returns a [`CommandError`] if the options or project configuration are
+    /// invalid, source discovery fails, no source files match, or `simfmt` cannot
+    /// be executed.
+    pub fn run(opts: &FormatOpts) -> Result<i32, CommandError> {
+        let verbosity = Self::verbosity(opts)?;
+
+        let files = if Self::is_info_request(opts) {
+            Vec::default()
+        } else if opts.files.is_empty() {
+            let config_path = Config::get_ancestors_manifest_path().map_err(FmtError::from)?;
+            let project_root = Config::get_project_root(&config_path).map_err(FmtError::from)?;
+            let loaded_config = Config::load(&config_path).map_err(FmtError::from)?;
+
+            Self::resolve_files(&loaded_config.build, project_root)?
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            opts.files
+                .iter()
+                .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+                .collect::<Vec<_>>()
+        };
+
+        let args = Self::build_simfmt_args(opts, &files);
+
+        Ok(Self::run_simfmt(&args, verbosity)?)
+    }
+
+    fn is_info_request(opts: &FormatOpts) -> bool {
         opts.simfmt_options.iter().any(|arg| {
-            ["--print-config", "-h", "--help", "-V"].contains(&arg.as_str())
+            ["--print-config", "-h", "--help", "-V", "--version"].contains(&arg.as_str())
                 || arg.starts_with("--help=")
                 || arg.starts_with("--print-config=")
         })
     }
 
-    /// Resolves the selected manifest to an absolute path.
-    ///
-    /// # Errors
-    /// Returns a [`FmtError`] when the current directory cannot be read or the
-    /// supplied path does not name a `Simplex.toml` file.
-    pub fn manifest_path() -> Result<PathBuf, FmtError> {
-        let current_dir = env::current_dir().map_err(FmtError::CurrentDir)?;
-        Self::resolve_manifest_path(&current_dir)
-    }
+    fn resolve_files(config: &BuildConfig, project_root: impl AsRef<Path>) -> Result<BTreeSet<PathBuf>, CommandError> {
+        let src_dir = project_root.as_ref().join(&config.src_dir);
+        let files = ArtifactsResolver::resolve_simf_files(project_root, &config.src_dir, &config.simf_files)?;
 
-    fn resolve_manifest_path(current_dir: impl AsRef<Path>) -> Result<PathBuf, FmtError> {
-        let current_dir = current_dir.as_ref();
-        let manifest_path = {
-            let path = current_dir
-                .ancestors()
-                .map(|directory| directory.join(CONFIG_FILENAME))
-                .find(|candidate| candidate.is_file());
-
-            if path.is_none() {
-                return Err(FmtError::FailedToFindManifest);
-            }
-
-            path.unwrap()
-        };
-
-        if manifest_path.file_name() != Some(OsStr::new(CONFIG_FILENAME)) {
-            return Err(FmtError::InvalidManifestPath(manifest_path));
+        if files.is_empty() {
+            return Err(FmtError::NoFiles(src_dir).into());
         }
 
-        if manifest_path.is_absolute() {
-            Ok(manifest_path)
-        } else {
-            Ok(current_dir.join(manifest_path))
-        }
-    }
-
-    /// Runs an informational `simfmt` request such as `--help`,
-    /// without loading a Simplex manifest.
-    ///
-    /// # Errors
-    /// Returns a [`CommandError`] if the options conflict or `simfmt` cannot be
-    /// executed.
-    pub fn run_info(opts: &FormatOpts) -> Result<i32, CommandError> {
-        let verbosity = Self::verbosity(opts)?;
-        let args = opts.simfmt_options.iter().map(OsString::from).collect::<Vec<_>>();
-
-        Ok(Self::run_simfmt(&args, verbosity)?)
-    }
-
-    /// Formats every configured `.simf` source file in one `simfmt` process.
-    ///
-    /// # Errors
-    /// Returns a [`CommandError`] if the options are invalid, source discovery
-    /// fails, no source files match, or `simfmt` cannot be executed.
-    pub fn run(opts: &FormatOpts, files: &[PathBuf]) -> Result<i32, CommandError> {
-        let verbosity = Self::verbosity(opts)?;
-        let args = Self::build_simfmt_args(opts, files);
-
-        Ok(Self::run_simfmt(&args, verbosity)?)
+        Ok(files)
     }
 
     fn verbosity(opts: &FormatOpts) -> Result<Verbosity, FmtError> {
@@ -102,20 +81,6 @@ impl Format {
             (true, false) => Ok(Verbosity::Verbose),
             (true, true) => Err(FmtError::ConflictingVerbosity),
         }
-    }
-
-    pub(crate) fn resolve_files(
-        config: &BuildConfig,
-        project_root: impl AsRef<Path>,
-    ) -> Result<BTreeSet<PathBuf>, CommandError> {
-        let src_dir = project_root.as_ref().join(&config.src_dir);
-        let files = ArtifactsResolver::resolve_simf_files(project_root, &config.src_dir, &config.simf_files)?;
-
-        if files.is_empty() {
-            return Err(FmtError::NoFiles(src_dir).into());
-        }
-
-        Ok(files)
     }
 
     fn build_simfmt_args(opts: &FormatOpts, files: &[PathBuf]) -> Vec<OsString> {
@@ -175,19 +140,14 @@ impl Format {
         Ok(Self::normalize_status(status))
     }
 
-    /// Resolves the file path to the `simfmt` binary in the same folder where `simplex` is situated.
+    /// Resolves the file path to the `simfmt` binary in the same directory where `simplex` is situated.
     /// Given that `simfmt` would be placed in one directory with `simplex`, this is suitable for our usecase.
-    ///
-    /// Path to the binary can be overrided with `SIMFMT_BIN_PATH_VAR_ENV`.
     ///
     /// # Warning
     /// Can fail to search for binary when env isn't set and `simfmt` binary lies in the other directory.
     /// Even when `simfmt` is visible through PATH
+    #[inline]
     fn simfmt_binary() -> Result<PathBuf, FmtError> {
-        if let Some(simfmt) = env::var_os(SIMFMT_BIN_PATH_VAR_ENV) {
-            return Ok(PathBuf::from(simfmt));
-        }
-
         Ok(env::current_exe()
             .map_err(FmtError::CurrentExecutable)?
             .with_file_name(SIMFMT_BIN_NAME))
@@ -212,7 +172,7 @@ mod tests {
     use crate::Cli;
     use crate::commands::Command as SimplexCommand;
 
-    use super::{CONFIG_FILENAME, Format, FormatOpts};
+    use super::{Format, FormatOpts};
 
     fn fmt_opts(args: impl IntoIterator<Item = &'static str>) -> FormatOpts {
         let cli = Cli::try_parse_from(args).expect("arguments should parse");
@@ -259,36 +219,6 @@ mod tests {
     fn rejects_unknown_wrapper_arguments() {
         assert!(Cli::try_parse_from(["simplex", "fmt", "--package", "demo"]).is_err());
         assert!(Cli::try_parse_from(["simplex", "fmt", "--all"]).is_err());
-    }
-
-    #[test]
-    fn discovers_manifest_in_current_directory() {
-        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-
-        let manifest_path = Format::resolve_manifest_path(&project_root).expect("manifest should be discovered");
-
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
-    }
-
-    #[test]
-    fn discovers_manifest_from_nested_directory() {
-        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-        let nested_directory = project_root.join("simf/nested/nested_2/imp2");
-
-        let manifest_path = Format::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
-
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
-    }
-
-    #[test]
-    fn discovers_nearest_manifest() {
-        let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
-        let project_root = fixtures_root.join("deps/math");
-        let nested_directory = project_root.join("simf");
-
-        let manifest_path = Format::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
-
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
     }
 
     #[test]

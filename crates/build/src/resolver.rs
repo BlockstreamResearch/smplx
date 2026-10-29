@@ -59,8 +59,8 @@ impl ArtifactsResolver {
     /// contain a `main` function.
     ///
     /// # Errors
-    /// Returns a [`BuildError`] if a glob cannot be constructed, the directory
-    /// walk fails, or a matching path cannot be canonicalized.
+    /// Returns a [`BuildError`] if a glob cannot be constructed or a matching
+    /// path cannot be canonicalized.
     #[cfg(feature = "full")]
     pub fn resolve_simf_files(
         project_root: impl AsRef<Path>,

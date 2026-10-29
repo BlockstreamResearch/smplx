@@ -34,4 +34,13 @@ pub enum ConfigError {
 
     #[error("Path doesn't exist: '{0}'")]
     PathNotExists(PathBuf),
+
+    #[error("Failed to determine the current directory: {0}")]
+    CurrentDir(std::io::Error),
+
+    #[error("Failed to find manifest in current and parent directories")]
+    FailedToFindManifest,
+
+    #[error("The manifest-path must be a path to a Simplex.toml file, got: '{}'", .0.display())]
+    InvalidManifestPath(PathBuf),
 }
