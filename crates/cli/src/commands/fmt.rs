@@ -24,7 +24,7 @@ pub struct Format;
 impl Format {
     /// Formats every configured `.simf` source file in one `simfmt` process.
     ///
-    /// Explicit files and informational requests do not require a manifest.
+    /// Explicit files and informational requests do not require a config.
     ///
     /// # Errors
     /// Returns a [`CommandError`] if the options or project configuration are
@@ -36,7 +36,7 @@ impl Format {
         let files = if Self::is_info_request(opts) {
             Vec::default()
         } else if opts.files.is_empty() {
-            let config_path = Config::get_ancestors_manifest_path().map_err(FmtError::from)?;
+            let config_path = Config::get_ancestors_config_path().map_err(FmtError::from)?;
             let project_root = Config::get_project_root(&config_path).map_err(FmtError::from)?;
             let loaded_config = Config::load(&config_path).map_err(FmtError::from)?;
 

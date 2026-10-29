@@ -38,21 +38,21 @@ impl Config {
     ///
     /// # Errors
     /// Returns a [`ConfigError`] if the current directory cannot be determined
-    /// or no manifest is found.
-    pub fn get_ancestors_manifest_path() -> Result<PathBuf, ConfigError> {
+    /// or no config is found.
+    pub fn get_ancestors_config_path() -> Result<PathBuf, ConfigError> {
         let current_dir = Self::get_default_path()?;
-        Self::resolve_manifest_path(&current_dir)
+        Self::resolve_config_path(&current_dir)
     }
 
-    /// Returns the parent directory of the given manifest path.
+    /// Returns the parent directory of the given config path.
     ///
     /// # Errors
     /// Returns a [`ConfigError`] if the path has no parent directory.
-    pub fn get_project_root(manifest_path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
-        let manifest_path = manifest_path.as_ref();
-        let root = manifest_path
+    pub fn get_project_root(config_path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+        let config_path = config_path.as_ref();
+        let root = config_path
             .parent()
-            .ok_or_else(|| ConfigError::InvalidManifestPath(manifest_path.to_path_buf()))?;
+            .ok_or_else(|| ConfigError::InvalidConfigPath(config_path.to_path_buf()))?;
 
         Ok(root.to_path_buf())
     }
@@ -115,30 +115,30 @@ impl Config {
         Ok(())
     }
 
-    // Resolves manifest path by moving through ancestors.
-    fn resolve_manifest_path(current_dir: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+    /// Resolves config path by moving through ancestors.
+    fn resolve_config_path(current_dir: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
         let current_dir = current_dir.as_ref();
-        let manifest_path = {
+        let config_path = {
             let path = current_dir
                 .ancestors()
                 .map(|directory| directory.join(CONFIG_FILENAME))
                 .find(|candidate| candidate.is_file());
 
             if path.is_none() {
-                return Err(ConfigError::FailedToFindManifest);
+                return Err(ConfigError::FailedToFindConfig);
             }
 
             path.unwrap()
         };
 
-        if manifest_path.file_name() != Some(OsStr::new(CONFIG_FILENAME)) {
-            return Err(ConfigError::InvalidManifestPath(manifest_path));
+        if config_path.file_name() != Some(OsStr::new(CONFIG_FILENAME)) {
+            return Err(ConfigError::InvalidConfigPath(config_path));
         }
 
-        if manifest_path.is_absolute() {
-            Ok(manifest_path)
+        if config_path.is_absolute() {
+            Ok(config_path)
         } else {
-            Ok(current_dir.join(manifest_path))
+            Ok(current_dir.join(config_path))
         }
     }
 }
@@ -150,32 +150,32 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn discovers_manifest_in_current_directory() {
+    fn discovers_config_in_current_directory() {
         let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
 
-        let manifest_path = Config::resolve_manifest_path(&project_root).expect("manifest should be discovered");
+        let config_path = Config::resolve_config_path(&project_root).expect("config should be discovered");
 
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
     }
 
     #[test]
-    fn discovers_manifest_from_nested_directory() {
+    fn discovers_config_from_nested_directory() {
         let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let nested_directory = project_root.join("simf/nested/nested_2/imp2");
 
-        let manifest_path = Config::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
+        let config_path = Config::resolve_config_path(&nested_directory).expect("config should be discovered");
 
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
     }
 
     #[test]
-    fn discovers_nearest_manifest() {
+    fn discovers_nearest_config() {
         let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
         let project_root = fixtures_root.join("deps/math");
         let nested_directory = project_root.join("simf");
 
-        let manifest_path = Config::resolve_manifest_path(&nested_directory).expect("manifest should be discovered");
+        let config_path = Config::resolve_config_path(&nested_directory).expect("config should be discovered");
 
-        assert_eq!(manifest_path, project_root.join(CONFIG_FILENAME));
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
     }
 }

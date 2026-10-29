@@ -38,9 +38,9 @@ pub enum ConfigError {
     #[error("Failed to determine the current directory: {0}")]
     CurrentDir(std::io::Error),
 
-    #[error("Failed to find manifest in current and parent directories")]
-    FailedToFindManifest,
+    #[error("Failed to find `Simplex.toml` in current and parent directories")]
+    FailedToFindConfig,
 
-    #[error("The manifest-path must be a path to a Simplex.toml file, got: '{}'", .0.display())]
-    InvalidManifestPath(PathBuf),
+    #[error("The config-path must be a path to a Simplex.toml file, got: '{}'", .0.display())]
+    InvalidConfigPath(PathBuf),
 }

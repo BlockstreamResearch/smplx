@@ -16,7 +16,8 @@ pub struct Install;
 pub struct InstalledRepos(Vec<PathBuf>);
 
 impl Install {
-    /// Installs all git-based dependencies into the local [`DEFAULT_DEPENDENCY_DIR`] directory.
+    /// Installs all git-based dependencies into the project's [`DEFAULT_DEPENDENCY_DIR`] directory.
+    /// The dependency directory is resolved relative to `root_dir`.
     ///
     /// Clones each dependency declared in [`DEFAULT_DEPENDENCY_DIR`] that specifies a `git` source,
     /// then reports which repositories were installed.
@@ -26,13 +27,13 @@ impl Install {
     /// Returns a [`CommandError`] if:
     /// - The [`DEFAULT_DEPENDENCY_DIR`] directory cannot be created (e.g. permission denied).
     /// - Any repository fails to clone or install.
-    pub fn run(deps: &DependencyConfig) -> Result<(), CommandError> {
+    pub fn run(root_dir: &Path, deps: &DependencyConfig) -> Result<(), CommandError> {
         let mut installed_repos = Vec::<PathBuf>::new();
 
-        let deps_dir = Path::new(DEFAULT_DEPENDENCY_DIR);
-        fs::create_dir_all(DEFAULT_DEPENDENCY_DIR)?;
+        let deps_dir = root_dir.join(DEFAULT_DEPENDENCY_DIR);
+        fs::create_dir_all(&deps_dir)?;
 
-        Self::install_repos(deps, deps_dir, &mut installed_repos)?;
+        Self::install_repos(deps, &deps_dir, &mut installed_repos)?;
         let installed_repos = InstalledRepos(installed_repos);
 
         if installed_repos.0.is_empty() {
