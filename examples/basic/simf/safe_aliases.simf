@@ -1,0 +1,7 @@
+fn main() {
+    let lock: Lock = param::LOCK;
+    let asset: Asset1 = witness::ASSET;
+    let nonce: Nonce = witness::NONCE;
+    let payload: (Option<Message>, [Point; 2]) = witness::PAYLOAD;
+    let count: u32 = witness::COUNT;
+}
