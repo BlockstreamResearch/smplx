@@ -3,7 +3,7 @@ set -eo pipefail
 
 # NOTE: if you make modifications to this script, please increment the version number.
 # WARNING: the SemVer pattern: major.minor.patch must be followed as we use it to determine if the script is up to date.
-SIMPLEXUP_INSTALLER_VERSION="0.0.7"
+SIMPLEXUP_INSTALLER_VERSION="0.0.8"
 
 BASE_DIR=${XDG_CONFIG_HOME:-$HOME}
 SIMPLEX_DIR=${SIMPLEX_DIR:-"$BASE_DIR/.simplex"}
@@ -16,7 +16,7 @@ SIMPLEXUP_IGNORE_VERIFICATION=false
 
 SMPLX_BIN_NAME="simplex"
 # Every binary a release may ship
-ALL_BINS=("${SMPLX_BIN_NAME}" elementsd electrs smplx-nextest)
+ALL_BINS=("${SMPLX_BIN_NAME}" elementsd electrs smplx-nextest simfmt)
 # Written last into a version dir, so an interrupted or rejected install is never used
 COMPLETE_MARKER=".complete"
 
@@ -497,13 +497,22 @@ detect_platform_arch() {
   fi
 }
 
-# Sets RELEASE_BINS to the binaries release $1 ships. Releases ship `smplx-nextest` since 0.0.6.
+# Sets RELEASE_BINS to the binaries release $1 ships.
+# Releases ship:
+# - `smplx-nextest` since 0.0.6.
+# - `simfmt` since 0.1.2.
 set_release_bins() {
-  if version_gt "0.0.6" "$1"; then
-    RELEASE_BINS=("${SMPLX_BIN_NAME}" elementsd electrs)
-  else
-    RELEASE_BINS=("${SMPLX_BIN_NAME}" elementsd electrs smplx-nextest)
+  local bins_to_include=("${SMPLX_BIN_NAME}" elementsd electrs)
+
+  if ! version_gt "0.0.6" "$1"; then
+    bins_to_include+=(smplx-nextest)
   fi
+
+  if ! version_gt "0.1.2" "$1"; then
+    bins_to_include+=(simfmt)
+  fi
+
+  RELEASE_BINS=("${bins_to_include[@]}")
 }
 
 # Prints the attested SHA-256 of binary $1 or an empty string when the attestation lacks one

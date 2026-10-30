@@ -7,6 +7,7 @@ use smplx_build::DependencyConfig;
 use crate::commands::Command;
 use crate::commands::build::Build;
 use crate::commands::clean::Clean;
+use crate::commands::fmt::Format;
 use crate::commands::init::Init;
 use crate::commands::install::Install;
 use crate::commands::regtest::Regtest;
@@ -49,7 +50,7 @@ impl Cli {
                 Ok(Init::run(simplex_conf_path)?)
             }
             Command::Config => {
-                let config_path = Config::get_default_path()?;
+                let config_path = Config::get_ancestors_config_path()?;
                 let loaded_config = Config::load(config_path)?;
 
                 println!("{loaded_config:#?}");
@@ -57,28 +58,30 @@ impl Cli {
                 Ok(())
             }
             Command::Test { args, flags } => {
-                let config_path = Config::get_default_path()?;
+                let config_path = Config::get_ancestors_config_path()?;
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Test::run(loaded_config.test, args, flags)?)
             }
             Command::Regtest => {
-                let config_path = Config::get_default_path()?;
+                let config_path = Config::get_ancestors_config_path()?;
                 let loaded_config = Config::load(config_path)?;
 
                 Ok(Regtest::run(&loaded_config.regtest)?)
             }
             Command::Install { deps } => {
-                let config_path = Config::get_default_path()?;
+                let config_path = Config::get_ancestors_config_path()?;
+                let root_dir = Config::get_project_root(&config_path)?;
+
                 DependencyConfig::add_dependency_to(&config_path, deps).map_err(ConfigError::from)?;
                 let loaded_config = Config::load(config_path)?;
 
-                Ok(Install::run(&loaded_config.dependencies)?)
+                Ok(Install::run(&root_dir, &loaded_config.dependencies)?)
             }
             Command::Build => {
-                let root_dir = env::current_dir()?;
-                let config_path = Config::get_default_path()?;
-                let loaded_config = Config::load(config_path)?;
+                let config_path = Config::get_ancestors_config_path()?;
+                let root_dir = Config::get_project_root(&config_path)?;
+                let loaded_config = Config::load(&config_path)?;
 
                 Ok(Build::run(
                     &root_dir,
@@ -87,12 +90,13 @@ impl Cli {
                 )?)
             }
             Command::Clean { flags } => {
-                let root_dir = env::current_dir()?;
-                let config_path = Config::get_default_path()?;
+                let config_path = Config::get_ancestors_config_path()?;
+                let root_dir = Config::get_project_root(&config_path)?;
                 let loaded_config = Config::load(&config_path)?;
 
                 Ok(Clean::run(&root_dir, &loaded_config.build, flags)?)
             }
+            Command::Fmt { opts } => Ok(Format::run(opts)?),
         }
     }
 }
