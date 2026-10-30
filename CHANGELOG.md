@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.2.0]
+
+- Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.
+- Rewrote fuzz testing to a much more versatile and smart suite.
+- Made every command find `Simplex.toml` in the current directory or any of its ancestors.
+
+### fuzz
+
+- Replaced the single-program fuzz engine with `Scenario`, a transaction template where each program `spends` inputs and `locks` outputs.
+- Added `bind_arguments` and `bind_witness` to derive values from the case, and `requires_witness` for values the fuzzer also violates to check that the contract rejects them.
+- Added `spec` to state when a case must be accepted, rejected or either, read from `FuzzCase`.
+- Added transaction `Mutations` of amounts, assets, timelocks and layout, applied to the template's targeted inputs and outputs.
+- Added lock and authorization smart checks that redirect locked outputs and replay signatures from a wrong key.
+- Added `spending_path` and `storage_capacity` to the program builder, and `random_strategy` and `custom_strategy` to replace the guided default.
+- Added a run summary of verdicts, rejections, spec predictions, violations, mutations and smart checks.
+- Removed `FuzzableProgram`, `FuzzTransaction`, `ArgsStrategyBuilder`, `ProgramCheck` and `FuzzError`.
+
+### sdk
+
+- Replaced `RequiredSignature` arguments with `Option<NativeSignature>` for native inputs and `Option<ProgramSignature>` for program inputs, built as `ProgramSignature::new(name).at_path(path).tagged(tag)`.
+- Made `Signer` sign only inputs that request a native signature and refuse a key that doesn't own a P2WPKH input.
+- Made `Signer` derive its keys and addresses once, and reuse one sighash cache per transaction.
+- Reduced how often coin selection signs the transaction.
+- Fixed coin selection: skip UTXOs listed twice, skip confidential UTXOs for an explicit change target, and keep blinded change that would reveal a blinded amount.
+- Fixed fees: report the whole leftover as the fee when change is dropped, and fold explicit change below the 22 sat dust threshold into the fee.
+- Made a set locktime enforced by default, by giving inputs without a sequence `ENABLE_LOCKTIME_NO_RBF`.
+- Made per-input `sequence` and `locktime` optional, so an explicit `Sequence::MAX` or `LockTime::ZERO` is kept.
+- Made `get_utxos` skip outputs the wallet can't unblind, instead of failing.
+- Replaced panics with errors for unknown input amounts, amount overflows, invalid fee rates, duplicate inputs, empty issuances, unblinded reissuance tokens, inputs without a witness UTXO and invalid derivation paths.
+- Fixed token-only issuance by encoding a zero asset amount as null.
+- Added `FinalTransaction::sequence` and `locktime` getters.
+- Added `Program::set_storage`, `get_arguments` and `MAX_STORAGE_SLOTS`, and capped storage at 128 slots.
+- Made `SimplexProvider::broadcast_transaction` wait until Esplora indexes the transaction.
+- Cached the program's CMR, witness types and taproot spend info.
+
+### build
+
+- Refused a dependency `src_dir` that resolves outside its package.
+- Refused an `out_dir` that holds the project or its `src_dir`, in both `build` and `clean`.
+- Refused source directories that aren't Rust identifiers, before writing any artifact.
+- Warned about `.simf` files that don't parse, instead of skipping them silently.
+
+### install
+
+- Resolved tags and branches by their full ref.
+- Made git dependency directory names unambiguous.
+- Made installs atomic, and reported an incomplete dependency instead of treating it as installed.
+
+### init
+
+- Made `simplex init` optimize dependencies in dev builds, which speeds up tests.
+
+### wasm
+
+- Rejected issuances of zero, reissuance tokens with a zero blinding factor, derivation paths other than `m/n`, and more than 128 extra leaves.
+
+### simplexup
+
+- Verified binaries before installing them and refused versions whose install didn't complete.
+- Verified the attestation's signer with `gh` when the GitHub CLI is installed and logged in.
+- Installed `--commit` builds as their own version.
+- Made `--use` switch every binary to the chosen version.
+
 ## [0.1.1]
 
 - Fixed broken dependencies.

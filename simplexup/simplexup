@@ -500,7 +500,7 @@ detect_platform_arch() {
 # Sets RELEASE_BINS to the binaries release $1 ships.
 # Releases ship:
 # - `smplx-nextest` since 0.0.6.
-# - `simfmt` since 0.1.2.
+# - `simfmt` since 0.2.0.
 set_release_bins() {
   local bins_to_include=("${SMPLX_BIN_NAME}" elementsd electrs)
 
@@ -508,7 +508,7 @@ set_release_bins() {
     bins_to_include+=(smplx-nextest)
   fi
 
-  if ! version_gt "0.1.2" "$1"; then
+  if ! version_gt "0.2.0" "$1"; then
     bins_to_include+=(simfmt)
   fi
 
