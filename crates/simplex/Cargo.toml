@@ -1,6 +1,6 @@
 [package]
 name = "smplx-std"
-version = "0.1.1"
+version = "0.2.0"
 description = "A blazingly-fast, ux-first simplicity development framework"
 rust-version = "1.91.0"
 license.workspace = true
