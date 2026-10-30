@@ -13,8 +13,12 @@ proc-macro = true
 [lints]
 workspace = true
 
+[features]
+default = ["test"]
+test = ["dep:smplx-test"]
+
 [dependencies]
 smplx-build = { workspace = true } 
-smplx-test = { workspace = true }
+smplx-test = { workspace = true, optional = true }
 
 syn = { version = "3.0.8", default-features = false, features = ["parsing", "proc-macro"] }

@@ -51,16 +51,34 @@ impl Init {
                 .expect("the profile is valid TOML");
             manifest["profile"] = profile["profile"].clone();
 
+            let version = Self::get_smplx_max_version()?;
+
+            let mut runtime_dep = toml_edit::InlineTable::new();
+            runtime_dep.insert("version", toml_edit::Value::from(version.as_str()));
+            runtime_dep.insert("default-features", toml_edit::Value::from(false));
+
             let mut dep_table = toml_edit::Table::default();
             dep_table.insert(
                 SIMPLEX_CRATE_NAME,
-                toml_edit::Item::Value(toml_edit::Value::String(toml_edit::Formatted::new(
-                    Self::get_smplx_max_version()?,
-                ))),
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(runtime_dep)),
             );
 
             manifest["dependencies"] = toml_edit::Item::Table(dep_table);
 
+            let mut test_features = toml_edit::Array::new();
+            test_features.push("test");
+
+            let mut test_dep = toml_edit::InlineTable::new();
+            test_dep.insert("version", toml_edit::Value::from(version.as_str()));
+            test_dep.insert("features", toml_edit::Value::Array(test_features));
+
+            let mut dev_dep_table = toml_edit::Table::default();
+            dev_dep_table.insert(
+                SIMPLEX_CRATE_NAME,
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(test_dep)),
+            );
+
+            manifest["dev-dependencies"] = toml_edit::Item::Table(dev_dep_table);
             manifest
         };
 
