@@ -1,5 +1,8 @@
+use elements_miniscript::bitcoin::bip32::DerivationPath;
+
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
+use crate::transaction::{FinalTransactionError, UtxoError};
 
 /// Core error types for the Signer component.
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +30,14 @@ pub enum SignerError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
 
+    /// A UTXO is missing its asset or amount and has no unblinding secrets.
+    #[error(transparent)]
+    Utxo(#[from] UtxoError),
+
+    /// Errors originating from transaction construction or validation.
+    #[error(transparent)]
+    FinalTransaction(#[from] FinalTransactionError),
+
     /// Error indicating a provider-backed operation was requested on a signer built without one.
     #[cfg(feature = "provider")]
     #[error("This signer was constructed without a provider")]
@@ -34,7 +45,7 @@ pub enum SignerError {
 
     /// Errors encountered when attempting to inject or wrap witness fields.
     #[error(transparent)]
-    WtnsInjectError(#[from] WtnsWrappingError),
+    WitnessInjectError(#[from] WitnessWrappingError),
 
     /// Error indicating an incorrectly formatted mnemonic phrase.
     #[error("Failed to parse a mnemonic: {0}")]
@@ -62,7 +73,7 @@ pub enum SignerError {
 
     /// Error indicating the transaction is not balanced.
     #[error("Transaction is not balanced or malformed")]
-    Unbalanced(),
+    Unbalanced,
 
     /// Error indicating the transaction inputs cover an amount that is lower than the dust limit.
     #[error("Fee amount is too low: {0}")]
@@ -71,6 +82,14 @@ pub enum SignerError {
     /// Error indicating the defined fee amount cannot cover the calculated transaction costs.
     #[error("Not enough fee amount {0} to cover transaction costs: {1}")]
     NotEnoughFeeAmount(i64, u64),
+
+    /// Error indicating a fee rate that is not a finite, non-negative number of sats/kvb.
+    #[error("Invalid fee rate: {0} sats/kvb")]
+    InvalidFeeRate(f32),
+
+    /// Error indicating the transaction spends the same outpoint more than once.
+    #[error("The transaction spends {0} more than once")]
+    DuplicateInput(simplicityhl::elements::OutPoint),
 
     /// Error indicating that the available UTXO funds are not enough to cover total costs.
     #[error("Not enough funds on account to cover transaction costs: {0}")]
@@ -82,6 +101,14 @@ pub enum SignerError {
     /// which the node would reject as `bad-txns-in-ne-out`.
     #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
     ConfidentialInputWithoutBlindedOutput,
+
+    /// Error indicating a derivation path isn't `m/n`.
+    #[error("The derivation path `{0}` is not of the form m/n")]
+    InvalidDerivationPath(DerivationPath),
+
+    /// Error indicating the key an input is signed with doesn't own the output it spends.
+    #[error("Input {0} is locked to another key than its derivation path gives")]
+    KeyMismatch(usize),
 
     /// Error indicating an invalid upstream `secp256k1` secret key.
     #[error("Invalid secret key")]
@@ -111,14 +138,18 @@ pub enum SignerError {
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
 
+    /// Error indicating an input whose amount the signer cannot know.
+    #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
+    UnknownInputAmount(simplicityhl::elements::OutPoint),
+
     /// Error indicating an expected witness field could not be found.
     #[error("Missing such witness field: {0}")]
-    WtnsFieldNotFound(String),
+    WitnessFieldNotFound(String),
 }
 
 /// Errors originating from manipulating witness paths and injecting values.
 #[derive(Debug, thiserror::Error)]
-pub enum WtnsWrappingError {
+pub enum WitnessWrappingError {
     /// Error indicating a failure while parsing the provided witness path string.
     #[error("Failed to parse path")]
     ParsingError,

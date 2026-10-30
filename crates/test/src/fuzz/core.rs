@@ -1,43 +1,58 @@
+use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::Debug;
-use std::marker::PhantomData;
+use std::panic::{self, AssertUnwindSafe};
+use std::sync::{Arc, Mutex};
 
-use proptest::prelude::{BoxedStrategy, TestCaseError};
+use proptest::prelude::TestCaseError;
 use proptest::strategy::Strategy;
-use proptest::test_runner::{Config as ProptestConfig, TestRunner};
+use proptest::test_runner::{Config as ProptestConfig, FailurePersistence, PersistedSeed, TestError, TestRunner};
 
-use simplicityhl::{Arguments, WitnessValues};
-
-use smplx_sdk::program::{ProgramFactory, ProgramSchema, ProgramTrait};
 use smplx_sdk::signer::Signer;
 
-use crate::fuzz::FuzzableProgram;
-use crate::fuzz::args_strategy::ArgsStrategyBuilder;
-use crate::fuzz::fuzz_check::{Expect, FuzzExecutionCheck, ProgramCheck, ProgramExecResult};
-use crate::fuzz::fuzz_transaction::{FuzzTransaction, ProgramTarget};
+use crate::fuzz::case::{Expect, FuzzCase};
+use crate::fuzz::execution::SignedTransaction;
+use crate::fuzz::mutations::Mutations;
+use crate::fuzz::outcome::{Outcome, SetupError};
+use crate::fuzz::requirement::RequiredValue;
+use crate::fuzz::scenario::Scenario;
+use crate::fuzz::scenario_strategy::CaseValues;
+use crate::fuzz::smart_check::{AuthCheck, LockCheck};
+use crate::fuzz::summary::RunSummary;
 
-pub struct SimplexFuzzEngine<Program, Args, Wit> {
-    pub config: ProptestConfig,
-    pub signer: Signer,
-    pub strategy: Option<BoxedStrategy<(Arguments, WitnessValues)>>,
-    pub initial_transaction: Option<FuzzTransaction>,
-    pub program_check: Option<Box<dyn ProgramCheck<Program, Args, Wit>>>,
-    pub _placeholder: PhantomData<(Program, Args, Wit)>,
+type Spec = dyn Fn(&FuzzCase<'_>) -> Expect;
+
+/// The smart checks' attacker. Fixed, so a replayed case meets the same attacker.
+pub(crate) const ATTACKER_MNEMONIC: &str =
+    "legal winner thank year wave sausage worth useful legal winner thank yellow";
+
+enum CaseFailure {
+    Setup(SetupError),
+    Finding(String),
 }
 
-impl<Program, Args, Wit> SimplexFuzzEngine<Program, Args, Wit>
-where
-    Program: FuzzableProgram<Program> + ProgramFactory<Program> + ProgramSchema + Clone + 'static,
-    Args: Into<Arguments> + Debug + Clone + 'static,
-    Wit: Into<WitnessValues> + Debug + Clone + 'static,
-{
-    pub fn new(config: ProptestConfig, signer: Signer) -> SimplexFuzzEngine<Program, Args, Wit> {
+pub struct SimplexFuzzEngine {
+    pub config: ProptestConfig,
+    pub signer: Signer,
+    pub scenario: Scenario,
+    pub spec: Box<Spec>,
+    pub mutations: Option<Mutations>,
+    pub allow_unspendable: bool,
+    pub check_lock: bool,
+    pub check_auth: bool,
+}
+
+impl SimplexFuzzEngine {
+    pub fn new(config: ProptestConfig, signer: Signer, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine {
             config,
             signer,
-            strategy: None,
-            initial_transaction: None,
-            program_check: None,
-            _placeholder: Default::default(),
+            scenario,
+            spec: Box::new(|_| Expect::Accept),
+            mutations: None,
+            allow_unspendable: false,
+            check_lock: true,
+            check_auth: true,
         }
     }
 
@@ -55,57 +70,109 @@ where
         self
     }
 
+    /// Sets what should happen to each spend. Without a spec, every spend is expected to be accepted.
     #[must_use]
-    pub fn with_custom_strategy(
-        mut self,
-        strategy: impl Strategy<Value = (Arguments, WitnessValues)> + 'static,
-    ) -> Self {
-        self.strategy = Some(strategy.boxed());
+    pub fn spec(mut self, spec: impl Fn(&FuzzCase<'_>) -> Expect + 'static) -> Self {
+        self.spec = Box::new(spec);
 
         self
     }
 
+    /// Mutates the transaction in half the cases. The spec judges the mutated transaction.
     #[must_use]
-    pub fn with_custom_transaction(mut self, transaction: FuzzTransaction) -> Self {
-        self.initial_transaction = Some(transaction);
+    pub fn mutations(mut self, mutations: Mutations) -> Self {
+        self.mutations = Some(mutations);
 
         self
     }
 
+    /// Lets a run pass without any accepted case, for tests where no spend should ever be accepted.
     #[must_use]
-    pub fn with_custom_check(mut self, check: impl ProgramCheck<Program, Args, Wit> + 'static) -> Self {
-        self.program_check = Some(Box::new(check));
+    pub fn allow_unspendable(mut self) -> Self {
+        self.allow_unspendable = true;
+
+        self
+    }
+
+    /// Skips checking that accepted spends cannot redirect the outputs they lock.
+    #[must_use]
+    pub fn without_lock_check(mut self) -> Self {
+        self.check_lock = false;
+
+        self
+    }
+
+    /// Skips checking that accepted spends depend on their signatures.
+    #[must_use]
+    pub fn without_auth_check(mut self) -> Self {
+        self.check_auth = false;
 
         self
     }
 
     pub fn run(self) {
-        let mut runner = TestRunner::new(self.config);
-
-        let strategy = match self.strategy {
-            None => ArgsStrategyBuilder::<Program>::new().build(),
-            Some(strategy) => strategy,
-        };
-        let program_check = match self.program_check {
-            None => Box::new(FuzzExecutionCheck::new(
-                runner.config().test_name.unwrap_or("simplex_fuzz"),
-                Expect::Ok,
-            )),
-            Some(check) => check,
-        };
-        let initial_transaction = match self.initial_transaction {
-            None => FuzzTransaction::try_default().expect("Shouldn't fail. Please report a bug"),
-            Some(tx) => tx,
+        let strategy = match self
+            .scenario
+            .validate()
+            .and_then(|()| self.scenario.combined_strategy(self.mutations.as_ref()))
+        {
+            Ok(strategy) => strategy,
+            Err(error) => panic!("The fuzz setup is broken, the contract was not tested: {error}"),
         };
 
-        let result = runner.run(&strategy.no_shrink(), |(arguments, witness)| {
-            Self::fuzz(&self.signer, &initial_transaction, &*program_check, arguments, witness)
+        let attacker = Signer::from_mnemonic(ATTACKER_MNEMONIC, *self.signer.get_network());
+        assert!(
+            attacker.get_schnorr_public_key() != self.signer.get_schnorr_public_key(),
+            "The fuzz setup is broken, the contract was not tested: the signer uses the smart checks attacker mnemonic"
+        );
+
+        let setup_error = Arc::new(Mutex::new(None));
+        let summary = RefCell::new(RunSummary::new(
+            self.config.test_name.unwrap_or("simplex_fuzz"),
+            self.config.rng_seed,
+            self.scenario.layout(),
+            self.check_lock,
+            self.check_auth,
+            self.mutations.is_some(),
+        ));
+
+        let mut config = self.config.clone();
+        config.failure_persistence = config.failure_persistence.map(|inner| {
+            Box::new(SkipSetupErrors {
+                inner,
+                setup_error: setup_error.clone(),
+            }) as Box<dyn FailurePersistence>
         });
 
+        let mut runner = TestRunner::new(config);
+
+        let result = runner.run(&strategy.no_shrink(), |values| {
+            self.fuzz(&summary, &attacker, values).map_err(|failure| match failure {
+                CaseFailure::Setup(error) => {
+                    let reason = error.to_string();
+                    *setup_error.lock().unwrap() = Some(error);
+
+                    TestCaseError::fail(reason)
+                }
+                CaseFailure::Finding(reason) => TestCaseError::fail(reason),
+            })
+        });
+
+        let summary = summary.into_inner();
+        eprintln!("{summary}");
+
+        if let Some(error) = setup_error.lock().unwrap().take() {
+            panic!("The fuzz setup is broken, the contract was not tested: {error}");
+        }
+
         match result {
-            Ok(()) => {}
-            Err(proptest::test_runner::TestError::Fail(reason, (args, wit))) => {
-                panic!("Program failed with these arguments: {args} and witness: {wit}, reason: `{reason}`");
+            Ok(()) => {
+                if let Some(reason) = summary.is_run_empty(self.allow_unspendable) {
+                    panic!("{reason}");
+                }
+            }
+            Err(TestError::Fail(reason, _)) => {
+                panic!("{reason}");
             }
             Err(err) => {
                 panic!("Fuzzing aborted: {err}");
@@ -113,119 +180,181 @@ where
         }
     }
 
-    /// Extracted helper that performs exactly one isolated test run.
-    fn fuzz(
-        signer: &Signer,
-        initial_tx: &FuzzTransaction,
-        program_check: &dyn ProgramCheck<Program, Args, Wit>,
-        arguments: Arguments,
-        witness: WitnessValues,
-    ) -> Result<(), TestCaseError> {
-        let (program, script) = Program::build_program(arguments.clone(), signer.get_network());
+    /// Builds one case, asks the spec, runs it and reports what disagrees.
+    fn fuzz(&self, summary: &RefCell<RunSummary>, attacker: &Signer, values: CaseValues) -> Result<(), CaseFailure> {
+        let mutations = values.change.mutations().to_vec();
+        let drew_violation = values.change.violation().is_some();
 
-        let final_transaction = initial_tx
-            .prepare_transaction(program.as_ref().as_ref(), &script, &arguments, &witness)
-            .map_err(|error| TestCaseError::fail(format!("failed to prepare fuzz transaction: {error}")))?;
+        let (programs, transaction, violated) =
+            self.scenario.build(values, &self.signer).map_err(CaseFailure::Setup)?;
 
-        // TODO: finalization also checks the witness budget, which fuzzing does not cover yet.
-        let (pst, signed_witnesses) = signer
-            .sign_witnesses(&final_transaction)
-            .map_err(|error| TestCaseError::fail(format!("failed to sign: {error}")))?;
+        if drew_violation && violated.is_none() {
+            summary.borrow_mut().record_unviolated();
+        }
+        let case = FuzzCase::new(&self.scenario, &programs, &transaction, &mutations, &self.signer);
 
-        // Iterate over program inputs to check contract execution
-        for target in initial_tx.targets().iter().copied() {
-            let ProgramTarget::Input(input_index) = target else {
-                continue;
-            };
+        let failure =
+            |reason: String| CaseFailure::Finding(format!("Case failed with {}, reason: `{reason}`", case.describe()));
 
-            let signed_witness = signed_witnesses.get(&input_index).unwrap_or(&witness);
-            let exec_result: ProgramExecResult =
-                program
-                    .as_ref()
-                    .as_ref()
-                    .execute(&pst, signed_witness, input_index, signer.get_network());
+        // A generated case that violates a requirement must be rejected, so the spec is not asked.
+        let expect = match violated {
+            Some(_) => None,
+            None => Some(self.ask_spec(&case)?),
+        };
 
-            if let Err(error) = program_check.call(signer, &pst, &arguments, signed_witness, input_index, exec_result) {
-                return Err(TestCaseError::fail(format!(
-                    "{error}, args: {arguments}, wit: {signed_witness}"
-                )));
-            }
+        let outcomes = SignedTransaction::new(&self.signer, &transaction)
+            .and_then(|signed| signed.run_all())
+            .map_err(CaseFailure::Setup)?;
+        let rejection = outcomes.iter().find(|(_, outcome)| !outcome.is_accepted());
+        let verdict = rejection.map_or(Outcome::Accepted, |(_, outcome)| *outcome);
+
+        summary.borrow_mut().record(
+            expect,
+            verdict,
+            rejection.map(|(index, _)| {
+                case.spending_program(*index)
+                    .map_or_else(|| format!("input {index}"), ToString::to_string)
+            }),
+        );
+        summary.borrow_mut().record_mutations(&mutations);
+
+        if let Some(finding) = Self::finding(expect, verdict, violated.as_ref()) {
+            return Err(failure(format!(
+                "{finding} ({})",
+                Self::describe_outcomes(&case, &outcomes)
+            )));
+        }
+
+        if verdict.is_accepted()
+            && let Some(bypass) = self
+                .do_smart_checks(summary, attacker, &case)
+                .map_err(CaseFailure::Setup)?
+        {
+            return Err(failure(bypass));
         }
 
         Ok(())
+    }
+
+    /// A panicking spec is a bug in the test, not a finding against the contract.
+    fn ask_spec(&self, case: &FuzzCase<'_>) -> Result<Expect, CaseFailure> {
+        panic::catch_unwind(AssertUnwindSafe(|| (self.spec)(case))).map_err(|_| CaseFailure::Setup(SetupError::Spec))
+    }
+
+    /// What the verdict means against the expectation, `None` when they agree.
+    /// `expect` is `None` for a case that violates a requirement.
+    fn finding(expect: Option<Expect>, verdict: Outcome, violated: Option<&RequiredValue<'_>>) -> Option<String> {
+        match (expect, verdict.is_accepted(), violated) {
+            (None, true, Some(violated)) => Some(format!(
+                "unsound: the contract accepted a spend that violates a requirement, {violated}"
+            )),
+            (Some(Expect::Reject), true, _) => {
+                Some("unsound: the contract accepted a spend the spec rejects".to_string())
+            }
+            (Some(Expect::Accept), false, _) => {
+                Some("liveness: the contract rejected a spend the spec accepts".to_string())
+            }
+            _ => None,
+        }
+    }
+
+    /// Every program input with its outcome, e.g. "input 0 `vault` accepted, input 1 rejected (assertion)".
+    fn describe_outcomes(case: &FuzzCase<'_>, outcomes: &[(usize, Outcome)]) -> String {
+        outcomes
+            .iter()
+            .map(|(index, outcome)| match case.spending_program(*index) {
+                Some(name) => format!("input {index} `{name}` {outcome}"),
+                None => format!("input {index} {outcome}"),
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// Runs the smart checks on an accepted case and returns the first bypass they find.
+    fn do_smart_checks(
+        &self,
+        summary: &RefCell<RunSummary>,
+        attacker: &Signer,
+        case: &FuzzCase<'_>,
+    ) -> Result<Option<String>, SetupError> {
+        let transaction = case.transaction();
+
+        if self.check_lock
+            && let Some(check) = LockCheck::new(&self.signer, attacker, transaction, case.locked_outputs())
+        {
+            let bypasses = check.run()?;
+            summary.borrow_mut().record_lock_check();
+
+            if !bypasses.is_empty() {
+                return Ok(Some(format!("lock bypass: {}", bypasses.join("; "))));
+            }
+        }
+
+        if self.check_auth
+            && let Some(check) = AuthCheck::new(&self.signer, attacker, transaction)
+        {
+            let bypasses = check.run()?;
+            summary.borrow_mut().record_auth_check();
+
+            if !bypasses.is_empty() {
+                return Ok(Some(format!("authorization bypass: {}", bypasses.join("; "))));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+/// Keeps setup errors out of the persisted failures.
+#[derive(Clone, Debug)]
+struct SkipSetupErrors {
+    inner: Box<dyn FailurePersistence>,
+    setup_error: Arc<Mutex<Option<SetupError>>>,
+}
+
+impl FailurePersistence for SkipSetupErrors {
+    fn load_persisted_failures2(&self, source_file: Option<&'static str>) -> Vec<PersistedSeed> {
+        self.inner.load_persisted_failures2(source_file)
+    }
+
+    fn save_persisted_failure2(
+        &mut self,
+        source_file: Option<&'static str>,
+        seed: PersistedSeed,
+        shrunken_value: &dyn Debug,
+    ) {
+        if self.setup_error.lock().unwrap().is_none() {
+            self.inner.save_persisted_failure2(source_file, seed, shrunken_value);
+        }
+    }
+
+    fn box_clone(&self) -> Box<dyn FailurePersistence> {
+        Box::new(self.clone())
+    }
+
+    fn eq(&self, other: &dyn FailurePersistence) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| *self.inner == *other.inner)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use proptest::strategy::Just;
     use proptest::test_runner::RngSeed;
 
     use smplx_sdk::global::Verbosity;
-    use smplx_sdk::program::Program;
     use smplx_sdk::provider::{EsploraProvider, SimplicityNetwork};
-    use smplx_sdk::transaction::{FinalTransaction, PartialInput, RequiredSignature, UTXO};
 
     use crate::config::{DEFAULT_TEST_MNEMONIC, EsploraConfig, FuzzConfig, TestConfig};
-    use crate::context::{FuzzMode, TestContext};
+    use crate::context::TestContext;
 
     use super::*;
-
-    #[derive(Clone)]
-    struct DummyProgram(Program);
-
-    impl AsRef<Program> for DummyProgram {
-        fn as_ref(&self) -> &Program {
-            &self.0
-        }
-    }
-
-    impl ProgramFactory<DummyProgram> for DummyProgram {
-        fn instantiate_program(args: impl Into<Arguments>) -> Box<DummyProgram> {
-            Box::new(DummyProgram(Program::new("fn main() { assert!(true); }", args)))
-        }
-    }
-
-    impl ProgramSchema for DummyProgram {
-        fn argument_types() -> Vec<(simplicityhl::TemplateProgramWitness, simplicityhl::ResolvedType)> {
-            Vec::new()
-        }
-
-        fn witness_types() -> Vec<(simplicityhl::TemplateProgramWitness, simplicityhl::ResolvedType)> {
-            Vec::new()
-        }
-
-        fn literals() -> Vec<simplicityhl::num::U256> {
-            Vec::new()
-        }
-    }
-
-    #[derive(Clone, Debug)]
-    struct EmptyArgs;
-
-    impl From<EmptyArgs> for Arguments {
-        fn from(_: EmptyArgs) -> Self {
-            Self::default()
-        }
-    }
-
-    impl From<EmptyArgs> for WitnessValues {
-        fn from(_: EmptyArgs) -> Self {
-            Self::default()
-        }
-    }
-
-    fn build_test_engine(context: TestContext<FuzzMode>) -> SimplexFuzzEngine<DummyProgram, EmptyArgs, EmptyArgs> {
-        let mut final_tx = FinalTransaction::new();
-        final_tx.add_input(PartialInput::new(UTXO::default()), RequiredSignature::None);
-
-        let fuzz_tx = FuzzTransaction::new(final_tx, [ProgramTarget::Input(0)]).unwrap();
-
-        context
-            .engine()
-            .with_custom_strategy(Just((Arguments::default(), WitnessValues::default())))
-            .with_custom_transaction(fuzz_tx)
-    }
 
     #[test]
     fn context_preserves_fuzz_network_signer_and_config() {
@@ -250,7 +379,7 @@ mod tests {
             .fuzz(test_name, source_file)
             .unwrap();
 
-        let engine = build_test_engine(context);
+        let engine = context.engine(Scenario::default());
         let network = SimplicityNetwork::Liquid;
 
         assert_eq!(*engine.signer.get_network(), network);
@@ -277,7 +406,7 @@ mod tests {
         assert_eq!(*context.get_network(), network);
         assert_eq!(*context.random_signer().get_network(), network);
 
-        let engine = build_test_engine(context);
+        let engine = context.engine(Scenario::default());
 
         assert_eq!(*engine.signer.get_network(), network);
     }
@@ -310,7 +439,8 @@ mod tests {
         custom_config.cases = 31;
         custom_config.rng_seed = RngSeed::Fixed(37);
 
-        let engine = build_test_engine(context)
+        let engine = context
+            .engine(Scenario::default())
             .with_custom_signer(custom_signer)
             .with_custom_config(custom_config);
 
@@ -329,8 +459,8 @@ mod tests {
             .fuzz("crate::repeated_engine_fuzz_test", file!())
             .unwrap();
 
-        let first = context.engine::<DummyProgram, EmptyArgs, EmptyArgs>();
-        let second = context.engine::<DummyProgram, EmptyArgs, EmptyArgs>();
+        let first = context.engine(Scenario::default());
+        let second = context.engine(Scenario::default());
 
         let default_key = context.get_default_signer().get_schnorr_public_key();
 

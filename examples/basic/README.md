@@ -44,7 +44,7 @@ Check out `confidential_test.rs` to learn how to issue and spend confidential UT
 
 ### Fuzzing
 
-Fuzz tests are essential tools for asserting smart contract invariants and finding logical edge-cases via randomly generated arguments and witness. They are marked with `#[simplex::fuzz]` and run fully locally without interacting with the node.
+Fuzz tests are essential tools for asserting smart contract invariants and finding logical edge-cases via randomly generated arguments, witness, storage, and transaction topology. They are marked with `#[simplex::fuzz]` and run fully locally without interacting with the node.
 
 Run the example fuzz test with the following command:
 

@@ -34,4 +34,13 @@ pub enum ConfigError {
 
     #[error("Path doesn't exist: '{0}'")]
     PathNotExists(PathBuf),
+
+    #[error("Failed to determine the current directory: {0}")]
+    CurrentDir(std::io::Error),
+
+    #[error("Failed to find `Simplex.toml` in current and parent directories")]
+    FailedToFindConfig,
+
+    #[error("The config-path must be a path to a Simplex.toml file, got: '{}'", .0.display())]
+    InvalidConfigPath(PathBuf),
 }

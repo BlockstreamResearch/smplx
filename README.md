@@ -130,6 +130,7 @@ Simplex CLI provides the following commands:
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests. Provide a `--fuzz` flag to run Simplex fuzz tests.
 - `simplex clean` - Cleans up generated artifacts and installed dependencies.
+- `simplex fmt` - Formats SimplicityHL files according to the specified `simfmt.toml` or default [configuration](https://github.com/BlockstreamResearch/simfmt/blob/master/simfmt.toml).  
 
 To view the available options, run the help command:
 
@@ -150,11 +151,12 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 - [x] SimplicityHL storage compatibility.
 - [x] SimplicityHL dependencies management.
 - [x] Fuzz testing for SimplicityHL contracts.
-- [ ] SDK support for confidential assets, taproot signer, and custom witness signatures.
+- [x] Browser compatibility.
+- [ ] SDK support for taproot signer and custom descriptors.
 - [ ] SimplicityHL contracts static analyzer.
+- [ ] Test coverage reporting.
 - [ ] Local regtest 10x speedup.
 - [ ] Regtest cheat codes.
-- [ ] Browser compatibility.
 - [ ] Comprehensive documentation.
 
 Check out the full roadmap [here](https://github.com/orgs/BlockstreamResearch/projects/3).

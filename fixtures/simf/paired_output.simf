@@ -1,0 +1,10 @@
+/*
+ * Spends when the output at its own input index pays NEXT_SCRIPT_HASH.
+ */
+
+fn main() {
+    let next_script_hash: u256 = param::NEXT_SCRIPT_HASH;
+    let output_script_hash: u256 = unwrap(jet::output_script_hash(jet::current_index()));
+
+    assert!(jet::eq_256(output_script_hash, next_script_hash));
+}

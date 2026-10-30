@@ -1,0 +1,5 @@
+fn main() {
+    let delay: u16 = param::DELAY;
+
+    assert!(jet::le_16(delay, 1000));
+}

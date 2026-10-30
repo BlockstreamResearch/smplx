@@ -7,7 +7,7 @@ use simplicityhl::{
     value::{ValueConstructible, ValueInner},
 };
 
-use crate::signer::error::WtnsWrappingError;
+use crate::signer::error::WitnessWrappingError;
 
 /// Represents an index-based route for array or tuple witness types.
 #[derive(Clone, Copy, Debug)]
@@ -22,14 +22,14 @@ pub(super) enum EitherRoute {
 
 /// Represents a single step in a witness path, either following a branch or an index.
 #[derive(Clone, Copy, Debug)]
-pub(super) enum WtnsPathRoute {
+pub(super) enum WitnessPathRoute {
     Either(EitherRoute),
     Enumerable(EnumerableRoute),
 }
 
 /// Exposes utilities to safely inject values into specific locations within a Simplicity witness structure.
 #[derive(Clone)]
-pub(super) struct WtnsInjector {}
+pub(super) struct WitnessInjector {}
 
 enum StackItem {
     Either(EitherRoute, Arc<ResolvedType>),
@@ -37,13 +37,13 @@ enum StackItem {
     Tuple(EnumerableRoute, Arc<[Value]>),
 }
 
-impl WtnsInjector {
+impl WitnessInjector {
     /// Constructs a new value by injecting a given value into the witness at the position described by `path`.
     ///
     /// Consistency between `witness` and `witness_types` should be guaranteed by the caller.
     ///
     /// # Errors
-    /// Returns a `WtnsWrappingError` if the path contains invalid segments, attempts to access an out-of-bounds index, navigates into an incorrect type layout, or expects a different branch representation.
+    /// Returns a `WitnessWrappingError` if the path contains invalid segments, attempts to access an out-of-bounds index, navigates into an incorrect type layout, or expects a different branch representation.
     ///
     /// # Panics
     /// Panics if internal type validations or downcasts fail after safety checks have passed.
@@ -52,7 +52,7 @@ impl WtnsInjector {
         witness_types: &ResolvedType,
         path: I,
         value: Value,
-    ) -> Result<Value, WtnsWrappingError>
+    ) -> Result<Value, WitnessWrappingError>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
@@ -67,11 +67,11 @@ impl WtnsInjector {
             if !matches!(
                 (route, current_ty.as_inner()),
                 (
-                    WtnsPathRoute::Enumerable(_),
+                    WitnessPathRoute::Enumerable(_),
                     TypeInner::Array(_, _) | TypeInner::Tuple(_)
-                ) | (WtnsPathRoute::Either(_), TypeInner::Either(_, _))
+                ) | (WitnessPathRoute::Either(_), TypeInner::Either(_, _))
             ) {
-                return Err(WtnsWrappingError::UnsupportedPathType(current_ty.to_string()));
+                return Err(WitnessWrappingError::UnsupportedPathType(current_ty.to_string()));
             }
 
             match current_ty.as_inner() {
@@ -90,14 +90,14 @@ impl WtnsInjector {
                             current_ty = right_ty;
                             current_val = Arc::clone(either_val.as_ref().unwrap_right());
                         }
-                        _ => return Err(WtnsWrappingError::EitherBranchMismatch),
+                        _ => return Err(WitnessWrappingError::EitherBranchMismatch),
                     }
                 }
                 TypeInner::Array(ty, len) => {
                     let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                     if idx.0 >= *len {
-                        return Err(WtnsWrappingError::IdxOutOfBounds(*len, idx.0));
+                        return Err(WitnessWrappingError::IdxOutOfBounds(*len, idx.0));
                     }
 
                     let arr_val = Self::downcast_array(&current_val);
@@ -111,7 +111,7 @@ impl WtnsInjector {
                     let idx: EnumerableRoute = (*route).try_into().expect("Checked in matches! above");
 
                     if idx.0 >= tuple.len() {
-                        return Err(WtnsWrappingError::IdxOutOfBounds(tuple.len(), idx.0));
+                        return Err(WitnessWrappingError::IdxOutOfBounds(tuple.len(), idx.0));
                     }
 
                     let tuple_val = Self::downcast_tuple(&current_val);
@@ -126,7 +126,7 @@ impl WtnsInjector {
         }
 
         if value.ty() != current_ty {
-            return Err(WtnsWrappingError::RootTypeMismatch(
+            return Err(WitnessWrappingError::RootTypeMismatch(
                 current_ty.to_string(),
                 value.ty().to_string(),
             ));
@@ -156,19 +156,19 @@ impl WtnsInjector {
         Ok(value)
     }
 
-    fn parse_path<I>(path: I) -> Result<Vec<WtnsPathRoute>, WtnsWrappingError>
+    fn parse_path<I>(path: I) -> Result<Vec<WitnessPathRoute>, WitnessWrappingError>
     where
         I: IntoIterator,
         I::Item: AsRef<str>,
     {
         path.into_iter()
             .map(|route| match route.as_ref() {
-                "Left" => Ok(WtnsPathRoute::Either(EitherRoute::Left)),
-                "Right" => Ok(WtnsPathRoute::Either(EitherRoute::Right)),
+                "Left" => Ok(WitnessPathRoute::Either(EitherRoute::Left)),
+                "Right" => Ok(WitnessPathRoute::Either(EitherRoute::Right)),
                 s => s
                     .parse::<usize>()
-                    .map(|n| WtnsPathRoute::Enumerable(EnumerableRoute(n)))
-                    .map_err(|_| WtnsWrappingError::ParsingError),
+                    .map(|n| WitnessPathRoute::Enumerable(EnumerableRoute(n)))
+                    .map_err(|_| WitnessWrappingError::ParsingError),
             })
             .collect::<Result<Vec<_>, _>>()
     }
@@ -195,8 +195,8 @@ impl WtnsInjector {
     }
 }
 
-impl TryInto<EitherRoute> for WtnsPathRoute {
-    type Error = WtnsPathRoute;
+impl TryInto<EitherRoute> for WitnessPathRoute {
+    type Error = WitnessPathRoute;
 
     fn try_into(self) -> Result<EitherRoute, Self::Error> {
         match self {
@@ -206,8 +206,8 @@ impl TryInto<EitherRoute> for WtnsPathRoute {
     }
 }
 
-impl TryInto<EnumerableRoute> for WtnsPathRoute {
-    type Error = WtnsPathRoute;
+impl TryInto<EnumerableRoute> for WitnessPathRoute {
+    type Error = WitnessPathRoute;
 
     fn try_into(self) -> Result<EnumerableRoute, Self::Error> {
         match self {
@@ -237,14 +237,14 @@ mod test {
         let witness_types = witness.ty();
 
         let injected_val_tuple =
-            WtnsInjector::inject_value(&witness, witness_types, &["Left", "0"], Value::u64(3)).unwrap();
+            WitnessInjector::inject_value(&witness, witness_types, &["Left", "0"], Value::u64(3)).unwrap();
 
         assert_eq!(
             injected_val_tuple,
             Value::parse_from_str("Left((3, Right(1)))", witness_types).unwrap()
         );
 
-        let injected_val_either = WtnsInjector::inject_value(
+        let injected_val_either = WitnessInjector::inject_value(
             &witness,
             witness_types,
             &["Left", "1"],
@@ -263,9 +263,9 @@ mod test {
         let witness = Arc::new(dummy_value());
         let witness_types = witness.ty();
 
-        let err = WtnsInjector::inject_value(&witness, witness_types, &["Left", "5"], Value::u64(0)).unwrap_err();
+        let err = WitnessInjector::inject_value(&witness, witness_types, &["Left", "5"], Value::u64(0)).unwrap_err();
 
-        assert!(matches!(err, WtnsWrappingError::IdxOutOfBounds(_, _)));
+        assert!(matches!(err, WitnessWrappingError::IdxOutOfBounds(_, _)));
     }
 
     #[test]
@@ -273,9 +273,9 @@ mod test {
         let witness = Arc::new(dummy_value());
         let witness_types = witness.ty();
 
-        let err = WtnsInjector::inject_value(&witness, witness_types, &["Left", "1"], Value::unit()).unwrap_err();
+        let err = WitnessInjector::inject_value(&witness, witness_types, &["Left", "1"], Value::unit()).unwrap_err();
 
-        assert!(matches!(err, WtnsWrappingError::RootTypeMismatch(_, _)));
+        assert!(matches!(err, WitnessWrappingError::RootTypeMismatch(_, _)));
     }
 
     #[test]
@@ -283,7 +283,7 @@ mod test {
         let witness = Arc::new(dummy_value());
         let witness_types = witness.ty();
 
-        let err = WtnsInjector::inject_value(
+        let err = WitnessInjector::inject_value(
             &witness,
             witness_types,
             &["Right"],
@@ -297,6 +297,6 @@ mod test {
         )
         .unwrap_err();
 
-        assert!(matches!(err, WtnsWrappingError::EitherBranchMismatch));
+        assert!(matches!(err, WitnessWrappingError::EitherBranchMismatch));
     }
 }

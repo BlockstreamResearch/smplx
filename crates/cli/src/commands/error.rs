@@ -23,6 +23,9 @@ pub enum CommandError {
     #[error(transparent)]
     Install(#[from] InstallError),
 
+    #[error(transparent)]
+    Fmt(#[from] FmtError),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -34,6 +37,27 @@ pub enum CommandError {
 
     #[error("test process terminated without an exit status")]
     TestProcessTerminated,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FmtError {
+    #[error("Quiet mode and verbose mode are not compatible")]
+    ConflictingVerbosity,
+
+    #[error("Invalid --message-format value: {0}. Allowed values are: short|human")]
+    InvalidMessageFormat(String),
+
+    #[error("no files matched the configured simf_files patterns under '{}'", .0.display())]
+    NoFiles(PathBuf),
+
+    #[error("Failed to determine the simplex executable path: {0}")]
+    CurrentExecutable(std::io::Error),
+
+    #[error("could not run simfmt at '{}': {source}", binary.display())]
+    RunSimfmt { binary: PathBuf, source: std::io::Error },
+
+    #[error(transparent)]
+    Config(#[from] crate::config::error::ConfigError),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -83,11 +107,8 @@ pub enum InstallError {
     #[error("Invalid Git repository URL (cannot extract name): '{0}'")]
     InvalidUrl(String),
 
-    #[error("Failed to create directory at '{1}': {0}")]
-    CreateDir(std::io::Error, PathBuf),
-
-    #[error("Failed to read directory at '{1}': {0}")]
-    ReadDir(std::io::Error, PathBuf),
+    #[error("Dependency at '{0}' is incomplete, remove the directory and run install again")]
+    Incomplete(PathBuf),
 
     #[error("Failed to execute git process for '{1}': {0}")]
     GitExecution(std::io::Error, String),
@@ -98,6 +119,9 @@ pub enum InstallError {
     #[error("Package directory '{0}' not found in repository: '{1}'")]
     PackageNotFound(String, String),
 
-    #[error("Failed to move package into '{1}': {0}")]
-    MovePackage(std::io::Error, PathBuf),
+    #[error("Failed to move the checkout into '{1}': {0}")]
+    MoveCheckout(std::io::Error, PathBuf),
+
+    #[error("Repository '{0}' has no Simplex.toml in the installed directory")]
+    MissingConfig(String),
 }

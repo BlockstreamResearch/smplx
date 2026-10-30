@@ -1,5 +1,7 @@
-use serde::Deserialize;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
 
 use smplx_build::{BuildConfig, CONFIG_FILENAME, DependencyConfig};
 use smplx_regtest::RegtestConfig;
@@ -29,7 +31,30 @@ impl Config {
     /// - If the current working directory cannot be determined.
     /// - If the `get_path` function encounters an error, processing the retrieved path.
     pub fn get_default_path() -> Result<PathBuf, ConfigError> {
-        Self::get_path(std::env::current_dir()?)
+        Self::get_path(std::env::current_dir().map_err(ConfigError::CurrentDir)?)
+    }
+
+    /// Finds the nearest `Simplex.toml` in the current directory or its ancestors.
+    ///
+    /// # Errors
+    /// Returns a [`ConfigError`] if the current directory cannot be determined
+    /// or no config is found.
+    pub fn get_ancestors_config_path() -> Result<PathBuf, ConfigError> {
+        let current_dir = Self::get_default_path()?;
+        Self::resolve_config_path(&current_dir)
+    }
+
+    /// Returns the parent directory of the given config path.
+    ///
+    /// # Errors
+    /// Returns a [`ConfigError`] if the path has no parent directory.
+    pub fn get_project_root(config_path: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+        let config_path = config_path.as_ref();
+        let root = config_path
+            .parent()
+            .ok_or_else(|| ConfigError::InvalidConfigPath(config_path.to_path_buf()))?;
+
+        Ok(root.to_path_buf())
     }
 
     /// Constructs a complete configuration file path by joining the provided path with the
@@ -88,5 +113,69 @@ impl Config {
         let _ = network.parse::<SimplicityNetwork>()?;
 
         Ok(())
+    }
+
+    /// Resolves config path by moving through ancestors.
+    fn resolve_config_path(current_dir: impl AsRef<Path>) -> Result<PathBuf, ConfigError> {
+        let current_dir = current_dir.as_ref();
+        let config_path = {
+            let path = current_dir
+                .ancestors()
+                .map(|directory| directory.join(CONFIG_FILENAME))
+                .find(|candidate| candidate.is_file());
+
+            if path.is_none() {
+                return Err(ConfigError::FailedToFindConfig);
+            }
+
+            path.unwrap()
+        };
+
+        if config_path.file_name() != Some(OsStr::new(CONFIG_FILENAME)) {
+            return Err(ConfigError::InvalidConfigPath(config_path));
+        }
+
+        if config_path.is_absolute() {
+            Ok(config_path)
+        } else {
+            Ok(current_dir.join(config_path))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::path::Path;
+
+    #[test]
+    fn discovers_config_in_current_directory() {
+        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+
+        let config_path = Config::resolve_config_path(&project_root).expect("config should be discovered");
+
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
+    }
+
+    #[test]
+    fn discovers_config_from_nested_directory() {
+        let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let nested_directory = project_root.join("simf/nested/nested_2/imp2");
+
+        let config_path = Config::resolve_config_path(&nested_directory).expect("config should be discovered");
+
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
+    }
+
+    #[test]
+    fn discovers_nearest_config() {
+        let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let project_root = fixtures_root.join("deps/math");
+        let nested_directory = project_root.join("simf");
+
+        let config_path = Config::resolve_config_path(&nested_directory).expect("config should be discovered");
+
+        assert_eq!(config_path, project_root.join(CONFIG_FILENAME));
     }
 }

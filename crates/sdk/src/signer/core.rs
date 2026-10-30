@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-#[cfg(feature = "provider")]
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -19,7 +19,10 @@ use bip39::rand::thread_rng;
 
 use elements_miniscript::{
     ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
-    bitcoin::{PrivateKey, PublicKey, bip32::DerivationPath},
+    bitcoin::{
+        PrivateKey, PublicKey,
+        bip32::{ChildNumber, DerivationPath},
+    },
     elements::{
         EcdsaSighashType,
         bitcoin::bip32::{Fingerprint, Xpriv, Xpub},
@@ -30,21 +33,30 @@ use elements_miniscript::{
     slip77::MasterBlindingKey,
 };
 
-use crate::constants::MIN_FEE;
+use crate::constants::{DUST_THRESHOLD, MIN_FEE};
 use crate::program::ProgramTrait;
 use crate::program::logger::ProgramLogger;
 #[cfg(feature = "provider")]
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::signer::wtns_injector::WtnsInjector;
-use crate::transaction::{ChangeOutput, FinalTransaction, PartialOutput, RequiredSignature, SigMessage};
+use crate::signer::witness_injector::WitnessInjector;
+use crate::transaction::{
+    ChangeOutput, FinalTransaction, PartialOutput, ProgramSignature, RequiredSignature, SigMessage,
+};
 #[cfg(feature = "provider")]
-use crate::transaction::{PartialInput, TxReceipt, UTXO};
+use crate::transaction::{NativeSignature, PartialInput, TxReceipt, UTXO};
 
 use super::error::SignerError;
 
 /// A placeholder dummy fee amount used during transaction estimation.
 pub const PLACEHOLDER_FEE: u64 = 1;
+
+/// Discounted weight of a native input with its signature.
+#[cfg(feature = "provider")]
+const NATIVE_INPUT_WEIGHT: usize = 274;
+
+/// Weight units per virtual byte.
+const WITNESS_SCALE_FACTOR: usize = 4;
 
 /// Common signing interface spanning over standard explicit inputs and Simplicity programs.
 pub trait SignerTrait {
@@ -81,12 +93,17 @@ pub trait SignerTrait {
 /// blind, sign and finalize a transaction it is handed, but it cannot discover UTXOs,
 /// look up a fee rate, or broadcast.
 pub struct Signer {
-    mnemonic: Mnemonic,
-    xprv: Xpriv,
     #[cfg(feature = "provider")]
     provider: Option<Box<dyn ProviderTrait>>,
     network: SimplicityNetwork,
     secp: Secp256k1<All>,
+    /// The account key at `m/84h/{coin}h/0h`, derived once from the seed.
+    account_xprv: Xpriv,
+    /// The signing key at the default path `0/0` under the account.
+    default_key: PrivateKey,
+    address: Address,
+    confidential_address: Address,
+    blinding_key: PrivateKey,
 }
 
 impl SignerTrait for Signer {
@@ -103,7 +120,7 @@ impl SignerTrait for Signer {
         let sighash = env.c_tx_env().sighash_all().to_byte_array();
         let msg = Message::from_digest(message.digest(sighash));
 
-        let private_key = self.get_private_key_at(derivation_path);
+        let private_key = self.get_private_key_at(derivation_path)?;
         let keypair = Keypair::from_secret_key(&self.secp, &private_key.inner);
 
         Ok(self.secp.sign_schnorr(&msg, &keypair))
@@ -117,19 +134,7 @@ impl SignerTrait for Signer {
     ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
         let tx = pst.extract_tx()?;
 
-        let mut sighash_cache = SighashCache::new(&tx);
-        let genesis_hash = elements_miniscript::elements::BlockHash::GENESIS_PREVIOUS_BLOCK_HASH;
-
-        let message = pst
-            .sighash_msg(input_index, &mut sighash_cache, None, genesis_hash)?
-            .to_secp_msg();
-
-        let private_key = self.get_private_key_at(derivation_path);
-        let public_key = private_key.public_key(&self.secp);
-
-        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
-
-        Ok((public_key, signature))
+        self.sign_input_with(pst, &mut SighashCache::new(&tx), input_index, derivation_path)
     }
 }
 
@@ -166,19 +171,36 @@ impl Signer {
         let secp = Secp256k1::new();
         let mnemonic: Mnemonic = mnemonic
             .parse()
-            .map_err(|e: bip39::Error| SignerError::Mnemonic(e.to_string()))
-            .unwrap();
+            .unwrap_or_else(|error: bip39::Error| panic!("{}", SignerError::Mnemonic(error.to_string())));
 
         let seed = mnemonic.to_seed("");
-        let xprv = Xpriv::new_master(network, &seed).unwrap();
+        let master_xprv = Xpriv::new_master(network, &seed).expect("a BIP-39 seed derives a master key");
+        let master_blinding_key = MasterBlindingKey::from_seed(&seed[..]);
+
+        let account_path = Self::account_path(network);
+        let account_xprv = master_xprv
+            .derive_priv(&secp, &account_path)
+            .expect("the account path derives from the master key");
+        let default_key = Self::derive_key(&secp, &account_xprv, &Self::default_path(), network);
+
+        let wpkh_descriptor = Self::wpkh_descriptor(&secp, &master_xprv, &account_path, &account_xprv);
+        let address = Self::wpkh_address(&wpkh_descriptor, network);
+        let confidential_address = Self::confidential_address(&secp, &wpkh_descriptor, master_blinding_key, network);
+        let blinding_key = PrivateKey::new(
+            master_blinding_key.blinding_private_key(&address.script_pubkey()),
+            network,
+        );
 
         Self {
-            mnemonic,
-            xprv,
             #[cfg(feature = "provider")]
             provider: None,
             network,
             secp,
+            account_xprv,
+            default_key,
+            address,
+            confidential_address,
+            blinding_key,
         }
     }
 
@@ -215,24 +237,38 @@ impl Signer {
     /// Returns a `SignerError` if the wallet contains insufficient funds to satisfy output values and target fee rates.
     #[cfg(feature = "provider")]
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
-        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
-        let mut set = HashSet::new();
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
 
-        for input in tx.inputs() {
-            set.insert(OutPoint {
-                txid: input.partial_input.witness_txid,
-                vout: input.partial_input.witness_output_index,
-            });
+        let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
+        Self::check_fee_rate(fee_rate)?;
+
+        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
+        let mut spent: HashSet<OutPoint> = tx.inputs().iter().map(|input| input.partial_input.outpoint).collect();
+
+        // Skips the outpoints the transaction spends already and the ones the provider lists twice
+        signer_utxos.retain(|utxo| spent.insert(utxo.outpoint));
+
+        // An explicit change target can't balance a confidential input unless another output is confidential
+        if tx.change().is_some_and(|change| change.blinding_key.is_none()) && !tx.needs_blinding() {
+            // Retain only explicit UTXOs
+            signer_utxos.retain(UTXO::is_explicit);
         }
 
-        signer_utxos.retain(|utxo| !set.contains(&utxo.outpoint));
-
-        // Descending sort of both confidential and explicit utxos
-        signer_utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount()));
+        // Resolve amounts before sorting so an unreadable UTXO returns an error.
+        let mut signer_utxos = signer_utxos
+            .into_iter()
+            .map(|utxo| utxo.amount().map(|amount| (amount, utxo)))
+            .collect::<Result<Vec<_>, _>>()?;
+        signer_utxos.sort_by_key(|(amount, _)| std::cmp::Reverse(*amount));
 
         let mut fee_tx = tx.clone();
         let mut curr_fee = MIN_FEE;
-        let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
+
+        // Each input added after an estimate makes the transaction heavier, so
+        // the next estimate also accounts for the fee of those inputs.
+        let input_fee = Self::calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
+        let mut inputs_since_estimate: u64 = 0;
 
         let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
             .estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
@@ -251,30 +287,38 @@ impl Signer {
             }
         };
 
-        for utxo in signer_utxos {
-            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
+        for (_, utxo) in signer_utxos {
+            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
+            let required_fee = curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee));
 
-            if policy_amount_delta >= curr_fee.cast_signed()
-                && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
-            {
-                return Ok(result);
+            if i128::from(policy_amount_delta) >= i128::from(required_fee) {
+                inputs_since_estimate = 0;
+
+                if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                    return Ok(result);
+                }
             }
 
             // IMPORTANT: must be added to the end of the transaction.
             // Otherwise, the logging of execution traces will be broken
-            fee_tx.add_input(PartialInput::new(utxo), RequiredSignature::NativeEcdsa);
+            fee_tx.add_input(PartialInput::new(utxo), Some(NativeSignature::Ecdsa));
+            inputs_since_estimate += 1;
         }
 
-        // need to try one more time after the loop
-        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network);
+        // Need to try one more time after the loop. No UTXO is left to add, so any chance is taken
+        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
 
-        if policy_amount_delta >= curr_fee.cast_signed()
-            && let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)?
-        {
-            return Ok(result);
+        if i128::from(policy_amount_delta) >= i128::from(curr_fee) {
+            inputs_since_estimate = 0;
+
+            if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                return Ok(result);
+            }
         }
 
-        Err(SignerError::NotEnoughFunds(curr_fee))
+        Err(SignerError::NotEnoughFunds(
+            curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee)),
+        ))
     }
 
     /// Verifies and finalizes a transaction against a strict target confirmation window (in blocks).
@@ -284,7 +328,11 @@ impl Signer {
     /// Returns a `SignerError` if the assembled inputs do not meet dust limits or fail to cover the
     /// dynamically estimated required fee.
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
-        let policy_amount_delta = tx.calculate_fee_delta(&self.network);
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
+        Self::check_fee_rate(fee_rate)?;
+
+        let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
         if policy_amount_delta < MIN_FEE.cast_signed() {
             return Err(SignerError::DustAmount(policy_amount_delta));
@@ -305,7 +353,11 @@ impl Signer {
     /// # Errors
     /// Returns a `SignerError` if the transaction cannot be signed.
     pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
-        let available_delta = tx.calculate_fee_delta(&self.network).max(0).cast_unsigned();
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
+        Self::check_fee_rate(fee_rate)?;
+
+        let available_delta = tx.calculate_fee_delta(&self.network)?.max(0).cast_unsigned();
         let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
 
         ProgramLogger::flush_logs();
@@ -348,8 +400,8 @@ impl Signer {
         Ok(pst)
     }
 
-    /// Blinds the transaction, signs the native inputs and injects signatures into program witnesses,
-    /// without executing or finalizing the programs.
+    /// Blinds the transaction, signs the `NativeEcdsa` inputs and injects signatures into program witnesses,
+    /// without executing or finalizing the programs. Inputs that require no signature stay unsigned.
     ///
     /// # Errors
     /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
@@ -357,7 +409,9 @@ impl Signer {
         &self,
         tx: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        let (mut pst, secrets) = tx.extract_pst();
+        Self::check_known_amounts(tx)?;
+
+        let (mut pst, secrets) = tx.extract_pst()?;
         let inputs = tx.inputs();
         let mut signed_witnesses = HashMap::new();
 
@@ -365,40 +419,43 @@ impl Signer {
             pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
         }
 
+        // Native inputs share one extracted transaction and sighash cache.
+        let mut sighash_cache = if inputs
+            .iter()
+            .any(|input| matches!(input.required_sig, RequiredSignature::NativeEcdsa))
+        {
+            Some(SighashCache::new(Box::new(pst.extract_tx()?)))
+        } else {
+            None
+        };
+
         for (index, input_i) in inputs.iter().enumerate() {
             if let Some(program_input) = &input_i.program_input {
-                let signing_info: Option<(&String, &[String], &SigMessage)> = match &input_i.required_sig {
-                    RequiredSignature::Witness(wtns_name) => Some((wtns_name, &[], &SigMessage::Sighash)),
-                    RequiredSignature::WitnessWithPath(wtns_name, sig_path) => {
-                        Some((wtns_name, sig_path, &SigMessage::Sighash))
-                    }
-                    RequiredSignature::WitnessWithMessage(wtns_name, sig_path, message) => {
-                        Some((wtns_name, sig_path, message))
-                    }
-                    _ => None,
-                };
-
-                let signed_witness = match signing_info {
+                let signed_witness = match &input_i.required_sig {
                     // Sign the program and inject the signature into the witness
-                    Some((witness_name, sig_path, message)) => self.get_signed_program_witness(
+                    RequiredSignature::Program(signature) => self.get_signed_program_witness(
                         &pst,
                         program_input.program.as_ref(),
                         &program_input.witness,
-                        witness_name,
-                        sig_path,
+                        signature,
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
-                        message,
                     )?,
                     // Just build the witness
-                    None => program_input.witness.shallow_clone(),
+                    _ => program_input.witness.shallow_clone(),
                 };
 
                 signed_witnesses.insert(index, signed_witness);
-            } else {
-                // We need to sign the UTXO as is
-                // TODO: do we always sign?
-                let signed_witness = self.sign_input(&pst, index, input_i.partial_input.derivation_path.as_ref())?;
+            } else if matches!(input_i.required_sig, RequiredSignature::NativeEcdsa)
+                && let Some(sighash_cache) = sighash_cache.as_mut()
+            {
+                // An input that requires no signature is left for its owner to satisfy
+                let signed_witness = self.sign_input_with(
+                    &pst,
+                    sighash_cache,
+                    index,
+                    input_i.partial_input.derivation_path.as_ref(),
+                )?;
                 let raw_sig = elementssig_to_rawsig(&(signed_witness.1, EcdsaSighashType::All));
 
                 pst.inputs_mut()[index].final_script_witness =
@@ -425,59 +482,35 @@ impl Signer {
     }
 
     /// Returns the confidential elements address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the SLIP77 descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_confidential_address(&self) -> Address {
-        let mut descriptor =
-            ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&self.get_slip77_descriptor().unwrap())
-                .map_err(|e| SignerError::Slip77Descriptor(e.to_string()))
-                .unwrap();
-
-        // Confidential descriptor doesn't support multipath
-        descriptor.descriptor = descriptor.descriptor.into_single_descriptors().unwrap()[0].clone();
-
-        descriptor
-            .at_derivation_index(0)
-            .unwrap()
-            .address(&self.secp, self.network.address_params())
-            .unwrap()
+        self.confidential_address.clone()
     }
 
     /// Returns the standard unblinded address matching the local wallet logic.
-    ///
-    /// # Panics
-    /// Panics if the WPKH descriptor cannot be generated or parsed, or if address derivation fails.
     #[must_use]
     pub fn get_address(&self) -> Address {
-        let descriptor = Descriptor::<DescriptorPublicKey>::from_str(&self.get_wpkh_descriptor().unwrap())
-            .map_err(|e| SignerError::WpkhDescriptor(e.to_string()))
-            .unwrap();
-
-        descriptor.into_single_descriptors().unwrap()[0]
-            .at_derivation_index(0)
-            .unwrap()
-            .address(self.network.address_params())
-            .unwrap()
+        self.address.clone()
     }
 
-    /// Iterates against the network provider to select and unblind all known UTXOs.
+    /// Retrieves UTXOs with known assets and amounts, skipping outputs that cannot be unblinded.
     ///
     /// # Errors
-    /// Returns a `SignerError` if querying the network or unblinding operations fail.
+    /// Returns a `SignerError` if querying the provider fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos(&self) -> Result<Vec<UTXO>, SignerError> {
         self.get_utxos_filter(&|_| true, &|_| true)
     }
 
-    /// Finds all known UTXOs belonging to the specific `AssetId`.
+    /// Finds usable UTXOs belonging to the specific `AssetId`, skipping unreadable outputs.
     ///
     /// # Errors
-    /// Returns a `SignerError` if network interaction or confidential output decryption fails.
+    /// Returns a `SignerError` if querying the provider fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos_asset(&self, asset: AssetId) -> Result<Vec<UTXO>, SignerError> {
-        self.get_utxos_filter(&|utxo| utxo.asset() == asset, &|utxo| utxo.asset() == asset)
+        self.get_utxos_filter(&|utxo| utxo.asset().is_ok_and(|id| id == asset), &|utxo| {
+            utxo.asset().is_ok_and(|id| id == asset)
+        })
     }
 
     /// Finds all known UTXOs deriving from a targeted `Txid`.
@@ -493,8 +526,12 @@ impl Signer {
     /// Maps UTXOs retrieved from the provider through arbitrary functional filters.
     /// Separate filtering criteria apply explicitly vs confidentially.
     ///
+    /// Outputs with null fields, unresolved partial commitments, or proofs that
+    /// cannot be rewound with the wallet key are skipped. Already supplied secrets
+    /// are preserved. A single unreadable payment must not block usable funds.
+    ///
     /// # Errors
-    /// Returns a `SignerError` if retrieving remote outputs or executing confidential node unblinding throws an error.
+    /// Returns a `SignerError` if retrieving remote outputs fails.
     #[cfg(feature = "provider")]
     pub fn get_utxos_filter(
         &self,
@@ -502,25 +539,40 @@ impl Signer {
         confidential_filter: &dyn Fn(&UTXO) -> bool,
     ) -> Result<Vec<UTXO>, SignerError> {
         // Fetch explicit and confidential utxos
-        let mut all_utxos = self
+        let fetched_utxos = self
             .get_provider()?
             .fetch_address_utxos(&self.get_confidential_address())?;
 
-        // Filter out only confidential utxos and unblind them
-        let mut confidential_utxos = self.unblind(
-            all_utxos
-                .iter()
-                .filter(|utxo| utxo.txout.value.is_confidential())
-                .cloned()
-                .collect(),
-        )?;
-        // Leave only explicit utxos
-        all_utxos.retain(|utxo| !utxo.txout.value.is_confidential());
+        let mut all_utxos = Vec::new();
+        let mut confidential_utxos = Vec::new();
+
+        for mut utxo in fetched_utxos {
+            if utxo.txout.asset.is_null() || utxo.txout.value.is_null() {
+                continue;
+            }
+
+            if utxo.is_explicit() {
+                all_utxos.push(utxo);
+                continue;
+            }
+
+            if utxo.secrets.is_none() {
+                let blinding_key = self.get_blinding_private_key();
+                let Ok(secrets) = utxo.txout.unblind(&self.secp, blinding_key.inner) else {
+                    // Payments to this script may use a foreign blinding key or
+                    // an asset-only commitment. Neither can fund this wallet.
+                    continue;
+                };
+
+                utxo.secrets = Some(secrets);
+            }
+
+            confidential_utxos.push(utxo);
+        }
 
         all_utxos.retain(explicit_filter);
         confidential_utxos.retain(confidential_filter);
 
-        // Push unblinded utxos to explicit ones
         all_utxos.extend(confidential_utxos);
 
         Ok(all_utxos)
@@ -547,72 +599,73 @@ impl Signer {
         self.get_blinding_private_key().public_key(&self.secp)
     }
 
-    /// Internally derives and exposes the wallet's signing active private key.
-    ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
+    /// Exposes the wallet's signing private key at the default path.
     #[must_use]
     pub fn get_private_key(&self) -> PrivateKey {
-        self.get_private_key_at(None)
+        self.default_key
     }
 
     /// Derives the signing key at a path relative to the account path. `None` defaults to `0/0`.
     ///
-    /// # Panics
-    /// Panics if the master private key or derivation path cannot be derived.
-    #[must_use]
-    pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> PrivateKey {
-        let master_xprv = self.master_xpriv().unwrap();
-        let full_path = self.get_derivation_path().unwrap();
+    /// # Errors
+    /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `m/n`.
+    pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> Result<PrivateKey, SignerError> {
+        match relative {
+            Some(path) => {
+                Self::check_derivation_path(path)?;
 
-        let default_path;
-        let relative = if let Some(path) = relative {
-            path
-        } else {
-            default_path = DerivationPath::from_str("0/0")
-                .map_err(|e| SignerError::DerivationPath(e.to_string()))
-                .unwrap();
-
-            &default_path
-        };
-
-        let derived = full_path.extend(relative);
-        let ext_derived = master_xprv.derive_priv(&self.secp, &derived).unwrap();
-
-        PrivateKey::new(ext_derived.private_key, self.network)
+                Ok(Self::derive_key(&self.secp, &self.account_xprv, path, self.network))
+            }
+            None => Ok(self.default_key),
+        }
     }
 
-    /// Generates the private key linked to confidential payload blinding.
-    ///
-    /// The generated `PrivateKey` is associated with the `Test` (non-Bitcoin/Liquid-mainnet) network kind.
-    /// Retrieves the blinding private key derived from the master SLIP77 key and the script public key of the address.
-    ///
-    /// # Panics
-    /// Panics if the master SLIP77 key cannot be derived.
+    /// The private key linked to confidential payload blinding, derived from the master SLIP77 key
+    /// and the script public key of the address.
     #[must_use]
     pub fn get_blinding_private_key(&self) -> PrivateKey {
-        let blinding_key = self
-            .master_slip77()
-            .unwrap()
-            .blinding_private_key(&self.get_address().script_pubkey());
-
-        PrivateKey::new(blinding_key, self.network)
+        self.blinding_key
     }
 
-    #[cfg(feature = "provider")]
-    fn unblind(&self, utxos: Vec<UTXO>) -> Result<Vec<UTXO>, SignerError> {
-        let mut unblinded: Vec<UTXO> = Vec::new();
+    /// Checks that `path` is in correct form of `m/n`.
+    ///
+    /// # Errors
+    /// Returns `SignerError::InvalidDerivationPath` otherwise.
+    pub fn check_derivation_path(path: &DerivationPath) -> Result<(), SignerError> {
+        match path.as_ref() {
+            [ChildNumber::Normal { .. }, ChildNumber::Normal { .. }] => Ok(()),
+            _ => Err(SignerError::InvalidDerivationPath(path.clone())),
+        }
+    }
 
-        for mut utxo in utxos {
-            let blinding_key = self.get_blinding_private_key();
-            let secrets = utxo.txout.unblind(&self.secp, blinding_key.inner)?;
+    fn sign_input_with(
+        &self,
+        pst: &PartiallySignedTransaction,
+        sighash_cache: &mut SighashCache<impl Deref<Target = Transaction>>,
+        input_index: usize,
+        derivation_path: Option<&DerivationPath>,
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
+        let message = pst
+            .sighash_msg(input_index, sighash_cache, None, self.network.genesis_block_hash())?
+            .to_secp_msg();
 
-            utxo.secrets = Some(secrets);
+        let private_key = self.get_private_key_at(derivation_path)?;
+        let public_key = private_key.public_key(&self.secp);
 
-            unblinded.push(utxo);
+        let script_pubkey = pst.inputs()[input_index]
+            .witness_utxo
+            .as_ref()
+            .map(|utxo| &utxo.script_pubkey);
+
+        if let Some(script_pubkey) = script_pubkey.filter(|script| script.is_v0_p2wpkh())
+            && *script_pubkey != Script::new_v0_wpkh(&public_key.wpubkey_hash().expect("the key is compressed"))
+        {
+            return Err(SignerError::KeyMismatch(input_index));
         }
 
-        Ok(unblinded)
+        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+
+        Ok((public_key, signature))
     }
 
     fn estimate_tx(
@@ -654,17 +707,27 @@ impl Signer {
         ));
 
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
 
-        if available_delta > fee && available_delta - fee >= MIN_FEE {
+        let change_index = fee_tx.n_outputs() - 2;
+        let change_minimum = if fee_tx.outputs()[change_index].blinding_key.is_some() {
+            MIN_FEE
+        } else {
+            DUST_THRESHOLD
+        };
+
+        if available_delta
+            .checked_sub(fee)
+            .is_some_and(|change| change >= change_minimum)
+        {
             // We have enough funds to cover the change UTXO
             let outputs = fee_tx.outputs_mut();
 
             outputs[outputs.len() - 2].amount = available_delta - fee;
             outputs[outputs.len() - 1].amount = fee;
 
-            if !fee_tx.is_balanced() {
-                return Err(SignerError::Unbalanced());
+            if !fee_tx.is_balanced()? {
+                return Err(SignerError::Unbalanced);
             }
 
             let final_tx = sign_and_extract_tx(self, &fee_tx)?;
@@ -672,25 +735,31 @@ impl Signer {
             return Ok(Estimate::Success(final_tx, fee));
         }
 
-        // Not enough funds for the change, so estimate without it.
-        // Dropping the change is only safe while something else stays blinded.
-        // When it is the transaction's only blinded output and an input is confidential,
-        // removing it makes the transaction unblindable.
-        let change_index = fee_tx.n_outputs() - 2;
         let blinded_without_change = fee_tx
             .outputs()
             .iter()
             .enumerate()
-            .any(|(index, output)| index != change_index && output.blinding_key.is_some());
+            .filter(|(index, output)| *index != change_index && output.blinding_key.is_some())
+            .count();
+        // Explicit change can always be dropped.
+        let change_needed = fee_tx.outputs()[change_index].blinding_key.is_some()
+            && if fee_tx.has_confidential_input() {
+                // Change is the only confidential output -> must stay
+                blinded_without_change == 0
+            } else {
+                // There is another confidential output -> must stay to preserve privacy
+                blinded_without_change == 1
+            };
 
-        if fee_tx.has_confidential_input() && !blinded_without_change {
-            return Ok(Estimate::Failure(fee + MIN_FEE));
+        if change_needed {
+            return Ok(Estimate::Failure(fee.saturating_add(change_minimum)));
         }
 
+        // Not enough funds for the change, so estimate without it.
         fee_tx.remove_output(change_index);
 
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = fee_tx.calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
 
         if available_delta < fee {
             return Ok(Estimate::Failure(fee));
@@ -701,55 +770,61 @@ impl Signer {
         // Change the fee output amount
         outputs[outputs.len() - 1].amount = available_delta;
 
-        if !fee_tx.is_balanced() {
-            return Err(SignerError::Unbalanced());
+        if !fee_tx.is_balanced()? {
+            return Err(SignerError::Unbalanced);
         }
 
-        // Finalize the tx with fee and without the change
+        // Finalize the tx with fee and without the change, which pays the whole delta
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
 
-        Ok(Estimate::Success(final_tx, fee))
+        Ok(Estimate::Success(final_tx, available_delta))
     }
 
     /// Signs and inserts a signature into appropriate witness value.
     ///
     /// # Errors
     /// Returns a `SignerError` if signing the program fails, if the witness types cannot be
-    /// retrieved from the program, if `witness_name` is not present among the program's
-    /// witness fields, or if injecting the signature into the witness value at `sig_path` fails.
-    #[allow(clippy::too_many_arguments)]
+    /// retrieved from the program, if the signature's witness field is not present among the program's
+    /// witness fields, or if injecting the signature into the witness value at its path fails.
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
         program: &dyn ProgramTrait,
         witness: &WitnessValues,
-        witness_name: &str,
-        sig_path: &[String],
+        program_signature: &ProgramSignature,
         index: usize,
         derivation_path: Option<&DerivationPath>,
-        message: &SigMessage,
     ) -> Result<WitnessValues, SignerError> {
-        let signature = self.sign_program(pst, program, index, &self.network, derivation_path, message)?;
+        let witness_name = program_signature.name();
+        let sig_path = program_signature.path();
+        let signature = self.sign_program(
+            pst,
+            program,
+            index,
+            &self.network,
+            derivation_path,
+            program_signature.message(),
+        )?;
 
-        // Inject the signature into the wtns name directly if the path is not provided
+        // Inject the signature into the witness field directly if the path is not provided
         let sig_val = if sig_path.is_empty() {
             Value::byte_array(signature.serialize())
         } else {
             let witness_types = program.get_witness_types()?;
             let witness_type = witness_types
                 .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                .ok_or(SignerError::WtnsFieldNotFound(witness_name.to_string()))?;
+                .ok_or(SignerError::WitnessFieldNotFound(witness_name.to_string()))?;
 
             #[allow(clippy::missing_panics_doc)]
-            let local_wtns = Arc::new(
+            let local_witness = Arc::new(
                 witness
                     .get(&TemplateProgramWitness::witness_from_str(witness_name))
                     .expect("checked above")
                     .clone(),
             );
 
-            WtnsInjector::inject_value(
-                &local_wtns,
+            WitnessInjector::inject_value(
+                &local_witness,
                 witness_type,
                 sig_path,
                 Value::byte_array(signature.serialize()),
@@ -767,67 +842,250 @@ impl Signer {
         Ok(WitnessValues::from_map(hm))
     }
 
-    #[allow(clippy::unnecessary_wraps)]
-    fn master_slip77(&self) -> Result<MasterBlindingKey, SignerError> {
-        let seed = self.mnemonic.to_seed("");
+    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
+        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
 
-        Ok(MasterBlindingKey::from_seed(&seed[..]))
+        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
-    fn derive_xpriv(&self, path: &DerivationPath) -> Result<Xpriv, SignerError> {
-        Ok(self.xprv.derive_priv(&self.secp, &path)?)
+    /// A fee rate is a finite, non-negative number of sats/kvb.
+    fn check_fee_rate(fee_rate: f32) -> Result<(), SignerError> {
+        if fee_rate.is_finite() && fee_rate >= 0.0 {
+            Ok(())
+        } else {
+            Err(SignerError::InvalidFeeRate(fee_rate))
+        }
     }
 
-    fn master_xpriv(&self) -> Result<Xpriv, SignerError> {
-        self.derive_xpriv(&DerivationPath::master())
+    /// A transaction spending an outpoint twice can never confirm.
+    fn check_unique_inputs(tx: &FinalTransaction) -> Result<(), SignerError> {
+        let mut seen = HashSet::new();
+
+        match tx
+            .inputs()
+            .iter()
+            .find(|input| !seen.insert(input.partial_input.outpoint))
+        {
+            Some(input) => Err(SignerError::DuplicateInput(input.partial_input.outpoint)),
+            None => Ok(()),
+        }
     }
 
-    fn derive_xpub(&self, path: &DerivationPath) -> Result<Xpub, SignerError> {
-        let derived = self.derive_xpriv(path)?;
-
-        Ok(Xpub::from_priv(&self.secp, &derived))
+    /// Balancing and signing need the amount of every input.
+    fn check_known_amounts(tx: &FinalTransaction) -> Result<(), SignerError> {
+        match tx
+            .inputs()
+            .iter()
+            .find(|input| input.partial_input.asset_and_amount().is_none())
+        {
+            Some(input) => Err(SignerError::UnknownInputAmount(input.partial_input.outpoint)),
+            None => Ok(()),
+        }
     }
 
-    fn master_xpub(&self) -> Result<Xpub, SignerError> {
-        self.derive_xpub(&DerivationPath::master())
+    /// The account path, `m/84h/1776h/0h` on mainnet and `m/84h/1h/0h` elsewhere.
+    fn account_path(network: SimplicityNetwork) -> DerivationPath {
+        let coin_type = if network.is_mainnet() { 1776 } else { 1 };
+
+        DerivationPath::from_str(&format!("m/84h/{coin_type}h/0h")).expect("the account path is valid")
     }
 
-    fn fingerprint(&self) -> Result<Fingerprint, SignerError> {
-        Ok(self.master_xpub()?.fingerprint())
+    /// The default signing path under the account.
+    fn default_path() -> DerivationPath {
+        DerivationPath::from_str("0/0").expect("the default path is valid")
     }
 
-    fn get_slip77_descriptor(&self) -> Result<String, SignerError> {
-        let wpkh_descriptor = self.get_wpkh_descriptor()?;
-        let blinding_key = self.master_slip77()?;
+    /// # Panics
+    /// Panics if `path` cannot be derived from `account_xprv`.
+    fn derive_key(
+        secp: &Secp256k1<All>,
+        account_xprv: &Xpriv,
+        path: &DerivationPath,
+        network: SimplicityNetwork,
+    ) -> PrivateKey {
+        let derived = account_xprv
+            .derive_priv(secp, path)
+            .unwrap_or_else(|error| panic!("Cannot derive a key at `{path}`: {error}"));
 
-        Ok(format!("ct(slip77({blinding_key}),{wpkh_descriptor})"))
+        PrivateKey::new(derived.private_key, network)
     }
 
-    fn get_wpkh_descriptor(&self) -> Result<String, SignerError> {
-        let fingerprint = self.fingerprint()?;
-        let path = self.get_derivation_path()?;
-        let mut xpub = self.derive_xpub(&path)?;
+    fn wpkh_descriptor(
+        secp: &Secp256k1<All>,
+        master_xprv: &Xpriv,
+        account_path: &DerivationPath,
+        account_xprv: &Xpriv,
+    ) -> String {
+        let fingerprint = Xpub::from_priv(secp, master_xprv).fingerprint();
+        let mut xpub = Xpub::from_priv(secp, account_xprv);
 
         // TODO: Blockstream app does this. Is this a bug?
         xpub.parent_fingerprint = Fingerprint::default();
 
-        Ok(format!("elwpkh([{fingerprint}/{path}]{xpub}/<0;1>/*)"))
+        format!("elwpkh([{fingerprint}/{account_path}]{xpub}/<0;1>/*)")
     }
 
-    fn get_derivation_path(&self) -> Result<DerivationPath, SignerError> {
-        let coin_type = if self.network.is_mainnet() { 1776 } else { 1 };
-        let path = format!("84h/{coin_type}h/0h");
+    /// # Panics
+    /// Panics if the WPKH descriptor cannot be parsed or the address cannot be derived.
+    fn wpkh_address(wpkh_descriptor: &str, network: SimplicityNetwork) -> Address {
+        let descriptor =
+            Descriptor::<DescriptorPublicKey>::from_str(wpkh_descriptor).expect("the wallet's descriptor parses");
 
-        DerivationPath::from_str(&format!("m/{path}")).map_err(|e| SignerError::DerivationPath(e.to_string()))
+        descriptor
+            .into_single_descriptors()
+            .expect("the wallet's descriptor is single-path")[0]
+            .at_derivation_index(0)
+            .expect("index 0 is a valid derivation index")
+            .address(network.address_params())
+            .expect("a WPKH descriptor has an address")
+    }
+
+    /// # Panics
+    /// Panics if the SLIP77 descriptor cannot be parsed or the address cannot be derived.
+    fn confidential_address(
+        secp: &Secp256k1<All>,
+        wpkh_descriptor: &str,
+        master_blinding_key: MasterBlindingKey,
+        network: SimplicityNetwork,
+    ) -> Address {
+        let mut descriptor = ConfidentialDescriptor::<DescriptorPublicKey>::from_str(&format!(
+            "ct(slip77({master_blinding_key}),{wpkh_descriptor})"
+        ))
+        .expect("the wallet's confidential descriptor parses");
+
+        // Confidential descriptor doesn't support multipath
+        descriptor.descriptor = descriptor
+            .descriptor
+            .into_single_descriptors()
+            .expect("the wallet's descriptor is single-path")[0]
+            .clone();
+
+        descriptor
+            .at_derivation_index(0)
+            .expect("index 0 is a valid derivation index")
+            .address(secp, network.address_params())
+            .expect("a SLIP77 descriptor has an address")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::EsploraProvider;
+    use simplicityhl::elements::confidential::{Asset, AssetBlindingFactor, Value};
+    use simplicityhl::elements::{OutPoint, TxOut, Txid};
+
+    use simplicityhl::elements::TxOutSecrets;
+    use simplicityhl::elements::confidential::ValueBlindingFactor;
+
+    use crate::provider::{EsploraProvider, ProviderError};
+    use crate::transaction::{FinalTransactionError, PartialInput, UTXO};
     use crate::utils::random_mnemonic;
 
     use super::*;
+
+    const MNEMONIC: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    struct StubProvider {
+        network: SimplicityNetwork,
+        utxos: Vec<UTXO>,
+    }
+
+    impl ProviderTrait for StubProvider {
+        fn get_network(&self) -> &SimplicityNetwork {
+            &self.network
+        }
+
+        fn fetch_address_utxos(&self, _: &Address) -> Result<Vec<UTXO>, ProviderError> {
+            Ok(self.utxos.clone())
+        }
+
+        fn fetch_fee_estimates(&self) -> Result<HashMap<String, f64>, ProviderError> {
+            Ok(HashMap::from([("1".to_string(), 0.1)]))
+        }
+
+        fn broadcast_transaction(&self, _: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
+            unimplemented!()
+        }
+
+        fn wait(&self, _: &Txid) -> Result<(), ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_tip_height(&self) -> Result<u32, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_tip_block_hash(&self) -> Result<String, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_tip_timestamp(&self) -> Result<u64, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_block_hash_at_height(&self, _: u32) -> Result<String, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_block_txids(&self, _: &str) -> Result<Vec<Txid>, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_transaction(&self, _: &Txid) -> Result<Transaction, ProviderError> {
+            unimplemented!()
+        }
+
+        fn fetch_scripthash_utxos(&self, _: &Script) -> Result<Vec<UTXO>, ProviderError> {
+            unimplemented!()
+        }
+    }
+
+    fn wallet_with(utxos: impl FnOnce(&Signer) -> Vec<UTXO>) -> Signer {
+        let network = SimplicityNetwork::default_regtest();
+        let utxos = utxos(&Signer::from_mnemonic(MNEMONIC, network));
+
+        Signer::new(MNEMONIC, Box::new(StubProvider { network, utxos }))
+    }
+
+    fn explicit_coin(signer: &Signer, vout: u32, amount: u64) -> UTXO {
+        UTXO::explicit(
+            OutPoint::new(Txid::from_byte_array([0x02; 32]), vout),
+            signer.get_address().script_pubkey(),
+            amount,
+            signer.network.policy_asset(),
+        )
+    }
+
+    fn confidential_coin(signer: &Signer, vout: u32, amount: u64) -> UTXO {
+        let asset = signer.network.policy_asset();
+        let spent = [TxOutSecrets::new(
+            asset,
+            AssetBlindingFactor::zero(),
+            amount,
+            ValueBlindingFactor::zero(),
+        )];
+        let (txout, ..) = TxOut::new_not_last_confidential(
+            &mut thread_rng(),
+            &signer.secp,
+            amount,
+            &signer.get_confidential_address(),
+            asset,
+            &spent,
+        )
+        .unwrap();
+
+        UTXO {
+            outpoint: OutPoint::new(Txid::from_byte_array([0x02; 32]), vout),
+            txout,
+            secrets: None,
+        }
+    }
 
     fn create_signer() -> Signer {
         let url = "https://blockstream.info/liquidtestnet/api".to_string();
@@ -857,7 +1115,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(PartialOutput::new(
             signer.get_address().script_pubkey(),
             50_000,
@@ -876,7 +1134,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(
             PartialOutput::new(
                 signer.get_address().script_pubkey(),
@@ -898,7 +1156,7 @@ mod tests {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(confidential_input(&signer, 100_000), RequiredSignature::NativeEcdsa);
+        ft.add_input(confidential_input(&signer, 100_000), Some(NativeSignature::Ecdsa));
         ft.add_output(PartialOutput::new(
             signer.get_address().script_pubkey(),
             50_000,
@@ -936,9 +1194,31 @@ mod tests {
     }
 
     #[test]
+    fn input_without_known_amount_is_an_error() {
+        use simplicityhl::elements::TxOut;
+
+        let signer = create_signer();
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x03; 32]), 1);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(
+            PartialInput::new(UTXO {
+                outpoint,
+                txout: TxOut::default(),
+                secrets: None,
+            }),
+            Some(NativeSignature::Ecdsa),
+        );
+
+        assert!(matches!(
+            signer.sign_witnesses(&ft),
+            Err(SignerError::UnknownInputAmount(unknown)) if unknown == outpoint
+        ));
+    }
+
+    #[test]
     fn sign_witnesses_leaves_failing_programs_for_the_caller_to_execute() {
         use simplicityhl::Arguments;
-        use simplicityhl::elements::TxOut;
 
         use simplicityhl::simplicity::bit_machine::ExecutionError;
 
@@ -948,27 +1228,26 @@ mod tests {
         let signer = create_signer();
         let program = Program::new("fn main() { assert!(false); }", Arguments::default());
 
-        let mut program_txout = TxOut::new_fee(1000, signer.network.policy_asset());
-        program_txout.script_pubkey = program.get_tr_address(&signer.network).script_pubkey();
-
         let mut ft = FinalTransaction::new();
         // A native input first, so the program sits at index 1
         ft.add_input(
-            PartialInput::new(UTXO {
-                outpoint: OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
-                txout: TxOut::new_fee(1000, signer.network.policy_asset()),
-                secrets: None,
-            }),
-            RequiredSignature::NativeEcdsa,
+            PartialInput::new(UTXO::explicit(
+                OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
+                Script::new(),
+                1000,
+                signer.network.policy_asset(),
+            )),
+            Some(NativeSignature::Ecdsa),
         );
         ft.add_program_input(
-            PartialInput::new(UTXO {
-                outpoint: OutPoint::new(Txid::from_byte_array([0x02; 32]), 0),
-                txout: program_txout,
-                secrets: None,
-            }),
+            PartialInput::new(UTXO::explicit(
+                OutPoint::new(Txid::from_byte_array([0x02; 32]), 0),
+                program.get_tr_address(&signer.network).script_pubkey(),
+                1000,
+                signer.network.policy_asset(),
+            )),
             ProgramInput::new(Box::new(program.clone()), WitnessValues::default()),
-            RequiredSignature::None,
+            None,
         );
 
         let (pst, signed_witnesses) = signer.sign_witnesses(&ft).unwrap();
@@ -988,5 +1267,195 @@ mod tests {
             signer.sign_tx(&ft),
             Err(SignerError::CovenantExecution { index: 1, .. })
         ));
+    }
+
+    #[test]
+    fn unresolved_inputs_are_rejected_before_signing() {
+        let signer = create_signer();
+        let network = signer.network;
+        let (amount_in, amount_out, fee_rate) = (100_000, 10_000, 100.);
+
+        let script = signer.get_address().script_pubkey();
+        let funding = UTXO {
+            outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 0),
+            txout: TxOut {
+                script_pubkey: script.clone(),
+                ..TxOut::new_fee(amount_in, network.policy_asset())
+            },
+            secrets: None,
+        };
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(PartialInput::new(funding.clone()), Some(NativeSignature::Ecdsa));
+        ft.add_output(PartialOutput::new(script.clone(), amount_out, network.policy_asset()));
+
+        // The signer can finalize valid caller-selected inputs successfully.
+        let (funded, _) = signer.finalize_strict(&ft, fee_rate).unwrap();
+        assert_eq!(funded.input.len(), 1);
+        funded.verify_tx_amt_proofs(&signer.secp, &[funding.txout]).unwrap();
+
+        // Adding a malformed input.
+        let mixed = UTXO {
+            outpoint: OutPoint::new(Txid::from_byte_array(Default::default()), 0),
+            txout: TxOut {
+                asset: Asset::new_confidential(
+                    &signer.secp,
+                    network.policy_asset(),
+                    AssetBlindingFactor::new(&mut thread_rng()),
+                ),
+                value: Value::Explicit(600),
+                script_pubkey: script,
+                ..Default::default()
+            },
+            secrets: None,
+        };
+        ft.add_input(PartialInput::new(mixed), Some(NativeSignature::Ecdsa));
+
+        // Direct accounting reports the unresolved input's position.
+        assert_eq!(
+            ft.calculate_fee_delta(&network),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        );
+        assert_eq!(
+            ft.is_balanced(),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        );
+        assert!(matches!(
+            ft.extract_pst(),
+            Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
+        ));
+
+        // Signer entry points preserve the error identifying the unresolved outpoint.
+        for result in [
+            signer.estimate_fee(&ft, 100.0).map(|_| ()),
+            signer.finalize_strict(&ft, 100.0).map(|_| ()),
+            signer.sign_witnesses(&ft).map(|_| ()),
+            signer.sign_tx(&ft).map(|_| ()),
+        ] {
+            assert!(matches!(result, Err(SignerError::UnknownInputAmount(_))));
+        }
+    }
+
+    #[test]
+    fn coin_selection_skips_a_coin_listed_twice() {
+        let signer = wallet_with(|owner| vec![explicit_coin(owner, 0, 100_000), explicit_coin(owner, 0, 100_000)]);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            150_000,
+            signer.network.policy_asset(),
+        ));
+
+        assert!(matches!(signer.finalize(&ft), Err(SignerError::NotEnoughFunds(_))));
+    }
+
+    #[test]
+    fn explicit_change_skips_confidential_coins() {
+        let signer = wallet_with(|owner| vec![explicit_coin(owner, 0, 50_000), confidential_coin(owner, 1, 100_000)]);
+        let script = signer.get_address().script_pubkey();
+
+        let mut ft = FinalTransaction::new();
+        ft.add_output(PartialOutput::new(
+            script.clone(),
+            10_000,
+            signer.network.policy_asset(),
+        ));
+        ft.add_change(ChangeOutput::new(script));
+
+        let (tx, _) = signer.finalize(&ft).unwrap();
+
+        assert_eq!(tx.input.len(), 1);
+        assert_eq!(tx.input[0].previous_output.vout, 0);
+    }
+
+    #[test]
+    fn invalid_fee_rates_and_duplicate_inputs_are_rejected() {
+        let signer = create_signer();
+        let coin = explicit_coin(&signer, 0, 100_000);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(PartialInput::new(coin.clone()), Some(NativeSignature::Ecdsa));
+        ft.add_output(PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            10_000,
+            signer.network.policy_asset(),
+        ));
+
+        for fee_rate in [f32::NAN, -1.0, f32::INFINITY] {
+            assert!(matches!(
+                signer.finalize_strict(&ft, fee_rate),
+                Err(SignerError::InvalidFeeRate(_))
+            ));
+            assert!(matches!(
+                signer.estimate_fee(&ft, fee_rate),
+                Err(SignerError::InvalidFeeRate(_))
+            ));
+        }
+
+        ft.add_input(PartialInput::new(coin), Some(NativeSignature::Ecdsa));
+
+        assert!(matches!(
+            signer.finalize_strict(&ft, 100.0),
+            Err(SignerError::DuplicateInput(_))
+        ));
+    }
+
+    #[test]
+    fn leftover_too_small_for_change_is_the_fee_unless_it_reveals_a_blinded_amount() {
+        let signer = create_signer();
+        let policy = signer.network.policy_asset();
+        let script = signer.get_address().script_pubkey();
+        let coin = explicit_coin(&signer, 0, 100_000);
+
+        let mut ft = FinalTransaction::new();
+        ft.add_input(PartialInput::new(coin.clone()), Some(NativeSignature::Ecdsa));
+        ft.add_output(PartialOutput::new(script.clone(), 99_970, policy));
+
+        let (tx, fee) = signer.finalize_strict(&ft, 100.0).unwrap();
+
+        assert_eq!(tx.output.len(), 2, "the change is dropped");
+        assert_eq!((fee, tx.fee_in(policy)), (30, 30));
+
+        // Without change, the inputs minus the fee would reveal the only blinded output
+        let mut ft = FinalTransaction::new();
+        ft.add_input(PartialInput::new(coin), Some(NativeSignature::Ecdsa));
+        ft.add_output(PartialOutput::new(script, 99_970, policy).with_blinding_key(signer.get_blinding_public_key()));
+
+        assert!(matches!(
+            signer.finalize_strict(&ft, 100.0),
+            Err(SignerError::NotEnoughFeeAmount(..))
+        ));
+    }
+
+    #[test]
+    fn only_wallet_paths_owning_the_input_sign_it() {
+        let signer = create_signer();
+        let path = |path: &str| DerivationPath::from_str(path).unwrap();
+
+        for valid in ["0/0", "0/7", "1/3", "2/7"] {
+            assert!(Signer::check_derivation_path(&path(valid)).is_ok(), "{valid}");
+        }
+        for invalid in ["", "m", "7", "0/7h", "84h/1h/0h/0/7"] {
+            assert!(Signer::check_derivation_path(&path(invalid)).is_err(), "{invalid}");
+        }
+
+        let sign_with = |relative: &str| {
+            let mut ft = FinalTransaction::new();
+            ft.add_input(
+                PartialInput::new(explicit_coin(&signer, 0, 100_000)).with_derivation_path(path(relative)),
+                Some(NativeSignature::Ecdsa),
+            );
+            ft.add_output(PartialOutput::new(
+                Script::new(),
+                100_000,
+                signer.network.policy_asset(),
+            ));
+
+            signer.sign_tx(&ft)
+        };
+
+        assert!(sign_with("0/0").is_ok());
+        assert!(matches!(sign_with("0/7"), Err(SignerError::KeyMismatch(0))));
     }
 }

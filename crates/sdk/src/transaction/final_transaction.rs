@@ -2,30 +2,17 @@ use std::collections::HashMap;
 
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
-    AssetBlindingNonce, AssetEntropy, AssetId, LockTime, Sequence, TxOutSecrets,
+    AssetBlindingNonce, AssetId, LockTime, Sequence, TxOutSecrets,
     confidential::{AssetBlindingFactor, ValueBlindingFactor},
 };
 
 use crate::provider::SimplicityNetwork;
-use crate::utils;
 
 use super::change_output::ChangeOutput;
-use super::partial_input::{IssuanceInput, PartialInput, ProgramInput, RequiredSignature};
+use super::error::FinalTransactionError;
+use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, ProgramInput};
 use super::partial_output::PartialOutput;
-
-/// Constant is defined for fee calculation on transaction sending.
-pub const WITNESS_SCALE_FACTOR: usize = 4;
-
-/// A structure representing the details of token issuance and related metadata.
-#[derive(Debug, Clone)]
-pub struct IssuanceDetails {
-    /// The unique `AssetId` generated from the provided entropy, representing the issued tokens struct.
-    pub asset_id: AssetId,
-    /// The `AssetId` corresponding to the reissuance (inflation) token, used for minting new tokens.
-    pub inflation_asset_id: AssetId,
-    /// The entropy value that was used to derive both the `asset_id` and `inflation_asset_id`.
-    pub asset_entropy: AssetEntropy,
-}
+use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
 
 /// Represents the final input structure put into a `FinalTransaction` for processing.
 #[derive(Clone, Debug)]
@@ -76,26 +63,18 @@ impl FinalInput {
     /// input is available.
     #[must_use]
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
-        match &self.issuance_input {
-            Some(issuance_input) => {
-                let asset_entropy = match issuance_input {
-                    IssuanceInput::Issuance { asset_entropy, .. } => {
-                        utils::asset_entropy(&self.partial_input.outpoint(), *asset_entropy)
-                    }
-                    IssuanceInput::Reissuance { asset_entropy, .. } => AssetEntropy::from_byte_array(*asset_entropy),
-                };
+        self.issuance_input
+            .as_ref()
+            .map(|issuance_input| issuance_input.details(&self.partial_input.outpoint))
+    }
 
-                let asset_id = AssetId::from_entropy(asset_entropy);
-                let inflation_asset_id = AssetId::reissuance_token_from_entropy(asset_entropy, false);
-
-                Some(IssuanceDetails {
-                    asset_id,
-                    inflation_asset_id,
-                    asset_entropy,
-                })
-            }
-            None => None,
-        }
+    /// Returns the input's asset ID and amount from unblinding secrets, or from
+    /// explicit fields when no secrets are available.
+    ///
+    /// Returns `None` if no secrets are available and either explicit field is missing.
+    #[must_use]
+    pub fn get_asset_and_amount(&self) -> Option<(AssetId, u64)> {
+        self.partial_input.asset_and_amount()
     }
 
     /// Converts the current object into an `Input` representation, including any
@@ -133,6 +112,28 @@ impl FinalInput {
 
         pst_input
     }
+
+    fn check_issuance(&self, input_index: usize) -> Result<(), FinalTransactionError> {
+        match &self.issuance_input {
+            Some(
+                IssuanceInput::Issuance {
+                    issuance_amount: 0,
+                    inflation_amount: 0,
+                    ..
+                }
+                | IssuanceInput::Reissuance { issuance_amount: 0, .. },
+            ) => Err(FinalTransactionError::EmptyIssuance { input_index }),
+            Some(IssuanceInput::Reissuance { .. })
+                if self
+                    .partial_input
+                    .secrets
+                    .is_none_or(|secrets| secrets.asset_bf == AssetBlindingFactor::zero()) =>
+            {
+                Err(FinalTransactionError::UnblindedReissuanceToken { input_index })
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// A struct representing a final (but not yet signed) transaction.
@@ -141,7 +142,7 @@ pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
     outputs: Vec<PartialOutput>,
     change: Option<ChangeOutput>,
-    sequence: Sequence,
+    sequence: Option<Sequence>,
     locktime: LockTime,
 }
 
@@ -154,15 +155,16 @@ impl FinalTransaction {
             inputs: Vec::new(),
             outputs: Vec::new(),
             change: None,
-            sequence: Sequence::default(),
+            sequence: None,
             locktime: LockTime::ZERO,
         }
     }
+
     /// Sets a specific `Sequence` for the transaction.
     ///
     /// Injects this value into the inputs that don't declare their own sequence.
     pub fn set_sequence(&mut self, sequence: Sequence) {
-        self.sequence = sequence;
+        self.sequence = Some(sequence);
     }
 
     /// Sets a specific `LockTime` for the transaction.
@@ -170,6 +172,23 @@ impl FinalTransaction {
     /// Injects this value into the inputs that don't declare their own locktime.
     pub fn set_locktime(&mut self, locktime: LockTime) {
         self.locktime = locktime;
+    }
+
+    /// The sequence of the inputs that don't declare their own. The one set with `set_sequence`,
+    /// or `ENABLE_LOCKTIME_NO_RBF` when a locktime is set to be enforced, and `MAX` otherwise.
+    #[must_use]
+    pub fn sequence(&self) -> Sequence {
+        self.sequence.unwrap_or(if self.has_locktime() {
+            Sequence::ENABLE_LOCKTIME_NO_RBF
+        } else {
+            Sequence::MAX
+        })
+    }
+
+    /// The locktime of the the transaction, e.g. inputs that don't declare their own.
+    #[must_use]
+    pub fn locktime(&self) -> LockTime {
+        self.locktime
     }
 
     /// Sets where this transaction's change should go.
@@ -184,97 +203,59 @@ impl FinalTransaction {
         self.change = None;
     }
 
-    /// Adds a new input to the transaction.
-    ///
-    /// # Panics
-    /// Panics if the requested signature is not `NativeEcdsa` or `None`.
-    /// (i.e. if `required_sig` is `RequiredSignature::Witness` or `RequiredSignature::WitnessWithPath`)
-    pub fn add_input(&mut self, partial_input: PartialInput, required_sig: RequiredSignature) {
-        match required_sig {
-            RequiredSignature::Witness(_)
-            | RequiredSignature::WitnessWithPath(_, _)
-            | RequiredSignature::WitnessWithMessage(_, _, _) => {
-                panic!("Requested signature is not NativeEcdsa or None")
-            }
-            _ => {}
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig));
+    /// Adds a native input to the transaction.
+    pub fn add_input(&mut self, partial_input: PartialInput, signature: Option<NativeSignature>) {
+        self.inputs.push(FinalInput::new(partial_input, signature.into()));
     }
 
-    /// Adds a new program input to the transaction.
-    ///
-    /// # Panics
-    /// The function will panic if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`,
-    /// as this type of signature is not applicable for program inputs.
+    /// Adds a program input to the transaction, with the signature the signer injects into its witness, if any.
     pub fn add_program_input(
         &mut self,
         partial_input: PartialInput,
         program_input: ProgramInput,
-        required_sig: RequiredSignature,
+        signature: Option<ProgramSignature>,
     ) {
-        if let RequiredSignature::NativeEcdsa = required_sig {
-            panic!("Requested signature is not Witness or None");
-        }
-
-        self.push_new_input(FinalInput::new(partial_input, required_sig).with_program(program_input));
+        self.inputs
+            .push(FinalInput::new(partial_input, signature.into()).with_program(program_input));
     }
 
-    /// Adds an issuance (or reissuance) input to the transaction.
-    ///
-    /// # Panics
-    /// This function panics if the `required_sig` is of type `Witness` or
-    /// `WitnessWithPath`, as these signature types are not allowed in the current context.
+    /// Adds a native issuance (or reissuance) input to the transaction.
     pub fn add_issuance_input(
         &mut self,
         partial_input: PartialInput,
         issuance_input: IssuanceInput,
-        required_sig: RequiredSignature,
+        signature: Option<NativeSignature>,
     ) -> IssuanceDetails {
-        match required_sig {
-            RequiredSignature::Witness(_)
-            | RequiredSignature::WitnessWithPath(_, _)
-            | RequiredSignature::WitnessWithMessage(_, _, _) => {
-                panic!("Requested signature is not NativeEcdsa or None")
-            }
-            _ => {}
-        }
+        let details = issuance_input.details(&partial_input.outpoint);
 
-        self.push_new_input(FinalInput::new(partial_input, required_sig).with_issuance(issuance_input))
-            .unwrap()
+        self.inputs
+            .push(FinalInput::new(partial_input, signature.into()).with_issuance(issuance_input));
+
+        details
     }
 
-    /// Adds an issuance program input to the transaction with the specified parameters.
-    ///
-    /// # Panics
-    /// Panics if the `required_sig` parameter is of type `RequiredSignature::NativeEcdsa`.
-    /// Also panics if the populated input fails to return valid issuance details.
+    /// Adds a program issuance (or reissuance) input to the transaction.
     pub fn add_program_issuance_input(
         &mut self,
         partial_input: PartialInput,
         program_input: ProgramInput,
         issuance_input: IssuanceInput,
-        required_sig: RequiredSignature,
+        signature: Option<ProgramSignature>,
     ) -> IssuanceDetails {
-        if let RequiredSignature::NativeEcdsa = required_sig {
-            panic!("Requested signature is not Witness or None");
-        }
+        let details = issuance_input.details(&partial_input.outpoint);
 
-        self.push_new_input(
-            FinalInput::new(partial_input, required_sig)
+        self.inputs.push(
+            FinalInput::new(partial_input, signature.into())
                 .with_program(program_input)
                 .with_issuance(issuance_input),
-        )
-        .unwrap()
+        );
+
+        details
     }
 
-    /// Removes an input from the list of inputs at the specified index.
+    /// Removes the input at `index`, `None` when there is none.
     pub fn remove_input(&mut self, index: usize) -> Option<FinalInput> {
-        if self.inputs.get(index).is_some() {
-            return Some(self.inputs.remove(index));
-        }
-
-        None
+        (index < self.inputs.len()).then(|| self.inputs.remove(index))
     }
 
     /// Adds a partial output to the list of outputs.
@@ -282,16 +263,9 @@ impl FinalTransaction {
         self.outputs.push(partial_output);
     }
 
-    /// Removes an output from the `outputs` list at the specified index.
-    ///
-    /// # Panics
-    /// This function does not panic. If the `index` is invalid, it will return `None` instead of causing a panic.
+    /// Removes the output at `index`, `None` when there is none.
     pub fn remove_output(&mut self, index: usize) -> Option<PartialOutput> {
-        if self.outputs.get(index).is_some() {
-            return Some(self.outputs.remove(index));
-        }
-
-        None
+        (index < self.outputs.len()).then(|| self.outputs.remove(index))
     }
 
     /// Where this transaction's change should go, when the caller said.
@@ -369,36 +343,30 @@ impl FinalTransaction {
     /// The function considers the network's policy asset to determine which inputs
     /// and outputs contribute to the calculation.
     ///
-    /// # Panics
-    /// Function will panic if the asset isn't unblinded correctly, and if PST input asset and amount is confidential.
-    #[must_use]
-    pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> i64 {
-        let mut available_amount = 0;
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available.
+    /// Returns [`FinalTransactionError::AmountOverflow`] if the delta doesn't fit `i64`.
+    pub fn calculate_fee_delta(&self, network: &SimplicityNetwork) -> Result<i64, FinalTransactionError> {
+        let mut available_amount: i128 = 0;
 
-        for input in &self.inputs {
-            match input.partial_input.secrets {
-                // This is an unblinded confidential input
-                Some(secrets) => {
-                    if secrets.asset == network.policy_asset() {
-                        available_amount += secrets.value;
-                    }
-                }
-                // This is an explicit input
-                None => {
-                    if input.partial_input.asset.unwrap() == network.policy_asset() {
-                        available_amount += input.partial_input.amount.unwrap();
-                    }
-                }
+        for (input_index, input) in self.inputs.iter().enumerate() {
+            let (asset, amount) = input
+                .get_asset_and_amount()
+                .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
+            if asset == network.policy_asset() {
+                available_amount += i128::from(amount);
             }
         }
 
-        let consumed_amount = self
+        let consumed_amount: i128 = self
             .outputs
             .iter()
             .filter(|output| output.asset == network.policy_asset())
-            .fold(0_u64, |acc, output| acc + output.amount);
+            .map(|output| i128::from(output.amount))
+            .sum();
 
-        available_amount.cast_signed() - consumed_amount.cast_signed()
+        i64::try_from(available_amount - consumed_amount).map_err(|_| FinalTransactionError::AmountOverflow)
     }
 
     /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
@@ -406,21 +374,20 @@ impl FinalTransaction {
     /// Issued and reissued amounts are credited to the input that declares them, so a newly created
     /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
     ///
-    /// # Panics
-    /// Function will panic if the assets aren't unblinded correctly, and if PST input assets and amounts are confidential.
-    #[must_use]
-    pub fn is_balanced(&self) -> bool {
-        let mut transfers: HashMap<AssetId, i64> = HashMap::new();
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available.
+    pub fn is_balanced(&self) -> Result<bool, FinalTransactionError> {
+        let mut transfers: HashMap<AssetId, i128> = HashMap::new();
 
         // Collecting all inputs
-        for input in &self.inputs {
-            let (asset, amount) = match input.partial_input.secrets {
-                Some(secrets) => (secrets.asset, secrets.value),
-                None => (input.partial_input.asset.unwrap(), input.partial_input.amount.unwrap()),
-            };
+        for (input_index, input) in self.inputs.iter().enumerate() {
+            let (asset, amount) = input
+                .get_asset_and_amount()
+                .ok_or(FinalTransactionError::MissingInputSecrets { input_index })?;
 
             let transfer_entry = transfers.entry(asset).or_insert(0);
-            *transfer_entry += amount.cast_signed();
+            *transfer_entry += i128::from(amount);
 
             // Issuance brings new assets into the transaction, so the declared amounts count as inputs.
             // A reissuance mints no new inflation tokens
@@ -436,8 +403,8 @@ impl FinalTransaction {
                     IssuanceInput::Reissuance { issuance_amount, .. } => (*issuance_amount, 0),
                 };
 
-                *transfers.entry(issuance_details.asset_id).or_insert(0) += issuance_amount.cast_signed();
-                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += inflation_amount.cast_signed();
+                *transfers.entry(issuance_details.asset_id).or_insert(0) += i128::from(issuance_amount);
+                *transfers.entry(issuance_details.inflation_asset_id).or_insert(0) += i128::from(inflation_amount);
             }
         }
 
@@ -448,98 +415,82 @@ impl FinalTransaction {
 
             match transfers.get_mut(&output.asset) {
                 Some(value) => {
-                    *value -= output.amount.cast_signed();
+                    *value -= i128::from(output.amount);
                 }
-                None => return false,
+                None => return Ok(false),
             }
         }
 
         // All transfers including fee should sum up to 0
-        transfers.values().all(|&value| value == 0)
-    }
-
-    /// Computes the transaction fee based on the provided weight and fee rate.
-    ///
-    /// Overall, the function calculates the virtual size (vsize) of the transaction as:
-    /// `weight / WITNESS_SCALE_FACTOR`, rounded up to the nearest whole number.
-    /// Then, the fee is computed as `(vsize * fee_rate / 1000.0)`, also rounded up.
-    ///
-    /// # Returns
-    /// The transaction fee in satoshis, rounded up to the nearest whole number.
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
-    #[must_use]
-    pub fn calculate_fee(&self, weight: usize, fee_rate: f32) -> u64 {
-        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
-
-        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
+        Ok(transfers.values().all(|&value| value == 0))
     }
 
     /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.
     ///
-    /// # Panics
-    /// Function will panic if the pst input is a confidential issuance.
-    #[must_use]
-    pub fn extract_pst(&self) -> (PartiallySignedTransaction, HashMap<usize, TxOutSecrets>) {
+    /// # Errors
+    /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
+    /// amount is unknown and no unblinding secrets are available.
+    ///
+    /// Returns [`FinalTransactionError::EmptyIssuance`] if an issuance input doesn't issue anything, and
+    /// [`FinalTransactionError::UnblindedReissuanceToken`] if a reissuance spends a token that isn't blinded.
+    pub fn extract_pst(
+        &self,
+    ) -> Result<(PartiallySignedTransaction, HashMap<usize, TxOutSecrets>), FinalTransactionError> {
         let mut input_secrets = HashMap::new();
         let mut pst = PartiallySignedTransaction::new_v2();
+        let sequence = self.sequence();
 
         for i in 0..self.inputs.len() {
             let mut final_input = self.inputs[i].clone();
 
-            // Inject sequence if the input has none
-            if final_input.partial_input.sequence == Sequence::default() {
-                final_input.partial_input = final_input.partial_input.with_sequence(self.sequence);
-            }
+            // An input that sets no sequence or locktime takes the transaction's
+            final_input.partial_input.sequence.get_or_insert(sequence);
+            final_input.partial_input.locktime.get_or_insert(self.locktime);
 
-            // Inject locktime if the input has none
-            if final_input.partial_input.locktime == LockTime::ZERO {
-                final_input.partial_input = final_input.partial_input.with_locktime(self.locktime);
-            }
+            let secrets = if let Some(secrets) = final_input.partial_input.secrets {
+                secrets
+            } else {
+                let (asset, value) = final_input
+                    .partial_input
+                    .asset_and_amount()
+                    .ok_or(FinalTransactionError::MissingInputSecrets { input_index: i })?;
 
-            let pst_input = final_input.to_input();
-
-            match final_input.partial_input.secrets {
-                // Insert input secrets if present
-                Some(secrets) => input_secrets.insert(i, secrets),
-                // Else populate input secrets with "explicit" amounts
-                None => input_secrets.insert(
-                    i,
-                    TxOutSecrets {
-                        asset: pst_input.asset.unwrap(),
-                        asset_bf: AssetBlindingFactor::zero(),
-                        value: pst_input.amount.unwrap(),
-                        value_bf: ValueBlindingFactor::zero(),
-                    },
-                ),
+                TxOutSecrets {
+                    asset,
+                    asset_bf: AssetBlindingFactor::zero(),
+                    value,
+                    value_bf: ValueBlindingFactor::zero(),
+                }
             };
 
-            pst.add_input(pst_input);
+            final_input.check_issuance(i)?;
+
+            input_secrets.insert(i, secrets);
+            pst.add_input(final_input.to_input());
         }
 
         self.outputs.iter().for_each(|el| {
             pst.add_output(el.to_output());
         });
 
-        (pst, input_secrets)
+        Ok((pst, input_secrets))
     }
 
-    fn push_new_input(&mut self, new_input: FinalInput) -> Option<IssuanceDetails> {
-        let issuance_details = new_input.get_issuance_details();
-
-        self.inputs.push(new_input);
-
-        issuance_details
+    /// If the transaction or any of its inputs sets a non-zero locktime.
+    fn has_locktime(&self) -> bool {
+        self.locktime != LockTime::ZERO
+            || self.inputs.iter().any(|input| {
+                input
+                    .partial_input
+                    .locktime
+                    .is_some_and(|locktime| locktime != LockTime::ZERO)
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use simplicityhl::elements::{LockTime, OutPoint, Script, TxOut, Txid};
+    use simplicityhl::elements::{AssetEntropy, LockTime, OutPoint, Script, TxOut, Txid};
 
     use crate::transaction::UTXO;
 
@@ -561,11 +512,7 @@ mod tests {
     }
 
     fn explicit_utxo(txid_byte: u8, vout: u32, amount: u64, asset: AssetId) -> UTXO {
-        UTXO {
-            outpoint: OutPoint::new(dummy_txid(txid_byte), vout),
-            txout: TxOut::new_fee(amount, asset),
-            secrets: None,
-        }
+        UTXO::explicit(OutPoint::new(dummy_txid(txid_byte), vout), Script::new(), amount, asset)
     }
 
     fn confidential_utxo(txid_byte: u8, vout: u32, asset: AssetId, value: u64) -> UTXO {
@@ -586,10 +533,7 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
 
         assert!(!ft.has_confidential_input());
     }
@@ -599,10 +543,7 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)), None);
 
         assert!(ft.has_confidential_input());
     }
@@ -612,10 +553,7 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
 
         assert!(ft.has_confidential_input());
@@ -627,10 +565,7 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy).with_blinding_key(dummy_blinding_key()));
 
         assert!(ft.has_confidential_input());
@@ -647,7 +582,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(partial_input.clone(), RequiredSignature::None);
+        ft.add_input(partial_input.clone(), None);
         ft.add_output(partial_output.clone());
 
         let mut expected_pst = PartiallySignedTransaction::new_v2();
@@ -659,7 +594,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 5000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -670,28 +605,35 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x02, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
+        ft.add_input(PartialInput::new(explicit_utxo(0x02, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 9000, policy));
         ft.set_locktime(LockTime::from_height(2_580_990).unwrap());
 
-        let (pst, _) = ft.extract_pst();
+        let (pst, _) = ft.extract_pst().unwrap();
 
         assert_eq!(
             pst.locktime().expect("one height, so no conflict"),
             LockTime::from_height(2_580_990).unwrap()
         );
-        assert!(
-            pst.inputs()
-                .iter()
-                .all(|input| input.required_height_locktime.is_some())
-        );
+        assert!(pst.inputs().iter().all(|input| {
+            input.required_height_locktime.is_some() && input.sequence == Some(Sequence::ENABLE_LOCKTIME_NO_RBF)
+        }));
+    }
+
+    #[test]
+    fn explicit_final_sequence_is_kept_under_a_locktime() {
+        let policy = dummy_asset_id(0xAA);
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
+        ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
+        ft.set_locktime(LockTime::from_height(100).unwrap());
+        ft.set_sequence(Sequence::MAX);
+
+        let (pst, _) = ft.extract_pst().unwrap();
+
+        assert_eq!(pst.inputs()[0].sequence, Some(Sequence::MAX));
     }
 
     #[test]
@@ -699,15 +641,13 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
 
-        let (pst, _) = ft.extract_pst();
+        let (pst, _) = ft.extract_pst().unwrap();
 
         assert_eq!(pst.locktime().unwrap(), LockTime::ZERO);
+        assert_eq!(pst.inputs()[0].sequence, Some(Sequence::MAX));
     }
 
     #[test]
@@ -719,7 +659,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 2000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(partial_input.clone(), RequiredSignature::None);
+        ft.add_input(partial_input.clone(), None);
         ft.add_output(partial_output.clone());
 
         let mut expected_pst = PartiallySignedTransaction::new_v2();
@@ -731,7 +671,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 3000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -752,8 +692,8 @@ mod tests {
         let output_b = PartialOutput::new(Script::new(), 800, other);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(explicit_partial.clone(), RequiredSignature::None);
-        ft.add_input(conf_partial.clone(), RequiredSignature::None);
+        ft.add_input(explicit_partial.clone(), None);
+        ft.add_input(conf_partial.clone(), None);
         ft.add_output(output_a.clone());
         ft.add_output(output_b.clone());
 
@@ -774,7 +714,7 @@ mod tests {
             ),
         ]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -792,7 +732,7 @@ mod tests {
         let partial_output = PartialOutput::new(Script::new(), 4000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_issuance_input(partial_input.clone(), issuance.clone(), RequiredSignature::None);
+        ft.add_issuance_input(partial_input.clone(), issuance.clone(), None);
         ft.add_output(partial_output.clone());
 
         // build expected pst, merge partial_input and issuance manually
@@ -812,7 +752,7 @@ mod tests {
             TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 5000, ValueBlindingFactor::zero()),
         )]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -824,13 +764,22 @@ mod tests {
         let entropy = [0x42u8; 32];
         let issuance_amount = 1_000_000u64;
 
-        let conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        // A reissuance token needs a non-zero asset blinding factor
+        let token_secrets = TxOutSecrets::new(
+            policy,
+            AssetBlindingFactor::from_slice(&[1; 32]).unwrap(),
+            1000,
+            ValueBlindingFactor::zero(),
+        );
+        let mut conf_utxo = confidential_utxo(0x02, 0, policy, 1000);
+        conf_utxo.secrets = Some(token_secrets);
+
         let partial_input = PartialInput::new(conf_utxo);
         let reissuance_input = IssuanceInput::new_reissuance(issuance_amount, entropy);
         let partial_output = PartialOutput::new(Script::new(), 1000, policy);
 
         let mut ft = FinalTransaction::new();
-        ft.add_issuance_input(partial_input.clone(), reissuance_input.clone(), RequiredSignature::None);
+        ft.add_issuance_input(partial_input.clone(), reissuance_input.clone(), None);
         ft.add_output(partial_output.clone());
 
         // build expected pst, merge partial_input and issuance manually
@@ -847,12 +796,9 @@ mod tests {
         expected_pst.add_input(expected_input);
         expected_pst.add_output(partial_output.to_output());
 
-        let expected_secrets = HashMap::from([(
-            0,
-            TxOutSecrets::new(policy, AssetBlindingFactor::zero(), 1000, ValueBlindingFactor::zero()),
-        )]);
+        let expected_secrets = HashMap::from([(0, token_secrets)]);
 
-        let (pst, secrets) = ft.extract_pst();
+        let (pst, secrets) = ft.extract_pst().unwrap();
 
         assert_eq!(pst, expected_pst);
         assert_eq!(secrets, expected_secrets);
@@ -863,14 +809,11 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -878,14 +821,11 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
         ft.add_output(PartialOutput::new(Script::new(), 1, dummy_asset_id(0xBB)));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -893,13 +833,10 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -910,13 +847,13 @@ mod tests {
         let details = ft.add_issuance_input(
             PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
             IssuanceInput::new_issuance(100, 1, [0x07; 32]),
-            RequiredSignature::None,
+            None,
         );
         ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -927,12 +864,12 @@ mod tests {
         let details = ft.add_issuance_input(
             PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
             IssuanceInput::new_issuance(100, 0, [0x07; 32]),
-            RequiredSignature::None,
+            None,
         );
         ft.add_output(PartialOutput::new(Script::new(), 1_000_000_000, details.asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -943,13 +880,13 @@ mod tests {
         let details = ft.add_issuance_input(
             PartialInput::new(explicit_utxo(0x01, 0, 1000, policy)),
             IssuanceInput::new_issuance(100, 0, [0x07; 32]),
-            RequiredSignature::None,
+            None,
         );
         ft.add_output(PartialOutput::new(Script::new(), 100, details.asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 42, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(!ft.is_balanced());
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -961,29 +898,26 @@ mod tests {
         let details = probe.add_issuance_input(
             PartialInput::new(explicit_utxo(0x01, 0, 1, dummy_asset_id(0xBB))),
             IssuanceInput::new_reissuance(100, entropy),
-            RequiredSignature::None,
+            None,
         );
 
         let mut ft = FinalTransaction::new();
         ft.add_input(
             PartialInput::new(explicit_utxo(0x02, 0, 1, details.inflation_asset_id)),
-            RequiredSignature::None,
+            None,
         );
         ft.add_issuance_input(
             PartialInput::new(explicit_utxo(0x03, 0, 50, details.asset_id)),
             IssuanceInput::new_reissuance(100, entropy),
-            RequiredSignature::None,
+            None,
         );
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x04, 0, 1000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x04, 0, 1000, policy)), None);
 
         ft.add_output(PartialOutput::new(Script::new(), 150, details.asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1, details.inflation_asset_id));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -991,13 +925,10 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(
-            PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(confidential_utxo(0x01, 0, policy, 5000)), None);
         ft.add_output(PartialOutput::new(Script::new(), 5000, policy));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
     }
 
     #[test]
@@ -1005,14 +936,106 @@ mod tests {
         let policy = dummy_asset_id(0xAA);
 
         let mut ft = FinalTransaction::new();
-        ft.add_input(
-            PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)),
-            RequiredSignature::None,
-        );
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), 4000, policy));
         ft.add_output(PartialOutput::new(Script::new(), 1000, policy));
         ft.add_output(PartialOutput::new_metadata("burn".as_bytes()));
 
-        assert!(ft.is_balanced());
+        assert!(ft.is_balanced().unwrap());
+    }
+
+    #[test]
+    fn amounts_beyond_i64_do_not_wrap() {
+        let policy = dummy_asset_id(0xAA);
+        let network = SimplicityNetwork::ElementsRegtest { policy_asset: policy };
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 100_000, policy)), None);
+        ft.add_output(PartialOutput::new(Script::new(), u64::MAX, policy));
+
+        assert_eq!(
+            ft.calculate_fee_delta(&network),
+            Err(FinalTransactionError::AmountOverflow)
+        );
+        assert_eq!(ft.is_balanced(), Ok(false));
+    }
+
+    #[test]
+    fn reissuance_with_an_explicit_token_is_rejected() {
+        let entropy = [0x42; 32];
+        let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
+
+        let mut tx = FinalTransaction::new();
+        tx.add_issuance_input(
+            PartialInput::new(explicit_utxo(1, 0, 1, token)),
+            IssuanceInput::new_reissuance(5_000, entropy),
+            None,
+        );
+
+        assert!(matches!(
+            tx.extract_pst(),
+            Err(FinalTransactionError::UnblindedReissuanceToken { input_index: 0 })
+        ));
+    }
+
+    #[test]
+    fn token_only_issuance_has_a_null_amount_and_an_empty_one_is_rejected() {
+        let policy = dummy_asset_id(0xAA);
+        let issuance = |issuance_amount, inflation_amount| {
+            let mut tx = FinalTransaction::new();
+            tx.add_issuance_input(
+                PartialInput::new(explicit_utxo(1, 0, 1000, policy)),
+                IssuanceInput::new_issuance(issuance_amount, inflation_amount, [0x42; 32]),
+                None,
+            );
+
+            tx.extract_pst()
+        };
+
+        let (pst, _) = issuance(0, 1).unwrap();
+
+        assert_eq!(pst.inputs()[0].issuance_value_amount, None);
+        assert_eq!(pst.inputs()[0].issuance_inflation_keys, Some(1));
+        assert!(matches!(
+            issuance(0, 0),
+            Err(FinalTransactionError::EmptyIssuance { input_index: 0 })
+        ));
+    }
+
+    #[test]
+    fn reissuance_with_secrets_preserves_the_blinding_nonce() {
+        use simplicityhl::elements::confidential::{Asset, Value};
+
+        let entropy = [0x12; 32];
+        let token = AssetId::reissuance_token_from_entropy(AssetEntropy::from_byte_array(entropy), false);
+
+        // A nonzero asset blinder distinguishes reissuance from a new issuance.
+        let asset_bf = AssetBlindingFactor::from_slice(&[1; 32]).unwrap();
+        let value_bf = ValueBlindingFactor::from_slice(&[2; 32]).unwrap();
+        let expected_secrets = TxOutSecrets::new(token, asset_bf, 1, value_bf);
+
+        let secp = simplicityhl::elements::secp256k1_zkp::Secp256k1::new();
+
+        let input = PartialInput::new(UTXO {
+            outpoint: OutPoint::new(dummy_txid(1), 0),
+            txout: TxOut {
+                asset: Asset::new_confidential(&secp, token, asset_bf),
+                value: Value::new_confidential_from_assetid(&secp, 1, token, value_bf, asset_bf),
+                ..Default::default()
+            },
+            secrets: Some(expected_secrets),
+        });
+
+        let mut tx = FinalTransaction::new();
+        tx.add_issuance_input(input, IssuanceInput::new_reissuance(5_000, entropy), None);
+
+        let (pst, secrets) = tx.extract_pst().unwrap();
+
+        assert_eq!(secrets.get(&0), Some(&expected_secrets));
+        assert_eq!(pst.inputs()[0].issuance_value_amount, Some(5_000));
+        assert_eq!(
+            pst.inputs()[0].issuance_blinding_nonce,
+            Some(AssetBlindingNonce::from_blinding_factor(asset_bf))
+        );
     }
 }

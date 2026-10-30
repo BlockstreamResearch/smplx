@@ -24,7 +24,8 @@ use smplx_sdk::provider::SimplicityNetwork;
 use smplx_sdk::signer::Signer;
 use smplx_sdk::transaction::partial_input::IssuanceInput;
 use smplx_sdk::transaction::{
-    ChangeOutput, FinalTransaction, IssuanceDetails, PartialInput, PartialOutput, ProgramInput, RequiredSignature, UTXO,
+    ChangeOutput, FinalTransaction, IssuanceDetails, NativeSignature, PartialInput, PartialOutput, ProgramInput,
+    ProgramSignature, UTXO,
 };
 
 use wasm_bindgen::prelude::*;
@@ -242,6 +243,14 @@ impl Covenant {
 
     fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
         let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
+
+        if declared.len() > Program::MAX_STORAGE_SLOTS {
+            return Err(format!(
+                "A covenant holds at most {} extra leaves, and this one has {}",
+                Program::MAX_STORAGE_SLOTS,
+                declared.len()
+            ));
+        }
         let mut leaves = Vec::with_capacity(declared.len());
 
         for (index, leaf) in declared.iter().enumerate() {
@@ -417,6 +426,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block height this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `height` is `500_000_000` or greater, which Elements reads as a time.
@@ -426,6 +436,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block time this transaction may not be mined before.
+    /// Unless a sequence is set, the inputs get one that enforces it.
     ///
     /// # Panics
     /// Panics if `time` is below `500_000_000`, which Elements reads as a height.
@@ -434,7 +445,7 @@ impl TransactionBuilder {
         self.transaction.set_locktime(LockTime::from_time(time).unwrap());
     }
 
-    /// Sets the sequence of for this transaction.
+    /// Sets the sequence of the inputs that don't declare their own.
     #[wasm_bindgen(js_name = setSequence)]
     pub fn set_sequence(&mut self, sequence: u32) {
         self.transaction.set_sequence(Sequence::from_consensus(sequence));
@@ -502,7 +513,7 @@ impl TransactionBuilder {
             derivation_path.as_deref(),
         )?;
 
-        self.transaction.add_input(input, RequiredSignature::NativeEcdsa);
+        self.transaction.add_input(input, Some(NativeSignature::Ecdsa));
 
         Ok(())
     }
@@ -511,7 +522,7 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed,
-    /// or if either issuance amount exceeds `i64::MAX`.
+    /// if either issuance amount exceeds `i64::MAX`, or if both are zero.
     #[wasm_bindgen(js_name = addWalletIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_wallet_issuance_input(
@@ -525,12 +536,7 @@ impl TransactionBuilder {
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
-        if i64::try_from(asset_amount_sats).is_err() {
-            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
-        }
-        if i64::try_from(inflation_amount_sats).is_err() {
-            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
-        }
+        Self::check_issuance_amounts(asset_amount_sats, inflation_amount_sats)?;
 
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
@@ -546,7 +552,7 @@ impl TransactionBuilder {
         let details = self.transaction.add_issuance_input(
             input,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            RequiredSignature::NativeEcdsa,
+            Some(NativeSignature::Ecdsa),
         );
 
         Ok(IssuanceReport::from_details(&details))
@@ -570,7 +576,7 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error for invalid input data, an amount outside 1..=`i64::MAX`,
-    /// or a claimed token asset that does not match the entropy.
+    /// a claimed token asset that does not match the entropy, or a token with a zero asset blinding factor.
     #[wasm_bindgen(js_name = addWalletReissuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_wallet_reissuance_input(
@@ -608,12 +614,17 @@ impl TransactionBuilder {
                 secrets.asset
             )));
         }
+        if secrets.asset_bf == AssetBlindingFactor::zero() {
+            return Err(JsError::new(
+                "the token's asset blinding factor is zero, which Elements reads as a new issuance of another asset",
+            ));
+        }
 
         let reissuance = IssuanceInput::new_reissuance(asset_amount_sats, entropy.to_byte_array());
 
         let details = self
             .transaction
-            .add_issuance_input(input, reissuance, RequiredSignature::NativeEcdsa);
+            .add_issuance_input(input, reissuance, Some(NativeSignature::Ecdsa));
 
         Ok(IssuanceReport::from_details(&details))
     }
@@ -657,7 +668,7 @@ impl TransactionBuilder {
                 extra_leaves_json,
                 include_debug_symbols,
             )?,
-            Self::required_signature(signature_witness.as_deref()),
+            Self::program_signature(signature_witness.as_deref()),
         );
 
         Ok(())
@@ -670,8 +681,8 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
-    /// issuer contract or the derivation path cannot be parsed, or if either issuance amount
-    /// exceeds `i64::MAX`.
+    /// issuer contract or the derivation path cannot be parsed, if either issuance amount
+    /// exceeds `i64::MAX`, or if both are zero.
     #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_covenant_issuance_input(
@@ -690,12 +701,7 @@ impl TransactionBuilder {
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceReport, JsError> {
-        if i64::try_from(asset_amount_sats).is_err() {
-            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
-        }
-        if i64::try_from(inflation_amount_sats).is_err() {
-            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
-        }
+        Self::check_issuance_amounts(asset_amount_sats, inflation_amount_sats)?;
 
         let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
             .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
@@ -710,7 +716,7 @@ impl TransactionBuilder {
                 include_debug_symbols,
             )?,
             IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            Self::required_signature(signature_witness.as_deref()),
+            Self::program_signature(signature_witness.as_deref()),
         );
 
         Ok(IssuanceReport::from_details(&details))
@@ -774,7 +780,10 @@ impl TransactionBuilder {
             .as_ref()
             .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
 
-        let (pst, _secrets) = self.transaction.extract_pst();
+        let (pst, _secrets) = self
+            .transaction
+            .extract_pst()
+            .map_err(|e| JsError::new(&format!("Could not construct the transaction: {e}")))?;
 
         program_input
             .program
@@ -813,24 +822,13 @@ impl TransactionBuilder {
     /// or a withess path if the signature is embedded like `SIGNATURE.Left.Right.1`
     ///
     /// `None` means no signature is required.
-    fn required_signature(signature_witness: Option<&str>) -> RequiredSignature {
-        let Some(raw) = signature_witness.map(str::trim).filter(|name| !name.is_empty()) else {
-            return RequiredSignature::None;
-        };
+    fn program_signature(signature_witness: Option<&str>) -> Option<ProgramSignature> {
+        let mut segments = signature_witness?
+            .split('.')
+            .map(str::trim)
+            .filter(|part| !part.is_empty());
 
-        let mut segments = raw.split('.').map(str::trim).filter(|part| !part.is_empty());
-
-        let Some(name) = segments.next() else {
-            return RequiredSignature::None;
-        };
-
-        let path: Vec<&str> = segments.collect();
-
-        if path.is_empty() {
-            return RequiredSignature::Witness(name.to_string());
-        }
-
-        RequiredSignature::witness_with_path(name, path)
+        Some(ProgramSignature::new(segments.next()?).at_path(segments))
     }
 
     fn input_at(
@@ -927,9 +925,12 @@ impl TransactionBuilder {
         }
     }
 
-    /// Reads a derivation path relative to the account path, e.g. `0/7`.
     fn relative_path(path: &str) -> Result<DerivationPath, String> {
-        DerivationPath::from_str(path).map_err(|e| e.to_string())
+        let path = DerivationPath::from_str(path).map_err(|e| e.to_string())?;
+
+        Signer::check_derivation_path(&path).map_err(|e| e.to_string())?;
+
+        Ok(path)
     }
 
     fn program_input(
@@ -949,6 +950,22 @@ impl TransactionBuilder {
             program: Box::new(Covenant::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
             witness: FixedWitness(witness).into(),
         })
+    }
+
+    fn check_issuance_amounts(asset_amount_sats: u64, inflation_amount_sats: u64) -> Result<(), JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+        if asset_amount_sats == 0 && inflation_amount_sats == 0 {
+            return Err(JsError::new(
+                "an issuance must create the asset, its reissuance token, or both",
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -1317,7 +1334,7 @@ mod tests {
 
         // Read the issuance back the way Elements does. A null blinding nonce would make
         // this a new issuance of another asset.
-        let (pst, _) = builder.transaction.extract_pst();
+        let (pst, _) = builder.transaction.extract_pst().unwrap();
         let input = &pst.inputs()[0];
         let (asset, minted_token) = input.issuance_ids();
 
@@ -1337,7 +1354,9 @@ mod tests {
             TransactionBuilder::relative_path("0/7").expect("a path").to_string(),
             "0/7"
         );
-        assert!(TransactionBuilder::relative_path("not a path").is_err());
+        for path in ["not a path", "", "m", "m/7", "7", "0/7h", "m/84h/1h/0h/0/7"] {
+            assert!(TransactionBuilder::relative_path(path).is_err(), "{path}");
+        }
     }
 
     fn spent_output() -> String {

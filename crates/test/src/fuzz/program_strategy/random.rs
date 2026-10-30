@@ -1,54 +1,55 @@
-use std::fmt::{Debug, Formatter, Result};
-use std::marker::PhantomData;
+use simplicityhl::{Arguments, WitnessNameToValueMap, WitnessValues};
 
-use simplicityhl::{Arguments, WitnessValues};
+use proptest::test_runner::TestRng;
 
-use proptest::prelude::Strategy;
-use proptest::strategy::NewTree;
-use proptest::test_runner::TestRunner;
+use rand::RngExt;
 
-use smplx_sdk::program::ProgramSchema;
+use crate::fuzz::program_strategy::{FuzzProgramSchema, FuzzProgramValues};
+use crate::fuzz::utils::{generate_random_value_by_ty, random_fields};
 
-use crate::fuzz::args_strategy::FixedValueTree;
-use crate::fuzz::utils::{random_arguments, random_witness};
-
-pub struct Random<P> {
-    _program: PhantomData<fn() -> P>,
+/// A single randomly generated case.
+pub(crate) struct RandomCase<'a> {
+    schema: &'a FuzzProgramSchema,
+    rng: &'a mut TestRng,
 }
 
-impl<P> Default for Random<P> {
-    fn default() -> Self {
-        Self { _program: PhantomData }
+impl<'a> RandomCase<'a> {
+    pub(crate) fn new(schema: &'a FuzzProgramSchema, rng: &'a mut TestRng) -> Self {
+        Self { schema, rng }
     }
-}
 
-impl<P> Debug for Random<P> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        writeln!(f, "Random trees...")
-    }
-}
+    pub(crate) fn generate(self) -> FuzzProgramValues {
+        let witness = self
+            .schema
+            .witness_types
+            .iter()
+            .map(|(name, ty)| {
+                let path = self.schema.spending_path(name);
 
-impl<P: ProgramSchema> Strategy for Random<P> {
-    type Tree = FixedValueTree<(Arguments, WitnessValues)>;
-    type Value = (Arguments, WitnessValues);
+                (
+                    name.clone(),
+                    path.draw(ty, &mut |ty| generate_random_value_by_ty(ty, self.rng)),
+                )
+            })
+            .collect();
 
-    fn new_tree(&self, runner: &mut TestRunner) -> NewTree<Self> {
-        let arguments = random_arguments::<P, _>(runner.rng());
-        let witness = random_witness::<P, _>(runner.rng());
-
-        Ok(FixedValueTree((arguments, witness)))
+        FuzzProgramValues {
+            arguments: Arguments::from_map(random_fields(&self.schema.argument_types, self.rng)),
+            witness: WitnessValues::from_map(witness),
+            storage: (0..self.schema.storage_capacity).map(|_| self.rng.random()).collect(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::Strategy;
-    use proptest::strategy::ValueTree;
     use proptest::test_runner::{Config, RngSeed, TestRunner};
 
     use simplicityhl::num::{NonZeroPow2Usize, U256};
     use simplicityhl::types::TypeConstructible;
     use simplicityhl::{ResolvedType, TemplateProgramWitness, WitnessNameToValueMap};
+
+    use smplx_sdk::program::ProgramSchema;
 
     use super::*;
 
@@ -104,6 +105,9 @@ mod tests {
     }
 
     impl ProgramSchema for RichSchema {
+        type Arguments = ();
+        type Witness = ();
+
         fn argument_types() -> Vec<(TemplateProgramWitness, ResolvedType)> {
             Self::types(TemplateProgramWitness::parameter_from_str)
         }
@@ -117,16 +121,18 @@ mod tests {
         }
     }
 
+    fn generate(runner: &mut TestRunner) -> FuzzProgramValues {
+        RandomCase::new(&FuzzProgramSchema::of::<RichSchema>(), runner.rng()).generate()
+    }
+
     #[test]
     fn strategy_is_persistent() {
-        let strategy = Random::<RichSchema>::default();
-
         let mut runner_1 = RichSchema::runner();
         let mut runner_2 = RichSchema::runner();
 
         for _ in 0..1024 {
-            let first = strategy.new_tree(&mut runner_1).unwrap().current();
-            let second = strategy.new_tree(&mut runner_2).unwrap().current();
+            let first = generate(&mut runner_1);
+            let second = generate(&mut runner_2);
 
             assert_eq!(first, second, "same seed produced a different random case");
         }
@@ -134,13 +140,12 @@ mod tests {
 
     #[test]
     fn values_match_their_declared_types() {
-        let strategy = Random::<RichSchema>::default();
         let mut runner = RichSchema::runner();
 
         for _ in 0..1024 {
-            let (arguments, witness) = strategy.new_tree(&mut runner).unwrap().current();
+            let values = generate(&mut runner);
 
-            RichSchema::assert_matches(&arguments, &witness);
+            RichSchema::assert_matches(&values.arguments, &values.witness);
         }
     }
 }

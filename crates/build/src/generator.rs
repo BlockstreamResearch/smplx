@@ -82,6 +82,10 @@ impl ArtifactsGenerator {
         let simf_out_dir = out_dir.join(pathdiff);
         let mut metadata = Metadata::default();
 
+        for simf in simfs {
+            Self::check_module_names(simf.as_ref(), base_dir)?;
+        }
+
         let artifacts = simfs
             .iter()
             .map(|s| Self::process_simf(s.as_ref(), base_dir, validated_deps, &simf_out_dir, &mut metadata))
@@ -175,6 +179,29 @@ impl ArtifactsGenerator {
             cmr: ContractId::from_template(&template)?,
             content: flattened,
         })
+    }
+
+    /// Every directory between `base_dir` and `source` becomes a module of the bindings.
+    fn check_module_names(source: &Path, base_dir: &Path) -> Result<(), BuildError> {
+        let relative_path = source
+            .strip_prefix(base_dir)
+            .map_err(BuildError::NoBasePathForGeneration)?;
+
+        for dir in relative_path.parent().into_iter().flat_map(Path::components) {
+            let Component::Normal(name) = dir else {
+                continue;
+            };
+            let name = name.to_string_lossy();
+
+            if syn::parse_str::<syn::Ident>(&name).is_err() {
+                return Err(BuildError::InvalidModuleName {
+                    name: name.into_owned(),
+                    path: source.to_path_buf(),
+                });
+            }
+        }
+
+        Ok(())
     }
 
     /// Arranges a flat list of artifacts into a tree mirroring the source directory layout.
@@ -389,5 +416,31 @@ impl ArtifactsGenerator {
         };
 
         Ok(code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn directories_must_be_rust_identifiers() {
+        let base = Path::new("/project/simf");
+
+        for valid in ["vault.simf", "vaults/vault.simf", "vaults/_2024/vault.simf"] {
+            assert!(
+                ArtifactsGenerator::check_module_names(&base.join(valid), base).is_ok(),
+                "{valid}"
+            );
+        }
+        for invalid in ["my-contracts/vault.simf", "2024/vault.simf", "mod/vault.simf"] {
+            assert!(
+                matches!(
+                    ArtifactsGenerator::check_module_names(&base.join(invalid), base),
+                    Err(BuildError::InvalidModuleName { .. })
+                ),
+                "{invalid}"
+            );
+        }
     }
 }

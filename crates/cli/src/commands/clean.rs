@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::{fmt::Display, fs, path::PathBuf};
 
-use smplx_build::ArtifactsResolver;
 use smplx_build::config::DEFAULT_DEPENDENCY_DIR;
+use smplx_build::{ArtifactsResolver, BuildConfig};
 
 use crate::commands::CleanFlags;
 use crate::commands::error::CleanError;
@@ -20,8 +20,8 @@ impl Clean {
     /// # Errors
     /// Returns a `CommandError` if the artifacts directory cannot be resolved
     /// or if removing any directory fails.
-    pub fn run(root_dir: &Path, artifacts: &impl AsRef<Path>, flags: &CleanFlags) -> Result<(), CommandError> {
-        let artifacts_dir = ArtifactsResolver::resolve_local_dir(root_dir, artifacts)
+    pub fn run(root_dir: &Path, config: &BuildConfig, flags: &CleanFlags) -> Result<(), CommandError> {
+        let artifacts_dir = ArtifactsResolver::resolve_out_dir(root_dir, &config.out_dir, &config.src_dir)
             .map_err(|err| CleanError::ResolveOutDir(err.to_string()))?;
 
         let mut to_remove = vec![artifacts_dir];
