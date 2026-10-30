@@ -34,7 +34,7 @@ pub enum Command {
         #[command(flatten)]
         flags: CleanFlags,
     },
-    /// Formats the configured Simplex source files using simfmt.
+    /// Formats the configured `SimplicityHL` source files using simfmt.
     Fmt {
         #[command(flatten)]
         opts: FormatOpts,
@@ -92,7 +92,7 @@ pub struct CleanFlags {
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Args)]
 pub struct FormatOpts {
-    /// Path to the file.
+    /// Path to the file to format.
     #[arg(value_hint = clap::ValueHint::FilePath, value_name = "PATH", num_args(1..))]
     pub files: Vec<std::path::PathBuf>,
 
@@ -108,12 +108,11 @@ pub struct FormatOpts {
     #[arg(short = 'v', long = "verbose")]
     pub verbose: bool,
 
-    /// List files with differences instead of showing the diff.
+    /// List files with differences instead of showing the full diff.
     #[arg(long = "short")]
     pub short: bool,
 
-    /// Options passed to simfmt.
-    // `raw = true` makes the `--` separator explicit.
+    /// Options passed directly to simfmt.
     #[arg(id = "simfmt_options", raw = true)]
     pub simfmt_options: Vec<String>,
 }

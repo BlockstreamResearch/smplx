@@ -51,7 +51,6 @@ impl Format {
         };
 
         let args = Self::build_simfmt_args(opts, &files);
-
         let signal = Self::run_simfmt(&args, verbosity)?;
 
         Self::flush(signal)
@@ -142,17 +141,6 @@ impl Format {
         Ok(Self::normalize_status(status))
     }
 
-    /// Flushes the STDOUT buffer and exits with the formatter's exit status.
-    fn flush(status: i32) -> Result<(), CommandError> {
-        use std::io::Write;
-
-        // Flush buffered standard output before exiting.
-        std::io::stdout().flush()?;
-
-        // Exit with the formatter's success or failure status.
-        std::process::exit(status);
-    }
-
     /// Resolves the file path to the `simfmt` binary in the same directory where `simplex` is situated.
     /// Given that `simfmt` would be placed in one directory with `simplex`, this is suitable for our usecase.
     ///
@@ -164,6 +152,17 @@ impl Format {
         Ok(env::current_exe()
             .map_err(FmtError::CurrentExecutable)?
             .with_file_name(SIMFMT_BIN_NAME))
+    }
+
+    /// Flushes the STDOUT buffer and exits with the formatter's exit status.
+    fn flush(status: i32) -> Result<(), CommandError> {
+        use std::io::Write;
+
+        // Flush buffered standard output before exiting.
+        std::io::stdout().flush()?;
+
+        // Exit with the formatter's success or failure status.
+        std::process::exit(status);
     }
 
     fn normalize_status(status: ExitStatus) -> i32 {
