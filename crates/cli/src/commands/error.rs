@@ -121,4 +121,7 @@ pub enum InstallError {
 
     #[error("Failed to move the checkout into '{1}': {0}")]
     MoveCheckout(std::io::Error, PathBuf),
+
+    #[error("Repository '{0}' has no Simplex.toml in the installed directory")]
+    MissingConfig(String),
 }

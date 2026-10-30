@@ -36,18 +36,14 @@ pub(crate) struct Mutator {
 impl Mutator {
     /// # Errors
     /// Returns a [`SetupError`] when `transaction` is not a balanced transaction of explicit or unblinded UTXOs,
-    /// or no enabled mutation applies to it.
+    /// can't be extracted, or no enabled mutation is applied.
     pub(crate) fn new(
         mutations: Mutations,
         transaction: &FinalTransaction,
         program_scenarios: &[FuzzProgramScenario],
     ) -> Result<Self, SetupError> {
-        let known = transaction
-            .inputs()
-            .iter()
-            .all(|input| input.partial_input.asset_and_amount().is_some());
-
-        if !known || transaction.is_balanced() != Ok(true) {
+        // An input of unknown amount fails the balance check too
+        if transaction.is_balanced() != Ok(true) {
             return Err(SetupError::Transaction(
                 "mutations need a balanced transaction of explicit or unblinded UTXOs".to_string(),
             ));
@@ -59,7 +55,7 @@ impl Mutator {
             target_outputs: Self::find_target_outputs(transaction, program_scenarios),
             target_inputs: Self::find_target_inputs(transaction, program_scenarios),
             literals: Self::literals(program_scenarios),
-            locktime: Self::locktime(transaction),
+            locktime: Self::locktime(transaction)?,
         };
 
         if !mutator.applies(transaction) {
@@ -398,13 +394,14 @@ impl Mutator {
             .collect()
     }
 
-    fn locktime(transaction: &FinalTransaction) -> u32 {
-        transaction
+    fn locktime(transaction: &FinalTransaction) -> Result<u32, SetupError> {
+        let (pst, _) = transaction
             .extract_pst()
-            .expect("mutation inputs have known assets and amounts")
-            .0
+            .map_err(|err| SetupError::Transaction(err.to_string()))?;
+
+        Ok(pst
             .extract_tx()
-            .map_or(0, |transaction| transaction.lock_time.to_consensus_u32())
+            .map_or(0, |transaction| transaction.lock_time.to_consensus_u32()))
     }
 }
 
@@ -413,6 +410,7 @@ mod tests {
     use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
     use simplicityhl::elements::{AssetId, OutPoint, Script, TxOut, TxOutSecrets};
 
+    use smplx_sdk::transaction::partial_input::IssuanceInput;
     use smplx_sdk::transaction::{PartialInput, PartialOutput, UTXO};
 
     use super::*;
@@ -435,5 +433,24 @@ mod tests {
         transaction.add_output(PartialOutput::default());
 
         assert!(Mutator::new(Mutations::default(), &transaction, &[]).is_ok());
+    }
+
+    #[test]
+    fn transaction_that_does_not_extract_is_a_setup_error() {
+        let asset = AssetId::default();
+
+        // Balanced, but an issuance of nothing can't be extracted
+        let mut transaction = FinalTransaction::new();
+        transaction.add_issuance_input(
+            PartialInput::new(UTXO::explicit(OutPoint::default(), Script::new(), 10, asset)),
+            IssuanceInput::new_issuance(0, 0, [0; 32]),
+            None,
+        );
+        transaction.add_output(PartialOutput::new(Script::new(), 10, asset));
+
+        assert!(matches!(
+            Mutator::new(Mutations::default(), &transaction, &[]),
+            Err(SetupError::Transaction(_))
+        ));
     }
 }

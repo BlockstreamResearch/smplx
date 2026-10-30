@@ -176,6 +176,10 @@ impl Install {
             None => staging.to_path_buf(),
         };
 
+        if !checkout.join(smplx_build::CONFIG_FILENAME).is_file() {
+            return Err(InstallError::MissingConfig(url.to_owned()));
+        }
+
         match fs::rename(&checkout, target_dir) {
             Ok(()) => Ok(true),
             Err(_) if Self::is_installed(target_dir)? => Ok(false),
@@ -462,6 +466,32 @@ mod tests {
             Err(InstallError::Incomplete(path)) if path == target_dir
         ));
         assert!(target_dir.join(".git").is_dir(), "nothing is removed");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checkout_without_its_config_is_not_installed() {
+        let root = std::env::temp_dir().join(format!("smplx-install-no-config-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let repo = root.join("a");
+        fs::create_dir_all(&repo).unwrap();
+        fs::write(repo.join("README.md"), "no config").unwrap();
+        git(&repo, &["init", "--quiet"]);
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "--quiet", "-m", "init"]);
+
+        let url = format!("file://{}", repo.display());
+        let deps = DependencyConfig::from_source(&format!("[dependencies]\na = {{ git = \"{url}\" }}\n")).unwrap();
+        let deps_dir = root.join("deps");
+        fs::create_dir_all(&deps_dir).unwrap();
+
+        assert!(matches!(
+            Install::install_repos(&deps, &deps_dir, &mut Vec::new()),
+            Err(InstallError::MissingConfig(_))
+        ));
+        assert_eq!(fs::read_dir(&deps_dir).unwrap().count(), 0);
 
         fs::remove_dir_all(root).unwrap();
     }

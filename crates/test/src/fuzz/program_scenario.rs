@@ -213,7 +213,18 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
     }
 
     /// Gives the program `capacity` storage slots, generated like its other values.
+    ///
+    /// # Panics
+    /// Panics if `capacity` exceeds [`Program::MAX_STORAGE_SLOTS`].
     pub fn storage_capacity(self, capacity: usize) -> Self {
+        // Refused here rather than in the middle of a fuzz run
+        assert!(
+            capacity <= Program::MAX_STORAGE_SLOTS,
+            "A program holds at most {} storage slots, and `{}` asks for {capacity}",
+            Program::MAX_STORAGE_SLOTS,
+            self.program_scenario.name
+        );
+
         self.program_scenario.storage_capacity = capacity;
 
         self
