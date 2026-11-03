@@ -23,6 +23,8 @@ pub(crate) enum Rejection {
     Resource,
     /// The program costs more than its witness pays for.
     Budget,
+    /// Pruning issue occurred on contract execution.
+    Pruning,
 }
 
 /// A broken fuzz setup. Not a statement about the contract.
@@ -62,6 +64,7 @@ impl Outcome {
                 ExecutionError::InputWrongType(_) | ExecutionError::JetTypeMismatch => {
                     return Err(SetupError::Engine(error.to_string()));
                 }
+                ExecutionError::PruningFailed => Rejection::Pruning,
             },
             ProgramError::Compilation(_) | ProgramError::ProgramGenAbiMeta(_) => {
                 return Err(SetupError::Arguments(error.to_string()));
@@ -100,6 +103,7 @@ impl Display for Rejection {
             Self::Unwrap => "unwrap",
             Self::Resource => "resource limit",
             Self::Budget => "witness budget",
+            Self::Pruning => "pruning",
         };
 
         write!(f, "{reason}")

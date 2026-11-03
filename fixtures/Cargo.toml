@@ -14,3 +14,6 @@ anyhow = { version = "1.0.104" }
 
 [dev-dependencies]
 serde_json = { version = "1.0.154" }
+
+[patch.crates-io]
+simplicity-lang = { git = "https://github.com/BlockstreamResearch/rust-simplicity.git", rev = "2c5a066" }
