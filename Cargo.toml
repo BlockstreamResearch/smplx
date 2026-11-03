@@ -40,3 +40,6 @@ deprecated_in_future = "warn"
 
 [workspace.lints.clippy]
 multiple_crate_versions = "allow"
+
+[patch.crates-io]
+simplicity-lang = { git = "https://github.com/BlockstreamResearch/rust-simplicity.git", rev = "2c5a066" }

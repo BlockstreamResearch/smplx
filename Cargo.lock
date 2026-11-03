@@ -1546,8 +1546,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "simplicity-lang"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cff7b10251528d46d9cf60238267911984fedbb0948cccea98dd74fc6bf9f729"
+source = "git+https://github.com/BlockstreamResearch/rust-simplicity.git?rev=2c5a066#2c5a066cc8f40cbadcefaa604742cbae99bd2557"
 dependencies = [
  "bitcoin",
  "bitcoin_hashes 1.2.0",
@@ -1563,8 +1562,7 @@ dependencies = [
 [[package]]
 name = "simplicity-sys"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "955935733b2735665b4735d9b1361eade6be4c7aea6bca2640345e4c81756f58"
+source = "git+https://github.com/BlockstreamResearch/rust-simplicity.git?rev=2c5a066#2c5a066cc8f40cbadcefaa604742cbae99bd2557"
 dependencies = [
  "bitcoin_hashes 1.2.0",
  "cc",

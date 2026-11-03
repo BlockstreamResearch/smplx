@@ -8,3 +8,6 @@ version = "0.1.0"
 smplx-std = { path = "../../crates/simplex" }
 
 anyhow = { version = "1.0.104" }
+
+[patch.crates-io]
+simplicity-lang = { git = "https://github.com/BlockstreamResearch/rust-simplicity.git", rev = "2c5a066" }
