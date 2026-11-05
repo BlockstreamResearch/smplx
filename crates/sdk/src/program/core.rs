@@ -20,9 +20,12 @@ use super::error::ProgramError;
 use crate::provider::SimplicityNetwork;
 use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key};
 
-/// Executes `simplicity` programs at runtime.
+/// What the [`Signer`](crate::signer::Signer) needs from a program to sign for and finalize a
+/// program input.
 ///
-/// This trait defines a core behavior related to testing and execution.
+/// [`Program`] implements it, as does `&T` for any `T: ProgramTrait`.
+/// [`ProgramInput`](crate::transaction::ProgramInput) holds a `Box<dyn ProgramTrait>`, which is
+/// `Clone`.
 pub trait ProgramTrait: DynClone + Send + Sync {
     /// Retrieves the types of arguments required by a `simplicity` program.
     ///
@@ -36,10 +39,13 @@ pub trait ProgramTrait: DynClone + Send + Sync {
     /// Returns a `ProgramError` if parsing or generating ABI metadata fails.
     fn get_witness_types(&self) -> Result<WitnessTypes, ProgramError>;
 
-    /// Constructs the Elements environment for a specified input index, PST, and network for further program execution.
+    /// The Simplicity transaction environment for input `input_index` of `pst`: what the
+    /// program's transaction jets, such as `jet::sig_all_hash()`, read.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if the input index is out of bounds or if the script pubkey of the UTXO mismatches the expected program script.
+    /// Returns `ProgramError::MissingWitnessUtxo` if an input of `pst` doesn't carry the output it
+    /// spends, `ProgramError::UtxoIndexOutOfBounds` if `input_index` is past the inputs, and
+    /// `ProgramError::ScriptPubkeyMismatch` if the input doesn't spend this program's address.
     fn get_env(
         &self,
         pst: &PartiallySignedTransaction,
@@ -47,14 +53,22 @@ pub trait ProgramTrait: DynClone + Send + Sync {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError>;
 
-    /// Executes a Simplicity program for the given input index of a partially signed transaction.
+    /// Runs the program locally on input `input_index` of `pst` with `witness`: satisfies it,
+    /// prunes it, and runs the pruned program on the Bit Machine. Returns the pruned program and
+    /// its output.
     ///
-    /// This function evaluates a Simplicity script associated with a specific transaction input
-    /// in a given network, producing the result of the computation along with the redeem node
-    /// used during execution.
+    /// Doesn't check the witness budget; [`ProgramTrait::finalize`] does. With [`Verbosity`](crate::global::Verbosity)
+    /// `Debug` or `Trace`, the execution output is buffered, not printed: call
+    /// [`ProgramLogger::flush_logs`] to print the output.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if loading the program, satisfying the witness, retrieving the environment, or executing the `BitMachine` fails.
+    /// - `ProgramError::WitnessSatisfaction` if the witness doesn't fit the program's witness types.
+    /// - `ProgramError::Pruning` if the program fails. A failed `assert!` or jet is
+    ///   `ExecutionError::JetFailed`. Reaching a pruned branch, for example with `unwrap(None)`, is
+    ///   `ExecutionError::ReachedPrunedBranch`. [`Program`] reports a failure in the Bit Machine run
+    ///   after pruning with this variant too.
+    /// - `ProgramError::BitMachineCreation` if the program exceeds the Bit Machine's limits.
+    /// - The errors of [`ProgramTrait::get_env`] and of compiling the program.
     fn execute(
         &self,
         pst: &PartiallySignedTransaction,
@@ -63,14 +77,16 @@ pub trait ProgramTrait: DynClone + Send + Sync {
         network: &SimplicityNetwork,
     ) -> Result<(Arc<RedeemNode>, Value), ProgramError>;
 
-    /// Finalizes and returns `pruned_witness` as output after executing the program on certain parameters.
+    /// Runs the program as [`ProgramTrait::execute`] does and returns the input's witness stack:
+    /// `[witness, program, cmr, control_block]`.
     ///
     /// Implementations must compare the pruned program's static cost with the budget from the
     /// exact serialized witness stack they return. Use [`check_budget`] for this check,
     /// as the built-in `Program` does.
     ///
     /// # Errors
-    /// Returns a `ProgramError` if execution, control block construction or budget validation fails.
+    /// Returns the errors of [`ProgramTrait::execute`], and `ProgramError::InsufficientBudget` if the
+    /// witness stack doesn't pay for the program's execution cost.
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,
@@ -81,6 +97,9 @@ pub trait ProgramTrait: DynClone + Send + Sync {
 }
 
 /// Static description of a program's inputs and integer literals. Implemented by `include_simf!()`.
+///
+/// The fuzz engine uses it to generate arguments and witnesses for a program it knows only by
+/// type.
 pub trait ProgramSchema {
     /// Generated arguments struct.
     type Arguments;
@@ -94,22 +113,31 @@ pub trait ProgramSchema {
     /// Witness names and types.
     fn witness_types() -> Vec<(TemplateProgramWitness, ResolvedType)>;
 
-    /// Integer literals in the source.
+    /// The integer literals in the source, sorted and without duplicates.
     fn literals() -> Vec<U256>;
 }
 
-/// A trait for creating instances of a program. The `ProgramFactory` trait defines a mechanism
-/// for constructing and returning a program instance of a type that implements `AsRef<Program>`.
-/// Only by generic struct name we have a possibility to create an instance of a program.
+/// Creates a program of type `P` from arguments, for code that knows the program only by type,
+/// such as the fuzz engine. Implemented by `include_simf!()`.
 pub trait ProgramFactory<P: AsRef<Program> + Sized> {
     /// Instantiates a program with the given arguments.
     fn instantiate_program(args: impl Into<Arguments>) -> Box<P>;
 }
 
-/// Represents a program structure containing its public key, compiled program, and associated storage.
-/// The compiled program with its CMR and the taproot spend info act as caches, filled on first use.
+/// A `SimplicityHL` program with its arguments, its Taproot internal key, and its storage slots.
 ///
-/// Abstraction giving the power to execute Simplicity contracts without specifying any additional parameters.
+/// The program compiles on first use, and the result is cached and shared between clones. The
+/// getters that need the compiled program panic if it doesn't compile. Call [`Program::load`]
+/// to get the compile error instead.
+///
+/// The program's address is a Taproot output. Its script tree holds the program as one leaf and
+/// one hidden leaf per storage slot, `tagged_hash("TapData", slot)`. The tree is left-folded:
+/// `tapbranch(tapbranch(tapbranch(program, slot0), slot1), slot2)`. So the source, the arguments
+/// and the debug-symbol setting determine the CMR, and the address also depends on the internal
+/// key and the storage.
+///
+/// Code generated by `simplex build` wraps a `Program` in one type per contract. Call `as_ref()`
+/// on that type to get the `Program`.
 #[derive(Clone)]
 pub struct Program {
     source: Arc<str>,
@@ -287,10 +315,14 @@ impl Program {
     /// The width of a storage slot.
     pub const STORAGE_SLOT_BYTES: usize = 32;
 
-    /// Each slot deepens the taproot tree by one and the tree is at most 128 layers deep.
+    /// The most storage slots a program can have. Each slot deepens the Taproot tree by one, and
+    /// the tree is at most 128 layers deep.
     pub const MAX_STORAGE_SLOTS: usize = 128;
 
-    /// Creates a new instance of the struct with the provided source string and arguments.
+    /// Creates a program from `SimplicityHL` source and its `param::` arguments. The source
+    /// compiles later, on first use.
+    ///
+    /// The Taproot internal key is [`tr_unspendable_key`], and there aren't any storage slots.
     #[must_use]
     pub fn new(source: impl Into<Arc<str>>, arguments: impl Into<Arguments>) -> Self {
         Self {
@@ -304,8 +336,7 @@ impl Program {
         }
     }
 
-    /// Sets the `pub_key` field of the struct to the provided `XOnlyPublicKey` value and returns the updated builder instance.
-    /// This is used to set the taproot public key for the program.
+    /// Sets the Taproot internal key, which changes the address.
     #[must_use]
     pub fn with_taproot_pubkey(mut self, pub_key: XOnlyPublicKey) -> Self {
         self.pub_key = pub_key;
@@ -314,7 +345,11 @@ impl Program {
         self
     }
 
-    /// Builds this program in the mode the protocol declares.
+    /// Compiles the program with or without debug symbols, overriding [`GlobalConfig`].
+    ///
+    /// Debug symbols change the CMR and so the address. A program whose address must match one
+    /// computed elsewhere, such as a deployed contract, should set this explicitly, because
+    /// verbosity `Debug` or `Trace` turns debug symbols on by default.
     #[must_use]
     pub fn with_debug_symbols(mut self, include: bool) -> Self {
         self.include_debug_symbols = Some(include);
@@ -325,7 +360,7 @@ impl Program {
         self
     }
 
-    /// Sets storage capacity for further usage.
+    /// Replaces the storage with `capacity` zeroed slots.
     ///
     /// # Panics
     /// Panics if `capacity` exceeds `MAX_STORAGE_SLOTS`.
@@ -383,31 +418,31 @@ impl Program {
         &self.arguments
     }
 
-    /// Returns the number of storage chunks for a program.
+    /// The number of storage slots.
     #[must_use]
     pub fn get_storage_len(&self) -> usize {
         self.storage.len()
     }
 
-    /// Returns storage as a whole array of 32-byte chunks.
+    /// The storage slots, each [`Program::STORAGE_SLOT_BYTES`] long.
     #[must_use]
     pub fn get_storage(&self) -> &[Vec<u8>] {
         &self.storage
     }
 
-    /// Returns storage value at a certain index.
+    /// The storage slot at `index`.
     ///
     /// # Panics
-    /// Panics if the `index` is out of bounds for the initiated storage.
+    /// Panics if the `index` is out of bounds for the initialized storage.
     #[must_use]
     pub fn get_storage_at(&self, index: usize) -> Vec<u8> {
         self.storage[index].clone()
     }
 
-    /// Returns a taproot address for a defined `SimplicityNetwork`.
+    /// The program's unconfidential Taproot address on `network`.
     ///
     /// # Panics
-    /// Panics if generating the taproot spending information fails.
+    /// Panics if the program doesn't compile.
     #[must_use]
     pub fn get_tr_address(&self, network: &SimplicityNetwork) -> Address {
         let spend_info = self.taproot_spending_info().unwrap_or_else(|error| panic!("{error}"));
@@ -421,19 +456,27 @@ impl Program {
         )
     }
 
-    /// Retrieves the `ScriptPubKey` associated with the Simplicity address for the specified network.
+    /// The script of the program's address on `network`, which locks the outputs the program
+    /// controls.
+    ///
+    /// # Panics
+    /// Panics if the program doesn't compile.
     #[must_use]
     pub fn get_script_pubkey(&self, network: &SimplicityNetwork) -> Script {
         self.get_tr_address(network).script_pubkey()
     }
 
-    /// Retrieves the 32-byte `ScriptPubKey` hash associated with the Simplicity address for the specified network.
+    /// The SHA-256 hash of [`Program::get_script_pubkey`], as Esplora's `scripthash` endpoints
+    /// and the `jet::output_script_hash` family use.
+    ///
+    /// # Panics
+    /// Panics if the program doesn't compile.
     #[must_use]
     pub fn get_script_hash(&self, network: &SimplicityNetwork) -> [u8; 32] {
         hash_script(&self.get_script_pubkey(network))
     }
 
-    /// Compiles the program and returns its Commitment Merkle Root.
+    /// The program's Commitment Merkle Root.
     ///
     /// # Panics
     /// Panics if the `SimplicityHL` compilation fails.
@@ -442,7 +485,7 @@ impl Program {
         self.cmr().unwrap_or_else(|error| panic!("{error}")).to_byte_array()
     }
 
-    /// Returns the 32-byte tapleaf hash of the program's Simplicity script.
+    /// The tapleaf hash of the program's leaf. Storage doesn't affect this hash.
     ///
     /// # Panics
     /// Panics if the `SimplicityHL` compilation fails.
@@ -453,7 +496,7 @@ impl Program {
         taproot::TapLeafHash::from_script(&script, version).to_byte_array()
     }
 
-    /// Retrieves program ABI metadata for argument types.
+    /// The names and types of the program's `param::` arguments.
     ///
     /// # Errors
     /// Returns a `ProgramError` if compilation fails or generating ABI metadata fails.
@@ -466,7 +509,7 @@ impl Program {
         Ok(abi_meta.param_types)
     }
 
-    /// Retrieves the witness types of the compiled program.
+    /// The names and types of the program's `witness::` fields.
     ///
     /// # Errors
     /// Returns a `ProgramError` if compilation fails.
@@ -474,10 +517,10 @@ impl Program {
         Ok(self.load()?.witness_types().shallow_clone())
     }
 
-    /// Compiles program by providing saved `Arguments`.
+    /// Compiles the program, or returns the cached result of an earlier compilation.
     ///
     /// # Errors
-    /// Retruns an error we have problems in a program compilation.
+    /// Returns `ProgramError::Compilation` if the source doesn't compile with these arguments.
     pub fn load(&self) -> Result<&CompiledProgram, ProgramError> {
         Ok(&self.load_with_cmr()?.0)
     }
@@ -597,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn storage_slot_takes_a_full_width_value() {
+    fn storage_slot_accepts_32_bytes() {
         let mut program = stateful(1);
 
         program.set_storage_at(0, vec![0x11; Program::STORAGE_SLOT_BYTES]);
@@ -607,18 +650,18 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "A storage slot is 32 bytes, and this one is 1")]
-    fn storage_slot_refuses_a_short_value() {
+    fn storage_slot_rejects_a_short_value() {
         stateful(1).set_storage_at(0, vec![0x11]);
     }
 
     #[test]
     #[should_panic(expected = "A storage slot is 32 bytes, and this one is 33")]
-    fn storage_slot_refuses_a_long_one() {
+    fn storage_slot_rejects_a_long_value() {
         stateful(1).set_storage_at(0, vec![0x11; 33]);
     }
 
     #[test]
-    fn changing_a_slot_changes_the_address_but_not_the_program() {
+    fn storage_changes_the_address_but_not_the_cmr() {
         let one = stateful(1);
         let network = SimplicityNetwork::LiquidTestnet;
         let address = one.get_tr_address(&network);
@@ -679,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn compiles_once_and_keeps_it() {
+    fn program_is_compiled_once() {
         let program = dummy_program();
 
         let first = program.load().expect("the dummy program compiles");
@@ -689,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn changed_build_mode_is_not_served_the_old_compilation() {
+    fn debug_symbols_change_the_cmr() {
         let plain = dummy_program();
         let plain_cmr = plain.get_cmr();
 
@@ -700,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_env_idx() {
+    fn get_env_checks_the_script_pubkey() {
         let program = dummy_program();
         let network = dummy_network();
 
@@ -721,7 +764,7 @@ mod tests {
             ..Default::default()
         });
 
-        // take a script with a wrong pubkey
+        // Input 0 spends a script that is not the program's
         assert!(matches!(
             program.get_env(&pst, 0, &network).unwrap_err(),
             ProgramError::ScriptPubkeyMismatch { .. }
@@ -731,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn input_without_its_utxo_is_an_error() {
+    fn input_without_witness_utxo_is_an_error() {
         let network = SimplicityNetwork::default_regtest();
         let program = stateful(0);
         let mut pst = PartiallySignedTransaction::new_v2();
@@ -752,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn storage_is_at_most_as_deep_as_the_taproot_tree() {
+    fn max_storage_slots_fit_the_taproot_tree() {
         let network = SimplicityNetwork::default_regtest();
 
         let _ = stateful(Program::MAX_STORAGE_SLOTS).get_tr_address(&network);
@@ -760,12 +803,12 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "A program holds at most 128 storage slots, and this one asks for 129")]
-    fn storage_beyond_the_taproot_tree_is_refused() {
+    fn too_many_storage_slots_panic() {
         let _ = stateful(Program::MAX_STORAGE_SLOTS + 1);
     }
 
     #[test]
-    fn left_folded_depths() {
+    fn taproot_leaf_depths_are_left_folded() {
         assert_eq!(Program::taproot_leaf_depths(1), vec![0]);
         assert_eq!(Program::taproot_leaf_depths(2), vec![1, 1]);
         assert_eq!(Program::taproot_leaf_depths(3), vec![2, 2, 1]);
@@ -773,10 +816,10 @@ mod tests {
         assert_eq!(Program::taproot_leaf_depths(5), vec![4, 4, 3, 2, 1]);
     }
 
-    // The measured boundary: a balanced tree agrees with a left fold up to three leaves and
-    // diverges from four. Four leaves balanced is [2, 2, 2, 2]; left-folded it is not.
+    // A balanced tree and a left fold agree up to three leaves. With four leaves, a balanced tree
+    // has depths [2, 2, 2, 2] and a left fold doesn't.
     #[test]
-    fn diverges_from_a_balanced_tree_at_four_leaves() {
+    fn left_fold_differs_from_a_balanced_tree_at_four_leaves() {
         assert_eq!(Program::taproot_leaf_depths(3), vec![2, 2, 1]);
         assert_ne!(Program::taproot_leaf_depths(4), vec![2, 2, 2, 2]);
     }

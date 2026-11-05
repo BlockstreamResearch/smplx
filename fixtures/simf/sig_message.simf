@@ -18,7 +18,7 @@ fn tagged_message() -> u256 {
 }
 
 /// sha256(sig_all_hash). Not a tagged hash and not the sighash itself,
-/// so neither Sighash nor Tagged can produce it.
+/// so neither Sighash nor Tagged can produce this message.
 fn custom_message() -> u256 {
     let ctx: Ctx8 = jet::sha_256_ctx_8_init();
     let ctx: Ctx8 = jet::sha_256_ctx_8_add_32(ctx, jet::sig_all_hash());

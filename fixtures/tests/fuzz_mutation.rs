@@ -102,7 +102,7 @@ fn unbalanced_transaction_is_a_setup_error(test_context: TestContext<FuzzMode>) 
     test_context.engine(scenario).mutations(Mutations::default()).run();
 }
 
-/// The template sets the locktime to 100, which makes input 0 enforce it.
+/// The template sets the locktime to 100, and input 0 enforces that locktime.
 #[simplex::fuzz]
 fn timelock_passes_with_a_spec_on_the_lock_height(test_context: TestContext<FuzzMode>) {
     let mut transaction = FinalTransaction::new();
@@ -185,7 +185,7 @@ fn auth_input_requirement_follows_its_utxo(test_context: TestContext<FuzzMode>) 
         .run();
 }
 
-/// The transaction enables the locktime, so a final input has to override it.
+/// The transaction enables the locktime, so a final input has to override the transaction's sequence.
 #[simplex::fuzz]
 fn sequence_mutation_reaches_the_signed_transaction(test_context: TestContext<FuzzMode>) {
     let mut transaction = FinalTransaction::new();

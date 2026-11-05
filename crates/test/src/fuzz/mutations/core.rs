@@ -1,4 +1,7 @@
-/// Which mutations a run draws.
+/// Which kinds of [`Mutation`](crate::fuzz::Mutation) a run draws.
+///
+/// `Mutations::default()` enables amounts, assets and timelocks. Layout changes, and mutating
+/// UTXOs that no program spends or locks, are off by default.
 #[derive(Clone, Debug)]
 pub struct Mutations {
     pub(crate) amounts: bool,

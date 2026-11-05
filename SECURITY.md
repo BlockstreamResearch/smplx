@@ -8,8 +8,8 @@ In your report, please include as much information as you can, including:
 
 * a description of the vulnerability and how it could be exploited
 * its potential impact (e.g. privacy leak, denial of service, theft of funds)
-* steps or code for reproducing it
-* a proposed patch for remedying it
+* steps or code for reproducing the vulnerability
+* a proposed patch, if you have one
 
 Also, provide us with a secure means to contact you with any follow up questions we might have.
 
@@ -17,7 +17,7 @@ Also, provide us with a secure means to contact you with any follow up questions
 
 Please take care not to violate the privacy of users in your report. For example, stack traces or exploit scripts sent to us should never contain private keys or personally identifiable information.
 
-Give us at least one week to investigate the vulnerability you found and up to 90 days to fix it. Also, please give us reasonable advanced notice if at any point you intend to disclose the vulnerability to anyone else.
+Give us at least one week to investigate the vulnerability you found and up to 90 days to fix the issue. Also, please give us reasonable advanced notice if at any point you intend to disclose the vulnerability to anyone else.
 
 In general, please investigate and report bugs in a way that makes a reasonable, good faith effort not to be disruptive or harmful to us, this software's users, or the users of dependent projects.
 
