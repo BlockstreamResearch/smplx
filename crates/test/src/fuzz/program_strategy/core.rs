@@ -7,7 +7,9 @@ use crate::fuzz::program_strategy::FuzzProgramSchema;
 /// The values a program strategy generates for one program of a case.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FuzzProgramValues {
+    /// The program's arguments.
     pub arguments: Arguments,
+    /// The witness of the inputs the program spends.
     pub witness: WitnessValues,
     /// One 32-byte value per storage slot.
     pub storage: Vec<[u8; 32]>,

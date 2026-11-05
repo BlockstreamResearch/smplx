@@ -9,10 +9,12 @@ use rand::{Rng, RngExt};
 
 use smplx_sdk::program::ProgramSchema;
 
+/// Random arguments for program `P`, each value drawn as [`generate_random_value_by_ty`] draws it.
 pub fn random_arguments<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> Arguments {
     Arguments::from_map(random_fields(&P::argument_types(), rng))
 }
 
+/// A random witness for program `P`, each value drawn as [`generate_random_value_by_ty`] draws it.
 pub fn random_witness<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> WitnessValues {
     WitnessValues::from_map(random_fields(&P::witness_types(), rng))
 }
@@ -27,6 +29,11 @@ pub(crate) fn random_fields<R: Rng + ?Sized>(
         .collect()
 }
 
+/// A random value of type `ty`.
+///
+/// Integers and booleans are uniform. Each `Either` branch and each `Option` variant is picked
+/// with equal probability, so an `Option` is `None` half the time, and a list's length is uniform
+/// over the lengths it allows.
 pub fn generate_random_value_by_ty<R: Rng + ?Sized>(ty: &ResolvedType, rng: &mut R) -> Value {
     match ty.as_inner() {
         TypeInner::Either(left_ty, right_ty) => match rng.random::<bool>() {
