@@ -262,7 +262,7 @@ impl TestContext<FuzzMode> {
         self.create_signer(random_mnemonic().as_str())
     }
 
-    /// Returns the default signer, initiated from the config.
+    /// Returns the default signer, created from the config.
     pub fn get_default_signer(&self) -> &Signer {
         &self.mode.signer
     }

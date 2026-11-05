@@ -7,7 +7,7 @@ use smplx_test::{TestConfig, smplx_test_marker};
 use super::core::{TestArguments, TestFlags};
 use super::error::CommandError;
 
-/// Nextest dsl variable to filter and use only simplex tests
+/// Nextest filter expression that selects only Simplex tests.
 const SMPLX_NEXTEST_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(), "$/)");
 const SMPLX_NEXTEST_FUZZ_DSL_TEST_MARKER: &str = concat!("test(/", smplx_test_marker!(fuzz), "$/)");
 const DEFAULT_THREADS_NUMBER: usize = 1;
@@ -26,7 +26,7 @@ impl Test {
         let cache_path = Self::get_test_config_cache_name()?;
 
         if flags.verbose > Verbosity::MAX_VERBOSITY_LEVEL {
-            return Err(CommandError::BadVersbosityMode(flags.verbose));
+            return Err(CommandError::BadVerbosityMode(flags.verbose));
         }
 
         config.verbosity = std::cmp::max(config.verbosity, Verbosity::new(flags.verbose));

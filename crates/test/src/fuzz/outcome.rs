@@ -19,7 +19,7 @@ pub(crate) enum Rejection {
     Panic,
     /// A pruned branch was reached, e.g. `unwrap(None)`.
     Unwrap,
-    /// A Bit Machine limit exceeded.
+    /// A Bit Machine limit was exceeded.
     Resource,
     /// The program costs more than its witness pays for.
     Budget,

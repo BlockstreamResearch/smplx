@@ -101,7 +101,7 @@ impl<'a> FuzzCase<'a> {
         self.map.new_output_position(old_index)
     }
 
-    /// The SHA-256 hash of the script of the output input `index` spends.
+    /// The SHA-256 hash of the script that input `index` spends.
     ///
     /// # Panics
     /// Panics when the transaction has no input `index`.
@@ -165,12 +165,12 @@ impl<'a> FuzzCase<'a> {
         self.transaction.outputs()[index].amount
     }
 
-    /// The lock height as the jets see it: zero when every input sequence is final or the locktime is a time.
+    /// The lock height the jets read: zero when every input sequence is final or the locktime is a time.
     pub fn lock_height(&self) -> u32 {
         self.read_lock(|locktime| locktime < LOCK_TIME_THRESHOLD)
     }
 
-    /// The lock time as the jets see it: zero when every input sequence is final or the locktime is a height.
+    /// The lock time the jets read: zero when every input sequence is final or the locktime is a height.
     pub fn lock_time(&self) -> u32 {
         self.read_lock(|locktime| locktime >= LOCK_TIME_THRESHOLD)
     }

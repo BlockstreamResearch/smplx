@@ -39,7 +39,7 @@ impl Scenario {
         }
     }
 
-    /// Adds a program of type `P`, named `name`, and returns a builder to configure it.
+    /// Adds a program of type `P`, named `name`, and returns a builder for that program.
     ///
     /// Names must be unique. At least one program must spend an input, and an input or output
     /// can belong to only one program.
@@ -379,7 +379,7 @@ impl<'a, 's> CaseBuilder<'a, 's> {
         Ok(())
     }
 
-    /// Sets the required witness values, then violates one of them when the case picks it.
+    /// Sets the required witness values, then violates the one the case picks, if any.
     fn require_witnesses(&mut self) -> Result<Option<RequiredValue<'a>>, SetupError> {
         let scenario = self.scenario;
         let mut requirements = Requirements::new();

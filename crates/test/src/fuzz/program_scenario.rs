@@ -27,7 +27,7 @@ pub struct FuzzProgramScenarioBuilder<'a, P> {
     _program: PhantomData<fn() -> P>,
 }
 
-/// The FuzzProgram fuzz configuration.
+/// The fuzz configuration of one program.
 pub(crate) struct FuzzProgramScenario {
     pub(crate) name: String,
     pub(crate) inputs: Vec<usize>,
@@ -204,7 +204,7 @@ impl<'a, P: FuzzProgramTrait> FuzzProgramScenarioBuilder<'a, P> {
         self
     }
 
-    /// Locks the transaction output at `index` to this program with the storage `transition` function returns.
+    /// Locks the transaction output at `index` to this program with the storage that `transition` returns.
     pub fn recursive(self, index: usize, transition: impl Fn(&FuzzProgram<'_, P>) -> Vec<[u8; 32]> + 'static) -> Self {
         let name = self.program_scenario.name.clone();
 

@@ -38,7 +38,7 @@ impl<'a> TxReceipt<'a> {
         Self { provider, tx_id }
     }
 
-    /// Returns the ID of the broadcasted transaction.
+    /// Returns the ID of the broadcast transaction.
     #[must_use]
     pub fn txid(self) -> Txid {
         self.tx_id

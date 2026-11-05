@@ -66,7 +66,7 @@ fn signed_witness_is_accepted(test_context: TestContext<FuzzMode>) -> anyhow::Re
     Ok(())
 }
 
-/// The hot path signs with the first of its two signatures, the second is never checked.
+/// The hot path checks the first of its two signatures and never the second.
 #[simplex::fuzz]
 fn nested_sig_spends_through_its_hot_path(test_context: TestContext<FuzzMode>) -> anyhow::Result<()> {
     let public_key = test_context.get_default_signer().get_schnorr_public_key().serialize();

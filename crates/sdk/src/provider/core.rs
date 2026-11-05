@@ -19,7 +19,7 @@ pub const DEFAULT_ESPLORA_TIMEOUT_SECS: u64 = 10;
 pub const DEFAULT_CONFIRMATION_ATTEMPTS: u32 = 9;
 
 /// The endpoints of a provider: an Esplora URL, and for a regtest node, its RPC URL and
-/// credentials. Neither the SDK nor the test framework reads it.
+/// credentials. Neither the SDK nor the test framework reads these.
 #[cfg(feature = "provider")]
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
@@ -34,8 +34,9 @@ pub struct ProviderInfo {
 /// Access to a Liquid or Elements network: broadcasting, confirmation, chain queries and UTXO
 /// lookups.
 ///
-/// All methods block. `EsploraProvider` and `SimplexProvider` implement it with the `provider`
-/// feature. The trait itself doesn't need the feature, so a host without it can implement it.
+/// All methods block. `EsploraProvider` and `SimplexProvider` implement this trait with the
+/// `provider` feature. The trait itself doesn't need the feature, so a host without the feature
+/// can still implement the trait.
 ///
 /// UTXOs come back as the chain has them: a confidential output has `secrets: None`. A
 /// [`Signer`](crate::signer::Signer) unblinds its own outputs.
@@ -43,7 +44,7 @@ pub trait ProviderTrait: Send + Sync {
     /// The network this provider talks to.
     fn get_network(&self) -> &SimplicityNetwork;
 
-    /// Broadcasts `tx` and returns a receipt for it.
+    /// Broadcasts `tx` and returns the transaction's receipt.
     ///
     /// # Errors
     /// Returns `ProviderError::BroadcastRejected` if the provider answers with an error status,

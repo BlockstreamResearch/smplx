@@ -9,12 +9,12 @@ use rand::{Rng, RngExt};
 
 use smplx_sdk::program::ProgramSchema;
 
-/// Random arguments for program `P`, each value drawn as [`generate_random_value_by_ty`] draws it.
+/// Random arguments for program `P`, with each value drawn by [`generate_random_value_by_ty`].
 pub fn random_arguments<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> Arguments {
     Arguments::from_map(random_fields(&P::argument_types(), rng))
 }
 
-/// A random witness for program `P`, each value drawn as [`generate_random_value_by_ty`] draws it.
+/// A random witness for program `P`, with each value drawn by [`generate_random_value_by_ty`].
 pub fn random_witness<P: ProgramSchema, R: Rng + ?Sized>(rng: &mut R) -> WitnessValues {
     WitnessValues::from_map(random_fields(&P::witness_types(), rng))
 }

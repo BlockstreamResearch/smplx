@@ -154,7 +154,7 @@ impl Covenant {
     /// Compiles the covenant and returns its Commitment Merkle Root as lowercase hex.
     ///
     /// # Errors
-    /// Returns an error the source fails to compile.
+    /// Returns an error if the source fails to compile.
     #[wasm_bindgen(js_name = commitmentMerkleRoot)]
     pub fn commitment_merkle_root(&self) -> Result<String, JsError> {
         self.validate()?;
@@ -166,7 +166,7 @@ impl Covenant {
     /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
     ///
     /// # Errors
-    /// Returns an error the source fails to compile.
+    /// Returns an error if the source fails to compile.
     #[wasm_bindgen(js_name = tapleafHash)]
     pub fn tapleaf_hash(&self) -> Result<String, JsError> {
         self.validate()?;
@@ -426,7 +426,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block height this transaction may not be mined before.
-    /// Unless a sequence is set, the inputs get one that enforces it.
+    /// Unless a sequence is set, the inputs get one that enforces the locktime.
     ///
     /// # Panics
     /// Panics if `height` is `500_000_000` or greater, which Elements reads as a time.
@@ -436,7 +436,7 @@ impl TransactionBuilder {
     }
 
     /// Sets the block time this transaction may not be mined before.
-    /// Unless a sequence is set, the inputs get one that enforces it.
+    /// Unless a sequence is set, the inputs get one that enforces the locktime.
     ///
     /// # Panics
     /// Panics if `time` is below `500_000_000`, which Elements reads as a height.
@@ -807,10 +807,10 @@ impl TransactionBuilder {
         self.transaction.n_outputs()
     }
 
-    /// The issuer contract an issuance commits to, which is nothing unless one is named.
+    /// The issuer contract hash an issuance commits to, all zeroes when none is given.
     fn issuer_contract(written: Option<&str>) -> Result<[u8; 32], String> {
         match written.map(str::trim).filter(|hex_id| !hex_id.is_empty()) {
-            Some(hex_id) if hex_id.len() != 64 => Err("an id is thirty-two bytes".to_string()),
+            Some(hex_id) if hex_id.len() != 64 => Err("a contract hash is 64 hex characters".to_string()),
             Some(hex_id) => ContractHash::from_str(hex_id)
                 .map(ContractHash::to_byte_array)
                 .map_err(|e| e.to_string()),
@@ -818,8 +818,8 @@ impl TransactionBuilder {
         }
     }
 
-    /// Which signature a covenant input needs. Can either be a witness name like `SIGNATURE`,
-    /// or a withess path if the signature is embedded like `SIGNATURE.Left.Right.1`
+    /// Which signature a covenant input needs: a witness name like `SIGNATURE`, or a witness path
+    /// like `SIGNATURE.Left.Right.1` when the signature sits inside the field.
     ///
     /// `None` means no signature is required.
     fn program_signature(signature_witness: Option<&str>) -> Option<ProgramSignature> {
@@ -1031,19 +1031,19 @@ mod tests {
     const TRIVIAL: &str = "fn main() { }";
 
     #[test]
-    fn state_leaf_that_is_not_a_full_slot_is_refused() {
+    fn short_state_leaf_is_rejected() {
         let refused = Covenant::state_leaves("[\"00\"]").expect_err("a one byte leaf");
 
         assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
     }
 
     #[test]
-    fn state_leaf_that_is_not_hex_is_refused() {
+    fn non_hex_state_leaf_is_rejected() {
         assert!(Covenant::state_leaves("[\"nonsense\"]").is_err());
     }
 
     #[test]
-    fn full_width_leaves_are_read_in_the_order_they_were_given() {
+    fn state_leaves_keep_their_order() {
         let read = Covenant::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
             .expect("two full leaves");
 
@@ -1051,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn full_width_state_leaf_is_accepted_and_updates_the_address() {
+    fn state_leaf_changes_the_address_but_not_the_cmr() {
         let leaf = "00".repeat(32);
         let other = format!("{}01", "00".repeat(31));
 
@@ -1064,7 +1064,7 @@ mod tests {
 
         assert_ne!(plain.address(network).unwrap(), stateful.address(network).unwrap());
         assert_ne!(stateful.address(network).unwrap(), moved.address(network).unwrap());
-        // The program did not change, only where its funds sit.
+        // The program is the same, only the address changes.
         assert_eq!(
             stateful.commitment_merkle_root().unwrap(),
             moved.commitment_merkle_root().unwrap()
@@ -1121,21 +1121,21 @@ mod tests {
     }
 
     #[test]
-    fn reports_the_assets_liquid_actually_holds() {
+    fn issuance_report_matches_liquid_asset_ids() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
             assert_eq!(report_for(txid, vout, contract).asset_id, asset);
         }
     }
 
     #[test]
-    fn reports_the_reissuance_tokens_liquid_actually_holds() {
+    fn issuance_report_matches_liquid_token_ids() {
         for (txid, vout, contract, _, token) in ON_CHAIN {
             assert_eq!(report_for(txid, vout, contract).reissuance_token_id, token);
         }
     }
 
     #[test]
-    fn reports_an_entropy_its_own_asset_can_be_rederived_from() {
+    fn reported_entropy_derives_the_asset() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
             let reported = report_for(txid, vout, contract).entropy;
             let read_back = AssetEntropy::from_str(&reported).expect("a reported entropy");
@@ -1145,7 +1145,7 @@ mod tests {
     }
 
     #[test]
-    fn commits_to_no_issuer_contract_unless_one_is_named() {
+    fn missing_issuer_contract_is_all_zeroes() {
         let empty = [0_u8; 32];
 
         assert_eq!(TransactionBuilder::issuer_contract(None), Ok(empty));
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn id_leaves_in_the_form_it_arrived_in() {
+    fn issuer_contract_keeps_its_display_byte_order() {
         let written = "ce091c998b83c78bb71a632313ba3760f1763d9cfcffae02258ffa9865a37bd2";
         let read = TransactionBuilder::issuer_contract(Some(written)).expect("a written id");
 
@@ -1165,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_an_issuer_contract_that_is_not_an_id() {
+    fn malformed_issuer_contract_is_rejected() {
         assert!(TransactionBuilder::issuer_contract(Some("not hex at all")).is_err());
         assert!(TransactionBuilder::issuer_contract(Some("00ff")).is_err());
     }
@@ -1178,8 +1178,8 @@ mod tests {
     }"#;
 
     #[test]
-    fn reads_back_what_the_wallet_unblinded() {
-        let secrets = TransactionBuilder::blinding_secrets(SECRETS).expect("the wallet's own reading");
+    fn blinding_secrets_are_parsed() {
+        let secrets = TransactionBuilder::blinding_secrets(SECRETS).expect("valid blinding secrets");
 
         assert_eq!(secrets.value, 100_000);
         assert_eq!(
@@ -1189,25 +1189,25 @@ mod tests {
     }
 
     #[test]
-    fn refuses_secrets_that_leave_a_field_out() {
+    fn blinding_secrets_without_a_field_are_rejected() {
         for missing in ["value", "asset", "assetBlindingFactor", "valueBlindingFactor"] {
             let without = SECRETS.replace(missing, "somethingElse");
 
             assert!(
                 TransactionBuilder::blinding_secrets(&without).is_err(),
-                "a reading without {missing} is not a reading"
+                "secrets without {missing} are rejected"
             );
         }
     }
 
     #[test]
-    fn refuses_secrets_that_are_not_a_reading_at_all() {
+    fn malformed_blinding_secrets_are_rejected() {
         assert!(TransactionBuilder::blinding_secrets("not json").is_err());
         assert!(TransactionBuilder::blinding_secrets("{}").is_err());
     }
 
     #[test]
-    fn reads_a_value_written_as_a_decimal_string_exactly() {
+    fn decimal_string_value_is_parsed_exactly() {
         for (written, exact) in [
             ("0", 0),
             ("9007199254740993", 9_007_199_254_740_993),
@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_json_number_above_javascripts_safe_integer_limit() {
+    fn json_number_above_safe_integer_is_rejected() {
         let safe = serde_json::json!(9_007_199_254_740_991_u64);
         let unsafe_number = serde_json::from_str::<serde_json::Value>("288230376151711740")
             .expect("the decimal digits emitted by JSON.stringify(2 ** 58)");
@@ -1236,7 +1236,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_an_amount_that_is_not_plain_decimal_digits() {
+    fn non_decimal_amount_is_rejected() {
         for written in [
             serde_json::json!(""),
             serde_json::json!("+1"),
@@ -1253,7 +1253,7 @@ mod tests {
     const TOKEN_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000001";
     const VALUE_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000003";
 
-    /// The entropy of the first chain vector, as `IssuanceReport` writes it.
+    /// The entropy of the first chain vector, in the format `IssuanceReport` uses.
     fn first_entropy() -> String {
         let (txid, vout, contract, _, _) = ON_CHAIN[0];
 
@@ -1271,8 +1271,8 @@ mod tests {
         AssetBlindingFactor::from_str(written).expect("a blinder")
     }
 
-    /// An output holding one unit of `asset`, committed with `committed_bf` or left explicit,
-    /// paired with the opening the wallet claims for it.
+    /// An input spending one unit of `asset`, blinded with `committed_bf` or left explicit, with
+    /// `claimed_bf` as its secrets.
     fn holding(
         asset: AssetId,
         committed_bf: Option<AssetBlindingFactor>,
@@ -1304,7 +1304,7 @@ mod tests {
     }
 
     #[test]
-    fn reissuance_mints_the_asset_its_entropy_first_issued() {
+    fn reissuance_mints_the_original_asset() {
         let entropy = first_entropy();
         let token = token_of(&entropy, false);
         let spent = holding(token, Some(blinder(TOKEN_BLINDER)), blinder(TOKEN_BLINDER));
@@ -1349,7 +1349,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_a_path_relative_to_the_account() {
+    fn relative_path_is_parsed() {
         assert_eq!(
             TransactionBuilder::relative_path("0/7").expect("a path").to_string(),
             "0/7"
@@ -1372,7 +1372,7 @@ mod tests {
     }
 
     #[test]
-    fn covenant_input_is_signed_with_the_key_it_names() {
+    fn covenant_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_input(
@@ -1393,7 +1393,7 @@ mod tests {
     }
 
     #[test]
-    fn covenant_input_naming_no_key_keeps_the_signers_default() {
+    fn covenant_input_without_path_uses_the_default_key() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_input(
@@ -1414,7 +1414,7 @@ mod tests {
     }
 
     #[test]
-    fn covenant_issuance_input_is_signed_with_the_key_it_names() {
+    fn covenant_issuance_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_covenant_issuance_input(
@@ -1438,7 +1438,7 @@ mod tests {
     }
 
     #[test]
-    fn wallet_input_is_signed_with_the_key_it_names() {
+    fn wallet_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
         let added = builder.add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));

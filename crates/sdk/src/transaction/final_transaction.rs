@@ -80,7 +80,7 @@ impl FinalInput {
     /// Converts this input, with its issuance, into a PSET input.
     ///
     /// The input's own sequence and locktime are used as they are. [`FinalTransaction::extract_pst`]
-    /// fills in the transaction-wide ones first and checks the issuance, so prefer it.
+    /// fills in the transaction-wide ones first and checks the issuance, so prefer `extract_pst`.
     ///
     /// # Panics
     /// Panics if the input reissues an asset and `partial_input.secrets` is `None`, because the
@@ -311,7 +311,8 @@ impl FinalTransaction {
         self.change.as_ref()
     }
 
-    /// The change target set with [`FinalTransaction::add_change`], if any, for changing it.
+    /// The change target set with [`FinalTransaction::add_change`], if any, for changing the target
+    /// in place.
     #[must_use]
     pub fn change_mut(&mut self) -> Option<&mut ChangeOutput> {
         self.change.as_mut()
@@ -466,8 +467,8 @@ impl FinalTransaction {
     ///
     /// Each input without its own sequence or locktime gets [`FinalTransaction::sequence`] and
     /// [`FinalTransaction::locktime`]. An explicit input gets secrets with zero blinding
-    /// factors, so that blinding can balance against it. Outputs are converted as they are: this
-    /// doesn't add any change or fee output.
+    /// factors, so that blinding can balance against the explicit amount. Outputs are converted
+    /// as they are: this doesn't add any change or fee output.
     ///
     /// This is where code that signs outside the [`Signer`](crate::signer::Signer) takes over.
     ///
@@ -573,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_input_is_not_a_confidential_one() {
+    fn explicit_input_is_not_confidential() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -583,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn input_carrying_secrets_is_a_confidential_one() {
+    fn input_with_secrets_is_confidential() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -593,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+    fn explicit_output_needs_no_blinding() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -605,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn blinded_output_is_what_balances_the_transaction() {
+    fn output_with_blinding_key_needs_blinding() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -616,7 +617,7 @@ mod tests {
         assert!(ft.needs_blinding());
     }
 
-    // Manually construct PST and check extract_pst correctness based on it
+    // Build the expected PST by hand and compare `extract_pst` with the result
     #[test]
     fn extract_pst_single_explicit_input_single_output() {
         let policy = dummy_asset_id(0xAA);
@@ -645,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn declared_height_becomes_the_transactions_locktime() {
+    fn locktime_height_applies_to_every_input() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -681,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_that_declares_no_height_still_has_none() {
+    fn no_locktime_keeps_final_sequences() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -1023,7 +1024,7 @@ mod tests {
     }
 
     #[test]
-    fn token_only_issuance_has_a_null_amount_and_an_empty_one_is_rejected() {
+    fn token_only_issuance_is_allowed_and_empty_issuance_is_rejected() {
         let policy = dummy_asset_id(0xAA);
         let issuance = |issuance_amount, inflation_amount| {
             let mut tx = FinalTransaction::new();

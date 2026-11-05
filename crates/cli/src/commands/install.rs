@@ -203,7 +203,7 @@ impl Install {
     /// at `reference`, keeping only `package` when it is set.
     ///
     /// 1. Clone the history without contents and any checks.
-    /// 2. If `package` is set, restrict the checkout to it.
+    /// 2. If `package` is set, restrict the checkout to that directory.
     /// 3. Check out `rev` (or the cloned ref), downloading only the files it needs.
     fn git_commands(url: &str, reference: Option<&GitRef>, package: Option<&str>, target_dir: &Path) -> Vec<Command> {
         let mut clone = Command::new("git");

@@ -39,7 +39,8 @@ pub struct PartialInput {
     pub derivation_path: Option<DerivationPath>,
 }
 
-/// The Simplicity program that locks an input's spent output, and the witness that satisfies it.
+/// The Simplicity program that locks an input's spent output, and the witness that satisfies the
+/// program.
 #[derive(Clone)]
 pub struct ProgramInput {
     /// The program. Its address must be the spent output's script.
