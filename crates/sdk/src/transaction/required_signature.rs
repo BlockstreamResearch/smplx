@@ -3,10 +3,16 @@ use std::sync::Arc;
 
 use crate::utils::tagged_hash;
 
-/// Derives the 32-byte message to sign from the input's `sighash_all`.
+/// A function that derives the 32-byte message to sign from the input's `sighash_all`, for
+/// [`SigMessage::Custom`].
 pub type SigMessageFn = Arc<dyn Fn([u8; 32]) -> [u8; 32] + Send + Sync>;
 
-/// Defines the 32-byte message a witness signature actually covers.
+/// The 32-byte message a program signature covers, derived from the input's Simplicity
+/// `sighash_all`.
+///
+/// Choose the message the contract checks the signature against: `Sighash` for a contract that
+/// calls `jet::bip_0340_verify` on `jet::sig_all_hash()`, and `Tagged` or `Custom` for one that
+/// hashes it first.
 #[derive(Clone)]
 pub enum SigMessage {
     /// Sign `sighash_all` itself.
@@ -17,14 +23,24 @@ pub enum SigMessage {
     Custom(SigMessageFn),
 }
 
-/// The signature the signer puts on a native input.
+/// The signature the signer puts on a native input, one not locked by a Simplicity program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeSignature {
-    /// A native ECDSA (WPKH) signature by the signer.
+    /// An ECDSA signature for a P2WPKH output, with the key at the input's derivation path.
     Ecdsa,
 }
 
-/// A signature the signer injects into a program's witness.
+/// A Schnorr signature the signer puts into a field of a program input's witness.
+///
+/// ```ignore
+/// // The signature goes into `witness::SIGNATURE` itself.
+/// ProgramSignature::new("SIGNATURE");
+/// // It goes inside `witness::PATH`, which has the type `Either<_, Either<Signature, _>>`.
+/// ProgramSignature::new("PATH").at_path(["Right", "Left"]);
+/// ```
+///
+/// The signer signs the message [`SigMessage`] derives from the input's `sighash_all`, using the
+/// key at the input's derivation path.
 #[derive(Debug, Clone)]
 pub struct ProgramSignature {
     name: String,
@@ -32,14 +48,18 @@ pub struct ProgramSignature {
     message: SigMessage,
 }
 
-/// The signature an input needs, native or into a program's witness.
+/// The signature the signer adds to an input.
+///
+/// [`FinalTransaction`](super::FinalTransaction)'s `add_*` methods take an
+/// `Option<NativeSignature>` or an `Option<ProgramSignature>` and convert it into this type.
 #[derive(Debug, Clone)]
 pub enum RequiredSignature {
-    /// No signature is required.
+    /// The signer doesn't sign the input. A native input stays unsigned, for its owner to sign,
+    /// and a program input's witness is used as supplied.
     None,
-    /// A native ECDSA (WPKH) signature is required.
+    /// The signer signs a native input with ECDSA, as [`NativeSignature::Ecdsa`].
     NativeEcdsa,
-    /// A signature injected into the program's witness.
+    /// The signer puts a signature into the program's witness, as [`ProgramSignature`] describes.
     Program(ProgramSignature),
 }
 
@@ -67,6 +87,9 @@ impl fmt::Debug for SigMessage {
 
 impl ProgramSignature {
     /// A signature over `sighash_all`, put into the witness field `name`.
+    ///
+    /// `name` is the field's name in the contract without the `witness::` prefix. The signer
+    /// replaces the field's whole value with the 64-byte signature.
     #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
@@ -76,7 +99,17 @@ impl ProgramSignature {
         }
     }
 
-    /// Puts the signature inside the witness field at `path`, e.g. `["Right", "Left", "0"]`.
+    /// Puts the signature at `path` inside the witness field, rather than replacing the field.
+    ///
+    /// Each step goes one level into the field's type: `"Left"` or `"Right"` into that branch of
+    /// an `Either`, and a decimal index such as `"0"` into that element of an array or tuple. The
+    /// supplied witness value must already take the branches the path names, and the value at
+    /// the end of the path must have the signature's type, `[u8; 64]`.
+    ///
+    /// The signer returns `SignerError::WitnessFieldNotFound` if the program doesn't have the
+    /// field, and `SignerError::WitnessInjectError` if the path doesn't fit the field's type or
+    /// value. It panics if the program has the field but the witness supplied in the
+    /// [`ProgramInput`](super::ProgramInput) doesn't contain it.
     #[must_use]
     pub fn at_path<I>(mut self, path: I) -> Self
     where
@@ -88,7 +121,8 @@ impl ProgramSignature {
         self
     }
 
-    /// Signs the message `message` derives from `sighash_all` instead of `sighash_all` itself.
+    /// Signs the message that `message` derives from `sighash_all`, instead of `sighash_all`
+    /// itself.
     #[must_use]
     pub fn with_message(mut self, message: SigMessage) -> Self {
         self.message = message;
@@ -96,7 +130,8 @@ impl ProgramSignature {
         self
     }
 
-    /// Signs the BIP-340 tagged hash over `tag` and `sighash_all`.
+    /// Signs the BIP-340 tagged hash `sha256(sha256(tag) || sha256(tag) || sighash_all)`, as
+    /// `with_message(SigMessage::Tagged(tag))` does.
     #[must_use]
     pub fn tagged(self, tag: &str) -> Self {
         self.with_message(SigMessage::Tagged(tag.to_string()))
