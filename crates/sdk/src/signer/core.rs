@@ -321,12 +321,25 @@ impl Signer {
         ))
     }
 
-    /// Verifies and finalizes a transaction against a strict target confirmation window (in blocks).
-    /// This function also assumes that the transaction already includes the coin selection.
+    /// Finalizes a transaction using only the inputs it already has, paying `fee_rate` sats/kvb.
+    ///
+    /// Unlike `Signer::finalize`, this doesn't add any wallet inputs or fetch a fee rate, so it
+    /// doesn't need a provider. Like `Signer::finalize`, it appends a fee output and, unless the
+    /// change would be too small to keep, a change output before it, then signs and runs every
+    /// program input. Returns the transaction and its fee.
     ///
     /// # Errors
-    /// Returns a `SignerError` if the assembled inputs do not meet dust limits or fail to cover the
-    /// dynamically estimated required fee.
+    /// - `SignerError::InvalidFeeRate` if `fee_rate` isn't a finite, non-negative number.
+    /// - `SignerError::UnknownInputAmount` if an input is confidential and has no unblinding secrets.
+    /// - `SignerError::DuplicateInput` if the transaction spends an outpoint twice.
+    /// - `SignerError::DustAmount` if the inputs don't exceed the outputs by at least [`MIN_FEE`] of
+    ///   the policy asset.
+    /// - `SignerError::NotEnoughFeeAmount` if that surplus can't pay the fee, or the fee and the
+    ///   smallest blinded change when the change can't be dropped.
+    /// - `SignerError::ConfidentialInputWithoutBlindedOutput` if the transaction spends a
+    ///   confidential input, has an explicit change target, and doesn't have any blinded output.
+    /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
+    /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`].
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
         Self::check_known_amounts(tx)?;
         Self::check_unique_inputs(tx)?;
