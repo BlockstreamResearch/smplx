@@ -314,9 +314,10 @@ impl Signer {
     ///   `ProgramError::ProgramExecution` if a program rejects the spend.
     #[cfg(feature = "provider")]
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
         let (tx, fee) = self.complete(tx)?;
 
-        Ok((self.sign_and_flush(&tx)?, fee))
+        Ok((self.sign_tx(&tx)?.extract_tx()?, fee))
     }
 
     /// The fee [`Signer::finalize`] would pay for `tx`. Completes `tx` the same way, without
@@ -326,6 +327,8 @@ impl Signer {
     /// Returns the errors of [`Signer::finalize`], except those of signing.
     #[cfg(feature = "provider")]
     pub fn estimate(&self, tx: &FinalTransaction) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
+
         Ok(self.complete(tx)?.1)
     }
 
@@ -349,6 +352,7 @@ impl Signer {
     /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
     /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`].
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
         let completion = self.complete_strict(tx, fee_rate)?;
         let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
@@ -357,7 +361,7 @@ impl Signer {
         }
 
         match completion {
-            Completion::Success(tx, fee) => Ok((self.sign_and_flush(&tx)?, fee)),
+            Completion::Success(tx, fee) => Ok((self.sign_tx(&tx)?.extract_tx()?, fee)),
             Completion::Failure(required_fee) => {
                 Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee))
             }
@@ -376,6 +380,8 @@ impl Signer {
     /// `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`] does,
     /// and `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
+
         Ok(match self.complete_strict(tx, fee_rate)? {
             Completion::Success(_, fee) | Completion::Failure(fee) => fee,
         })
@@ -393,6 +399,7 @@ impl Signer {
     ///   `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`]
     ///   does, and the errors of [`Signer::sign_tx`].
     pub fn finalize_strict_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
         let (fee_tx, fee) = Self::complete_strict_fee(tx, &self.network, fee_rate)?;
         let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
@@ -404,7 +411,10 @@ impl Signer {
             return Err(SignerError::Unbalanced);
         }
 
-        Ok((self.sign_and_flush(&fee_tx)?, policy_amount_delta.cast_unsigned()))
+        Ok((
+            self.sign_tx(&fee_tx)?.extract_tx()?,
+            policy_amount_delta.cast_unsigned(),
+        ))
     }
 
     /// The fee [`Signer::finalize_strict_fee`] needs `tx` on `network` to pay at `fee_rate`
@@ -423,6 +433,8 @@ impl Signer {
         network: &SimplicityNetwork,
         fee_rate: f32,
     ) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
+
         Ok(Self::complete_strict_fee(tx, network, fee_rate)?.1)
     }
 
@@ -464,7 +476,7 @@ impl Signer {
     /// outputs, every call produces different output commitments and so a different
     /// `sighash_all`.
     ///
-    /// Running a program input with [`ProgramTrait::execute`] on the result is a dry run: it
+    /// Running a program input with [`ProgramTrait::finalize`] on the result is a dry run: it
     /// checks the program with its real signature without finalizing anything.
     ///
     /// # Errors
@@ -931,15 +943,6 @@ impl Signer {
         Ok(Completion::Success(fee_tx, available_delta))
     }
 
-    /// Signs `tx` and prints the buffered program output.
-    fn sign_and_flush(&self, tx: &FinalTransaction) -> Result<Transaction, SignerError> {
-        let signed = self.sign_tx(tx).and_then(|pst| Ok(pst.extract_tx()?));
-
-        ProgramLogger::flush_logs();
-
-        signed
-    }
-
     /// Signs and inserts a signature into appropriate witness value.
     ///
     /// # Errors
@@ -1401,7 +1404,7 @@ mod tests {
 
         // The caller executes against the signed transaction and observes the program's own failure
         assert!(matches!(
-            program.execute(&pst, &signed_witnesses[&1], 1, &signer.network),
+            program.finalize(&pst, &signed_witnesses[&1], 1, &signer.network),
             Err(ProgramError::Pruning(ExecutionError::JetFailed(_)))
         ));
 

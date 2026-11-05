@@ -56,22 +56,11 @@ pub enum ProgramError {
     #[error("Failed to satisfy witness: {0}")]
     WitnessSatisfaction(String),
 
-    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet, and
-    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`.
-    ///
-    /// [`Program`](super::Program) reports both a failure during pruning and a failure in the Bit
-    /// Machine run after pruning with this variant.
+    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet,
+    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`, and
+    /// `ExecutionError::LimitExceeded` is a program beyond the Bit Machine's limits.
     #[error("Failed to prune program: {0}")]
     Pruning(#[from] simplicityhl::simplicity::bit_machine::ExecutionError),
-
-    /// Error thrown when the bit machine cannot be initialized due to complexity or limit restrictions.
-    #[error("Failed to construct a Bit Machine with enough space: {0}")]
-    BitMachineCreation(#[from] simplicityhl::simplicity::bit_machine::LimitError),
-
-    /// The Bit Machine rejected the pruned program. [`Program`](super::Program) doesn't return
-    /// this variant; it reports such failures as `Pruning`.
-    #[error("Failed to execute program on the Bit Machine: {0}")]
-    Execution(simplicityhl::simplicity::bit_machine::ExecutionError),
 
     /// Error indicating an input that doesn't carry the output it spends.
     #[error("Input {input_index} has no witness UTXO")]

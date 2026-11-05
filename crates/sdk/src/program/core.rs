@@ -8,7 +8,8 @@ use simplicityhl::elements::{Address, Script, Transaction, TxOut, taproot};
 use simplicityhl::num::U256;
 use simplicityhl::simplicity::bitcoin::{XOnlyPublicKey, secp256k1};
 use simplicityhl::simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
-use simplicityhl::simplicity::{BitMachine, Cmr, RedeemNode, Value, leaf_version};
+use simplicityhl::simplicity::jet::{Elements, JetEnvironment};
+use simplicityhl::simplicity::{Cmr, RedeemNode, leaf_version};
 use simplicityhl::{Arguments, Parameters, ResolvedType, TemplateProgramWitness, WitnessTypes, WitnessValues};
 use simplicityhl::{CompiledProgram, UnstableFeatures};
 
@@ -54,40 +55,27 @@ pub trait ProgramTrait: DynClone + Send + Sync {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError>;
 
-    /// Runs the program locally on input `input_index` of `pst` with `witness`: satisfies it,
-    /// prunes it, and runs the pruned program on the Bit Machine. Returns the pruned program and
-    /// its output.
+    /// Runs the program locally on input `input_index` of `pst` with `witness` and returns the
+    /// input's witness stack: `[witness, program, cmr, control_block]`.
     ///
-    /// Doesn't check the witness budget; [`ProgramTrait::finalize`] does. With [`Verbosity`](crate::global::Verbosity)
-    /// `Debug` or `Trace`, the execution output is buffered, not printed: call
-    /// [`ProgramLogger::flush_logs`] to print the output.
-    ///
-    /// # Errors
-    /// - `ProgramError::WitnessSatisfaction` if the witness doesn't fit the program's witness types.
-    /// - `ProgramError::Pruning` if the program fails. A failed `assert!` or jet is
-    ///   `ExecutionError::JetFailed`. Reaching a pruned branch, for example with `unwrap(None)`, is
-    ///   `ExecutionError::ReachedPrunedBranch`. [`Program`] reports a failure in the Bit Machine run
-    ///   after pruning with this variant too.
-    /// - `ProgramError::BitMachineCreation` if the program exceeds the Bit Machine's limits.
-    /// - The errors of [`ProgramTrait::get_env`] and of compiling the program.
-    fn execute(
-        &self,
-        pst: &PartiallySignedTransaction,
-        witness: &WitnessValues,
-        input_index: usize,
-        network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode>, Value), ProgramError>;
-
-    /// Runs the program as [`ProgramTrait::execute`] does and returns the input's witness stack:
-    /// `[witness, program, cmr, control_block]`.
+    /// Satisfies the program and prunes the branches the spend doesn't take, which runs the
+    /// program on the Bit Machine. With [`Verbosity`](crate::global::Verbosity) `Debug` or
+    /// `Trace`, the execution output is buffered, not printed: call [`ProgramLogger::flush_logs`]
+    /// to print the output.
     ///
     /// Implementations must compare the pruned program's static cost with the budget from the
     /// exact serialized witness stack they return. Use [`check_budget`] for this check,
     /// as the built-in `Program` does.
     ///
     /// # Errors
-    /// Returns the errors of [`ProgramTrait::execute`], and `ProgramError::InsufficientBudget` if the
-    /// witness stack doesn't pay for the program's execution cost.
+    /// - `ProgramError::WitnessSatisfaction` if the witness doesn't fit the program's witness types.
+    /// - `ProgramError::Pruning` if the program fails. A failed `assert!` or jet is
+    ///   `ExecutionError::JetFailed`. Reaching a pruned branch, for example with `unwrap(None)`, is
+    ///   `ExecutionError::ReachedPrunedBranch`. Exceeding the Bit Machine's limits is
+    ///   `ExecutionError::LimitExceeded`.
+    /// - `ProgramError::InsufficientBudget` if the witness stack doesn't pay for the program's
+    ///   execution cost.
+    /// - The errors of [`ProgramTrait::get_env`] and of compiling the program.
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,
@@ -232,38 +220,6 @@ impl ProgramTrait for Program {
         ))
     }
 
-    fn execute(
-        &self,
-        pst: &PartiallySignedTransaction,
-        witness: &WitnessValues,
-        input_index: usize,
-        network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
-        let satisfied = self
-            .load()?
-            .satisfy(witness.clone())
-            .map_err(ProgramError::WitnessSatisfaction)?;
-
-        // execute() is called multiple times during fee estimation; output is buffered
-        // so only the final successful execution's logs are emitted to stderr.
-        let mut tracker =
-            ProgramLogger::make_tracker(input_index, satisfied.debug_symbols(), GlobalConfig::get_log_level());
-
-        let env = self.get_env(pst, input_index, network)?;
-
-        let pruned = satisfied.redeem().prune_with_tracker(&env, &mut tracker)?;
-
-        if GlobalConfig::is_max_verbose() {
-            ProgramLogger::buffer_cost_log(input_index, &pruned);
-        }
-
-        let mut mac = BitMachine::for_program(&pruned)?;
-
-        let result = mac.exec(&pruned, &env)?;
-
-        Ok((pruned, result))
-    }
-
     fn finalize(
         &self,
         pst: &PartiallySignedTransaction,
@@ -271,7 +227,8 @@ impl ProgramTrait for Program {
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
-        let pruned = self.execute(pst, witness, input_index, network)?.0;
+        let env = self.get_env(pst, input_index, network)?;
+        let pruned = self.prune(witness, input_index, &env)?;
 
         self.witness_stack(&pruned)
     }
@@ -283,14 +240,8 @@ impl ProgramTrait for Program {
         input_index: usize,
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
-        let satisfied = self
-            .load()?
-            .satisfy(witness.clone())
-            .map_err(ProgramError::WitnessSatisfaction)?;
-
         let env = self.get_env(pst, input_index, network)?;
-
-        let pruned = satisfied.redeem().prune(&UnverifiedEnv(&env))?;
+        let pruned = self.prune(witness, input_index, &UnverifiedEnv(&env))?;
 
         self.witness_stack(&pruned)
     }
@@ -312,16 +263,6 @@ impl<T: ProgramTrait + Sized> ProgramTrait for &T {
         network: &SimplicityNetwork,
     ) -> Result<ElementsEnv<Arc<Transaction>>, ProgramError> {
         (*self).get_env(pst, input_index, network)
-    }
-
-    fn execute(
-        &self,
-        pst: &PartiallySignedTransaction,
-        witness: &WitnessValues,
-        input_index: usize,
-        network: &SimplicityNetwork,
-    ) -> Result<(Arc<RedeemNode>, Value), ProgramError> {
-        (*self).execute(pst, witness, input_index, network)
     }
 
     fn finalize(
@@ -630,6 +571,32 @@ impl Program {
             .expect("tap tree should be valid");
 
         Ok(self.spend_info.get_or_init(|| spend_info))
+    }
+
+    /// Satisfies the program with `witness` and prunes it by running it in `env`.
+    fn prune(
+        &self,
+        witness: &WitnessValues,
+        input_index: usize,
+        env: &impl JetEnvironment<Jet = Elements>,
+    ) -> Result<Arc<RedeemNode>, ProgramError> {
+        let satisfied = self
+            .load()?
+            .satisfy(witness.clone())
+            .map_err(ProgramError::WitnessSatisfaction)?;
+
+        // The signer runs a program several times; output is buffered
+        // so only the last run's logs are emitted to stderr.
+        let mut tracker =
+            ProgramLogger::make_tracker(input_index, satisfied.debug_symbols(), GlobalConfig::get_log_level());
+
+        let pruned = satisfied.redeem().prune_with_tracker(env, &mut tracker)?;
+
+        if GlobalConfig::is_max_verbose() {
+            ProgramLogger::buffer_cost_log(input_index, &pruned);
+        }
+
+        Ok(pruned)
     }
 
     /// The witness stack of a spend with `pruned`, checked against its budget.

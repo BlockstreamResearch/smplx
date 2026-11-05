@@ -763,11 +763,11 @@ impl TransactionBuilder {
     /// Runs the Simplicity program of one covenant input against this transaction.
     ///
     /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
-    /// take, and executes the result on a `BitMachine`.
+    /// take, which runs the program on a `BitMachine`, and checks the witness budget.
     ///
     /// # Errors
     /// Returns an error if the input is not a covenant input, or if the program fails to
-    /// satisfy, prune or execute.
+    /// satisfy, run or fit the budget.
     #[wasm_bindgen(js_name = dryRunCovenantInput)]
     pub fn dry_run_covenant_input(&self, input_index: usize, network: &str) -> Result<(), JsError> {
         let network = network_from_str(network)?;
@@ -787,7 +787,7 @@ impl TransactionBuilder {
 
         program_input
             .program
-            .execute(&pst, &program_input.witness, input_index, &network)
+            .finalize(&pst, &program_input.witness, input_index, &network)
             .map_err(|e| JsError::new(&format!("Input {input_index} did not execute: {e}")))?;
 
         Ok(())

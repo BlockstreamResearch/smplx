@@ -53,8 +53,7 @@ impl Outcome {
 
         let rejection = match &error {
             ProgramError::InsufficientBudget { .. } => Rejection::Budget,
-            ProgramError::BitMachineCreation(_) => Rejection::Resource,
-            ProgramError::Pruning(execution) | ProgramError::Execution(execution) => match execution {
+            ProgramError::Pruning(execution) => match execution {
                 ExecutionError::JetFailed(_) => Rejection::Assertion,
                 ExecutionError::ReachedFailNode(_) => Rejection::Panic,
                 ExecutionError::ReachedPrunedBranch(_) => Rejection::Unwrap,
