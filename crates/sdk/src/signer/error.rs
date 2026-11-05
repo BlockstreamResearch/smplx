@@ -11,7 +11,7 @@ use crate::transaction::{FinalTransactionError, UtxoError};
 /// `Provider(ProviderError::BroadcastRejected { .. })`.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    /// A program failed while the signer signed for it, before running it: in
+    /// A program failed while the signer prepared its signature, before the program ran: in
     /// [`SignerTrait::sign_program`](super::SignerTrait::sign_program), or in
     /// [`Signer::sign_witnesses`](super::Signer::sign_witnesses) for an input with a
     /// [`ProgramSignature`](crate::transaction::ProgramSignature). The program doesn't compile,
@@ -23,11 +23,11 @@ pub enum SignerError {
     /// Running a program input failed, so the transaction wasn't finalized.
     ///
     /// Raised before broadcast, by [`Signer::sign_tx`](super::Signer::sign_tx) and the methods
-    /// built on it. `source` says why: `ProgramError::Pruning` when the contract rejects the spend,
-    /// and other variants, such as `ProgramError::WitnessSatisfaction`,
+    /// built on `sign_tx`. `source` says why: `ProgramError::Pruning` when the contract rejects
+    /// the spend, and other variants, such as `ProgramError::WitnessSatisfaction`,
     /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
-    /// program can't run on this input or its witness doesn't pay for it. The locktime and
-    /// sequence identify most timelock failures.
+    /// program can't run on this input or its witness stack doesn't cover the execution cost. The
+    /// locktime and sequence identify most timelock failures.
     #[error(
         "Covenant input {index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
     )]
@@ -119,12 +119,12 @@ pub enum SignerError {
     ConfidentialInputWithoutBlindedOutput,
 
     /// A derivation path doesn't have exactly two unhardened steps, such as `0/5`.
-    #[error("The derivation path `{0}` is not of the form m/n")]
+    #[error("The derivation path `{0}` must have exactly two unhardened steps, such as 0/5")]
     InvalidDerivationPath(DerivationPath),
 
-    /// A native input spends a P2WPKH output locked to another key than the one at its
+    /// A native input spends a P2WPKH output locked to a different key than the one at its
     /// derivation path.
-    #[error("Input {0} is locked to another key than its derivation path gives")]
+    #[error("Input {0} is locked to a different key than the one at its derivation path")]
     KeyMismatch(usize),
 
     /// Error indicating an invalid upstream `secp256k1` secret key.
@@ -161,7 +161,7 @@ pub enum SignerError {
 
     /// A [`ProgramSignature`](crate::transaction::ProgramSignature) with a path names a field
     /// that the program's witness doesn't have.
-    #[error("Missing such witness field: {0}")]
+    #[error("The program's witness has no field `{0}`")]
     WitnessFieldNotFound(String),
 }
 
@@ -186,7 +186,7 @@ pub enum WitnessWrappingError {
     RootTypeMismatch(String, String),
 
     /// The supplied witness value takes the other branch of an `Either` than the path does.
-    #[error("Path reached undefined branch of Either")]
+    #[error("The witness value takes the other branch of an Either than the path")]
     EitherBranchMismatch,
 }
 

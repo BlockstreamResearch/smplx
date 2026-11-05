@@ -67,7 +67,7 @@ impl EsploraProvider {
         }
     }
 
-    /// Sends a GET to `path` under the Esplora URL, whatever the status it answers with.
+    /// Sends a GET to `path` under the Esplora URL, whatever the response status.
     fn request(&self, path: &str) -> Result<minreq::Response, ProviderError> {
         minreq::get(format!("{}{path}", self.esplora_url))
             .with_timeout(self.timeout.as_secs())
@@ -75,7 +75,7 @@ impl EsploraProvider {
             .map_err(|e| ProviderError::Request(e.to_string()))
     }
 
-    /// Sends a GET to `path`, failing unless it answers 200.
+    /// Sends a GET to `path`, failing unless the response status is 200.
     fn get(&self, path: &str) -> Result<minreq::Response, ProviderError> {
         let response = self.request(path)?;
 
@@ -195,7 +195,7 @@ impl ProviderTrait for EsploraProvider {
         for _ in 0..self.confirmation_attempts {
             let response = self.request(&path)?;
 
-            // an unknown transaction answers 404 until Esplora indexes it
+            // Esplora answers 404 for a transaction it hasn't indexed yet
             if response.status_code == 200 {
                 let status: TxStatus = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 

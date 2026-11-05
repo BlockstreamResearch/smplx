@@ -286,7 +286,7 @@ impl Signer {
     ///
     /// # Errors
     /// Returns the errors of [`Signer::finalize`], and `SignerError::Provider` if the broadcast
-    /// fails. A node's rejection is `ProviderError::BroadcastRejected` inside it.
+    /// fails. A node's rejection arrives as `SignerError::Provider(ProviderError::BroadcastRejected)`.
     #[cfg(feature = "provider")]
     pub fn broadcast(&self, tx: &FinalTransaction) -> Result<TxReceipt<'_>, SignerError> {
         let (tx, _fee) = self.finalize(tx)?;
@@ -384,7 +384,8 @@ impl Signer {
             inputs_since_estimate += 1;
         }
 
-        // Need to try one more time after the loop. No UTXO is left to add, so any chance is taken
+        // One last estimate for the UTXOs added since the previous one. No UTXO is left to add,
+        // so skip the margin for their fees and let the estimate decide
         let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
 
         if i128::from(policy_amount_delta) >= i128::from(curr_fee) {
@@ -443,9 +444,9 @@ impl Signer {
     /// The fee `tx` would pay at `fee_rate` sats/kvb with a change output and a fee output added,
     /// as [`Signer::finalize_strict`] would add them. Doesn't add any wallet inputs.
     ///
-    /// Returns the fee even if `tx`'s inputs can't pay it. If the change is blinded and can't be
-    /// dropped, and the surplus is too small for it, this returns the fee plus [`MIN_FEE`] instead:
-    /// the smallest surplus that pays both the fee and the change.
+    /// Returns the fee even if `tx`'s inputs can't cover the fee. If the change is blinded and
+    /// can't be dropped, and the surplus is too small for the change, this returns the fee plus
+    /// [`MIN_FEE`] instead: the smallest surplus that pays both the fee and the change.
     ///
     /// # Errors
     /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
@@ -725,7 +726,8 @@ impl Signer {
     /// `0/0`.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidDerivationPath` if the path is not of the form `m/n`.
+    /// Returns `SignerError::InvalidDerivationPath` if the path doesn't have exactly two unhardened
+    /// steps, such as `0/5`.
     pub fn get_private_key_at(&self, relative: Option<&DerivationPath>) -> Result<PrivateKey, SignerError> {
         match relative {
             Some(path) => {
@@ -873,7 +875,7 @@ impl Signer {
             return Ok(Estimate::Failure(fee.saturating_add(change_minimum)));
         }
 
-        // Not enough funds for the change, so estimate without it.
+        // Not enough funds for the change, so estimate without a change output.
         fee_tx.remove_output(change_index);
 
         let final_tx = sign_and_extract_tx(self, &fee_tx)?;
@@ -1248,7 +1250,7 @@ mod tests {
     }
 
     #[test]
-    fn blinded_output_lets_the_explicit_change_target_stand() {
+    fn explicit_change_target_is_allowed_with_a_blinded_output() {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
@@ -1270,7 +1272,7 @@ mod tests {
     }
 
     #[test]
-    fn default_change_target_balances_it_by_itself() {
+    fn default_change_target_balances_a_confidential_input() {
         let signer = create_signer();
         let mut ft = FinalTransaction::new();
 
@@ -1304,7 +1306,7 @@ mod tests {
     }
 
     #[test]
-    fn descriptors() {
+    fn prints_addresses() {
         let signer = create_signer();
 
         println!("{}", signer.get_address());
@@ -1520,7 +1522,7 @@ mod tests {
     }
 
     #[test]
-    fn leftover_too_small_for_change_is_the_fee_unless_it_reveals_a_blinded_amount() {
+    fn small_leftover_goes_to_the_fee_unless_a_blinded_output_needs_change() {
         let signer = create_signer();
         let policy = signer.network.policy_asset();
         let script = signer.get_address().script_pubkey();
@@ -1547,7 +1549,7 @@ mod tests {
     }
 
     #[test]
-    fn only_wallet_paths_owning_the_input_sign_it() {
+    fn derivation_path_must_own_the_input() {
         let signer = create_signer();
         let path = |path: &str| DerivationPath::from_str(path).unwrap();
 

@@ -109,7 +109,7 @@ impl ProgramSignature {
     /// The signer returns `SignerError::WitnessFieldNotFound` if the program doesn't have the
     /// field, and `SignerError::WitnessInjectError` if the path doesn't fit the field's type or
     /// value. It panics if the program has the field but the witness supplied in the
-    /// [`ProgramInput`](super::ProgramInput) doesn't contain it.
+    /// [`ProgramInput`](super::ProgramInput) doesn't contain the field.
     #[must_use]
     pub fn at_path<I>(mut self, path: I) -> Self
     where

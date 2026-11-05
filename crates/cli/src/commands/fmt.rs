@@ -141,12 +141,10 @@ impl Format {
         Ok(Self::normalize_status(status))
     }
 
-    /// Resolves the file path to the `simfmt` binary in the same directory where `simplex` is situated.
-    /// Given that `simfmt` would be placed in one directory with `simplex`, this is suitable for our usecase.
+    /// The path to the `simfmt` binary next to the `simplex` binary, where `simplexup` installs both.
     ///
     /// # Warning
-    /// Can fail to search for binary when env isn't set and `simfmt` binary lies in the other directory.
-    /// Even when `simfmt` is visible through PATH.
+    /// Doesn't find a `simfmt` in another directory, even one on `PATH`, unless the env variable is set.
     #[inline]
     fn simfmt_binary() -> Result<PathBuf, FmtError> {
         Ok(env::current_exe()

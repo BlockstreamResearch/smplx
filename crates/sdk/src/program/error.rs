@@ -1,7 +1,7 @@
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
-    /// The serialized witness stack does not buy enough budget to cover the program's execution cost.
+    /// The witness budget, set by the serialized witness stack size, doesn't cover the program's execution cost.
     ///
     /// Consensus requires `cost <= 1000 * (serialized witness stack size + 50)` milli weight units.
     /// The 50 is Elements' `VALIDATION_WEIGHT_OFFSET`
@@ -15,7 +15,7 @@ pub enum ProgramError {
     InsufficientBudget {
         /// Static execution cost of the pruned program, rounded up to whole weight units.
         cost_wu: u64,
-        /// Budget bought by the witness stack: its serialized size plus 50 weight units.
+        /// Witness budget: the serialized witness stack size plus 50 weight units.
         budget_wu: u64,
         /// Serialized size of the witness stack in bytes.
         stack_bytes: usize,
@@ -51,7 +51,7 @@ pub enum ProgramError {
     /// Error indicating an input that doesn't carry the output it spends.
     #[error("Input {input_index} has no witness UTXO")]
     MissingWitnessUtxo {
-        /// The index of the input without one.
+        /// The index of the input without a witness UTXO.
         input_index: usize,
     },
 

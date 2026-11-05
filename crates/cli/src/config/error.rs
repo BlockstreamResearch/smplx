@@ -29,7 +29,7 @@ pub enum ConfigError {
     #[error("Unable to get env variable: {0}")]
     UnableToGetEnv(#[from] std::env::VarError),
 
-    #[error("Path doesn't a file: '{0}'")]
+    #[error("Path isn't a file: '{0}'")]
     PathIsNotFile(PathBuf),
 
     #[error("Path doesn't exist: '{0}'")]

@@ -60,7 +60,7 @@ struct RawDependency {
     rev: Option<String>,
     /// The specific tag to download (only applicable if `git` is provided).
     tag: Option<String>,
-    /// The specific branch to download (only applicable if `branch` is provided).
+    /// The specific branch to download (only applicable if `git` is provided).
     branch: Option<String>,
     /// The specific directory with contracts to download (only applicable if `git` is provided).
     package: Option<String>,

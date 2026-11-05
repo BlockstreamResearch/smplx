@@ -86,7 +86,7 @@ pub fn btc2sat(btc: u64) -> u64 {
 /// Pass the pruned program's `bounds().cost` and the exact witness stack the input will carry.
 ///
 /// # Errors
-/// Returns `ProgramError::InsufficientBudget` if the cost exceeds the budget the stack buys.
+/// Returns `ProgramError::InsufficientBudget` if the cost exceeds the witness budget.
 #[allow(clippy::ptr_arg)] // `Cost::is_budget_valid` takes `&Vec<Vec<u8>>` to reuse its consensus encoding
 pub fn check_budget(cost: Cost, stack: &Vec<Vec<u8>>) -> Result<(), ProgramError> {
     if cost.is_budget_valid(stack) {
