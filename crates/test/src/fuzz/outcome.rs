@@ -67,6 +67,8 @@ impl Outcome {
                 return Err(SetupError::Arguments(error.to_string()));
             }
             ProgramError::WitnessSatisfaction(_) => return Err(SetupError::Witness(error.to_string())),
+            // Only the signer and the fee measurement wrap a program's failure
+            ProgramError::ProgramExecution { .. } => return Err(SetupError::Engine(error.to_string())),
             ProgramError::MissingWitnessUtxo { .. }
             | ProgramError::UtxoIndexOutOfBounds { .. }
             | ProgramError::ScriptPubkeyMismatch { .. }

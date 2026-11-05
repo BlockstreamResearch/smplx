@@ -1,6 +1,31 @@
+use simplicityhl::elements::pset::PartiallySignedTransaction;
+use simplicityhl::elements::{LockTime, Sequence};
+
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
+    /// Running the program of a transaction input failed, so the transaction wasn't measured or
+    /// finalized.
+    ///
+    /// Raised before broadcast. `source` says why: `ProgramError::Pruning` when the contract
+    /// rejects the spend, and other variants, such as `ProgramError::WitnessSatisfaction`,
+    /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
+    /// program can't run on this input or its witness stack doesn't cover the execution cost. The
+    /// locktime and sequence identify most timelock failures.
+    #[error(
+        "Covenant input {input_index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
+    )]
+    ProgramExecution {
+        /// The index of the input whose program failed.
+        input_index: usize,
+        /// The locktime the transaction being satisfied carries.
+        locktime: u32,
+        /// The sequence of the failing input.
+        sequence: u32,
+        /// The underlying program failure.
+        source: Box<ProgramError>,
+    },
+
     /// The witness budget, set by the serialized witness stack size, doesn't cover the program's execution cost.
     ///
     /// Consensus requires `cost <= 1000 * (serialized witness stack size + 50)` milli weight units.
@@ -85,4 +110,18 @@ pub enum ProgramError {
     /// Error thrown if the compiled program fails to export or generate valid ABI metadata.
     #[error("Failed to obtain program witness types: {0}")]
     ProgramGenAbiMeta(String),
+}
+
+impl ProgramError {
+    /// Input `input_index` of `pst` failing to run, with the locktime and sequence it ran with.
+    pub(crate) fn program_execution(pst: &PartiallySignedTransaction, input_index: usize, source: Self) -> Self {
+        Self::ProgramExecution {
+            input_index,
+            locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+            sequence: pst.inputs()[input_index]
+                .sequence
+                .map_or(u32::MAX, Sequence::to_consensus_u32),
+            source: Box::new(source),
+        }
+    }
 }

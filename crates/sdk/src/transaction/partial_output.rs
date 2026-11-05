@@ -7,7 +7,7 @@ use simplicityhl::elements::{AssetId, Script};
 /// that the signer blinds if it has a blinding key.
 ///
 /// A fee output is `PartialOutput::new(Script::new(), fee, network.policy_asset())`. The signer's
-/// `finalize`, `finalize_strict` and `estimate_fee` add one.
+/// `finalize*` methods and their estimates add one.
 #[derive(Debug, Clone)]
 pub struct PartialOutput {
     /// The script the output pays to.

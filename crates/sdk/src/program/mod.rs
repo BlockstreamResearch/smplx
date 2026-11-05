@@ -4,6 +4,7 @@ pub mod core;
 pub mod error;
 /// Buffering of the output of program execution.
 pub mod logger;
+mod unverified_env;
 
 pub use core::{Program, ProgramFactory, ProgramSchema, ProgramTrait};
 pub use error::ProgramError;

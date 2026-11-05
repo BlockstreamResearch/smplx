@@ -374,11 +374,11 @@ impl WalletSigner {
     /// Reports what an assembled transaction would cost in fees, in satoshis.
     ///
     /// # Errors
-    /// Returns an error if the transaction cannot be signed.
+    /// Returns an error if the transaction cannot be completed or a program rejects the spend.
     #[wasm_bindgen(js_name = estimateFee)]
     pub fn estimate_fee(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
         self.signer
-            .estimate_fee(&builder.transaction, fee_rate)
+            .estimate_strict(&builder.transaction, fee_rate)
             .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
     }
 

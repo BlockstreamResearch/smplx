@@ -16,6 +16,7 @@ use crate::global::GlobalConfig;
 use crate::program::logger::ProgramLogger;
 
 use super::error::ProgramError;
+use super::unverified_env::UnverifiedEnv;
 
 use crate::provider::SimplicityNetwork;
 use crate::utils::{check_budget, hash_script, tap_data_hash, tr_unspendable_key};
@@ -88,6 +89,22 @@ pub trait ProgramTrait: DynClone + Send + Sync {
     /// Returns the errors of [`ProgramTrait::execute`], and `ProgramError::InsufficientBudget` if the
     /// witness stack doesn't pay for the program's execution cost.
     fn finalize(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError>;
+
+    /// Returns the witness stack [`ProgramTrait::finalize`] would, with every signature check
+    /// passing.
+    ///
+    /// A placeholder signature prunes the program as a real one does, so the stack has the size
+    /// of the signed one. The stack is never valid on chain: it prices a spend before signing.
+    ///
+    /// # Errors
+    /// Returns the errors of [`ProgramTrait::finalize`], except that no signature check fails.
+    fn finalize_unverified(
         &self,
         pst: &PartiallySignedTransaction,
         witness: &WitnessValues,
@@ -256,19 +273,26 @@ impl ProgramTrait for Program {
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
         let pruned = self.execute(pst, witness, input_index, network)?.0;
 
-        let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
-        let cmr = pruned.cmr();
+        self.witness_stack(&pruned)
+    }
 
-        let stack = vec![
-            simplicity_witness_bytes,
-            simplicity_program_bytes,
-            cmr.as_ref().to_vec(),
-            self.control_block()?.serialize(),
-        ];
+    fn finalize_unverified(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        let satisfied = self
+            .load()?
+            .satisfy(witness.clone())
+            .map_err(ProgramError::WitnessSatisfaction)?;
 
-        check_budget(pruned.bounds().cost, &stack)?;
+        let env = self.get_env(pst, input_index, network)?;
 
-        Ok(stack)
+        let pruned = satisfied.redeem().prune(&UnverifiedEnv(&env))?;
+
+        self.witness_stack(&pruned)
     }
 }
 
@@ -308,6 +332,16 @@ impl<T: ProgramTrait + Sized> ProgramTrait for &T {
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
         (*self).finalize(pst, witness, input_index, network)
+    }
+
+    fn finalize_unverified(
+        &self,
+        pst: &PartiallySignedTransaction,
+        witness: &WitnessValues,
+        input_index: usize,
+        network: &SimplicityNetwork,
+    ) -> Result<Vec<Vec<u8>>, ProgramError> {
+        (*self).finalize_unverified(pst, witness, input_index, network)
     }
 }
 
@@ -596,6 +630,23 @@ impl Program {
             .expect("tap tree should be valid");
 
         Ok(self.spend_info.get_or_init(|| spend_info))
+    }
+
+    /// The witness stack of a spend with `pruned`, checked against its budget.
+    fn witness_stack(&self, pruned: &RedeemNode) -> Result<Vec<Vec<u8>>, ProgramError> {
+        let (simplicity_program_bytes, simplicity_witness_bytes) = pruned.to_vec_with_witness();
+        let cmr = pruned.cmr();
+
+        let stack = vec![
+            simplicity_witness_bytes,
+            simplicity_program_bytes,
+            cmr.as_ref().to_vec(),
+            self.control_block()?.serialize(),
+        ];
+
+        check_budget(pruned.bounds().cost, &stack)?;
+
+        Ok(stack)
     }
 
     fn control_block(&self) -> Result<taproot::ControlBlock, ProgramError> {

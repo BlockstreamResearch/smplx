@@ -50,21 +50,21 @@ fn spend_budget(
 
 fn assert_insufficient_budget<T>(result: Result<T, SignerError>) {
     match result {
-        Err(SignerError::CovenantExecution {
-            index: 0,
-            source:
-                ProgramError::InsufficientBudget {
-                    cost_wu,
-                    budget_wu,
-                    stack_bytes,
-                    deficit_wu,
-                },
-            ..
-        }) => {
-            assert!(deficit_wu > 0);
-            assert_eq!(cost_wu, budget_wu + deficit_wu);
-            assert_eq!(budget_wu, stack_bytes as u64 + 50);
-        }
+        Err(SignerError::Program(ProgramError::ProgramExecution {
+            input_index: 0, source, ..
+        })) => match *source {
+            ProgramError::InsufficientBudget {
+                cost_wu,
+                budget_wu,
+                stack_bytes,
+                deficit_wu,
+            } => {
+                assert!(deficit_wu > 0);
+                assert_eq!(cost_wu, budget_wu + deficit_wu);
+                assert_eq!(budget_wu, stack_bytes as u64 + 50);
+            }
+            other => panic!("expected an insufficient budget error, got {other:?}"),
+        },
         Err(other) => panic!("expected an insufficient budget error, got {other:?}"),
         Ok(_) => panic!("expected an insufficient budget error, but the spend went through"),
     }
@@ -113,7 +113,7 @@ fn test_fee_estimation_reports_over_budget(context: simplex::TestContext) -> any
 
     let ft = spend_budget(&context, witness, "Right")?;
 
-    assert_insufficient_budget(signer.estimate_fee(&ft, 100.0));
+    assert_insufficient_budget(signer.estimate_strict(&ft, 100.0));
 
     Ok(())
 }

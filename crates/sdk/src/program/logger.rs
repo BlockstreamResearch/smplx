@@ -36,8 +36,8 @@ pub struct ProgramInfo {
 ///
 /// With [`Verbosity`](crate::global::Verbosity) `Debug` or `Trace`, every
 /// [`ProgramTrait::execute`](super::ProgramTrait::execute) replaces its input's buffer, so only
-/// the last run's output is kept. `Signer::finalize` and `estimate_fee` print the buffers after
-/// their last signing pass, and `finalize_strict` does when it succeeds. Code that calls
+/// the last run's output is kept. `Signer::finalize`, `finalize_strict` and `finalize_strict_fee`
+/// print the buffers after signing. Code that calls
 /// `ProgramTrait::execute` or `Signer::sign_tx` directly must call [`ProgramLogger::flush_logs`]
 /// to see the output. `Signer::sign_witnesses` doesn't run any program.
 pub struct ProgramLogger {

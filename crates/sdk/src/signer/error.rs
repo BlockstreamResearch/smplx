@@ -2,45 +2,26 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
-use crate::transaction::{FinalTransactionError, UtxoError};
+use crate::transaction::{FinalTransactionError, UtxoError, WitnessWrappingError};
 
 /// Errors from a [`Signer`](super::Signer).
 ///
-/// A contract that rejects a spend fails with `CovenantExecution` before anything is broadcast.
+/// A contract that rejects a spend fails with `Program(ProgramError::ProgramExecution { .. })`
+/// before anything is broadcast.
 /// A transaction that is broadcast and refused fails with
 /// `Provider(ProviderError::BroadcastRejected { .. })`.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    /// A program failed while the signer prepared its signature, before the program ran: in
-    /// [`SignerTrait::sign_program`](super::SignerTrait::sign_program), or in
-    /// [`Signer::sign_witnesses`](super::Signer::sign_witnesses) for an input with a
-    /// [`ProgramSignature`](crate::transaction::ProgramSignature). The program doesn't compile,
-    /// the input doesn't spend its address, or its witness types can't be read. For an input
-    /// without a signature, the same failures are `CovenantExecution`.
+    /// A program failed.
+    ///
+    /// `ProgramError::ProgramExecution` when running a program input failed, while the
+    /// transaction was measured or finalized. Other variants when the signer prepared a signature,
+    /// before the program ran: in [`SignerTrait::sign_program`](super::SignerTrait::sign_program),
+    /// or in [`Signer::sign_witnesses`](super::Signer::sign_witnesses) for an input with a
+    /// [`ProgramSignature`](crate::transaction::ProgramSignature), when the program doesn't compile
+    /// or the input doesn't spend its address.
     #[error(transparent)]
     Program(#[from] ProgramError),
-
-    /// Running a program input failed, so the transaction wasn't finalized.
-    ///
-    /// Raised before broadcast, by [`Signer::sign_tx`](super::Signer::sign_tx) and the methods
-    /// built on `sign_tx`. `source` says why: `ProgramError::Pruning` when the contract rejects
-    /// the spend, and other variants, such as `ProgramError::WitnessSatisfaction`,
-    /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
-    /// program can't run on this input or its witness stack doesn't cover the execution cost. The
-    /// locktime and sequence identify most timelock failures.
-    #[error(
-        "Covenant input {index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
-    )]
-    CovenantExecution {
-        /// The index of the input whose program failed.
-        index: usize,
-        /// The locktime the transaction being satisfied carries.
-        locktime: u32,
-        /// The sequence of the failing input.
-        sequence: u32,
-        /// The underlying program failure.
-        source: ProgramError,
-    },
 
     /// Errors originating from provider network interactions.
     #[error(transparent)]
@@ -52,7 +33,7 @@ pub enum SignerError {
 
     /// Errors originating from transaction construction or validation.
     #[error(transparent)]
-    FinalTransaction(#[from] FinalTransactionError),
+    FinalTransaction(FinalTransactionError),
 
     /// Error indicating a provider-backed operation was requested on a signer built without one.
     #[cfg(feature = "provider")]
@@ -113,9 +94,9 @@ pub enum SignerError {
 
     /// Error indicating a confidential input was left with no blinded output to balance against.
     ///
-    /// Raised when the caller pins an explicit change target while spending confidential inputs,
-    /// which the node would reject as `bad-txns-in-ne-out`.
-    #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
+    /// Raised when a transaction spending confidential inputs has an explicit change target, or is
+    /// finalized without change, which the node would reject as `bad-txns-in-ne-out`.
+    #[error("A confidential input needs at least one blinded output to balance against")]
     ConfidentialInputWithoutBlindedOutput,
 
     /// A derivation path doesn't have exactly two unhardened steps, such as `0/5`.
@@ -158,36 +139,16 @@ pub enum SignerError {
     /// Error indicating an input whose amount the signer cannot know.
     #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
     UnknownInputAmount(simplicityhl::elements::OutPoint),
-
-    /// A [`ProgramSignature`](crate::transaction::ProgramSignature) with a path names a field
-    /// that the program's witness doesn't have.
-    #[error("The program's witness has no field `{0}`")]
-    WitnessFieldNotFound(String),
 }
 
-/// Errors originating from manipulating witness paths and injecting values.
-#[derive(Debug, thiserror::Error)]
-pub enum WitnessWrappingError {
-    /// A path step isn't `Left`, `Right` or a decimal index.
-    #[error("Failed to parse path")]
-    ParsingError,
-
-    /// A path step doesn't fit the type it steps into: an index into a type that isn't an array or
-    /// tuple, or `Left` or `Right` into a type that isn't an `Either`.
-    #[error("Unsupported path type: {0}")]
-    UnsupportedPathType(String),
-
-    /// An index is past the end of an array or tuple: `(length, index)`.
-    #[error("Path index out of bounds: len is {0}, got {1}")]
-    IdxOutOfBounds(usize, usize),
-
-    /// The type at the end of the path isn't the signature's type: `(expected, signature type)`.
-    #[error("Root type mismatch: expected {0}, got {1}")]
-    RootTypeMismatch(String, String),
-
-    /// The supplied witness value takes the other branch of an `Either` than the path does.
-    #[error("The witness value takes the other branch of an Either than the path")]
-    EitherBranchMismatch,
+impl From<FinalTransactionError> for SignerError {
+    /// A program failure is a `SignerError::Program` whether it happens while measuring or signing.
+    fn from(err: FinalTransactionError) -> Self {
+        match err {
+            FinalTransactionError::Program(err) => Self::Program(err),
+            err => Self::FinalTransaction(err),
+        }
+    }
 }
 
 impl From<simplicityhl::elements::UnblindError> for SignerError {
