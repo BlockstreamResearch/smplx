@@ -44,7 +44,12 @@ impl ArtifactsResolver {
             match parse::Program::parse_from_str(&content) {
                 Ok(program) if Self::rec_main_checker(program.items(), &FunctionName::main()) => paths.push(path),
                 Ok(_) => {}
-                Err(error) => eprintln!("warning: skipping '{}' as it doesn't parse: {error}", path.display()),
+                Err(error) => {
+                    return Err(BuildError::SourceParse {
+                        path,
+                        error: error.to_string(),
+                    });
+                }
             }
         }
 
