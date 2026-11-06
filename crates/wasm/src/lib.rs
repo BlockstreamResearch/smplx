@@ -24,13 +24,13 @@ use simplicityhl::{
     WitnessValues,
 };
 
-use smplx_sdk::program::Program;
+use smplx_sdk::program::Program as SdkProgram;
 use smplx_sdk::provider::SimplicityNetwork;
-use smplx_sdk::signer::Signer;
+use smplx_sdk::signer::Signer as SdkSigner;
 use smplx_sdk::transaction::partial_input::IssuanceInput;
 use smplx_sdk::transaction::{
-    ChangeOutput, FinalTransaction, IssuanceDetails, NativeSignature, PartialInput, PartialOutput, ProgramInput,
-    ProgramSignature, UTXO,
+    ChangeOutput, FinalTransaction, IssuanceDetails as SdkIssuanceDetails, NativeSignature, PartialInput,
+    PartialOutput, ProgramInput, ProgramSignature, UTXO,
 };
 
 use wasm_bindgen::prelude::*;
@@ -47,19 +47,19 @@ fn network_from_str(network: &str) -> Result<SimplicityNetwork, JsError> {
 
 /// Asset issuance details.
 #[wasm_bindgen]
-pub struct IssuanceReport {
+pub struct IssuanceDetails {
     asset_id: String,
-    entropy: String,
-    reissuance_token_id: String,
+    asset_entropy: String,
+    inflation_asset_id: String,
 }
 
 #[wasm_bindgen]
-impl IssuanceReport {
-    fn from_details(details: &IssuanceDetails) -> Self {
+impl IssuanceDetails {
+    fn from_details(details: &SdkIssuanceDetails) -> Self {
         Self {
             asset_id: details.asset_id.to_string(),
-            entropy: details.asset_entropy.to_string(),
-            reissuance_token_id: details.inflation_asset_id.to_string(),
+            asset_entropy: details.asset_entropy.to_string(),
+            inflation_asset_id: details.inflation_asset_id.to_string(),
         }
     }
 
@@ -70,22 +70,22 @@ impl IssuanceReport {
         self.asset_id.clone()
     }
 
-    /// The entropy to derive the reissuance asset.
-    #[wasm_bindgen(getter)]
+    /// The asset entropy both IDs derive from, which a later reissuance needs.
+    #[wasm_bindgen(getter, js_name = assetEntropy)]
     #[must_use]
-    pub fn entropy(&self) -> String {
-        self.entropy.clone()
+    pub fn asset_entropy(&self) -> String {
+        self.asset_entropy.clone()
     }
 
-    /// The reissuance asset this issuance creates.
-    #[wasm_bindgen(getter, js_name = reissuanceTokenId)]
+    /// The reissuance token this issuance creates, which a later reissuance must spend.
+    #[wasm_bindgen(getter, js_name = inflationAssetId)]
     #[must_use]
-    pub fn reissuance_token_id(&self) -> String {
-        self.reissuance_token_id.clone()
+    pub fn inflation_asset_id(&self) -> String {
+        self.inflation_asset_id.clone()
     }
 }
 
-/// Compile-time parameters for a covenant, resolved before construction.
+/// Compile-time parameters for a program, resolved before construction.
 #[derive(Clone)]
 struct FixedArguments(Arguments);
 
@@ -101,7 +101,7 @@ impl From<&FixedArguments> for Arguments {
     }
 }
 
-/// Witness values for a covenant input, resolved before the transaction is assembled.
+/// Witness values for a program input, resolved before the transaction is assembled.
 #[derive(Clone)]
 struct FixedWitness(WitnessValues);
 
@@ -117,20 +117,20 @@ impl From<&FixedWitness> for WitnessValues {
     }
 }
 
-/// A compiled `SimplicityHL` covenant.
+/// A compiled `SimplicityHL` program.
 #[wasm_bindgen]
-pub struct Covenant {
-    program: Program,
+pub struct Program {
+    program: SdkProgram,
 }
 
 #[wasm_bindgen]
-impl Covenant {
-    /// Creates a covenant from `SimplicityHL` source text delivered at runtime.
+impl Program {
+    /// Creates a program from `SimplicityHL` source text delivered at runtime.
     ///
-    /// `argumentsJson` carries the covenant's compile-time parameters.
+    /// `argumentsJson` carries the program's compile-time parameters.
     ///
     /// Shape: `{"NAME": {"value": "0x…", "type": "Pubkey"}}`.
-    /// Pass `None` for a covenant that declares no parameters.
+    /// Pass `None` for a program that declares no parameters.
     ///
     /// `extraLeavesJson` is a JSON array of hex strings, each an encoded taproot
     /// leaf payload appended to the tree in declaration order.
@@ -145,7 +145,7 @@ impl Covenant {
         arguments_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
-    ) -> Result<Covenant, JsError> {
+    ) -> Result<Program, JsError> {
         Ok(Self {
             program: Self::from_source(
                 source,
@@ -156,19 +156,19 @@ impl Covenant {
         })
     }
 
-    /// Compiles the covenant and returns its Commitment Merkle Root as lowercase hex.
+    /// Compiles the program and returns its Commitment Merkle Root as lowercase hex.
     ///
     /// # Errors
     /// Returns an error if the source fails to compile.
-    #[wasm_bindgen(js_name = commitmentMerkleRoot)]
-    pub fn commitment_merkle_root(&self) -> Result<String, JsError> {
+    #[wasm_bindgen(js_name = cmr)]
+    pub fn cmr(&self) -> Result<String, JsError> {
         self.validate()?;
         let cmr = self.program.get_cmr();
 
         Ok(hex::encode(cmr))
     }
 
-    /// Compiles the covenant and returns the tapleaf hash of its Simplicity script, as hex.
+    /// Compiles the program and returns the tapleaf hash of its Simplicity script, as hex.
     ///
     /// # Errors
     /// Returns an error if the source fails to compile.
@@ -179,19 +179,19 @@ impl Covenant {
         Ok(hex::encode(self.program.get_tapleaf_hash()))
     }
 
-    /// Compiles the covenant and returns the `scriptPubKey` its funds are locked with, as hex.
+    /// Compiles the program and returns the `scriptPubKey` its funds are locked with, as hex.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
-    #[wasm_bindgen(js_name = scriptPubKeyHex)]
-    pub fn script_pubkey_hex(&self, network: &str) -> Result<String, JsError> {
+    #[wasm_bindgen(js_name = scriptPubkey)]
+    pub fn script_pubkey(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
         self.validate()?;
 
         Ok(hex::encode(self.program.get_script_pubkey(&network).as_bytes()))
     }
 
-    /// Compiles the covenant and returns its `scriptPubKey` hash.
+    /// Compiles the program and returns its `scriptPubKey` hash.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
@@ -203,12 +203,12 @@ impl Covenant {
         Ok(hex::encode(self.program.get_script_hash(&network)))
     }
 
-    /// Compiles the covenant and returns the taproot address its funds would sit at.
+    /// Compiles the program and returns the taproot address its funds would sit at.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown or the source fails to compile.
-    #[wasm_bindgen(js_name = address)]
-    pub fn address(&self, network: &str) -> Result<String, JsError> {
+    #[wasm_bindgen(js_name = trAddress)]
+    pub fn tr_address(&self, network: &str) -> Result<String, JsError> {
         let network = network_from_str(network)?;
         self.validate()?;
 
@@ -220,14 +220,14 @@ impl Covenant {
         arguments_json: Option<&str>,
         extra_leaves_json: Option<&str>,
         include_debug_symbols: Option<bool>,
-    ) -> Result<Program, JsError> {
+    ) -> Result<SdkProgram, JsError> {
         let arguments = match arguments_json {
             Some(json) if !json.trim().is_empty() => serde_json::from_str::<Arguments>(json)
-                .map_err(|e| JsError::new(&format!("Invalid covenant arguments: {e}")))?,
+                .map_err(|e| JsError::new(&format!("Invalid program arguments: {e}")))?,
             _ => Arguments::default(),
         };
 
-        let mut program = Program::new(Arc::<str>::from(source), FixedArguments(arguments));
+        let mut program = SdkProgram::new(Arc::<str>::from(source), FixedArguments(arguments));
 
         if let Some(include) = include_debug_symbols {
             program = program.with_debug_symbols(include);
@@ -249,10 +249,10 @@ impl Covenant {
     fn state_leaves(json: &str) -> Result<Vec<Vec<u8>>, String> {
         let declared: Vec<String> = serde_json::from_str(json).map_err(|e| format!("Invalid extra leaves: {e}"))?;
 
-        if declared.len() > Program::MAX_STORAGE_SLOTS {
+        if declared.len() > SdkProgram::MAX_STORAGE_SLOTS {
             return Err(format!(
-                "A covenant holds at most {} extra leaves, and this one has {}",
-                Program::MAX_STORAGE_SLOTS,
+                "A program holds at most {} extra leaves, and this one has {}",
+                SdkProgram::MAX_STORAGE_SLOTS,
                 declared.len()
             ));
         }
@@ -262,14 +262,14 @@ impl Covenant {
             let bytes = hex::decode(leaf.strip_prefix("0x").unwrap_or(leaf))
                 .map_err(|e| format!("Extra leaf {index} is not hex: {e}"))?;
 
-            if bytes.len() != Program::STORAGE_SLOT_BYTES {
+            if bytes.len() != SdkProgram::STORAGE_SLOT_BYTES {
                 return Err(format!(
-                    "Extra leaf {index} is {} bytes, and a leaf is {}. A covenant reads its state in \
-                     {}-byte steps, so a leaf of any other width commits to something the covenant \
+                    "Extra leaf {index} is {} bytes, and a leaf is {}. A program reads its state in \
+                     {}-byte steps, so a leaf of any other width commits to something the program \
                      cannot read back.",
                     bytes.len(),
-                    Program::STORAGE_SLOT_BYTES,
-                    Program::STORAGE_SLOT_BYTES,
+                    SdkProgram::STORAGE_SLOT_BYTES,
+                    SdkProgram::STORAGE_SLOT_BYTES,
                 ));
             }
 
@@ -283,22 +283,22 @@ impl Covenant {
         self.program
             .get_argument_types()
             .map(|_| ())
-            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))
+            .map_err(|e| JsError::new(&format!("Program does not compile: {e}")))
     }
 }
 
-/// The compile-time parameters a covenant source declares, as JSON of name to type.
+/// The compile-time parameters a program source declares, as JSON of name to type.
 ///
 /// # Errors
 /// Returns an error if the source does not parse or does not type-check.
-#[wasm_bindgen(js_name = covenantParameterTypes)]
-pub fn covenant_parameter_types(source: &str) -> Result<String, JsError> {
+#[wasm_bindgen(js_name = programArgumentTypes)]
+pub fn program_argument_types(source: &str) -> Result<String, JsError> {
     let template = TemplateAst::new_with_unstable(
         Arc::<str>::from(source),
         &UnstableFeatures::all(),
         Box::new(ElementsJetHinter),
     )
-    .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))?;
+    .map_err(|e| JsError::new(&format!("Program does not compile: {e}")))?;
 
     let declared: BTreeMap<String, String> = template
         .parameters()
@@ -311,23 +311,23 @@ pub fn covenant_parameter_types(source: &str) -> Result<String, JsError> {
 
 /// The wallet's signer that understands how to work with Simplicity.
 #[wasm_bindgen]
-pub struct WalletSigner {
-    signer: Signer,
+pub struct Signer {
+    signer: SdkSigner,
     network: SimplicityNetwork,
 }
 
 #[wasm_bindgen]
-impl WalletSigner {
+impl Signer {
     /// Creates a signer from an account mnemonic.
     ///
     /// # Errors
     /// Returns an error if the network name is unknown.
     #[wasm_bindgen(constructor)]
-    pub fn new(mnemonic: &str, network: &str) -> Result<WalletSigner, JsError> {
+    pub fn new(mnemonic: &str, network: &str) -> Result<Signer, JsError> {
         let network = network_from_str(network)?;
 
         Ok(Self {
-            signer: Signer::from_mnemonic(mnemonic, network),
+            signer: SdkSigner::from_mnemonic(mnemonic, network),
             network,
         })
     }
@@ -355,7 +355,7 @@ impl WalletSigner {
         hex::encode(self.signer.get_schnorr_public_key().serialize())
     }
 
-    /// The compressed public key used for ordinary wallet inputs, as lowercase hex.
+    /// The compressed public key used for native inputs, as lowercase hex.
     #[wasm_bindgen(js_name = ecdsaPublicKey)]
     #[must_use]
     pub fn ecdsa_public_key(&self) -> String {
@@ -446,7 +446,7 @@ impl WalletSigner {
     /// spent twice, a confidential input has no blinded output, or a program rejects the spend.
     #[wasm_bindgen(js_name = estimateStrictFee)]
     pub fn estimate_strict_fee(builder: &TransactionBuilder, network: &str, fee_rate: f32) -> Result<u64, JsError> {
-        Signer::estimate_strict_fee(&builder.transaction, &network_from_str(network)?, fee_rate)
+        SdkSigner::estimate_strict_fee(&builder.transaction, &network_from_str(network)?, fee_rate)
             .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
     }
 }
@@ -497,31 +497,57 @@ impl TransactionBuilder {
         self.transaction.set_sequence(Sequence::from_consensus(sequence));
     }
 
-    /// Sets the sequence of input `input_index` alone, such as the relative timelock a covenant
+    /// Sets the sequence of input `input_index` alone, such as the relative timelock a program
     /// checks, overriding `setSequence`.
     ///
     /// # Errors
     /// Returns an error if there is no input at `input_index`.
     #[wasm_bindgen(js_name = setInputSequence)]
     pub fn set_input_sequence(&mut self, input_index: usize, sequence: u32) -> Result<(), JsError> {
-        let input = self
-            .transaction
-            .inputs_mut()
-            .get_mut(input_index)
-            .ok_or_else(|| JsError::new(&format!("There is no input at index {input_index}.")))?;
-
-        input.partial_input.sequence = Some(Sequence::from_consensus(sequence));
+        self.partial_input_mut(input_index)?.sequence = Some(Sequence::from_consensus(sequence));
 
         Ok(())
     }
 
-    /// Gives each witness in `names` of covenant input `input_index` the zero value of its type.
+    /// Sets the block height input `input_index` alone may not be mined before, overriding
+    /// `setLocktimeHeight`. Unless a sequence is set, the inputs get one that enforces the
+    /// locktime.
+    ///
+    /// # Errors
+    /// Returns an error if there is no input at `input_index`, or if `height` is `500_000_000` or
+    /// greater, which Elements reads as a time.
+    #[wasm_bindgen(js_name = setInputLocktimeHeight)]
+    pub fn set_input_locktime_height(&mut self, input_index: usize, height: u32) -> Result<(), JsError> {
+        let locktime = LockTime::from_height(height).map_err(|e| JsError::new(&format!("Invalid height: {e}")))?;
+
+        self.partial_input_mut(input_index)?.locktime = Some(locktime);
+
+        Ok(())
+    }
+
+    /// Sets the block time input `input_index` alone may not be mined before, overriding
+    /// `setLocktimeTime`. Unless a sequence is set, the inputs get one that enforces the
+    /// locktime.
+    ///
+    /// # Errors
+    /// Returns an error if there is no input at `input_index`, or if `time` is below
+    /// `500_000_000`, which Elements reads as a height.
+    #[wasm_bindgen(js_name = setInputLocktimeTime)]
+    pub fn set_input_locktime_time(&mut self, input_index: usize, time: u32) -> Result<(), JsError> {
+        let locktime = LockTime::from_time(time).map_err(|e| JsError::new(&format!("Invalid time: {e}")))?;
+
+        self.partial_input_mut(input_index)?.locktime = Some(locktime);
+
+        Ok(())
+    }
+
+    /// Gives each witness in `names` of program input `input_index` the zero value of its type.
     ///
     /// For witnesses on branches the spend doesn't take: satisfying the program needs a value for
     /// every witness it declares, and pruning drops the unused ones.
     ///
     /// # Errors
-    /// Returns an error if input `input_index` isn't a covenant input, or if its program doesn't
+    /// Returns an error if input `input_index` isn't a program input, or if its program doesn't
     /// compile or declares no witness with one of the names.
     #[wasm_bindgen(js_name = setUnusedWitnesses)]
     #[allow(clippy::needless_pass_by_value)]
@@ -531,12 +557,12 @@ impl TransactionBuilder {
             .inputs_mut()
             .get_mut(input_index)
             .and_then(|input| input.program_input.as_mut())
-            .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
+            .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a program input.")))?;
 
         let types = program_input
             .program
             .get_witness_types()
-            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))?;
+            .map_err(|e| JsError::new(&format!("Program does not compile: {e}")))?;
         let mut values: HashMap<TemplateProgramWitness, Value> = program_input
             .witness
             .iter()
@@ -547,7 +573,7 @@ impl TransactionBuilder {
             let key = TemplateProgramWitness::witness_from_str(name.as_str());
             let ty = types
                 .get(&key)
-                .ok_or_else(|| JsError::new(&format!("The covenant declares no witness named {name}.")))?;
+                .ok_or_else(|| JsError::new(&format!("The program declares no witness named {name}.")))?;
 
             values.insert(key, Self::zero_value(ty));
         }
@@ -590,7 +616,7 @@ impl TransactionBuilder {
         self.transaction.remove_change();
     }
 
-    /// Adds an ordinary wallet input, spending the output at `txid:vout`.
+    /// Adds a native input, spending the output at `txid:vout`.
     ///
     /// `tx_out_hex` is the consensus encoding of the output being spent, which is what the
     /// wallet already has from its own snapshot or a chain read.
@@ -601,9 +627,9 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
-    #[wasm_bindgen(js_name = addWalletInput)]
+    #[wasm_bindgen(js_name = addInput)]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn add_wallet_input(
+    pub fn add_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -611,7 +637,7 @@ impl TransactionBuilder {
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
     ) -> Result<(), JsError> {
-        let input = Self::input_at(
+        let input = Self::partial_input(
             txid,
             vout,
             tx_out_hex,
@@ -624,14 +650,14 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Adds an ordinary wallet input that also creates a new asset.
+    /// Adds a native input that also creates a new asset.
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output or the issuer contract cannot be parsed,
     /// if either issuance amount exceeds `i64::MAX`, or if both are zero.
-    #[wasm_bindgen(js_name = addWalletIssuanceInput)]
+    #[wasm_bindgen(js_name = addIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_wallet_issuance_input(
+    pub fn add_issuance_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -641,33 +667,27 @@ impl TransactionBuilder {
         issuer_contract_hex: Option<String>,
         blinding_secrets_json: Option<String>,
         derivation_path: Option<String>,
-    ) -> Result<IssuanceReport, JsError> {
-        Self::check_issuance_amounts(asset_amount_sats, inflation_amount_sats)?;
-
-        let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
-            .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
-
-        let input = Self::input_at(
+    ) -> Result<IssuanceDetails, JsError> {
+        let input = Self::partial_input(
             txid,
             vout,
             tx_out_hex,
             blinding_secrets_json.as_deref(),
             derivation_path.as_deref(),
         )?;
+        let issuance = Self::issuance(asset_amount_sats, inflation_amount_sats, issuer_contract_hex.as_deref())?;
 
-        let details = self.transaction.add_issuance_input(
-            input,
-            IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            Some(NativeSignature::Ecdsa),
-        );
+        let details = self
+            .transaction
+            .add_issuance_input(input, issuance, Some(NativeSignature::Ecdsa));
 
-        Ok(IssuanceReport::from_details(&details))
+        Ok(IssuanceDetails::from_details(&details))
     }
 
-    /// Spends a wallet output holding the reissuance token and mints
+    /// Adds a native input that spends an output holding the reissuance token and mints
     /// `asset_amount_sats` more units of the asset.
     ///
-    /// Pass the entropy returned by `IssuanceReport.entropy` for the first issuance.
+    /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance.
     /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
     /// that the claimed asset ID matches the token derived from the entropy. The caller
     /// must ensure the secrets open the output. Write `value` as a decimal string if it
@@ -678,14 +698,14 @@ impl TransactionBuilder {
     /// creates a different asset.
     ///
     /// This method supports tokens from explicit-amount issuances, including
-    /// those created by `addWalletIssuanceInput`.
+    /// those created by `addIssuanceInput`.
     ///
     /// # Errors
     /// Returns an error for invalid input data, an amount outside 1..=`i64::MAX`,
     /// a claimed token asset that does not match the entropy, or a token with a zero asset blinding factor.
-    #[wasm_bindgen(js_name = addWalletReissuanceInput)]
+    #[wasm_bindgen(js_name = addReissuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_wallet_reissuance_input(
+    pub fn add_reissuance_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -694,8 +714,8 @@ impl TransactionBuilder {
         asset_entropy: &str,
         blinding_secrets_json: &str,
         derivation_path: Option<String>,
-    ) -> Result<IssuanceReport, JsError> {
-        let input = Self::input_at(
+    ) -> Result<IssuanceDetails, JsError> {
+        let input = Self::partial_input(
             txid,
             vout,
             tx_out_hex,
@@ -703,39 +723,16 @@ impl TransactionBuilder {
             derivation_path.as_deref(),
         )?;
 
-        if asset_amount_sats == 0 || i64::try_from(asset_amount_sats).is_err() {
-            return Err(JsError::new("reissuance amount must be between 1 and i64::MAX"));
-        }
-
-        let entropy = AssetEntropy::from_str(asset_entropy)
-            .map_err(|e| JsError::new(&format!("the entropy is not 32 bytes of hex: {e}")))?;
-        let secrets = input
-            .secrets
-            .ok_or_else(|| JsError::new("the token output has no blinding secrets"))?;
-        let token = AssetId::reissuance_token_from_entropy(entropy, false);
-
-        if secrets.asset != token {
-            return Err(JsError::new(&format!(
-                "the output holds {}, not the reissuance token {token}",
-                secrets.asset
-            )));
-        }
-        if secrets.asset_bf == AssetBlindingFactor::zero() {
-            return Err(JsError::new(
-                "the token's asset blinding factor is zero, which Elements reads as a new issuance of another asset",
-            ));
-        }
-
-        let reissuance = IssuanceInput::new_reissuance(asset_amount_sats, entropy.to_byte_array());
+        let reissuance = Self::reissuance(&input, asset_amount_sats, asset_entropy)?;
 
         let details = self
             .transaction
             .add_issuance_input(input, reissuance, Some(NativeSignature::Ecdsa));
 
-        Ok(IssuanceReport::from_details(&details))
+        Ok(IssuanceDetails::from_details(&details))
     }
 
-    /// Adds a Simplicity covenant input.
+    /// Adds an input that spends an output locked by a Simplicity program.
     ///
     /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
@@ -750,9 +747,9 @@ impl TransactionBuilder {
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness or the
     /// derivation path cannot be parsed.
-    #[wasm_bindgen(js_name = addCovenantInput)]
+    #[wasm_bindgen(js_name = addProgramInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_covenant_input(
+    pub fn add_program_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -760,13 +757,13 @@ impl TransactionBuilder {
         source: &str,
         arguments_json: Option<String>,
         witness_json: Option<String>,
-        signature_witness: Option<String>,
+        program_signature: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -774,24 +771,24 @@ impl TransactionBuilder {
                 extra_leaves_json,
                 include_debug_symbols,
             )?,
-            Self::program_signature(signature_witness.as_deref()),
+            Self::program_signature(program_signature.as_deref()),
         );
 
         Ok(())
     }
 
-    /// Adds a Simplicity covenant input that also creates a new asset.
+    /// Adds a program input, as `addProgramInput` does, that also creates a new asset.
     ///
-    /// The covenant half is the same as `addCovenantInput` and
-    /// the issuance half the same as `addWalletIssuanceInput`.
+    /// The program half is the same as `addProgramInput` and
+    /// the issuance half the same as `addIssuanceInput`.
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
     /// issuer contract or the derivation path cannot be parsed, if either issuance amount
     /// exceeds `i64::MAX`, or if both are zero.
-    #[wasm_bindgen(js_name = addCovenantIssuanceInput)]
+    #[wasm_bindgen(js_name = addProgramIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn add_covenant_issuance_input(
+    pub fn add_program_issuance_input(
         &mut self,
         txid: &str,
         vout: u32,
@@ -799,21 +796,19 @@ impl TransactionBuilder {
         source: &str,
         arguments_json: Option<String>,
         witness_json: Option<String>,
-        signature_witness: Option<String>,
+        program_signature: Option<String>,
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
-    ) -> Result<IssuanceReport, JsError> {
-        Self::check_issuance_amounts(asset_amount_sats, inflation_amount_sats)?;
-
-        let contract = Self::issuer_contract(issuer_contract_hex.as_deref())
-            .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
+    ) -> Result<IssuanceDetails, JsError> {
+        let input = Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?;
+        let issuance = Self::issuance(asset_amount_sats, inflation_amount_sats, issuer_contract_hex.as_deref())?;
 
         let details = self.transaction.add_program_issuance_input(
-            Self::input_at(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            input,
             Self::program_input(
                 source,
                 arguments_json,
@@ -821,16 +816,69 @@ impl TransactionBuilder {
                 extra_leaves_json,
                 include_debug_symbols,
             )?,
-            IssuanceInput::new_issuance(asset_amount_sats, inflation_amount_sats, contract),
-            Self::program_signature(signature_witness.as_deref()),
+            issuance,
+            Self::program_signature(program_signature.as_deref()),
         );
 
-        Ok(IssuanceReport::from_details(&details))
+        Ok(IssuanceDetails::from_details(&details))
+    }
+
+    /// Adds a program input, as `addProgramInput` does, that spends an output holding the
+    /// reissuance token and mints `asset_amount_sats` more units of the asset.
+    ///
+    /// The program half is the same as `addProgramInput` and the reissuance half the same as
+    /// `addReissuanceInput`, including the unblinded token details in `blinding_secrets_json`.
+    ///
+    /// # Errors
+    /// Returns an error for invalid input data, an amount outside 1..=`i64::MAX`, a claimed token
+    /// asset that does not match the entropy, or a token with a zero asset blinding factor.
+    #[wasm_bindgen(js_name = addProgramReissuanceInput)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn add_program_reissuance_input(
+        &mut self,
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        source: &str,
+        arguments_json: Option<String>,
+        witness_json: Option<String>,
+        program_signature: Option<String>,
+        asset_amount_sats: u64,
+        asset_entropy: &str,
+        blinding_secrets_json: &str,
+        extra_leaves_json: Option<String>,
+        include_debug_symbols: Option<bool>,
+        derivation_path: Option<String>,
+    ) -> Result<IssuanceDetails, JsError> {
+        let input = Self::partial_input(
+            txid,
+            vout,
+            tx_out_hex,
+            Some(blinding_secrets_json),
+            derivation_path.as_deref(),
+        )?;
+        let reissuance = Self::reissuance(&input, asset_amount_sats, asset_entropy)?;
+
+        let details = self.transaction.add_program_issuance_input(
+            input,
+            Self::program_input(
+                source,
+                arguments_json,
+                witness_json,
+                extra_leaves_json,
+                include_debug_symbols,
+            )?,
+            reissuance,
+            Self::program_signature(program_signature.as_deref()),
+        );
+
+        Ok(IssuanceDetails::from_details(&details))
     }
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Covenant and `OP_RETURN` outputs are always unblinded.
+    /// A blinding key makes the output confidential. Outputs locked by a program and `OP_RETURN`
+    /// outputs are always unblinded.
     ///
     /// # Errors
     /// Returns an error if the script, asset id or blinding key cannot be parsed,
@@ -880,6 +928,125 @@ impl TransactionBuilder {
         self.transaction.n_outputs()
     }
 
+    fn partial_input_mut(&mut self, input_index: usize) -> Result<&mut PartialInput, JsError> {
+        self.transaction
+            .inputs_mut()
+            .get_mut(input_index)
+            .map(|input| &mut input.partial_input)
+            .ok_or_else(|| JsError::new(&format!("There is no input at index {input_index}.")))
+    }
+
+    fn partial_input(
+        txid: &str,
+        vout: u32,
+        tx_out_hex: &str,
+        secrets_json: Option<&str>,
+        derivation_path: Option<&str>,
+    ) -> Result<PartialInput, JsError> {
+        let input = PartialInput::new(Self::utxo(txid, vout, tx_out_hex, secrets_json)?);
+
+        let Some(path) = derivation_path else {
+            return Ok(input);
+        };
+
+        let path = Self::relative_path(path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?;
+
+        Ok(input.with_derivation_path(path))
+    }
+
+    fn program_input(
+        source: &str,
+        arguments_json: Option<String>,
+        witness_json: Option<String>,
+        extra_leaves_json: Option<String>,
+        include_debug_symbols: Option<bool>,
+    ) -> Result<ProgramInput, JsError> {
+        let witness = match witness_json {
+            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(&json)
+                .map_err(|e| JsError::new(&format!("Invalid witness values: {e}")))?,
+            _ => WitnessValues::default(),
+        };
+
+        Ok(ProgramInput {
+            program: Box::new(Program::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
+            witness: FixedWitness(witness).into(),
+        })
+    }
+
+    /// Which signature a program input needs: a witness name like `SIGNATURE`, or a witness path
+    /// like `SIGNATURE.Left.Right.1` when the signature sits inside the field.
+    ///
+    /// `None` means no signature is required.
+    fn program_signature(program_signature: Option<&str>) -> Option<ProgramSignature> {
+        let mut segments = program_signature?
+            .split('.')
+            .map(str::trim)
+            .filter(|part| !part.is_empty());
+
+        Some(ProgramSignature::new(segments.next()?).at_path(segments))
+    }
+
+    /// An issuance of `asset_amount_sats` of a new asset and `inflation_amount_sats` of its
+    /// reissuance token, committing to `issuer_contract_hex`.
+    fn issuance(
+        asset_amount_sats: u64,
+        inflation_amount_sats: u64,
+        issuer_contract_hex: Option<&str>,
+    ) -> Result<IssuanceInput, JsError> {
+        if i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
+        }
+        if i64::try_from(inflation_amount_sats).is_err() {
+            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
+        }
+        if asset_amount_sats == 0 && inflation_amount_sats == 0 {
+            return Err(JsError::new(
+                "an issuance must create the asset, its reissuance token, or both",
+            ));
+        }
+
+        let contract = Self::issuer_contract(issuer_contract_hex)
+            .map_err(|e| JsError::new(&format!("Invalid issuer contract: {e}")))?;
+
+        Ok(IssuanceInput::new_issuance(
+            asset_amount_sats,
+            inflation_amount_sats,
+            contract,
+        ))
+    }
+
+    /// A reissuance of `asset_amount_sats` by `input`, which must hold the blinded reissuance
+    /// token of `asset_entropy`.
+    fn reissuance(input: &PartialInput, asset_amount_sats: u64, asset_entropy: &str) -> Result<IssuanceInput, JsError> {
+        if asset_amount_sats == 0 || i64::try_from(asset_amount_sats).is_err() {
+            return Err(JsError::new("reissuance amount must be between 1 and i64::MAX"));
+        }
+
+        let entropy = AssetEntropy::from_str(asset_entropy)
+            .map_err(|e| JsError::new(&format!("the entropy is not 32 bytes of hex: {e}")))?;
+        let secrets = input
+            .secrets
+            .ok_or_else(|| JsError::new("the token output has no blinding secrets"))?;
+        let token = AssetId::reissuance_token_from_entropy(entropy, false);
+
+        if secrets.asset != token {
+            return Err(JsError::new(&format!(
+                "the output holds {}, not the reissuance token {token}",
+                secrets.asset
+            )));
+        }
+        if secrets.asset_bf == AssetBlindingFactor::zero() {
+            return Err(JsError::new(
+                "the token's asset blinding factor is zero, which Elements reads as a new issuance of another asset",
+            ));
+        }
+
+        Ok(IssuanceInput::new_reissuance(
+            asset_amount_sats,
+            entropy.to_byte_array(),
+        ))
+    }
+
     /// The issuer contract hash an issuance commits to, all zeroes when none is given.
     fn issuer_contract(written: Option<&str>) -> Result<[u8; 32], String> {
         match written.map(str::trim).filter(|hex_id| !hex_id.is_empty()) {
@@ -891,38 +1058,7 @@ impl TransactionBuilder {
         }
     }
 
-    /// Which signature a covenant input needs: a witness name like `SIGNATURE`, or a witness path
-    /// like `SIGNATURE.Left.Right.1` when the signature sits inside the field.
-    ///
-    /// `None` means no signature is required.
-    fn program_signature(signature_witness: Option<&str>) -> Option<ProgramSignature> {
-        let mut segments = signature_witness?
-            .split('.')
-            .map(str::trim)
-            .filter(|part| !part.is_empty());
-
-        Some(ProgramSignature::new(segments.next()?).at_path(segments))
-    }
-
-    fn input_at(
-        txid: &str,
-        vout: u32,
-        tx_out_hex: &str,
-        secrets_json: Option<&str>,
-        derivation_path: Option<&str>,
-    ) -> Result<PartialInput, JsError> {
-        let input = PartialInput::new(Self::utxo_at(txid, vout, tx_out_hex, secrets_json)?);
-
-        let Some(path) = derivation_path else {
-            return Ok(input);
-        };
-
-        let path = Self::relative_path(path).map_err(|e| JsError::new(&format!("Invalid derivation path: {e}")))?;
-
-        Ok(input.with_derivation_path(path))
-    }
-
-    fn utxo_at(txid: &str, vout: u32, tx_out_hex: &str, secrets_json: Option<&str>) -> Result<UTXO, JsError> {
+    fn utxo(txid: &str, vout: u32, tx_out_hex: &str, secrets_json: Option<&str>) -> Result<UTXO, JsError> {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).map_err(|e| JsError::new(&format!("Invalid txid: {e}")))?,
             vout,
@@ -1001,50 +1137,15 @@ impl TransactionBuilder {
     fn relative_path(path: &str) -> Result<DerivationPath, String> {
         let path = DerivationPath::from_str(path).map_err(|e| e.to_string())?;
 
-        Signer::check_derivation_path(&path).map_err(|e| e.to_string())?;
+        SdkSigner::check_derivation_path(&path).map_err(|e| e.to_string())?;
 
         Ok(path)
-    }
-
-    fn program_input(
-        source: &str,
-        arguments_json: Option<String>,
-        witness_json: Option<String>,
-        extra_leaves_json: Option<String>,
-        include_debug_symbols: Option<bool>,
-    ) -> Result<ProgramInput, JsError> {
-        let witness = match witness_json {
-            Some(json) if !json.trim().is_empty() => serde_json::from_str::<WitnessValues>(&json)
-                .map_err(|e| JsError::new(&format!("Invalid witness values: {e}")))?,
-            _ => WitnessValues::default(),
-        };
-
-        Ok(ProgramInput {
-            program: Box::new(Covenant::new(source, arguments_json, extra_leaves_json, include_debug_symbols)?.program),
-            witness: FixedWitness(witness).into(),
-        })
     }
 
     fn zero_value(ty: &ResolvedType) -> Value {
         let zero = simplicityhl::simplicity::Value::zero(StructuralType::from(ty).as_ref());
 
         Value::reconstruct(&StructuralValue::from(zero), ty).expect("a zero value has its own type")
-    }
-
-    fn check_issuance_amounts(asset_amount_sats: u64, inflation_amount_sats: u64) -> Result<(), JsError> {
-        if i64::try_from(asset_amount_sats).is_err() {
-            return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
-        }
-        if i64::try_from(inflation_amount_sats).is_err() {
-            return Err(JsError::new("inflation amount must not exceed i64::MAX"));
-        }
-        if asset_amount_sats == 0 && inflation_amount_sats == 0 {
-            return Err(JsError::new(
-                "an issuance must create the asset, its reissuance token, or both",
-            ));
-        }
-
-        Ok(())
     }
 }
 
@@ -1103,27 +1204,28 @@ mod tests {
     use smplx_sdk::utils::asset_entropy;
 
     use super::{
-        AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput, Script,
-        Sequence, SimplicityNetwork, TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor, WalletSigner,
+        AssetBlindingFactor, ContractHash, FromStr, IssuanceDetails, JsError, LockTime, PartialInput, Program, Script,
+        SdkIssuanceDetails, Sequence, Signer, SimplicityNetwork, TransactionBuilder, TxOutSecrets, UTXO,
+        ValueBlindingFactor,
     };
 
     const TRIVIAL: &str = "fn main() { }";
 
     #[test]
     fn short_state_leaf_is_rejected() {
-        let refused = Covenant::state_leaves("[\"00\"]").expect_err("a one byte leaf");
+        let refused = Program::state_leaves("[\"00\"]").expect_err("a one byte leaf");
 
         assert!(refused.contains("is 1 bytes, and a leaf is 32"), "{refused}");
     }
 
     #[test]
     fn non_hex_state_leaf_is_rejected() {
-        assert!(Covenant::state_leaves("[\"nonsense\"]").is_err());
+        assert!(Program::state_leaves("[\"nonsense\"]").is_err());
     }
 
     #[test]
     fn state_leaves_keep_their_order() {
-        let read = Covenant::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
+        let read = Program::state_leaves(&format!("[\"{}\", \"0x{}\"]", "00".repeat(32), "11".repeat(32)))
             .expect("two full leaves");
 
         assert_eq!(read, vec![vec![0x00; 32], vec![0x11; 32]]);
@@ -1134,20 +1236,22 @@ mod tests {
         let leaf = "00".repeat(32);
         let other = format!("{}01", "00".repeat(31));
 
-        let plain = Covenant::new(TRIVIAL, None, None, None).expect("a covenant that compiles");
-        let stateful =
-            Covenant::new(TRIVIAL, None, Some(format!("[\"{leaf}\"]")), None).expect("a covenant with state");
-        let moved = Covenant::new(TRIVIAL, None, Some(format!("[\"{other}\"]")), None).expect("a covenant with state");
+        let plain = Program::new(TRIVIAL, None, None, None).expect("a program that compiles");
+        let stateful = Program::new(TRIVIAL, None, Some(format!("[\"{leaf}\"]")), None).expect("a program with state");
+        let moved = Program::new(TRIVIAL, None, Some(format!("[\"{other}\"]")), None).expect("a program with state");
 
         let network = "liquidtestnet";
 
-        assert_ne!(plain.address(network).unwrap(), stateful.address(network).unwrap());
-        assert_ne!(stateful.address(network).unwrap(), moved.address(network).unwrap());
-        // The program is the same, only the address changes.
-        assert_eq!(
-            stateful.commitment_merkle_root().unwrap(),
-            moved.commitment_merkle_root().unwrap()
+        assert_ne!(
+            plain.tr_address(network).unwrap(),
+            stateful.tr_address(network).unwrap()
         );
+        assert_ne!(
+            stateful.tr_address(network).unwrap(),
+            moved.tr_address(network).unwrap()
+        );
+        // The program is the same, only the address changes.
+        assert_eq!(stateful.cmr().unwrap(), moved.cmr().unwrap());
         assert_eq!(stateful.tapleaf_hash().unwrap(), moved.tapleaf_hash().unwrap());
     }
 
@@ -1182,7 +1286,7 @@ mod tests {
         ),
     ];
 
-    fn report_for(txid: &str, vout: u32, contract: &str) -> IssuanceReport {
+    fn report_for(txid: &str, vout: u32, contract: &str) -> IssuanceDetails {
         let outpoint = OutPoint {
             txid: Txid::from_str(txid).expect("a chain vector's txid"),
             vout,
@@ -1192,7 +1296,7 @@ mod tests {
             TransactionBuilder::issuer_contract(Some(contract)).expect("a chain vector's contract"),
         );
 
-        IssuanceReport::from_details(&IssuanceDetails {
+        IssuanceDetails::from_details(&SdkIssuanceDetails {
             asset_id: AssetId::from_entropy(entropy),
             inflation_asset_id: AssetId::reissuance_token_from_entropy(entropy, false),
             asset_entropy: entropy,
@@ -1209,14 +1313,14 @@ mod tests {
     #[test]
     fn issuance_report_matches_liquid_token_ids() {
         for (txid, vout, contract, _, token) in ON_CHAIN {
-            assert_eq!(report_for(txid, vout, contract).reissuance_token_id, token);
+            assert_eq!(report_for(txid, vout, contract).inflation_asset_id, token);
         }
     }
 
     #[test]
     fn reported_entropy_derives_the_asset() {
         for (txid, vout, contract, asset, _) in ON_CHAIN {
-            let reported = report_for(txid, vout, contract).entropy;
+            let reported = report_for(txid, vout, contract).asset_entropy;
             let read_back = AssetEntropy::from_str(&reported).expect("a reported entropy");
 
             assert_eq!(AssetId::from_entropy(read_back).to_string(), asset);
@@ -1332,11 +1436,11 @@ mod tests {
     const TOKEN_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000001";
     const VALUE_BLINDER: &str = "0000000000000000000000000000000000000000000000000000000000000003";
 
-    /// The entropy of the first chain vector, in the format `IssuanceReport` uses.
+    /// The entropy of the first chain vector, in the format `IssuanceDetails` uses.
     fn first_entropy() -> String {
         let (txid, vout, contract, _, _) = ON_CHAIN[0];
 
-        report_for(txid, vout, contract).entropy
+        report_for(txid, vout, contract).asset_entropy
     }
 
     fn token_of(entropy: &str, confidential_issuance: bool) -> AssetId {
@@ -1384,6 +1488,37 @@ mod tests {
 
     #[test]
     fn reissuance_mints_the_original_asset() {
+        assert_reissues_the_original_asset(|builder, spent, entropy, secrets| {
+            builder.add_reissuance_input(ON_CHAIN[0].0, 0, spent, 5_000, entropy, secrets, None)
+        });
+    }
+
+    #[test]
+    fn program_reissuance_mints_the_original_asset() {
+        assert_reissues_the_original_asset(|builder, spent, entropy, secrets| {
+            builder.add_program_reissuance_input(
+                ON_CHAIN[0].0,
+                0,
+                spent,
+                TRIVIAL,
+                None,
+                None,
+                None,
+                5_000,
+                entropy,
+                secrets,
+                None,
+                None,
+                None,
+            )
+        });
+    }
+
+    /// Asserts that `add` reissues 5000 units of the first chain vector's asset from a blinded
+    /// token, given the encoded spent output, the entropy and the token's secrets.
+    fn assert_reissues_the_original_asset(
+        add: impl FnOnce(&mut TransactionBuilder, &str, &str, &str) -> Result<IssuanceDetails, JsError>,
+    ) {
         let entropy = first_entropy();
         let token = token_of(&entropy, false);
         let spent = holding(token, Some(blinder(TOKEN_BLINDER)), blinder(TOKEN_BLINDER));
@@ -1395,21 +1530,17 @@ mod tests {
         });
 
         let mut builder = TransactionBuilder::new();
-        let report = builder
-            .add_wallet_reissuance_input(
-                ON_CHAIN[0].0,
-                0,
-                &hex::encode(simplicityhl::elements::encode::serialize(&spent.witness_utxo)),
-                5_000,
-                &entropy,
-                &secrets.to_string(),
-                None,
-            )
-            .expect("a confidential token and its opening");
+        let report = add(
+            &mut builder,
+            &hex::encode(simplicityhl::elements::encode::serialize(&spent.witness_utxo)),
+            &entropy,
+            &secrets.to_string(),
+        )
+        .expect("a confidential token and its opening");
 
         assert_eq!(report.asset_id, ON_CHAIN[0].3);
-        assert_eq!(report.reissuance_token_id, ON_CHAIN[0].4);
-        assert_eq!(report.entropy, entropy);
+        assert_eq!(report.inflation_asset_id, ON_CHAIN[0].4);
+        assert_eq!(report.asset_entropy, entropy);
 
         // Read the issuance back the way Elements does. A null blinding nonce would make
         // this a new issuance of another asset.
@@ -1451,10 +1582,10 @@ mod tests {
     }
 
     #[test]
-    fn covenant_input_keeps_its_derivation_path() {
+    fn program_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
-        let added = builder.add_covenant_input(
+        let added = builder.add_program_input(
             ON_CHAIN[0].0,
             0,
             &spent_output(),
@@ -1472,10 +1603,10 @@ mod tests {
     }
 
     #[test]
-    fn covenant_input_without_path_uses_the_default_key() {
+    fn program_input_without_path_uses_the_default_key() {
         let mut builder = TransactionBuilder::new();
 
-        let added = builder.add_covenant_input(
+        let added = builder.add_program_input(
             ON_CHAIN[0].0,
             0,
             &spent_output(),
@@ -1493,10 +1624,10 @@ mod tests {
     }
 
     #[test]
-    fn covenant_issuance_input_keeps_its_derivation_path() {
+    fn program_issuance_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
-        let added = builder.add_covenant_issuance_input(
+        let added = builder.add_program_issuance_input(
             ON_CHAIN[0].0,
             0,
             &spent_output(),
@@ -1517,10 +1648,10 @@ mod tests {
     }
 
     #[test]
-    fn wallet_input_keeps_its_derivation_path() {
+    fn native_input_keeps_its_derivation_path() {
         let mut builder = TransactionBuilder::new();
 
-        let added = builder.add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));
+        let added = builder.add_input(ON_CHAIN[0].0, 0, &spent_output(), None, Some("0/7".to_string()));
 
         assert!(added.is_ok());
         assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
@@ -1540,8 +1671,8 @@ mod tests {
     fn unused_witness_lets_the_other_branch_be_spent() {
         let network = "liquidtestnet";
         let policy = SimplicityNetwork::LiquidTestnet.policy_asset();
-        let script_hex = Covenant::new(COLD_OR_HOT, None, None, None)
-            .and_then(|covenant| covenant.script_pubkey_hex(network))
+        let script_hex = Program::new(COLD_OR_HOT, None, None, None)
+            .and_then(|program| program.script_pubkey(network))
             .unwrap();
         let spent = TxOut {
             asset: Asset::Explicit(policy),
@@ -1554,7 +1685,7 @@ mod tests {
         let mut builder = TransactionBuilder::new();
 
         builder
-            .add_covenant_input(
+            .add_program_input(
                 ON_CHAIN[0].0,
                 0,
                 &hex::encode(simplicityhl::elements::encode::serialize(&spent)),
@@ -1572,7 +1703,27 @@ mod tests {
             .unwrap();
         builder.set_unused_witnesses(0, vec!["B".to_string()]).unwrap();
 
-        assert!(WalletSigner::estimate_strict_fee(&builder, network, 1000.0).is_ok());
+        assert!(Signer::estimate_strict_fee(&builder, network, 1000.0).is_ok());
+    }
+
+    #[test]
+    fn input_locktime_overrides_the_transaction_locktime() {
+        let mut builder = TransactionBuilder::new();
+
+        builder
+            .add_input(ON_CHAIN[0].0, 0, &spent_output(), None, None)
+            .unwrap();
+        builder
+            .add_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
+            .unwrap();
+        builder.set_locktime_height(100);
+        builder.set_input_locktime_height(0, 200).unwrap();
+
+        let locktime_of = |index: usize| builder.transaction.inputs()[index].partial_input.locktime;
+
+        assert_eq!(locktime_of(0), Some(LockTime::from_height(200).unwrap()));
+        assert_eq!(locktime_of(1), None);
+        assert_eq!(builder.transaction.sequence(), Sequence::ENABLE_LOCKTIME_NO_RBF);
     }
 
     #[test]
@@ -1580,10 +1731,10 @@ mod tests {
         let mut builder = TransactionBuilder::new();
 
         builder
-            .add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, None)
+            .add_input(ON_CHAIN[0].0, 0, &spent_output(), None, None)
             .unwrap();
         builder
-            .add_wallet_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
+            .add_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
             .unwrap();
         builder.set_sequence(1);
         builder.set_input_sequence(0, 25_920).unwrap();

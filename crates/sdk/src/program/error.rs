@@ -13,7 +13,7 @@ pub enum ProgramError {
     /// program can't run on this input or its witness stack doesn't cover the execution cost. The
     /// locktime and sequence identify most timelock failures.
     #[error(
-        "Covenant input {input_index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
+        "Program input {input_index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
     )]
     ProgramExecution {
         /// The index of the input whose program failed.
