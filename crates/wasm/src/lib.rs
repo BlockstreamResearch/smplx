@@ -4,7 +4,7 @@
 //! This crate exists so the SDK itself stays free of `wasm-bindgen` annotations
 //! and follows the arrangement of `lwk_wasm`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -17,7 +17,12 @@ use simplicityhl::elements::{self, Sequence};
 use simplicityhl::elements::{
     AssetEntropy, AssetId, ContractHash, LockTime, OutPoint, Script, TxOut, TxOutSecrets, Txid,
 };
-use simplicityhl::{Arguments, TemplateAst, UnstableFeatures, WitnessValues};
+use simplicityhl::types::StructuralType;
+use simplicityhl::value::StructuralValue;
+use simplicityhl::{
+    Arguments, ResolvedType, TemplateAst, TemplateProgramWitness, UnstableFeatures, Value, WitnessNameToValueMap,
+    WitnessValues,
+};
 
 use smplx_sdk::program::Program;
 use smplx_sdk::provider::SimplicityNetwork;
@@ -371,27 +376,25 @@ impl WalletSigner {
         hex::encode(self.signer.get_blinding_public_key().to_bytes())
     }
 
-    /// Reports what an assembled transaction would cost in fees, in satoshis.
+    /// The fee `finalizeStrict` would pay for an assembled transaction at `fee_rate` sats/kvb, in
+    /// satoshis.
     ///
     /// # Errors
     /// Returns an error if the transaction cannot be completed or a program rejects the spend.
-    #[wasm_bindgen(js_name = estimateFee)]
-    pub fn estimate_fee(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
+    #[wasm_bindgen(js_name = estimateStrict)]
+    pub fn estimate_strict(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<u64, JsError> {
         self.signer
             .estimate_strict(&builder.transaction, fee_rate)
             .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
     }
 
-    /// Blinds, signs and finalizes an assembled transaction.
+    /// Blinds, signs and finalizes an assembled transaction, adding a change output and a fee
+    /// output at `fee_rate` sats/kvb.
     ///
     /// # Errors
     /// Returns an error if the transaction cannot be balanced, blinded, signed or finalized.
-    #[wasm_bindgen(js_name = finalizeTransaction)]
-    pub fn finalize_transaction(
-        &self,
-        builder: &TransactionBuilder,
-        fee_rate: f32,
-    ) -> Result<SignedTransaction, JsError> {
+    #[wasm_bindgen(js_name = finalizeStrict)]
+    pub fn finalize_strict(&self, builder: &TransactionBuilder, fee_rate: f32) -> Result<SignedTransaction, JsError> {
         let (transaction, fee_sats) = self
             .signer
             .finalize_strict(&builder.transaction, fee_rate)
@@ -402,6 +405,49 @@ impl WalletSigner {
             hex: elements::encode::serialize_hex(&transaction),
             txid: transaction.txid().to_string(),
         })
+    }
+
+    /// Blinds, signs and finalizes an assembled transaction with no change output, paying its
+    /// whole policy-asset surplus as the fee.
+    ///
+    /// The surplus must cover the fee `estimateStrictFee` returns at the same `fee_rate`. The fee
+    /// paid is the inputs minus the outputs, so it is known before signing.
+    ///
+    /// # Errors
+    /// Returns an error if the surplus is below that fee, or if the transaction cannot be
+    /// balanced, blinded, signed or finalized.
+    #[wasm_bindgen(js_name = finalizeStrictFee)]
+    pub fn finalize_strict_fee(
+        &self,
+        builder: &TransactionBuilder,
+        fee_rate: f32,
+    ) -> Result<SignedTransaction, JsError> {
+        let (transaction, fee_sats) = self
+            .signer
+            .finalize_strict_fee(&builder.transaction, fee_rate)
+            .map_err(|e| JsError::new(&format!("Could not finalize the transaction: {e}")))?;
+
+        Ok(SignedTransaction {
+            fee_sats,
+            hex: elements::encode::serialize_hex(&transaction),
+            txid: transaction.txid().to_string(),
+        })
+    }
+
+    /// The fee `finalizeStrictFee` needs an assembled transaction to pay on `network` at
+    /// `fee_rate` sats/kvb. Needs no key, so it can price a spend before the wallet is unlocked.
+    ///
+    /// Every program input runs with its signature checks passing, and every signature is
+    /// measured at the largest size the signer makes. Returns the fee even if the transaction's
+    /// surplus can't cover the fee.
+    ///
+    /// # Errors
+    /// Returns an error if the network name is unknown, an input's amount is unknown, an input is
+    /// spent twice, a confidential input has no blinded output, or a program rejects the spend.
+    #[wasm_bindgen(js_name = estimateStrictFee)]
+    pub fn estimate_strict_fee(builder: &TransactionBuilder, network: &str, fee_rate: f32) -> Result<u64, JsError> {
+        Signer::estimate_strict_fee(&builder.transaction, &network_from_str(network)?, fee_rate)
+            .map_err(|e| JsError::new(&format!("Could not estimate the transaction fee: {e}")))
     }
 }
 
@@ -449,6 +495,66 @@ impl TransactionBuilder {
     #[wasm_bindgen(js_name = setSequence)]
     pub fn set_sequence(&mut self, sequence: u32) {
         self.transaction.set_sequence(Sequence::from_consensus(sequence));
+    }
+
+    /// Sets the sequence of input `input_index` alone, such as the relative timelock a covenant
+    /// checks, overriding `setSequence`.
+    ///
+    /// # Errors
+    /// Returns an error if there is no input at `input_index`.
+    #[wasm_bindgen(js_name = setInputSequence)]
+    pub fn set_input_sequence(&mut self, input_index: usize, sequence: u32) -> Result<(), JsError> {
+        let input = self
+            .transaction
+            .inputs_mut()
+            .get_mut(input_index)
+            .ok_or_else(|| JsError::new(&format!("There is no input at index {input_index}.")))?;
+
+        input.partial_input.sequence = Some(Sequence::from_consensus(sequence));
+
+        Ok(())
+    }
+
+    /// Gives each witness in `names` of covenant input `input_index` the zero value of its type.
+    ///
+    /// For witnesses on branches the spend doesn't take: satisfying the program needs a value for
+    /// every witness it declares, and pruning drops the unused ones.
+    ///
+    /// # Errors
+    /// Returns an error if input `input_index` isn't a covenant input, or if its program doesn't
+    /// compile or declares no witness with one of the names.
+    #[wasm_bindgen(js_name = setUnusedWitnesses)]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn set_unused_witnesses(&mut self, input_index: usize, names: Vec<String>) -> Result<(), JsError> {
+        let program_input = self
+            .transaction
+            .inputs_mut()
+            .get_mut(input_index)
+            .and_then(|input| input.program_input.as_mut())
+            .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
+
+        let types = program_input
+            .program
+            .get_witness_types()
+            .map_err(|e| JsError::new(&format!("Covenant does not compile: {e}")))?;
+        let mut values: HashMap<TemplateProgramWitness, Value> = program_input
+            .witness
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+
+        for name in &names {
+            let key = TemplateProgramWitness::witness_from_str(name.as_str());
+            let ty = types
+                .get(&key)
+                .ok_or_else(|| JsError::new(&format!("The covenant declares no witness named {name}.")))?;
+
+            values.insert(key, Self::zero_value(ty));
+        }
+
+        program_input.witness = WitnessValues::from_map(values);
+
+        Ok(())
     }
 
     /// Sets where this transaction's change should go.
@@ -760,39 +866,6 @@ impl TransactionBuilder {
         Ok(())
     }
 
-    /// Runs the Simplicity program of one covenant input against this transaction.
-    ///
-    /// This is the dry-run: it satisfies the witness, prunes the branches the spend does not
-    /// take, which runs the program on a `BitMachine`, and checks the witness budget.
-    ///
-    /// # Errors
-    /// Returns an error if the input is not a covenant input, or if the program fails to
-    /// satisfy, run or fit the budget.
-    #[wasm_bindgen(js_name = dryRunCovenantInput)]
-    pub fn dry_run_covenant_input(&self, input_index: usize, network: &str) -> Result<(), JsError> {
-        let network = network_from_str(network)?;
-        let inputs = self.transaction.inputs();
-        let input = inputs
-            .get(input_index)
-            .ok_or_else(|| JsError::new(&format!("There is no input at index {input_index}.")))?;
-        let program_input = input
-            .program_input
-            .as_ref()
-            .ok_or_else(|| JsError::new(&format!("Input {input_index} is not a covenant input.")))?;
-
-        let (pst, _secrets) = self
-            .transaction
-            .extract_pst()
-            .map_err(|e| JsError::new(&format!("Could not construct the transaction: {e}")))?;
-
-        program_input
-            .program
-            .finalize(&pst, &program_input.witness, input_index, &network)
-            .map_err(|e| JsError::new(&format!("Input {input_index} did not execute: {e}")))?;
-
-        Ok(())
-    }
-
     /// How many inputs and outputs this transaction currently carries.
     #[wasm_bindgen(js_name = inputCount)]
     #[must_use]
@@ -952,6 +1025,12 @@ impl TransactionBuilder {
         })
     }
 
+    fn zero_value(ty: &ResolvedType) -> Value {
+        let zero = simplicityhl::simplicity::Value::zero(StructuralType::from(ty).as_ref());
+
+        Value::reconstruct(&StructuralValue::from(zero), ty).expect("a zero value has its own type")
+    }
+
     fn check_issuance_amounts(asset_amount_sats: u64, inflation_amount_sats: u64) -> Result<(), JsError> {
         if i64::try_from(asset_amount_sats).is_err() {
             return Err(JsError::new("asset issuance amount must not exceed i64::MAX"));
@@ -1024,8 +1103,8 @@ mod tests {
     use smplx_sdk::utils::asset_entropy;
 
     use super::{
-        AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput,
-        TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor,
+        AssetBlindingFactor, ContractHash, Covenant, FromStr, IssuanceDetails, IssuanceReport, PartialInput, Script,
+        Sequence, SimplicityNetwork, TransactionBuilder, TxOutSecrets, UTXO, ValueBlindingFactor, WalletSigner,
     };
 
     const TRIVIAL: &str = "fn main() { }";
@@ -1445,5 +1524,74 @@ mod tests {
 
         assert!(added.is_ok());
         assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    /// The cold branch reads witness `A`, the hot branch witness `B`.
+    const COLD_OR_HOT: &str = r"
+        fn main() {
+            match witness::PATH {
+                Left(cold: ()) => assert!(jet::eq_32(witness::A, 0)),
+                Right(hot: ()) => assert!(jet::eq_32(witness::B, 0)),
+            }
+        }
+    ";
+
+    #[test]
+    fn unused_witness_lets_the_other_branch_be_spent() {
+        let network = "liquidtestnet";
+        let policy = SimplicityNetwork::LiquidTestnet.policy_asset();
+        let script_hex = Covenant::new(COLD_OR_HOT, None, None, None)
+            .and_then(|covenant| covenant.script_pubkey_hex(network))
+            .unwrap();
+        let spent = TxOut {
+            asset: Asset::Explicit(policy),
+            value: Value::Explicit(50_000),
+            script_pubkey: Script::from(hex::decode(&script_hex).unwrap()),
+            ..TxOut::default()
+        };
+        let cold = r#"{"PATH": {"value": "Left(())", "type": "Either<(), ()>"}, "A": {"value": "0", "type": "u32"}}"#;
+
+        let mut builder = TransactionBuilder::new();
+
+        builder
+            .add_covenant_input(
+                ON_CHAIN[0].0,
+                0,
+                &hex::encode(simplicityhl::elements::encode::serialize(&spent)),
+                COLD_OR_HOT,
+                None,
+                Some(cold.to_string()),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        builder
+            .add_output(&script_hex, 49_000, &policy.to_string(), None)
+            .unwrap();
+        builder.set_unused_witnesses(0, vec!["B".to_string()]).unwrap();
+
+        assert!(WalletSigner::estimate_strict_fee(&builder, network, 1000.0).is_ok());
+    }
+
+    #[test]
+    fn input_sequence_overrides_the_transaction_sequence() {
+        let mut builder = TransactionBuilder::new();
+
+        builder
+            .add_wallet_input(ON_CHAIN[0].0, 0, &spent_output(), None, None)
+            .unwrap();
+        builder
+            .add_wallet_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
+            .unwrap();
+        builder.set_sequence(1);
+        builder.set_input_sequence(0, 25_920).unwrap();
+
+        let sequence_of = |index: usize| builder.transaction.inputs()[index].partial_input.sequence;
+
+        assert_eq!(sequence_of(0), Some(Sequence::from_consensus(25_920)));
+        assert_eq!(sequence_of(1), None);
+        assert_eq!(builder.transaction.sequence(), Sequence::from_consensus(1));
     }
 }
