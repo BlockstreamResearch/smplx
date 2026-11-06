@@ -37,9 +37,10 @@ pub mod required_signature;
 pub mod tx_receipt;
 /// Common representation of unspent transaction outputs used as funding sources.
 pub mod utxo;
+mod witness_injector;
 
 pub use change_output::ChangeOutput;
-pub use error::{FinalTransactionError, UtxoError};
+pub use error::{FinalTransactionError, UtxoError, WitnessWrappingError};
 pub use final_transaction::{FinalInput, FinalTransaction};
 pub use partial_input::{IssuanceDetails, PartialInput, ProgramInput};
 pub use partial_output::PartialOutput;

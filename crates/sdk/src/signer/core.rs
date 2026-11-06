@@ -2,17 +2,14 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::Arc;
 
-use simplicityhl::Value;
 use simplicityhl::elements::pset::PartiallySignedTransaction;
 use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
-use simplicityhl::elements::{Address, LockTime, Script, Sequence, Transaction, Witness};
+use simplicityhl::elements::{Address, Script, Transaction, Witness};
 #[cfg(feature = "provider")]
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
 use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
-use simplicityhl::value::ValueConstructible;
-use simplicityhl::{TemplateProgramWitness, WitnessNameToValueMap, WitnessValues};
+use simplicityhl::{WitnessNameToValueMap, WitnessValues};
 
 use bip39::Mnemonic;
 use bip39::rand::thread_rng;
@@ -34,14 +31,13 @@ use elements_miniscript::{
 };
 
 use crate::constants::{DUST_THRESHOLD, MIN_FEE};
-use crate::program::ProgramTrait;
 use crate::program::logger::ProgramLogger;
+use crate::program::{ProgramError, ProgramTrait};
 #[cfg(feature = "provider")]
 use crate::provider::ProviderTrait;
 use crate::provider::SimplicityNetwork;
-use crate::signer::witness_injector::WitnessInjector;
 use crate::transaction::{
-    ChangeOutput, FinalTransaction, PartialOutput, ProgramSignature, RequiredSignature, SigMessage,
+    ChangeOutput, FinalTransaction, PartialOutput, ProgramInput, ProgramSignature, RequiredSignature, SigMessage,
 };
 #[cfg(feature = "provider")]
 use crate::transaction::{NativeSignature, PartialInput, TxReceipt, UTXO};
@@ -55,9 +51,6 @@ pub const PLACEHOLDER_FEE: u64 = 1;
 /// Discounted weight of a native input with its signature.
 #[cfg(feature = "provider")]
 const NATIVE_INPUT_WEIGHT: usize = 274;
-
-/// Weight units per virtual byte.
-const WITNESS_SCALE_FACTOR: usize = 4;
 
 /// The two signatures a [`Signer`] makes: Schnorr for a program input, ECDSA for a native one.
 ///
@@ -124,22 +117,27 @@ pub trait SignerTrait {
 /// | `broadcast` | yes | yes | yes | yes |
 /// | `finalize` | yes | yes | yes | no |
 /// | [`finalize_strict`](Signer::finalize_strict) | no | no | yes | no |
-/// | [`estimate_fee`](Signer::estimate_fee) | no | no | only to measure | no |
+/// | [`finalize_strict_fee`](Signer::finalize_strict_fee) | no | no | only the fee output | no |
 /// | [`sign_tx`](Signer::sign_tx) | no | no | no | no |
 /// | [`sign_witnesses`](Signer::sign_witnesses) | no | no | no | no |
 ///
+/// Each `finalize*` method has an `estimate*` counterpart that completes the transaction the same
+/// way and returns its fee without signing: `estimate`, [`estimate_strict`](Signer::estimate_strict)
+/// and [`estimate_strict_fee`](Signer::estimate_strict_fee), which needs no key.
+///
 /// Fee rates are in sats/kvb. Every method except `sign_witnesses` runs each program input
-/// locally, so a contract that rejects the spend fails with `SignerError::CovenantExecution`
-/// before anything is broadcast.
+/// locally, so a contract that rejects the spend fails with
+/// `ProgramError::ProgramExecution` before anything is broadcast.
 ///
 /// # Fees and change
 ///
-/// `finalize`, `finalize_strict` and `estimate_fee` append a change output and then a fee
+/// `finalize`, `finalize_strict` and their estimates append a change output and then a fee
 /// output, which has an empty script. The change goes to the transaction's
 /// [`change`](FinalTransaction::change) target, or to the signer's own address, blinded, if it
-/// has none. The signer signs once to measure the weight, sets the fee for that weight, pays the
-/// rest of the policy-asset surplus as change, and signs again. Each signing runs every program
-/// input, so a program runs at least twice.
+/// has none. The signer measures the weight with placeholder signatures, sets the fee for that
+/// weight, pays the rest of the policy-asset surplus as change, and signs. Measuring runs every
+/// program input with its signature checks passing, so a placeholder prunes a program as the real
+/// signature does. `finalize_strict_fee` appends only a fee output, which pays the whole surplus.
 ///
 /// Change below [`MIN_FEE`] (blinded) or [`DUST_THRESHOLD`] (explicit) is dropped, and the whole
 /// surplus becomes the fee. Blinded change is kept, and more funds are needed instead, when it is
@@ -193,8 +191,8 @@ impl SignerTrait for Signer {
     }
 }
 
-enum Estimate {
-    Success(Transaction, u64),
+enum Completion {
+    Success(FinalTransaction, u64),
     Failure(u64),
 }
 
@@ -313,92 +311,25 @@ impl Signer {
     /// - `SignerError::InvalidFeeRate` if the provider's fee rate isn't a finite, non-negative number.
     /// - `SignerError::Provider` or `SignerError::ProviderUnavailable` for provider failures.
     /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`], including
-    ///   `SignerError::CovenantExecution` if a program rejects the spend.
+    ///   `ProgramError::ProgramExecution` if a program rejects the spend.
     #[cfg(feature = "provider")]
     pub fn finalize(&self, tx: &FinalTransaction) -> Result<(Transaction, u64), SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
+        let _logs = ProgramLogger::flush_on_drop();
+        let (tx, fee) = self.complete(tx)?;
 
-        let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
-        Self::check_fee_rate(fee_rate)?;
+        Ok((self.sign_tx(&tx)?.extract_tx()?, fee))
+    }
 
-        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
-        let mut spent: HashSet<OutPoint> = tx.inputs().iter().map(|input| input.partial_input.outpoint).collect();
+    /// The fee [`Signer::finalize`] would pay for `tx`. Completes `tx` the same way, without
+    /// signing.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Signer::finalize`], except those of signing.
+    #[cfg(feature = "provider")]
+    pub fn estimate(&self, tx: &FinalTransaction) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
 
-        // Skips the outpoints the transaction spends already and the ones the provider lists twice
-        signer_utxos.retain(|utxo| spent.insert(utxo.outpoint));
-
-        // An explicit change target can't balance a confidential input unless another output is confidential
-        if tx.change().is_some_and(|change| change.blinding_key.is_none()) && !tx.needs_blinding() {
-            // Retain only explicit UTXOs
-            signer_utxos.retain(UTXO::is_explicit);
-        }
-
-        // Resolve amounts before sorting so an unreadable UTXO returns an error.
-        let mut signer_utxos = signer_utxos
-            .into_iter()
-            .map(|utxo| utxo.amount().map(|amount| (amount, utxo)))
-            .collect::<Result<Vec<_>, _>>()?;
-        signer_utxos.sort_by_key(|(amount, _)| std::cmp::Reverse(*amount));
-
-        let mut fee_tx = tx.clone();
-        let mut curr_fee = MIN_FEE;
-
-        // Each input added after an estimate makes the transaction heavier, so
-        // the next estimate also accounts for the fee of those inputs.
-        let input_fee = Self::calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
-        let mut inputs_since_estimate: u64 = 0;
-
-        let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
-            .estimate_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
-        {
-            Ok(Estimate::Success(tx, fee)) => {
-                ProgramLogger::flush_logs();
-                Ok(Some((tx, fee)))
-            }
-            Ok(Estimate::Failure(required_fee)) => {
-                *curr_fee = required_fee;
-                Ok(None)
-            }
-            Err(err) => {
-                ProgramLogger::flush_logs();
-                Err(err)
-            }
-        };
-
-        for (_, utxo) in signer_utxos {
-            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
-            let required_fee = curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee));
-
-            if i128::from(policy_amount_delta) >= i128::from(required_fee) {
-                inputs_since_estimate = 0;
-
-                if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
-                    return Ok(result);
-                }
-            }
-
-            // IMPORTANT: must be added to the end of the transaction.
-            // Otherwise, the logging of execution traces will be broken
-            fee_tx.add_input(PartialInput::new(utxo), Some(NativeSignature::Ecdsa));
-            inputs_since_estimate += 1;
-        }
-
-        // One last estimate for the UTXOs added since the previous one. No UTXO is left to add,
-        // so skip the margin for their fees and let the estimate decide
-        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
-
-        if i128::from(policy_amount_delta) >= i128::from(curr_fee) {
-            inputs_since_estimate = 0;
-
-            if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
-                return Ok(result);
-            }
-        }
-
-        Err(SignerError::NotEnoughFunds(
-            curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee)),
-        ))
+        Ok(self.complete(tx)?.1)
     }
 
     /// Finalizes a transaction using only the inputs it already has, paying `fee_rate` sats/kvb.
@@ -421,28 +352,24 @@ impl Signer {
     /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
     /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`].
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
-        Self::check_fee_rate(fee_rate)?;
-
+        let _logs = ProgramLogger::flush_on_drop();
+        let completion = self.complete_strict(tx, fee_rate)?;
         let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
         if policy_amount_delta < MIN_FEE.cast_signed() {
             return Err(SignerError::DustAmount(policy_amount_delta));
         }
 
-        // policy_amount_delta will be > 0
-        match self.estimate_tx(tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())? {
-            Estimate::Success(tx, fee) => {
-                ProgramLogger::flush_logs();
-                Ok((tx, fee))
+        match completion {
+            Completion::Success(tx, fee) => Ok((self.sign_tx(&tx)?.extract_tx()?, fee)),
+            Completion::Failure(required_fee) => {
+                Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee))
             }
-            Estimate::Failure(required_fee) => Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, required_fee)),
         }
     }
 
-    /// The fee `tx` would pay at `fee_rate` sats/kvb with a change output and a fee output added,
-    /// as [`Signer::finalize_strict`] would add them. Doesn't add any wallet inputs.
+    /// The fee [`Signer::finalize_strict`] would pay for `tx` at `fee_rate` sats/kvb. Completes `tx`
+    /// the same way, without signing.
     ///
     /// Returns the fee even if `tx`'s inputs can't cover the fee. If the change is blinded and
     /// can't be dropped, and the surplus is too small for the change, this returns the fee plus
@@ -451,20 +378,64 @@ impl Signer {
     /// # Errors
     /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
     /// `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`] does,
-    /// and the errors of [`Signer::sign_tx`].
-    pub fn estimate_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
-        Self::check_fee_rate(fee_rate)?;
+    /// and `ProgramError::ProgramExecution` if a program rejects the spend.
+    pub fn estimate_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
 
-        let available_delta = tx.calculate_fee_delta(&self.network)?.max(0).cast_unsigned();
-        let estimate = self.estimate_tx(tx.clone(), fee_rate, available_delta);
-
-        ProgramLogger::flush_logs();
-
-        Ok(match estimate? {
-            Estimate::Success(_, fee) | Estimate::Failure(fee) => fee,
+        Ok(match self.complete_strict(tx, fee_rate)? {
+            Completion::Success(_, fee) | Completion::Failure(fee) => fee,
         })
+    }
+
+    /// Finalizes a transaction using only the inputs and outputs it already has, paying the whole
+    /// policy-asset surplus as the fee. Returns the transaction and its fee.
+    ///
+    /// Appends only a fee output. The surplus, which is known before signing, must cover the fee
+    /// at `fee_rate` sats/kvb that [`Signer::estimate_strict_fee`] returns.
+    ///
+    /// # Errors
+    /// - `SignerError::NotEnoughFeeAmount` if the surplus is below the fee at `fee_rate`.
+    /// - `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
+    ///   `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`]
+    ///   does, and the errors of [`Signer::sign_tx`].
+    pub fn finalize_strict_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
+        let (fee_tx, fee) = Self::complete_strict_fee(tx, &self.network, fee_rate)?;
+        let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
+
+        if i128::from(policy_amount_delta) < i128::from(fee) {
+            return Err(SignerError::NotEnoughFeeAmount(policy_amount_delta, fee));
+        }
+
+        if !fee_tx.is_balanced()? {
+            return Err(SignerError::Unbalanced);
+        }
+
+        Ok((
+            self.sign_tx(&fee_tx)?.extract_tx()?,
+            policy_amount_delta.cast_unsigned(),
+        ))
+    }
+
+    /// The fee [`Signer::finalize_strict_fee`] needs `tx` on `network` to pay at `fee_rate`
+    /// sats/kvb. Completes `tx` the same way, without signing, and needs no key.
+    ///
+    /// Returns the fee even if `tx`'s surplus can't cover the fee. Signatures are measured as
+    /// placeholders of the largest size the signer makes, so the fee is never below the one the
+    /// signed transaction needs.
+    ///
+    /// # Errors
+    /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput` or
+    /// `ConfidentialInputWithoutBlindedOutput` as [`Signer::finalize_strict`] does, and
+    /// `ProgramError::ProgramExecution` if a program rejects the spend.
+    pub fn estimate_strict_fee(
+        tx: &FinalTransaction,
+        network: &SimplicityNetwork,
+        fee_rate: f32,
+    ) -> Result<u64, SignerError> {
+        let _logs = ProgramLogger::flush_on_drop();
+
+        Ok(Self::complete_strict_fee(tx, network, fee_rate)?.1)
     }
 
     /// Blinds and signs exactly the transaction it is given, and finalizes every program input.
@@ -475,7 +446,7 @@ impl Signer {
     /// sets the input's final witness. Call `extract_tx()` on the result for a [`Transaction`].
     ///
     /// # Errors
-    /// Returns `SignerError::CovenantExecution` if a program rejects the spend, with the input's
+    /// Returns `ProgramError::ProgramExecution` if a program rejects the spend, with the input's
     /// index and the locktime and sequence it ran with, and the errors of
     /// [`Signer::sign_witnesses`].
     pub fn sign_tx(&self, tx: &FinalTransaction) -> Result<PartiallySignedTransaction, SignerError> {
@@ -489,14 +460,7 @@ impl Signer {
             let pruned_witness = program_input
                 .program
                 .finalize(&pst, &signed_witnesses[&index], index, &self.network)
-                .map_err(|source| SignerError::CovenantExecution {
-                    index,
-                    locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
-                    sequence: pst.inputs()[index]
-                        .sequence
-                        .map_or(u32::MAX, Sequence::to_consensus_u32),
-                    source,
-                })?;
+                .map_err(|source| ProgramError::program_execution(&pst, index, source))?;
 
             pst.inputs_mut()[index].final_script_witness = Some(Witness::from(pruned_witness));
         }
@@ -512,7 +476,7 @@ impl Signer {
     /// outputs, every call produces different output commitments and so a different
     /// `sighash_all`.
     ///
-    /// Running a program input with [`ProgramTrait::execute`] on the result is a dry run: it
+    /// Running a program input with [`ProgramTrait::finalize`] on the result is a dry run: it
     /// checks the program with its real signature without finalizing anything.
     ///
     /// # Errors
@@ -547,8 +511,7 @@ impl Signer {
                     // Sign the program and inject the signature into the witness
                     RequiredSignature::Program(signature) => self.get_signed_program_witness(
                         &pst,
-                        program_input.program.as_ref(),
-                        &program_input.witness,
+                        program_input,
                         signature,
                         index,
                         input_i.partial_input.derivation_path.as_ref(),
@@ -758,46 +721,132 @@ impl Signer {
         }
     }
 
-    fn sign_input_with(
-        &self,
-        pst: &PartiallySignedTransaction,
-        sighash_cache: &mut SighashCache<impl Deref<Target = Transaction>>,
-        input_index: usize,
-        derivation_path: Option<&DerivationPath>,
-    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
-        let message = pst
-            .sighash_msg(input_index, sighash_cache, None, self.network.genesis_block_hash())?
-            .to_secp_msg();
+    /// `tx` with wallet inputs, a change output and a fee output added, and its fee.
+    #[cfg(feature = "provider")]
+    fn complete(&self, tx: &FinalTransaction) -> Result<(FinalTransaction, u64), SignerError> {
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
 
-        let private_key = self.get_private_key_at(derivation_path)?;
-        let public_key = private_key.public_key(&self.secp);
+        let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
+        Self::check_fee_rate(fee_rate)?;
 
-        let script_pubkey = pst.inputs()[input_index]
-            .witness_utxo
-            .as_ref()
-            .map(|utxo| &utxo.script_pubkey);
+        let mut signer_utxos = self.get_utxos_asset(self.network.policy_asset())?;
+        let mut spent: HashSet<OutPoint> = tx.inputs().iter().map(|input| input.partial_input.outpoint).collect();
 
-        if let Some(script_pubkey) = script_pubkey.filter(|script| script.is_v0_p2wpkh())
-            && *script_pubkey != Script::new_v0_wpkh(&public_key.wpubkey_hash().expect("the key is compressed"))
-        {
-            return Err(SignerError::KeyMismatch(input_index));
+        // Skips the outpoints the transaction spends already and the ones the provider lists twice
+        signer_utxos.retain(|utxo| spent.insert(utxo.outpoint));
+
+        // An explicit change target can't balance a confidential input unless another output is confidential
+        if tx.change().is_some_and(|change| change.blinding_key.is_none()) && !tx.needs_blinding() {
+            // Retain only explicit UTXOs
+            signer_utxos.retain(UTXO::is_explicit);
         }
 
-        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+        // Resolve amounts before sorting so an unreadable UTXO returns an error.
+        let mut signer_utxos = signer_utxos
+            .into_iter()
+            .map(|utxo| utxo.amount().map(|amount| (amount, utxo)))
+            .collect::<Result<Vec<_>, _>>()?;
+        signer_utxos.sort_by_key(|(amount, _)| std::cmp::Reverse(*amount));
 
-        Ok((public_key, signature))
+        let mut fee_tx = tx.clone();
+        let mut curr_fee = MIN_FEE;
+
+        // Each input added after an estimate makes the transaction heavier, so
+        // the next estimate also accounts for the fee of those inputs.
+        let input_fee = FinalTransaction::calculate_fee(NATIVE_INPUT_WEIGHT, fee_rate);
+        let mut inputs_since_estimate: u64 = 0;
+
+        let try_estimate = |fee_tx: &FinalTransaction, policy_amount_delta: i64, curr_fee: &mut u64| match self
+            .complete_tx(fee_tx.clone(), fee_rate, policy_amount_delta.cast_unsigned())
+        {
+            Ok(Completion::Success(tx, fee)) => Ok(Some((tx, fee))),
+            Ok(Completion::Failure(required_fee)) => {
+                *curr_fee = required_fee;
+                Ok(None)
+            }
+            Err(err) => Err(err),
+        };
+
+        for (_, utxo) in signer_utxos {
+            let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
+            let required_fee = curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee));
+
+            if i128::from(policy_amount_delta) >= i128::from(required_fee) {
+                inputs_since_estimate = 0;
+
+                if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                    return Ok(result);
+                }
+            }
+
+            // IMPORTANT: must be added to the end of the transaction.
+            // Otherwise, the logging of execution traces will be broken
+            fee_tx.add_input(PartialInput::new(utxo), Some(NativeSignature::Ecdsa));
+            inputs_since_estimate += 1;
+        }
+
+        // One last estimate for the UTXOs added since the previous one. No UTXO is left to add,
+        // so skip the margin for their fees and let the estimate decide
+        let policy_amount_delta = fee_tx.calculate_fee_delta(&self.network)?;
+
+        if i128::from(policy_amount_delta) >= i128::from(curr_fee) {
+            inputs_since_estimate = 0;
+
+            if let Some(result) = try_estimate(&fee_tx, policy_amount_delta, &mut curr_fee)? {
+                return Ok(result);
+            }
+        }
+
+        Err(SignerError::NotEnoughFunds(
+            curr_fee.saturating_add(inputs_since_estimate.saturating_mul(input_fee)),
+        ))
     }
 
-    fn estimate_tx(
+    /// `tx` with a change output and a fee output added at `fee_rate`, or the fee it needs when the
+    /// surplus is too small.
+    fn complete_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<Completion, SignerError> {
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
+        Self::check_fee_rate(fee_rate)?;
+
+        let available_delta = tx.calculate_fee_delta(&self.network)?.max(0).cast_unsigned();
+
+        self.complete_tx(tx.clone(), fee_rate, available_delta)
+    }
+
+    /// `tx` with a fee output paying its whole surplus, and the fee that surplus must cover at
+    /// `fee_rate`.
+    fn complete_strict_fee(
+        tx: &FinalTransaction,
+        network: &SimplicityNetwork,
+        fee_rate: f32,
+    ) -> Result<(FinalTransaction, u64), SignerError> {
+        Self::check_known_amounts(tx)?;
+        Self::check_unique_inputs(tx)?;
+        Self::check_fee_rate(fee_rate)?;
+
+        if tx.has_confidential_input() && !tx.needs_blinding() {
+            return Err(SignerError::ConfidentialInputWithoutBlindedOutput);
+        }
+
+        let surplus = tx.calculate_fee_delta(network)?.max(0).cast_unsigned();
+        let mut fee_tx = tx.clone();
+
+        fee_tx.add_output(PartialOutput::new(Script::new(), surplus, network.policy_asset()));
+
+        let fee = fee_tx.measure_fee(network, fee_rate)?;
+
+        Ok((fee_tx, fee))
+    }
+
+    /// Appends the change and fee outputs to `fee_tx`, priced at `fee_rate`, without signing.
+    fn complete_tx(
         &self,
         mut fee_tx: FinalTransaction,
         fee_rate: f32,
         available_delta: u64,
-    ) -> Result<Estimate, SignerError> {
-        let sign_and_extract_tx = |signer: &Signer, tx: &FinalTransaction| -> Result<Transaction, SignerError> {
-            Ok(signer.sign_tx(tx)?.extract_tx()?)
-        };
-
+    ) -> Result<Completion, SignerError> {
         // Estimate the tx fee with the change. The caller supplies the change target
         let change = match fee_tx.change() {
             Some(target) => target.clone(),
@@ -826,8 +875,7 @@ impl Signer {
             self.network.policy_asset(),
         ));
 
-        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = fee_tx.measure_fee(&self.network, fee_rate)?;
 
         let change_index = fee_tx.n_outputs() - 2;
         let change_minimum = if fee_tx.outputs()[change_index].blinding_key.is_some() {
@@ -850,9 +898,7 @@ impl Signer {
                 return Err(SignerError::Unbalanced);
             }
 
-            let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-
-            return Ok(Estimate::Success(final_tx, fee));
+            return Ok(Completion::Success(fee_tx, fee));
         }
 
         let blinded_without_change = fee_tx
@@ -872,17 +918,16 @@ impl Signer {
             };
 
         if change_needed {
-            return Ok(Estimate::Failure(fee.saturating_add(change_minimum)));
+            return Ok(Completion::Failure(fee.saturating_add(change_minimum)));
         }
 
         // Not enough funds for the change, so estimate without a change output.
         fee_tx.remove_output(change_index);
 
-        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-        let fee = Self::calculate_fee(final_tx.discount_weight(), fee_rate);
+        let fee = fee_tx.measure_fee(&self.network, fee_rate)?;
 
         if available_delta < fee {
-            return Ok(Estimate::Failure(fee));
+            return Ok(Completion::Failure(fee));
         }
 
         let outputs = fee_tx.outputs_mut();
@@ -894,10 +939,8 @@ impl Signer {
             return Err(SignerError::Unbalanced);
         }
 
-        // Finalize the tx with fee and without the change, which pays the whole delta
-        let final_tx = sign_and_extract_tx(self, &fee_tx)?;
-
-        Ok(Estimate::Success(final_tx, available_delta))
+        // The fee output pays the whole delta, without the change
+        Ok(Completion::Success(fee_tx, available_delta))
     }
 
     /// Signs and inserts a signature into appropriate witness value.
@@ -909,69 +952,51 @@ impl Signer {
     fn get_signed_program_witness(
         &self,
         pst: &PartiallySignedTransaction,
-        program: &dyn ProgramTrait,
-        witness: &WitnessValues,
+        program_input: &ProgramInput,
         program_signature: &ProgramSignature,
         index: usize,
         derivation_path: Option<&DerivationPath>,
     ) -> Result<WitnessValues, SignerError> {
-        let witness_name = program_signature.name();
-        let sig_path = program_signature.path();
         let signature = self.sign_program(
             pst,
-            program,
+            program_input.program.as_ref(),
             index,
             &self.network,
             derivation_path,
             program_signature.message(),
         )?;
 
-        // Inject the signature into the witness field directly if the path is not provided
-        let sig_val = if sig_path.is_empty() {
-            Value::byte_array(signature.serialize())
-        } else {
-            let witness_types = program.get_witness_types()?;
-            let witness_type = witness_types
-                .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                .ok_or(SignerError::WitnessFieldNotFound(witness_name.to_string()))?;
-
-            #[allow(clippy::missing_panics_doc)]
-            let local_witness = Arc::new(
-                witness
-                    .get(&TemplateProgramWitness::witness_from_str(witness_name))
-                    .expect("checked above")
-                    .clone(),
-            );
-
-            WitnessInjector::inject_value(
-                &local_witness,
-                witness_type,
-                sig_path,
-                Value::byte_array(signature.serialize()),
-            )?
-        };
-
-        let mut hm = HashMap::new();
-
-        witness.iter().for_each(|el| {
-            hm.insert(el.0.clone(), el.1.clone());
-        });
-
-        hm.insert(TemplateProgramWitness::witness_from_str(witness_name), sig_val);
-
-        Ok(WitnessValues::from_map(hm))
+        Ok(program_input.signed_witness(program_signature, signature.serialize())?)
     }
 
-    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss
-    )]
-    fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
-        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+    fn sign_input_with(
+        &self,
+        pst: &PartiallySignedTransaction,
+        sighash_cache: &mut SighashCache<impl Deref<Target = Transaction>>,
+        input_index: usize,
+        derivation_path: Option<&DerivationPath>,
+    ) -> Result<(PublicKey, ecdsa::Signature), SignerError> {
+        let message = pst
+            .sighash_msg(input_index, sighash_cache, None, self.network.genesis_block_hash())?
+            .to_secp_msg();
 
-        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
+        let private_key = self.get_private_key_at(derivation_path)?;
+        let public_key = private_key.public_key(&self.secp);
+
+        let script_pubkey = pst.inputs()[input_index]
+            .witness_utxo
+            .as_ref()
+            .map(|utxo| &utxo.script_pubkey);
+
+        if let Some(script_pubkey) = script_pubkey.filter(|script| script.is_v0_p2wpkh())
+            && *script_pubkey != Script::new_v0_wpkh(&public_key.wpubkey_hash().expect("the key is compressed"))
+        {
+            return Err(SignerError::KeyMismatch(input_index));
+        }
+
+        let signature = self.secp.sign_ecdsa_low_r(&message, &private_key.inner);
+
+        Ok((public_key, signature))
     }
 
     /// A fee rate is a finite, non-negative number of sats/kvb.
@@ -1244,7 +1269,7 @@ mod tests {
         ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
 
         assert!(matches!(
-            signer.estimate_fee(&ft, 1.0),
+            signer.estimate_strict(&ft, 1.0),
             Err(SignerError::ConfidentialInputWithoutBlindedOutput)
         ));
     }
@@ -1266,7 +1291,7 @@ mod tests {
         ft.add_change(ChangeOutput::new(signer.get_address().script_pubkey()));
 
         assert!(!matches!(
-            signer.estimate_fee(&ft, 1.0),
+            signer.estimate_strict(&ft, 1.0),
             Err(SignerError::ConfidentialInputWithoutBlindedOutput)
         ));
     }
@@ -1284,7 +1309,7 @@ mod tests {
         ));
 
         assert!(!matches!(
-            signer.estimate_fee(&ft, 1.0),
+            signer.estimate_strict(&ft, 1.0),
             Err(SignerError::ConfidentialInputWithoutBlindedOutput)
         ));
     }
@@ -1379,13 +1404,16 @@ mod tests {
 
         // The caller executes against the signed transaction and observes the program's own failure
         assert!(matches!(
-            program.execute(&pst, &signed_witnesses[&1], 1, &signer.network),
+            program.finalize(&pst, &signed_witnesses[&1], 1, &signer.network),
             Err(ProgramError::Pruning(ExecutionError::JetFailed(_)))
         ));
 
         assert!(matches!(
             signer.sign_tx(&ft),
-            Err(SignerError::CovenantExecution { index: 1, .. })
+            Err(SignerError::Program(ProgramError::ProgramExecution {
+                input_index: 1,
+                ..
+            }))
         ));
     }
 
@@ -1432,14 +1460,14 @@ mod tests {
         ft.add_input(PartialInput::new(mixed), Some(NativeSignature::Ecdsa));
 
         // Direct accounting reports the unresolved input's position.
-        assert_eq!(
+        assert!(matches!(
             ft.calculate_fee_delta(&network),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
-        );
-        assert_eq!(
+        ));
+        assert!(matches!(
             ft.is_balanced(),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
-        );
+        ));
         assert!(matches!(
             ft.extract_pst(),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
@@ -1447,7 +1475,7 @@ mod tests {
 
         // Signer entry points preserve the error identifying the unresolved outpoint.
         for result in [
-            signer.estimate_fee(&ft, 100.0).map(|_| ()),
+            signer.estimate_strict(&ft, 100.0).map(|_| ()),
             signer.finalize_strict(&ft, 100.0).map(|_| ()),
             signer.sign_witnesses(&ft).map(|_| ()),
             signer.sign_tx(&ft).map(|_| ()),
@@ -1508,7 +1536,7 @@ mod tests {
                 Err(SignerError::InvalidFeeRate(_))
             ));
             assert!(matches!(
-                signer.estimate_fee(&ft, fee_rate),
+                signer.estimate_strict(&ft, fee_rate),
                 Err(SignerError::InvalidFeeRate(_))
             ));
         }

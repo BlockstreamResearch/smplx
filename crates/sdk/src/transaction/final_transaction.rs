@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 
+use bip39::rand::thread_rng;
+
+use simplicityhl::WitnessNameToValueMap;
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
+use simplicityhl::elements::secp256k1_zkp::SECP256K1;
 use simplicityhl::elements::{
-    AssetBlindingNonce, AssetId, LockTime, Sequence, TxOutSecrets,
+    AssetBlindingNonce, AssetId, LockTime, Sequence, TxOutSecrets, Witness,
     confidential::{AssetBlindingFactor, ValueBlindingFactor},
 };
 
+use crate::program::ProgramError;
 use crate::provider::SimplicityNetwork;
 
 use super::change_output::ChangeOutput;
@@ -13,6 +18,18 @@ use super::error::FinalTransactionError;
 use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, ProgramInput};
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
+
+/// Weight units per virtual byte.
+const WITNESS_SCALE_FACTOR: usize = 4;
+
+/// A BIP-340 signature.
+const SCHNORR_SIGNATURE_BYTES: usize = 64;
+
+/// The largest low-R ECDSA signature in DER with its sighash byte.
+const MAX_ECDSA_SIGNATURE_BYTES: usize = 71;
+
+/// A compressed public key.
+const COMPRESSED_KEY_BYTES: usize = 33;
 
 /// One input of a [`FinalTransaction`]: the output it spends, and optionally the program that
 /// locks that output and an asset issuance, together with the signature the signer adds.
@@ -521,6 +538,56 @@ impl FinalTransaction {
         Ok((pst, input_secrets))
     }
 
+    /// The fee for the weight of the transaction at `fee_rate` sats/kvb, measured with placeholder
+    /// signatures of the largest size the signer makes: 64 bytes for Schnorr, and 71 for low-R
+    /// ECDSA with its sighash byte.
+    ///
+    /// Every program input runs with its signature checks passing, so a placeholder prunes the
+    /// program as the real signature does.
+    pub(crate) fn measure_fee(&self, network: &SimplicityNetwork, fee_rate: f32) -> Result<u64, FinalTransactionError> {
+        let (mut pst, secrets) = self.extract_pst()?;
+
+        if self.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), SECP256K1, &secrets)?;
+        }
+
+        for (index, input_i) in self.inputs.iter().enumerate() {
+            let stack = if let Some(program_input) = &input_i.program_input {
+                let witness = match &input_i.required_sig {
+                    RequiredSignature::Program(signature) => {
+                        program_input.signed_witness(signature, [0; SCHNORR_SIGNATURE_BYTES])?
+                    }
+                    _ => program_input.witness.shallow_clone(),
+                };
+
+                program_input
+                    .program
+                    .finalize_unverified(&pst, &witness, index, network)
+                    .map_err(|source| ProgramError::program_execution(&pst, index, source))?
+            } else if matches!(input_i.required_sig, RequiredSignature::NativeEcdsa) {
+                vec![vec![0; MAX_ECDSA_SIGNATURE_BYTES], vec![0; COMPRESSED_KEY_BYTES]]
+            } else {
+                continue;
+            };
+
+            pst.inputs_mut()[index].final_script_witness = Some(Witness::from(stack));
+        }
+
+        Ok(Self::calculate_fee(pst.extract_tx()?.discount_weight(), fee_rate))
+    }
+
+    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    pub(crate) fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
+        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+
+        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
+    }
+
     /// If the transaction or any of its inputs sets a non-zero locktime.
     fn has_locktime(&self) -> bool {
         self.locktime != LockTime::ZERO
@@ -998,11 +1065,11 @@ mod tests {
         ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 100_000, policy)), None);
         ft.add_output(PartialOutput::new(Script::new(), u64::MAX, policy));
 
-        assert_eq!(
+        assert!(matches!(
             ft.calculate_fee_delta(&network),
             Err(FinalTransactionError::AmountOverflow)
-        );
-        assert_eq!(ft.is_balanced(), Ok(false));
+        ));
+        assert!(!ft.is_balanced().unwrap());
     }
 
     #[test]
