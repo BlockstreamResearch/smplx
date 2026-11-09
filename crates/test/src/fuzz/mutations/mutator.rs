@@ -43,7 +43,7 @@ impl Mutator {
         program_scenarios: &[FuzzProgramScenario],
     ) -> Result<Self, SetupError> {
         // An input of unknown amount fails the balance check too
-        if !matches!(transaction.is_balanced(), Ok(true)) {
+        if transaction.is_balanced() != Ok(true) {
             return Err(SetupError::Transaction(
                 "mutations need a balanced transaction of explicit or unblinded UTXOs".to_string(),
             ));

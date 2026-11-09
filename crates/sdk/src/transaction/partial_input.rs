@@ -13,7 +13,7 @@ use crate::program::ProgramTrait;
 use crate::utils;
 
 use super::UTXO;
-use super::error::WitnessWrappingError;
+use super::error::{ProgramInputError, WitnessWrappingError};
 use super::required_signature::ProgramSignature;
 use super::witness_injector::WitnessInjector;
 
@@ -218,8 +218,9 @@ impl ProgramInput {
     /// The witness with `signature` put where `program_signature` says.
     ///
     /// # Errors
-    /// Returns `WitnessWrappingError::WitnessFieldNotFound` if the program has no field the
-    /// signature names, and another `WitnessWrappingError` if the path doesn't fit the field.
+    /// For a signature with a path, returns `ProgramInputError::Program` if the program doesn't
+    /// compile, and `ProgramInputError::Injection` if the program has no field the signature names
+    /// or the path doesn't fit the field.
     ///
     /// # Panics
     /// Panics if the program has the field but the witness doesn't contain the field.
@@ -227,7 +228,7 @@ impl ProgramInput {
         &self,
         program_signature: &ProgramSignature,
         signature: [u8; 64],
-    ) -> Result<WitnessValues, WitnessWrappingError> {
+    ) -> Result<WitnessValues, ProgramInputError> {
         let witness_name = TemplateProgramWitness::witness_from_str(program_signature.name());
         let sig_path = program_signature.path();
 

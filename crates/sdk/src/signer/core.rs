@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
+use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, SECP256K1, Secp256k1, ecdsa, schnorr};
 use simplicityhl::elements::{Address, Script, Transaction, Witness};
 #[cfg(feature = "provider")]
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
@@ -51,6 +51,15 @@ pub const PLACEHOLDER_FEE: u64 = 1;
 /// Discounted weight of a native input with its signature.
 #[cfg(feature = "provider")]
 const NATIVE_INPUT_WEIGHT: usize = 274;
+
+/// A BIP-340 signature.
+const SCHNORR_SIGNATURE_BYTES: usize = 64;
+
+/// The largest low-R ECDSA signature in DER with its sighash byte.
+const MAX_ECDSA_SIGNATURE_BYTES: usize = 71;
+
+/// A compressed public key.
+const COMPRESSED_KEY_BYTES: usize = 33;
 
 /// The two signatures a [`Signer`] makes: Schnorr for a program input, ECDSA for a native one.
 ///
@@ -835,7 +844,7 @@ impl Signer {
 
         fee_tx.add_output(PartialOutput::new(Script::new(), surplus, network.policy_asset()));
 
-        let fee = fee_tx.measure_fee(network, fee_rate)?;
+        let fee = Self::measure_fee(&fee_tx, network, fee_rate)?;
 
         Ok((fee_tx, fee))
     }
@@ -875,7 +884,7 @@ impl Signer {
             self.network.policy_asset(),
         ));
 
-        let fee = fee_tx.measure_fee(&self.network, fee_rate)?;
+        let fee = Self::measure_fee(&fee_tx, &self.network, fee_rate)?;
 
         let change_index = fee_tx.n_outputs() - 2;
         let change_minimum = if fee_tx.outputs()[change_index].blinding_key.is_some() {
@@ -924,7 +933,7 @@ impl Signer {
         // Not enough funds for the change, so estimate without a change output.
         fee_tx.remove_output(change_index);
 
-        let fee = fee_tx.measure_fee(&self.network, fee_rate)?;
+        let fee = Self::measure_fee(&fee_tx, &self.network, fee_rate)?;
 
         if available_delta < fee {
             return Ok(Completion::Failure(fee));
@@ -941,6 +950,47 @@ impl Signer {
 
         // The fee output pays the whole delta, without the change
         Ok(Completion::Success(fee_tx, available_delta))
+    }
+
+    /// The fee for the weight of `tx` at `fee_rate` sats/kvb, measured with placeholder signatures
+    /// of the largest size the signer makes: 64 bytes for Schnorr, and 71 for low-R ECDSA with its
+    /// sighash byte.
+    ///
+    /// Every program input runs with its signature checks passing, so a placeholder prunes the
+    /// program as the real signature does.
+    fn measure_fee(tx: &FinalTransaction, network: &SimplicityNetwork, fee_rate: f32) -> Result<u64, SignerError> {
+        let (mut pst, secrets) = tx.extract_pst()?;
+
+        if tx.needs_blinding() {
+            pst.blind_last(&mut thread_rng(), SECP256K1, &secrets)?;
+        }
+
+        for (index, input_i) in tx.inputs().iter().enumerate() {
+            let stack = if let Some(program_input) = &input_i.program_input {
+                let witness = match &input_i.required_sig {
+                    RequiredSignature::Program(signature) => {
+                        program_input.signed_witness(signature, [0; SCHNORR_SIGNATURE_BYTES])?
+                    }
+                    _ => program_input.witness.shallow_clone(),
+                };
+
+                program_input
+                    .program
+                    .finalize_unverified(&pst, &witness, index, network)
+                    .map_err(|source| ProgramError::program_execution(&pst, index, source))?
+            } else if matches!(input_i.required_sig, RequiredSignature::NativeEcdsa) {
+                vec![vec![0; MAX_ECDSA_SIGNATURE_BYTES], vec![0; COMPRESSED_KEY_BYTES]]
+            } else {
+                continue;
+            };
+
+            pst.inputs_mut()[index].final_script_witness = Some(Witness::from(stack));
+        }
+
+        Ok(FinalTransaction::calculate_fee(
+            pst.extract_tx()?.discount_weight(),
+            fee_rate,
+        ))
     }
 
     /// Signs and inserts a signature into appropriate witness value.
@@ -1460,14 +1510,14 @@ mod tests {
         ft.add_input(PartialInput::new(mixed), Some(NativeSignature::Ecdsa));
 
         // Direct accounting reports the unresolved input's position.
-        assert!(matches!(
+        assert_eq!(
             ft.calculate_fee_delta(&network),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
-        ));
-        assert!(matches!(
+        );
+        assert_eq!(
             ft.is_balanced(),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })
-        ));
+        );
         assert!(matches!(
             ft.extract_pst(),
             Err(FinalTransactionError::MissingInputSecrets { input_index: 1 })

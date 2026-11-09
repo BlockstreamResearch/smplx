@@ -2,6 +2,7 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
+use crate::transaction::error::ProgramInputError;
 use crate::transaction::{FinalTransactionError, UtxoError, WitnessWrappingError};
 
 /// Errors from a [`Signer`](super::Signer).
@@ -14,12 +15,11 @@ use crate::transaction::{FinalTransactionError, UtxoError, WitnessWrappingError}
 pub enum SignerError {
     /// A program failed.
     ///
-    /// `ProgramError::ProgramExecution` when running a program input failed, while the
-    /// transaction was measured or finalized. Other variants when the signer prepared a signature,
-    /// before the program ran: in [`SignerTrait::sign_program`](super::SignerTrait::sign_program),
-    /// or in [`Signer::sign_witnesses`](super::Signer::sign_witnesses) for an input with a
-    /// [`ProgramSignature`](crate::transaction::ProgramSignature), when the program doesn't compile
-    /// or the input doesn't spend its address.
+    /// - `ProgramError::ProgramExecution`: a program input failed to run while the transaction was
+    ///   measured or finalized.
+    /// - Any other variant: the program doesn't compile, or the input doesn't spend its address.
+    ///   The signer finds this while signing for a
+    ///   [`ProgramSignature`](crate::transaction::ProgramSignature), before the program runs.
     #[error(transparent)]
     Program(#[from] ProgramError),
 
@@ -33,7 +33,7 @@ pub enum SignerError {
 
     /// Errors originating from transaction construction or validation.
     #[error(transparent)]
-    FinalTransaction(FinalTransactionError),
+    FinalTransaction(#[from] FinalTransactionError),
 
     /// Error indicating a provider-backed operation was requested on a signer built without one.
     #[cfg(feature = "provider")]
@@ -141,12 +141,11 @@ pub enum SignerError {
     UnknownInputAmount(simplicityhl::elements::OutPoint),
 }
 
-impl From<FinalTransactionError> for SignerError {
-    /// A program failure is a `SignerError::Program` whether it happens while measuring or signing.
-    fn from(err: FinalTransactionError) -> Self {
+impl From<ProgramInputError> for SignerError {
+    fn from(err: ProgramInputError) -> Self {
         match err {
-            FinalTransactionError::Program(err) => Self::Program(err),
-            err => Self::FinalTransaction(err),
+            ProgramInputError::Program(err) => Self::Program(err),
+            ProgramInputError::Injection(err) => Self::WitnessInjectError(err),
         }
     }
 }
