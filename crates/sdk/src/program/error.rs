@@ -1,6 +1,31 @@
+use simplicityhl::elements::pset::PartiallySignedTransaction;
+use simplicityhl::elements::{LockTime, Sequence};
+
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
+    /// Running the program of a transaction input failed, so the transaction wasn't measured or
+    /// finalized.
+    ///
+    /// Raised before broadcast. `source` says why: `ProgramError::Pruning` when the contract
+    /// rejects the spend, and other variants, such as `ProgramError::WitnessSatisfaction`,
+    /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
+    /// program can't run on this input or its witness stack doesn't cover the execution cost. The
+    /// locktime and sequence identify most timelock failures.
+    #[error(
+        "Program input {input_index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
+    )]
+    ProgramExecution {
+        /// The index of the input whose program failed.
+        input_index: usize,
+        /// The locktime the transaction being satisfied carries.
+        locktime: u32,
+        /// The sequence of the failing input.
+        sequence: u32,
+        /// The underlying program failure.
+        source: Box<ProgramError>,
+    },
+
     /// The witness budget, set by the serialized witness stack size, doesn't cover the program's execution cost.
     ///
     /// Consensus requires `cost <= 1000 * (serialized witness stack size + 50)` milli weight units.
@@ -31,22 +56,11 @@ pub enum ProgramError {
     #[error("Failed to satisfy witness: {0}")]
     WitnessSatisfaction(String),
 
-    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet, and
-    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`.
-    ///
-    /// [`Program`](super::Program) reports both a failure during pruning and a failure in the Bit
-    /// Machine run after pruning with this variant.
+    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet,
+    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`, and
+    /// `ExecutionError::LimitExceeded` is a program beyond the Bit Machine's limits.
     #[error("Failed to prune program: {0}")]
     Pruning(#[from] simplicityhl::simplicity::bit_machine::ExecutionError),
-
-    /// Error thrown when the bit machine cannot be initialized due to complexity or limit restrictions.
-    #[error("Failed to construct a Bit Machine with enough space: {0}")]
-    BitMachineCreation(#[from] simplicityhl::simplicity::bit_machine::LimitError),
-
-    /// The Bit Machine rejected the pruned program. [`Program`](super::Program) doesn't return
-    /// this variant; it reports such failures as `Pruning`.
-    #[error("Failed to execute program on the Bit Machine: {0}")]
-    Execution(simplicityhl::simplicity::bit_machine::ExecutionError),
 
     /// Error indicating an input that doesn't carry the output it spends.
     #[error("Input {input_index} has no witness UTXO")]
@@ -85,4 +99,18 @@ pub enum ProgramError {
     /// Error thrown if the compiled program fails to export or generate valid ABI metadata.
     #[error("Failed to obtain program witness types: {0}")]
     ProgramGenAbiMeta(String),
+}
+
+impl ProgramError {
+    /// Input `input_index` of `pst` failing to run, with the locktime and sequence it ran with.
+    pub(crate) fn program_execution(pst: &PartiallySignedTransaction, input_index: usize, source: Self) -> Self {
+        Self::ProgramExecution {
+            input_index,
+            locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+            sequence: pst.inputs()[input_index]
+                .sequence
+                .map_or(u32::MAX, Sequence::to_consensus_u32),
+            source: Box::new(source),
+        }
+    }
 }

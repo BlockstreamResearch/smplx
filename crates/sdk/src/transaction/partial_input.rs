@@ -1,15 +1,21 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
 
 use elements_miniscript::bitcoin::bip32::DerivationPath;
 
-use simplicityhl::WitnessValues;
 use simplicityhl::elements::pset::Input;
 use simplicityhl::elements::{AssetEntropy, AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets};
+use simplicityhl::value::ValueConstructible;
+use simplicityhl::{TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
 
 use crate::program::ProgramTrait;
 use crate::utils;
 
 use super::UTXO;
+use super::error::{ProgramInputError, WitnessWrappingError};
+use super::required_signature::ProgramSignature;
+use super::witness_injector::WitnessInjector;
 
 /// The output an input spends, with the input's own sequence, locktime and signing key.
 ///
@@ -45,7 +51,7 @@ pub struct PartialInput {
 pub struct ProgramInput {
     /// The program. Its address must be the spent output's script.
     pub program: Box<dyn ProgramTrait>,
-    /// The witness. A field that a [`ProgramSignature`](super::ProgramSignature) names holds a
+    /// The witness. A field that a [`ProgramSignature`] names holds a
     /// placeholder, which the signer replaces with the signature.
     pub witness: WitnessValues,
 }
@@ -207,6 +213,49 @@ impl ProgramInput {
             program,
             witness: witness.into(),
         }
+    }
+
+    /// The witness with `signature` put where `program_signature` says.
+    ///
+    /// # Errors
+    /// For a signature with a path, returns `ProgramInputError::Program` if the program doesn't
+    /// compile, and `ProgramInputError::Injection` if the program has no field the signature names
+    /// or the path doesn't fit the field.
+    ///
+    /// # Panics
+    /// Panics if the program has the field but the witness doesn't contain the field.
+    pub(crate) fn signed_witness(
+        &self,
+        program_signature: &ProgramSignature,
+        signature: [u8; 64],
+    ) -> Result<WitnessValues, ProgramInputError> {
+        let witness_name = TemplateProgramWitness::witness_from_str(program_signature.name());
+        let sig_path = program_signature.path();
+
+        // Inject the signature into the witness field directly if the path is not provided
+        let sig_val = if sig_path.is_empty() {
+            Value::byte_array(signature)
+        } else {
+            let witness_types = self.program.get_witness_types()?;
+            let witness_type = witness_types
+                .get(&witness_name)
+                .ok_or(WitnessWrappingError::WitnessFieldNotFound(
+                    program_signature.name().to_string(),
+                ))?;
+            let local_witness = Arc::new(self.witness.get(&witness_name).expect("checked above").clone());
+
+            WitnessInjector::inject_value(&local_witness, witness_type, sig_path, Value::byte_array(signature))?
+        };
+
+        let mut hm: HashMap<_, _> = self
+            .witness
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect();
+
+        hm.insert(witness_name, sig_val);
+
+        Ok(WitnessValues::from_map(hm))
     }
 }
 

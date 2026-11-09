@@ -106,10 +106,10 @@ impl ProgramSignature {
     /// supplied witness value must already take the branches the path names, and the value at
     /// the end of the path must have the signature's type, `[u8; 64]`.
     ///
-    /// The signer returns `SignerError::WitnessFieldNotFound` if the program doesn't have the
-    /// field, and `SignerError::WitnessInjectError` if the path doesn't fit the field's type or
-    /// value. It panics if the program has the field but the witness supplied in the
-    /// [`ProgramInput`](super::ProgramInput) doesn't contain the field.
+    /// The signer returns `SignerError::WitnessInjectError` if the program doesn't have the field,
+    /// or if the path doesn't fit the field's type or value. It panics if the program has the
+    /// field but the witness supplied in the [`ProgramInput`](super::ProgramInput) doesn't
+    /// contain the field.
     #[must_use]
     pub fn at_path<I>(mut self, path: I) -> Self
     where

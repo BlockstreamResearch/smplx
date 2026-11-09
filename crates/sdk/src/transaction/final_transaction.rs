@@ -14,6 +14,9 @@ use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, Program
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
 
+/// Weight units per virtual byte.
+const WITNESS_SCALE_FACTOR: usize = 4;
+
 /// One input of a [`FinalTransaction`]: the output it spends, and optionally the program that
 /// locks that output and an asset issuance, together with the signature the signer adds.
 ///
@@ -519,6 +522,18 @@ impl FinalTransaction {
         });
 
         Ok((pst, input_secrets))
+    }
+
+    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    pub(crate) fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
+        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+
+        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
     /// If the transaction or any of its inputs sets a non-zero locktime.
