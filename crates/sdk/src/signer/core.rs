@@ -362,12 +362,13 @@ impl Signer {
     /// - The errors of [`FinalTransaction::calculate_fee_delta`] and [`Signer::sign_tx`].
     pub fn finalize_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
         let _logs = ProgramLogger::flush_on_drop();
-        let completion = self.complete_strict(tx, fee_rate)?;
         let policy_amount_delta = tx.calculate_fee_delta(&self.network)?;
 
         if policy_amount_delta < MIN_FEE.cast_signed() {
             return Err(SignerError::DustAmount(policy_amount_delta));
         }
+
+        let completion = self.complete_strict(tx, fee_rate)?;
 
         match completion {
             Completion::Success(tx, fee) => Ok((self.sign_tx(&tx)?.extract_tx()?, fee)),
