@@ -1,9 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-- Made `simplex build` fail with the source path and parser diagnostic when a configured source cannot be parsed, instead of producing incomplete artifacts.
-
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.
