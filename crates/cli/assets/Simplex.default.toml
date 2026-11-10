@@ -1,4 +1,4 @@
-# Simplex configuration
+# Simplex configuration.
 # Omitted settings use the built-in defaults.
 # To override a setting, uncomment its section header and the setting.
 
@@ -14,7 +14,7 @@
 # [regtest]
 # mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 # bitcoins = 10_000_000
-# Ports are assigned automatically; authentication uses the node's cookie.
+# Ports are assigned automatically. Authentication uses the node's cookie.
 # rpc_port = 18443
 # esplora_port = 3000
 # rpc_user = "user"
@@ -28,11 +28,11 @@
 # [test.fuzz]
 # cases = 10000
 # seed = 12345 # random by default
-# network = "ElementsRegtest"
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
 # [test.esplora]
 # url = "http://localhost:3000"
-# network = "ElementsRegtest"
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
 # [test.rpc]
 # url = "http://localhost:18443"

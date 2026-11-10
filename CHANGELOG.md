@@ -1,9 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-- Corrected the README and generated configuration examples, including the `Simplex.toml` filename, recursive source glob, optional service settings, and verbosity values.
-
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.

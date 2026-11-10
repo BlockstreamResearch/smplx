@@ -20,7 +20,7 @@ Simplex is a Rust-based, comprehensive development framework for [SimplicityHL](
 - Extensive framework configuration.
 
 > [!WARNING]
-> The framework is at the extremely early stage of development, unforeseen breaking changes and critical bugs are expected.
+> The framework is at the early stage of development, unforeseen breaking changes and critical bugs are expected.
 
 ## Installation
 
@@ -47,12 +47,12 @@ simplex init <name>
 
 ## Usage
 
-Simplex reads `Simplex.toml` from the current directory or its nearest ancestor containing that file. An empty file uses the built-in defaults. Run `simplex config` to inspect the loaded settings.
+Simplex is a zero-config framework. However, it requires a `Simplex.toml` file to exist in the project root.
 
-The example below keeps the default build and local test settings. Dependencies, fixed regtest ports, fuzz options, and external test services are optional, so their examples are commented out. Uncomment an optional section header together with the settings you need.
+The example below keeps the default settings. Dependencies, regtest ports, fuzz options, and external providers are optional, so their examples are commented out.
 
 ```toml
-# Simplex config
+# Simplex config.
 
 [build]
 src_dir = "simf"
@@ -66,7 +66,7 @@ out_dir = "src/artifacts"
 [regtest]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
-# Ports are assigned automatically; authentication uses the node's cookie.
+# Ports are assigned automatically. Authentication uses the node's cookie.
 # rpc_port = 18443
 # esplora_port = 3000
 # rpc_user = "user"
@@ -80,11 +80,11 @@ verbosity = "None" # "None", "Debug", or "Trace"
 # [test.fuzz]
 # cases = 10000
 # seed = 12345 # random by default
-# network = "ElementsRegtest"
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
 # [test.esplora]
 # url = "http://localhost:3000"
-# network = "ElementsRegtest"
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
 # [test.rpc]
 # url = "http://localhost:18443"
@@ -100,7 +100,7 @@ Where:
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `dependencies` (`simplex install` config)
   - The list of SimplicityHL dependencies to install. Each entry uses either `path` or `git` as its source.
-  - A Git dependency can select one `tag`, `rev`, or `branch`. Its optional `package` field selects the repository subdirectory containing `Simplex.toml`.
+    - A Git dependency can select one `tag`, `rev`, or `branch`. An optional `package` field selects the repository subdirectory containing `Simplex.toml`.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
@@ -114,7 +114,7 @@ Where:
   - `fuzz`
     - `cases` - The number of fuzz iterations to do.
     - `seed` - The fuzzer random seed.
-    - `network` - Network parameters for local fuzz transactions (`Liquid`, `LiquidTestnet`, `ElementsRegtest`); defaults to `ElementsRegtest`.
+    - `network` - Network type for local fuzz transactions (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
   - `esplora`
     - `url` - Esplora API endpoint url.
     - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
