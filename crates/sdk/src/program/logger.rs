@@ -41,7 +41,7 @@ pub struct ProgramInfo {
 /// measuring, and its `finalize*` methods after signing, or after measuring when that fails.
 /// Measuring runs every program with its signature checks passing. Code that calls
 /// `ProgramTrait::finalize` or `Signer::sign_tx` directly must call [`ProgramLogger::flush_logs`]
-/// to see the output. `Signer::sign_witnesses` doesn't run any program.
+/// to see the output, except in a regular `simplex` test, which flushes when its context drops.
 pub struct ProgramLogger {
     /// A mapping of program ids to program logs
     pub logs: HashMap<usize, ProgramInfo>,

@@ -298,6 +298,7 @@ impl<T: ContextMode> TestContext<T> {
 impl Drop for RegularMode {
     fn drop(&mut self) {
         ProgramLogger::flush_logs();
+
         if let Some(client) = &mut self._client {
             let _ = client.kill();
         }

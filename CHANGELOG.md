@@ -1,9 +1,5 @@
 # Changelog
 
-## [Unreleased]
-
-- Flushed remaining execution logs when a regular test ends, including after a caught program failure or a panic, without duplicating output already printed by the signer.
-
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.
