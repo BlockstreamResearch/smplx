@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Bumped `simplicityhl` to `0.9.0`.
+
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.
