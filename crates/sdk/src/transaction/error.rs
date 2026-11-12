@@ -26,6 +26,9 @@ pub enum FinalTransactionError {
     /// The difference of the policy asset amounts of the inputs and outputs overflows `i64`.
     #[error("The policy asset amounts overflow the fee delta")]
     AmountOverflow,
+    /// The transaction spends the same outpoint more than once.
+    #[error("The transaction spends {0} more than once")]
+    DuplicateInput(OutPoint),
 }
 
 /// Errors encountered when reading a UTXO's asset or amount.
@@ -37,6 +40,32 @@ pub enum UtxoError {
     /// Neither an explicit amount nor unblinding secrets are available.
     #[error("UTXO {0} has no explicit amount or unblinding secrets")]
     UnknownAmount(OutPoint),
+}
+
+/// Errors encountered when checking the asset and amount an input spends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum PartialInputError {
+    /// The spent UTXO is confidential and the input has no unblinding secrets.
+    #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
+    UnknownAmount(OutPoint),
+    /// The unblinding secrets don't rebuild the spent UTXO's asset.
+    #[error("The unblinding secrets of the input spending {0} don't open its asset")]
+    AssetMismatch(OutPoint),
+    /// The unblinding secrets rebuild the spent UTXO's asset but not its amount.
+    #[error("The unblinding secrets of the input spending {0} don't open its amount")]
+    AmountMismatch(OutPoint),
+}
+
+/// Errors from putting a signature into a program input's witness.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ProgramInputError {
+    /// The program doesn't compile, so its witness types can't be read.
+    #[error(transparent)]
+    Program(#[from] ProgramError),
+
+    /// The signature doesn't fit the witness.
+    #[error(transparent)]
+    Injection(#[from] WitnessWrappingError),
 }
 
 /// Errors originating from manipulating witness paths and injecting values.
@@ -67,16 +96,4 @@ pub enum WitnessWrappingError {
     /// The supplied witness value takes the other branch of an `Either` than the path does.
     #[error("The witness value takes the other branch of an Either than the path")]
     EitherBranchMismatch,
-}
-
-/// Errors from putting a signature into a program input's witness.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ProgramInputError {
-    /// The program doesn't compile, so its witness types can't be read.
-    #[error(transparent)]
-    Program(#[from] ProgramError),
-
-    /// The signature doesn't fit the witness.
-    #[error(transparent)]
-    Injection(#[from] WitnessWrappingError),
 }

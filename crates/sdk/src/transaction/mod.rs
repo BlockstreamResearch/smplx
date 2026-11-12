@@ -40,7 +40,7 @@ pub mod utxo;
 mod witness_injector;
 
 pub use change_output::ChangeOutput;
-pub use error::{FinalTransactionError, UtxoError, WitnessWrappingError};
+pub use error::{FinalTransactionError, PartialInputError, UtxoError, WitnessWrappingError};
 pub use final_transaction::{FinalInput, FinalTransaction};
 pub use partial_input::{IssuanceDetails, PartialInput, ProgramInput};
 pub use partial_output::PartialOutput;

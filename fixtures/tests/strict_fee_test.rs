@@ -2,7 +2,9 @@ use simplex::constants::DUMMY_SIGNATURE;
 use simplex::program::Program;
 use simplex::signer::Signer;
 use simplex::simplicityhl::WitnessValues;
-use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, ProgramSignature};
+use simplex::simplicityhl::elements::Script;
+use simplex::simplicityhl::elements::secp256k1_zkp::SECP256K1;
+use simplex::transaction::{FinalTransaction, PartialInput, PartialOutput, ProgramInput, ProgramSignature, UTXO};
 
 use simplex_fixtures::artifacts::nested_sig::NestedSigProgram;
 use simplex_fixtures::artifacts::nested_sig::derived_nested_sig::{NestedSigArguments, NestedSigWitness};
@@ -13,23 +15,30 @@ const FEE_RATE: f32 = 1000.0;
 
 const LOCKED: u64 = 50_000;
 
-/// Funds `program`, then spends the funds back to the signer, `blinded` or not, at the fee the
-/// keyless estimate gives.
+/// Which outputs are blinded: none, the one spending the program's funds, or also the one the
+/// program locks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Blinded {
+    Neither,
+    Spend,
+    Both,
+}
+
+/// Funds `program`, then spends the funds back to the signer at the fee the keyless estimate
+/// gives.
 fn spend_at_strict_fee(
     context: &simplex::TestContext,
     program: &Program,
     witness: impl Into<WitnessValues>,
     signature: ProgramSignature,
-    blinded: bool,
+    blinded: Blinded,
 ) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
     let script = program.get_script_pubkey(context.get_network());
     let witness = witness.into();
 
-    signer.send(script.clone(), LOCKED)?;
-
-    let utxo = provider.fetch_scripthash_utxos(&script)?[0].clone();
+    let utxo = lock(context, &script, blinded == Blinded::Both)?;
     let spend = |fee: u64| {
         let mut ft = FinalTransaction::new();
 
@@ -44,10 +53,10 @@ fn spend_at_strict_fee(
             context.get_network().policy_asset(),
         );
 
-        ft.add_output(if blinded {
-            output.with_blinding_key(signer.get_blinding_public_key())
-        } else {
+        ft.add_output(if blinded == Blinded::Neither {
             output
+        } else {
+            output.with_blinding_key(signer.get_blinding_public_key())
         });
 
         ft
@@ -69,6 +78,28 @@ fn spend_at_strict_fee(
     Ok(())
 }
 
+/// Locks `LOCKED` to `script`, `blinded` or not, and returns the locked output with its secrets.
+fn lock(context: &simplex::TestContext, script: &Script, blinded: bool) -> anyhow::Result<UTXO> {
+    let signer = context.get_default_signer();
+    let output = PartialOutput::new(script.clone(), LOCKED, context.get_network().policy_asset());
+    let mut ft = FinalTransaction::new();
+
+    ft.add_output(if blinded {
+        output.with_blinding_key(signer.get_blinding_public_key())
+    } else {
+        output
+    });
+    signer.broadcast(&ft)?;
+
+    let mut utxo = context.get_default_provider().fetch_scripthash_utxos(script)?[0].clone();
+
+    if blinded {
+        utxo.secrets = Some(utxo.txout.unblind(SECP256K1, signer.get_blinding_private_key().inner)?);
+    }
+
+    Ok(utxo)
+}
+
 #[simplex::test]
 fn strict_fee_pays_a_p2pk_spend(context: simplex::TestContext) -> anyhow::Result<()> {
     let p2pk = P2pkProgram::new(P2pkArguments {
@@ -80,7 +111,7 @@ fn strict_fee_pays_a_p2pk_spend(context: simplex::TestContext) -> anyhow::Result
         p2pk.as_ref(),
         P2pkWitness::default(),
         ProgramSignature::new("SIGNATURE"),
-        false,
+        Blinded::Neither,
     )
 }
 
@@ -96,7 +127,23 @@ fn strict_fee_pays_a_spend_with_a_blinded_output(context: simplex::TestContext) 
         p2pk.as_ref(),
         P2pkWitness::default(),
         ProgramSignature::new("SIGNATURE"),
-        true,
+        Blinded::Spend,
+    )
+}
+
+#[simplex::test]
+fn strict_fee_pays_a_spend_of_a_blinded_program_output(context: simplex::TestContext) -> anyhow::Result<()> {
+    let p2pk = P2pkProgram::new(P2pkArguments {
+        public_key: context.get_default_signer().get_schnorr_public_key().serialize(),
+    });
+
+    // The program input carries the secrets that open the output it spends
+    spend_at_strict_fee(
+        &context,
+        p2pk.as_ref(),
+        P2pkWitness::default(),
+        ProgramSignature::new("SIGNATURE"),
+        Blinded::Both,
     )
 }
 
@@ -114,6 +161,6 @@ fn strict_fee_pays_a_spend_with_pruned_branches(context: simplex::TestContext) -
         nested_sig.as_ref(),
         cold,
         ProgramSignature::new("INHERIT_OR_NOT").at_path(["Right", "Left"]),
-        false,
+        Blinded::Neither,
     )
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
 use simplicityhl::elements::{
@@ -9,7 +9,7 @@ use simplicityhl::elements::{
 use crate::provider::SimplicityNetwork;
 
 use super::change_output::ChangeOutput;
-use super::error::FinalTransactionError;
+use super::error::{FinalTransactionError, PartialInputError};
 use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, ProgramInput};
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
@@ -463,6 +463,33 @@ impl FinalTransaction {
 
         // All transfers including fee should sum up to 0
         Ok(transfers.values().all(|&value| value == 0))
+    }
+
+    /// Checks every input with [`PartialInput::check_asset_and_amount`].
+    ///
+    /// # Errors
+    /// Returns the error of the first input that fails the check.
+    pub fn check_inputs_assets_and_amounts(&self) -> Result<(), PartialInputError> {
+        self.inputs
+            .iter()
+            .try_for_each(|input| input.partial_input.check_asset_and_amount())
+    }
+
+    /// Checks that no two inputs spend the same outpoint.
+    ///
+    /// # Errors
+    /// Returns [`FinalTransactionError::DuplicateInput`] with the first outpoint spent twice.
+    pub fn check_unique_inputs(&self) -> Result<(), FinalTransactionError> {
+        let mut seen = HashSet::new();
+
+        match self
+            .inputs
+            .iter()
+            .find(|input| !seen.insert(input.partial_input.outpoint))
+        {
+            Some(input) => Err(FinalTransactionError::DuplicateInput(input.partial_input.outpoint)),
+            None => Ok(()),
+        }
     }
 
     /// Converts the transaction into an unsigned PSET, and returns it with each input's secrets,

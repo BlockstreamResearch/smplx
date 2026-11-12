@@ -264,9 +264,8 @@ impl TransactionBuilder {
     /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance. Like
     /// `assetEntropy`, it is hex with its bytes reversed, the order Elements prints it in.
     /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
-    /// that the claimed asset ID matches the token derived from the entropy. The caller
-    /// must ensure the secrets open the output. Write `value` as a decimal string if it
-    /// exceeds 2^53 - 1.
+    /// that the claimed asset ID matches the token derived from the entropy. Write `value` as a
+    /// decimal string if it exceeds 2^53 - 1.
     ///
     /// The token's asset must be confidential. Elements uses its asset blinding
     /// factor as the reissuance nonce. An explicit asset has a zero nonce, which

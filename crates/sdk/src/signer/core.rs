@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+#[cfg(feature = "provider")]
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -312,8 +313,10 @@ impl Signer {
     ///
     /// # Errors
     /// - `SignerError::NotEnoughFunds` if the wallet runs out before the fee is covered.
-    /// - `SignerError::UnknownInputAmount` if an input is confidential and has no unblinding secrets.
-    /// - `SignerError::DuplicateInput` if `tx` spends an outpoint twice.
+    /// - `SignerError::PartialInput` if an input is confidential and has no unblinding secrets, or
+    ///   its secrets don't open the output it spends.
+    /// - `SignerError::FinalTransaction` with `FinalTransactionError::DuplicateInput` if `tx` spends
+    ///   an outpoint twice.
     /// - `SignerError::ConfidentialInputWithoutBlindedOutput` if `tx` spends a confidential input,
     ///   has an explicit change target, and doesn't have any blinded output.
     /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
@@ -350,8 +353,10 @@ impl Signer {
     ///
     /// # Errors
     /// - `SignerError::InvalidFeeRate` if `fee_rate` isn't a finite, non-negative number.
-    /// - `SignerError::UnknownInputAmount` if an input is confidential and has no unblinding secrets.
-    /// - `SignerError::DuplicateInput` if the transaction spends an outpoint twice.
+    /// - `SignerError::PartialInput` if an input is confidential and has no unblinding secrets, or
+    ///   its secrets don't open the output it spends.
+    /// - `SignerError::FinalTransaction` with `FinalTransactionError::DuplicateInput` if the
+    ///   transaction spends an outpoint twice.
     /// - `SignerError::DustAmount` if the inputs don't exceed the outputs by at least [`MIN_FEE`] of
     ///   the policy asset.
     /// - `SignerError::NotEnoughFeeAmount` if that surplus can't pay the fee, or the fee and the
@@ -385,7 +390,7 @@ impl Signer {
     /// [`MIN_FEE`] instead: the smallest surplus that pays both the fee and the change.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
+    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)`,
     /// `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`] does,
     /// and `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
@@ -404,7 +409,7 @@ impl Signer {
     ///
     /// # Errors
     /// - `SignerError::NotEnoughFeeAmount` if the surplus is below the fee at `fee_rate`.
-    /// - `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput`,
+    /// - `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)`,
     ///   `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`]
     ///   does, and the errors of [`Signer::sign_tx`].
     pub fn finalize_strict_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
@@ -434,7 +439,7 @@ impl Signer {
     /// signed transaction needs.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidFeeRate`, `UnknownInputAmount`, `DuplicateInput` or
+    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)` or
     /// `ConfidentialInputWithoutBlindedOutput` as [`Signer::finalize_strict`] does, and
     /// `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict_fee(
@@ -489,12 +494,13 @@ impl Signer {
     /// checks the program with its real signature without finalizing anything.
     ///
     /// # Errors
-    /// Returns a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
+    /// Returns `SignerError::PartialInput` as [`Signer::finalize_strict`] does, and
+    /// a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
     pub fn sign_witnesses(
         &self,
         tx: &FinalTransaction,
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
-        Self::check_known_amounts(tx)?;
+        tx.check_inputs_assets_and_amounts()?;
 
         let (mut pst, secrets) = tx.extract_pst()?;
         let inputs = tx.inputs();
@@ -733,8 +739,8 @@ impl Signer {
     /// `tx` with wallet inputs, a change output and a fee output added, and its fee.
     #[cfg(feature = "provider")]
     fn complete(&self, tx: &FinalTransaction) -> Result<(FinalTransaction, u64), SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
+        tx.check_inputs_assets_and_amounts()?;
+        tx.check_unique_inputs()?;
 
         let fee_rate = self.get_provider()?.fetch_fee_rate(1)?;
         Self::check_fee_rate(fee_rate)?;
@@ -815,8 +821,8 @@ impl Signer {
     /// `tx` with a change output and a fee output added at `fee_rate`, or the fee it needs when the
     /// surplus is too small.
     fn complete_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<Completion, SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
+        tx.check_inputs_assets_and_amounts()?;
+        tx.check_unique_inputs()?;
         Self::check_fee_rate(fee_rate)?;
 
         let available_delta = tx.calculate_fee_delta(&self.network)?.max(0).cast_unsigned();
@@ -831,8 +837,8 @@ impl Signer {
         network: &SimplicityNetwork,
         fee_rate: f32,
     ) -> Result<(FinalTransaction, u64), SignerError> {
-        Self::check_known_amounts(tx)?;
-        Self::check_unique_inputs(tx)?;
+        tx.check_inputs_assets_and_amounts()?;
+        tx.check_unique_inputs()?;
         Self::check_fee_rate(fee_rate)?;
 
         if tx.has_confidential_input() && !tx.needs_blinding() {
@@ -1058,32 +1064,6 @@ impl Signer {
         }
     }
 
-    /// A transaction spending an outpoint twice can never confirm.
-    fn check_unique_inputs(tx: &FinalTransaction) -> Result<(), SignerError> {
-        let mut seen = HashSet::new();
-
-        match tx
-            .inputs()
-            .iter()
-            .find(|input| !seen.insert(input.partial_input.outpoint))
-        {
-            Some(input) => Err(SignerError::DuplicateInput(input.partial_input.outpoint)),
-            None => Ok(()),
-        }
-    }
-
-    /// Balancing and signing need the amount of every input.
-    fn check_known_amounts(tx: &FinalTransaction) -> Result<(), SignerError> {
-        match tx
-            .inputs()
-            .iter()
-            .find(|input| input.partial_input.asset_and_amount().is_none())
-        {
-            Some(input) => Err(SignerError::UnknownInputAmount(input.partial_input.outpoint)),
-            None => Ok(()),
-        }
-    }
-
     /// The account path, `m/84h/1776h/0h` on mainnet and `m/84h/1h/0h` elsewhere.
     fn account_path(network: SimplicityNetwork) -> DerivationPath {
         let coin_type = if network.is_mainnet() { 1776 } else { 1 };
@@ -1178,7 +1158,7 @@ mod tests {
     use simplicityhl::elements::confidential::ValueBlindingFactor;
 
     use crate::provider::{EsploraProvider, ProviderError};
-    use crate::transaction::{FinalTransactionError, PartialInput, UTXO};
+    use crate::transaction::{FinalTransactionError, PartialInput, PartialInputError, UTXO};
     use crate::utils::random_mnemonic;
 
     use super::*;
@@ -1293,16 +1273,49 @@ mod tests {
         use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
         use simplicityhl::elements::{TxOut, TxOutSecrets};
 
+        let asset = signer.network.policy_asset();
+        let asset_bf = AssetBlindingFactor::new(&mut thread_rng());
+        let value_bf = ValueBlindingFactor::new(&mut thread_rng());
+
         PartialInput::new(UTXO {
             outpoint: OutPoint::new(Txid::from_byte_array([0x01; 32]), 0),
-            txout: TxOut::default(),
-            secrets: Some(TxOutSecrets::new(
-                signer.network.policy_asset(),
-                AssetBlindingFactor::zero(),
-                value,
-                ValueBlindingFactor::zero(),
-            )),
+            txout: TxOut {
+                asset: Asset::new_confidential(&signer.secp, asset, asset_bf),
+                value: Value::new_confidential_from_assetid(&signer.secp, value, asset, value_bf, asset_bf),
+                ..TxOut::default()
+            },
+            secrets: Some(TxOutSecrets::new(asset, asset_bf, value, value_bf)),
         })
+    }
+
+    #[test]
+    fn inputs_whose_secrets_do_not_open_them_are_refused() {
+        let signer = create_signer();
+        let mut input = confidential_input(&signer, 100_000);
+
+        input.secrets.as_mut().unwrap().value = 100_001;
+
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(input, Some(NativeSignature::Ecdsa));
+        ft.add_output(
+            PartialOutput::new(
+                signer.get_address().script_pubkey(),
+                50_000,
+                signer.network.policy_asset(),
+            )
+            .with_blinding_key(signer.get_blinding_public_key()),
+        );
+
+        for result in [
+            signer.estimate_strict(&ft, 1.0).map(|_| ()),
+            signer.sign_witnesses(&ft).map(|_| ()),
+        ] {
+            assert!(matches!(
+                result,
+                Err(SignerError::PartialInput(PartialInputError::AmountMismatch(_)))
+            ));
+        }
     }
 
     #[test]
@@ -1407,7 +1420,7 @@ mod tests {
 
         assert!(matches!(
             signer.sign_witnesses(&ft),
-            Err(SignerError::UnknownInputAmount(unknown)) if unknown == outpoint
+            Err(SignerError::PartialInput(PartialInputError::UnknownAmount(unknown))) if unknown == outpoint
         ));
     }
 
@@ -1530,7 +1543,10 @@ mod tests {
             signer.sign_witnesses(&ft).map(|_| ()),
             signer.sign_tx(&ft).map(|_| ()),
         ] {
-            assert!(matches!(result, Err(SignerError::UnknownInputAmount(_))));
+            assert!(matches!(
+                result,
+                Err(SignerError::PartialInput(PartialInputError::UnknownAmount(_)))
+            ));
         }
     }
 
@@ -1595,7 +1611,7 @@ mod tests {
 
         assert!(matches!(
             signer.finalize_strict(&ft, 100.0),
-            Err(SignerError::DuplicateInput(_))
+            Err(SignerError::FinalTransaction(FinalTransactionError::DuplicateInput(_)))
         ));
     }
 

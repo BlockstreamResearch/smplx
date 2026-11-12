@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use elements_miniscript::bitcoin::bip32::DerivationPath;
 
+use simplicityhl::elements::confidential::{self, AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::pset::Input;
+use simplicityhl::elements::secp256k1_zkp::SECP256K1;
 use simplicityhl::elements::{AssetEntropy, AssetId, LockTime, OutPoint, Sequence, TxOut, TxOutSecrets};
 use simplicityhl::value::ValueConstructible;
 use simplicityhl::{TemplateProgramWitness, Value, WitnessNameToValueMap, WitnessValues};
@@ -13,7 +15,7 @@ use crate::program::ProgramTrait;
 use crate::utils;
 
 use super::UTXO;
-use super::error::{ProgramInputError, WitnessWrappingError};
+use super::error::{PartialInputError, ProgramInputError, WitnessWrappingError};
 use super::required_signature::ProgramSignature;
 use super::witness_injector::WitnessInjector;
 
@@ -161,6 +163,57 @@ impl PartialInput {
             Some(secrets) => Some((secrets.asset, secrets.value)),
             None => self.explicit_asset().zip(self.explicit_amount()),
         }
+    }
+
+    /// Checks that [`PartialInput::asset_and_amount`] can be trusted: the asset and amount of the
+    /// spent UTXO are known, and the unblinding secrets, if any, open the UTXO. Opening means the
+    /// secrets rebuild its asset and amount, whether blinded or explicit. An explicit asset or
+    /// amount needs a zero blinding factor.
+    ///
+    /// # Errors
+    /// Returns `PartialInputError::UnknownAmount` if the UTXO is confidential and has no secrets,
+    /// `PartialInputError::AssetMismatch` if the secrets don't open the asset, and
+    /// `PartialInputError::AmountMismatch` if they open the asset but not the amount.
+    pub fn check_asset_and_amount(&self) -> Result<(), PartialInputError> {
+        let Some(secrets) = self.secrets else {
+            return self
+                .asset_and_amount()
+                .map(|_| ())
+                .ok_or(PartialInputError::UnknownAmount(self.outpoint));
+        };
+
+        let opens_asset = match self.witness_utxo.asset {
+            confidential::Asset::Explicit(asset) => {
+                asset == secrets.asset && secrets.asset_bf == AssetBlindingFactor::zero()
+            }
+            committed => committed == confidential::Asset::new_confidential(SECP256K1, secrets.asset, secrets.asset_bf),
+        };
+
+        if !opens_asset {
+            return Err(PartialInputError::AssetMismatch(self.outpoint));
+        }
+
+        let opens_amount = match self.witness_utxo.value {
+            confidential::Value::Explicit(value) => {
+                value == secrets.value && secrets.value_bf == ValueBlindingFactor::zero()
+            }
+            committed => {
+                committed
+                    == confidential::Value::new_confidential_from_assetid(
+                        SECP256K1,
+                        secrets.value,
+                        secrets.asset,
+                        secrets.value_bf,
+                        secrets.asset_bf,
+                    )
+            }
+        };
+
+        if !opens_amount {
+            return Err(PartialInputError::AmountMismatch(self.outpoint));
+        }
+
+        Ok(())
     }
 
     /// Converts this input into a PSET input.
@@ -326,5 +379,67 @@ impl IssuanceInput {
             inflation_asset_id: AssetId::reissuance_token_from_entropy(asset_entropy, false),
             asset_entropy,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bip39::rand::thread_rng;
+
+    use super::*;
+
+    #[test]
+    fn secrets_must_open_the_spent_utxo() {
+        let asset = AssetId::from_byte_array([0x01; 32]);
+        let other_asset = AssetId::from_byte_array([0x02; 32]);
+        let asset_bf = AssetBlindingFactor::new(&mut thread_rng());
+        let value_bf = ValueBlindingFactor::new(&mut thread_rng());
+
+        let blinded = TxOut {
+            asset: confidential::Asset::new_confidential(SECP256K1, asset, asset_bf),
+            value: confidential::Value::new_confidential_from_assetid(SECP256K1, 1000, asset, value_bf, asset_bf),
+            ..TxOut::default()
+        };
+        let explicit = TxOut::new_fee(1000, asset);
+        let check = |txout: &TxOut, secrets: TxOutSecrets| {
+            PartialInput::new(UTXO {
+                outpoint: OutPoint::default(),
+                txout: txout.clone(),
+                secrets: Some(secrets),
+            })
+            .check_asset_and_amount()
+        };
+
+        assert_eq!(
+            check(&blinded, TxOutSecrets::new(asset, asset_bf, 1000, value_bf)),
+            Ok(())
+        );
+        assert_eq!(
+            check(&blinded, TxOutSecrets::new(other_asset, asset_bf, 1000, value_bf)),
+            Err(PartialInputError::AssetMismatch(OutPoint::default()))
+        );
+        assert_eq!(
+            check(
+                &blinded,
+                TxOutSecrets::new(asset, asset_bf, 1000, ValueBlindingFactor::zero())
+            ),
+            Err(PartialInputError::AmountMismatch(OutPoint::default()))
+        );
+
+        // Secrets of an explicit UTXO state its asset and amount with zero factors
+        assert_eq!(
+            check(
+                &explicit,
+                TxOutSecrets::new(asset, AssetBlindingFactor::zero(), 1000, ValueBlindingFactor::zero())
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                &explicit,
+                TxOutSecrets::new(asset, AssetBlindingFactor::zero(), 999, ValueBlindingFactor::zero())
+            ),
+            Err(PartialInputError::AmountMismatch(OutPoint::default()))
+        );
     }
 }
