@@ -4,7 +4,7 @@ pub fn enforce_relative_distance(min_distance: Distance) {
     // block containing the input UTXO.
     // Panic otherwise.
 
-    // This is a replacement for the deprecated jet::check_lock_distance.
+    // This is a replacement for jet::broken_do_not_use_check_lock_distance.
 
     // Transaction version must be at least 2.
     assert!(jet::le_32(2, jet::version()));
