@@ -196,6 +196,8 @@ impl TransactionBuilder {
     /// `blinding_secrets_json` contains the unblinded details of a confidential output.
     /// Write its `value` as a JSON number up to 2^53 - 1. Larger amounts must be
     /// decimal strings because JavaScript may serialize a number with different digits.
+    /// The blinding factors are hex with their bytes reversed, the order Elements prints them in,
+    /// so factor 1 is `01` followed by 31 zero bytes.
     ///
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
@@ -259,7 +261,8 @@ impl TransactionBuilder {
     /// Adds a native input that spends an output holding the reissuance token and mints
     /// `asset_amount_sats` more units of the asset.
     ///
-    /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance.
+    /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance. Like
+    /// `assetEntropy`, it is hex with its bytes reversed, the order Elements prints it in.
     /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
     /// that the claimed asset ID matches the token derived from the entropy. The caller
     /// must ensure the secrets open the output. Write `value` as a decimal string if it
@@ -313,12 +316,15 @@ impl TransactionBuilder {
     /// over this transaction.
     /// Leaving this `None` says the program needs no signature.
     ///
+    /// `blinding_secrets_json` contains the unblinded details of a confidential output, as in
+    /// `addInput`.
+    ///
     /// `derivation_path` is the path of the key that signature is made with, relative to the
     /// account path. Omitting it keeps the signer's default.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
-    /// derivation path cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness, the
+    /// blinding secrets or the derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addProgramInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_program_input(
@@ -330,12 +336,19 @@ impl TransactionBuilder {
         arguments_json: Option<String>,
         witness_json: Option<String>,
         program_signature: Option<String>,
+        blinding_secrets_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            Self::partial_input(
+                txid,
+                vout,
+                tx_out_hex,
+                blinding_secrets_json.as_deref(),
+                derivation_path.as_deref(),
+            )?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -356,8 +369,8 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
-    /// issuer contract or the derivation path cannot be parsed, if either issuance amount
-    /// exceeds `i64::MAX`, or if both are zero.
+    /// issuer contract, the blinding secrets or the derivation path cannot be parsed, if either
+    /// issuance amount exceeds `i64::MAX`, or if both are zero.
     #[wasm_bindgen(js_name = addProgramIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_program_issuance_input(
@@ -372,11 +385,18 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
+        blinding_secrets_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceDetails, JsError> {
-        let input = Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?;
+        let input = Self::partial_input(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
         let issuance = Self::issuance(asset_amount_sats, inflation_amount_sats, issuer_contract_hex.as_deref())?;
 
         let details = self.transaction.add_program_issuance_input(
@@ -462,8 +482,7 @@ impl TransactionBuilder {
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Outputs locked by a program and `OP_RETURN`
-    /// outputs are always unblinded.
+    /// A blinding key makes the output confidential, whatever its script.
     ///
     /// # Errors
     /// Returns an error if the script, asset id or blinding key cannot be parsed,
@@ -1117,6 +1136,7 @@ mod tests {
             Some("SIGNATURE".to_string()),
             None,
             None,
+            None,
             Some("0/7".to_string()),
         );
 
@@ -1136,6 +1156,7 @@ mod tests {
             None,
             None,
             Some("SIGNATURE".to_string()),
+            None,
             None,
             None,
             None,
@@ -1162,11 +1183,67 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some("0/7".to_string()),
         );
 
         assert!(added.is_ok());
         assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn program_inputs_take_blinding_secrets() {
+        let asset = SimplicityNetwork::LiquidTestnet.policy_asset();
+        let spent = holding(asset, Some(blinder(TOKEN_BLINDER)), blinder(TOKEN_BLINDER));
+        let tx_out_hex = hex::encode(simplicityhl::elements::encode::serialize(&spent.witness_utxo));
+        let secrets = serde_json::json!({
+            "asset": asset.to_string(),
+            "assetBlindingFactor": TOKEN_BLINDER,
+            "value": "1",
+            "valueBlindingFactor": VALUE_BLINDER,
+        })
+        .to_string();
+
+        let mut builder = TransactionBuilder::new();
+
+        builder
+            .add_program_input(
+                ON_CHAIN[0].0,
+                0,
+                &tx_out_hex,
+                TRIVIAL,
+                None,
+                None,
+                None,
+                Some(secrets.clone()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        builder
+            .add_program_issuance_input(
+                ON_CHAIN[0].0,
+                1,
+                &tx_out_hex,
+                TRIVIAL,
+                None,
+                None,
+                None,
+                1_000,
+                0,
+                None,
+                Some(secrets),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Without the secrets, the confidential spent output has no known asset or amount
+        for input in builder.transaction.inputs() {
+            assert_eq!(input.partial_input.asset_and_amount(), Some((asset, 1)));
+        }
     }
 
     #[test]
@@ -1214,6 +1291,7 @@ mod tests {
                 COLD_OR_HOT,
                 None,
                 Some(cold.to_string()),
+                None,
                 None,
                 None,
                 None,

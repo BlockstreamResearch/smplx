@@ -27,7 +27,8 @@ impl IssuanceDetails {
         self.asset_id.clone()
     }
 
-    /// The asset entropy both IDs derive from, which a later reissuance needs.
+    /// The asset entropy both IDs derive from, which a later reissuance needs. It is hex with its
+    /// bytes reversed, the order Elements prints it in.
     #[wasm_bindgen(getter, js_name = assetEntropy)]
     #[must_use]
     pub fn asset_entropy(&self) -> String {
