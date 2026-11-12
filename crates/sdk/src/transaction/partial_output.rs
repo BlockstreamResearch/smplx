@@ -1,5 +1,6 @@
 use elements_miniscript::bitcoin::PublicKey;
 
+use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::pset::Output;
 use simplicityhl::elements::{AssetId, Script};
 
@@ -18,6 +19,10 @@ pub struct PartialOutput {
     pub asset: AssetId,
     /// The blinding public key. With one, the signer blinds this output's amount and asset.
     pub blinding_key: Option<PublicKey>,
+    /// The asset blinding factor the signer blinds with, instead of a random one.
+    pub asset_blinding_factor: Option<AssetBlindingFactor>,
+    /// The value blinding factor the signer blinds with, instead of a random one.
+    pub value_blinding_factor: Option<ValueBlindingFactor>,
 }
 
 impl Default for PartialOutput {
@@ -36,6 +41,8 @@ impl PartialOutput {
             amount,
             asset,
             blinding_key: None,
+            asset_blinding_factor: None,
+            value_blinding_factor: None,
         }
     }
 
@@ -47,6 +54,8 @@ impl PartialOutput {
             amount: 0,
             asset: AssetId::default(),
             blinding_key: None,
+            asset_blinding_factor: None,
+            value_blinding_factor: None,
         }
     }
 
@@ -54,6 +63,30 @@ impl PartialOutput {
     #[must_use]
     pub fn with_blinding_key(mut self, blinding_key: PublicKey) -> Self {
         self.blinding_key = Some(blinding_key);
+
+        self
+    }
+
+    /// Blinds this output's asset with `asset_blinding_factor` instead of a random one.
+    ///
+    /// The output needs a blinding key, and the factor must differ from the one any input brings
+    /// the same asset in with. A covenant can check the factor, and Elements reads a reissuance
+    /// token's asset factor as the next reissuance's nonce.
+    #[must_use]
+    pub fn with_asset_blinding_factor(mut self, asset_blinding_factor: AssetBlindingFactor) -> Self {
+        self.asset_blinding_factor = Some(asset_blinding_factor);
+
+        self
+    }
+
+    /// Blinds this output's amount with `value_blinding_factor` instead of a random one.
+    ///
+    /// The output needs a blinding key. The signer solves one blinded output's value factor so
+    /// that the transaction balances, so at least one blinded output, normally the change, must
+    /// leave this unset.
+    #[must_use]
+    pub fn with_value_blinding_factor(mut self, value_blinding_factor: ValueBlindingFactor) -> Self {
+        self.value_blinding_factor = Some(value_blinding_factor);
 
         self
     }

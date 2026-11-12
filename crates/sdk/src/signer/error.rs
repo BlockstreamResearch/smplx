@@ -65,10 +65,6 @@ pub enum SignerError {
     #[error("Failed to unblind txout: {0}")]
     Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
-    /// Error thrown when PSET blinding fails.
-    #[error("Failed to blind a PST: {0}")]
-    PsetBlind(#[from] simplicityhl::elements::pset::PsetBlindError),
-
     /// Error indicating failure to construct sighash for input spending.
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),

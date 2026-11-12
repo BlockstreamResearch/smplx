@@ -483,9 +483,15 @@ impl TransactionBuilder {
     ///
     /// A blinding key makes the output confidential, whatever its script.
     ///
+    /// `asset_blinding_factor_hex` and `value_blinding_factor_hex` choose the factors the output is
+    /// blinded with, instead of random ones. They are hex with their bytes reversed, the order
+    /// Elements prints them in, so factor 1 is `01` followed by 31 zero bytes. A chosen factor
+    /// needs a blinding key, and at least one blinded output, normally the change, must leave its
+    /// value factor unchosen so that the signer can balance the transaction.
+    ///
     /// # Errors
-    /// Returns an error if the script, asset id or blinding key cannot be parsed,
-    /// or if the amount exceeds `i64::MAX`.
+    /// Returns an error if the script, asset id, blinding key or a blinding factor cannot be
+    /// parsed, or if the amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addOutput)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_output(
@@ -494,6 +500,8 @@ impl TransactionBuilder {
         amount_sats: u64,
         asset_hex: &str,
         blinding_key_hex: Option<String>,
+        asset_blinding_factor_hex: Option<String>,
+        value_blinding_factor_hex: Option<String>,
     ) -> Result<(), JsError> {
         if i64::try_from(amount_sats).is_err() {
             return Err(JsError::new("output amount must not exceed i64::MAX"));
@@ -510,6 +518,20 @@ impl TransactionBuilder {
                 PublicKey::from_str(blinding_key).map_err(|e| JsError::new(&format!("Invalid blinding key: {e}")))?;
 
             output = output.with_blinding_key(key);
+        }
+
+        if let Some(asset_bf) = asset_blinding_factor_hex.as_deref() {
+            let factor = AssetBlindingFactor::from_str(asset_bf)
+                .map_err(|e| JsError::new(&format!("Invalid asset blinding factor: {e}")))?;
+
+            output = output.with_asset_blinding_factor(factor);
+        }
+
+        if let Some(value_bf) = value_blinding_factor_hex.as_deref() {
+            let factor = ValueBlindingFactor::from_str(value_bf)
+                .map_err(|e| JsError::new(&format!("Invalid value blinding factor: {e}")))?;
+
+            output = output.with_value_blinding_factor(factor);
         }
 
         self.transaction.add_output(output);
@@ -1298,7 +1320,7 @@ mod tests {
             )
             .unwrap();
         builder
-            .add_output(&script_hex, 49_000, &policy.to_string(), None)
+            .add_output(&script_hex, 49_000, &policy.to_string(), None, None, None)
             .unwrap();
         builder.set_unused_witnesses(0, vec!["B".to_string()]).unwrap();
 
@@ -1316,8 +1338,8 @@ mod tests {
         builder
             .add_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
             .unwrap();
-        builder.add_output("", 1_000, &policy, None).unwrap();
-        builder.add_output("", 2_000, &policy, None).unwrap();
+        builder.add_output("", 1_000, &policy, None, None, None).unwrap();
+        builder.add_output("", 2_000, &policy, None, None, None).unwrap();
 
         builder.remove_input(0).unwrap();
         builder.remove_output(0).unwrap();

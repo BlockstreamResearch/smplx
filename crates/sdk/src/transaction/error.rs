@@ -1,9 +1,10 @@
 use simplicityhl::elements::OutPoint;
+use simplicityhl::elements::pset::PsetBlindError;
 
 use crate::program::ProgramError;
 
-/// Errors encountered while assembling or validating a transaction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// Errors encountered while assembling, validating or blinding a transaction.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FinalTransactionError {
     /// An input has no known asset or amount and no unblinding secrets.
     #[error("Input {input_index} requires an explicit asset and amount or unblinding secrets")]
@@ -29,6 +30,26 @@ pub enum FinalTransactionError {
     /// The transaction spends the same outpoint more than once.
     #[error("The transaction spends {0} more than once")]
     DuplicateInput(OutPoint),
+    /// An output without a blinding key chooses a blinding factor.
+    #[error("Output {output_index} chooses a blinding factor but has no blinding key")]
+    ChosenFactorOnExplicitOutput {
+        /// The index of the output in the transaction.
+        output_index: usize,
+    },
+    /// An output chooses the asset blinding factor an input brings the same asset in with. Its
+    /// asset commitment then equals the input's, and no surjection proof can be made.
+    #[error("Output {output_index} chooses the asset blinding factor of an input with the same asset")]
+    SurjectionWithoutShift {
+        /// The index of the output in the transaction.
+        output_index: usize,
+    },
+    /// Every blinded output chooses its value blinding factor, so none is left to balance the
+    /// others.
+    #[error("Every blinded output chooses its value blinding factor, so none can balance the transaction")]
+    NoFreeValueFactor,
+    /// A commitment or a proof of a blinded output can't be made.
+    #[error("Failed to blind the transaction: {0}")]
+    Blinding(#[from] PsetBlindError),
 }
 
 /// Errors encountered when reading a UTXO's asset or amount.

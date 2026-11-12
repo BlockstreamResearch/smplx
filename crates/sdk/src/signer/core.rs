@@ -5,7 +5,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use simplicityhl::elements::pset::PartiallySignedTransaction;
-use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, SECP256K1, Secp256k1, ecdsa, schnorr};
+use simplicityhl::elements::secp256k1_zkp::{All, Keypair, Message, Secp256k1, ecdsa, schnorr};
 use simplicityhl::elements::{Address, Script, Transaction, Witness};
 #[cfg(feature = "provider")]
 use simplicityhl::elements::{AssetId, OutPoint, Txid};
@@ -13,7 +13,6 @@ use simplicityhl::simplicity::bitcoin::XOnlyPublicKey;
 use simplicityhl::{WitnessNameToValueMap, WitnessValues};
 
 use bip39::Mnemonic;
-use bip39::rand::thread_rng;
 
 use elements_miniscript::{
     ConfidentialDescriptor, Descriptor, DescriptorPublicKey,
@@ -486,9 +485,8 @@ impl Signer {
     /// without executing or finalizing the programs. Inputs that require no signature stay unsigned.
     ///
     /// Returns the PSET, with the native inputs finalized, and each program input's witness with
-    /// its signature inserted, by input index. Blinding is random, so when `tx` has blinded
-    /// outputs, every call produces different output commitments and so a different
-    /// `sighash_all`.
+    /// its signature inserted, by input index. Blinding draws a new ephemeral key for every blinded
+    /// output, so when `tx` has blinded outputs, every call produces a different `sighash_all`.
     ///
     /// Running a program input with [`ProgramTrait::finalize`] on the result is a dry run: it
     /// checks the program with its real signature without finalizing anything.
@@ -502,13 +500,9 @@ impl Signer {
     ) -> Result<(PartiallySignedTransaction, HashMap<usize, WitnessValues>), SignerError> {
         tx.check_inputs_assets_and_amounts()?;
 
-        let (mut pst, secrets) = tx.extract_pst()?;
+        let mut pst = tx.extract_blinded_pst()?;
         let inputs = tx.inputs();
         let mut signed_witnesses = HashMap::new();
-
-        if tx.needs_blinding() {
-            pst.blind_last(&mut thread_rng(), &self.secp, &secrets)?;
-        }
 
         // Native inputs share one extracted transaction and sighash cache.
         let mut sighash_cache = if inputs
@@ -965,11 +959,7 @@ impl Signer {
     /// Every program input runs with its signature checks passing, so a placeholder prunes the
     /// program as the real signature does.
     fn measure_fee(tx: &FinalTransaction, network: &SimplicityNetwork, fee_rate: f32) -> Result<u64, SignerError> {
-        let (mut pst, secrets) = tx.extract_pst()?;
-
-        if tx.needs_blinding() {
-            pst.blind_last(&mut thread_rng(), SECP256K1, &secrets)?;
-        }
+        let mut pst = tx.extract_blinded_pst()?;
 
         for (index, input_i) in tx.inputs().iter().enumerate() {
             let stack = if let Some(program_input) = &input_i.program_input {
@@ -1151,6 +1141,8 @@ impl Signer {
 
 #[cfg(test)]
 mod tests {
+    use bip39::rand::thread_rng;
+
     use simplicityhl::elements::confidential::{Asset, AssetBlindingFactor, Value};
     use simplicityhl::elements::{OutPoint, TxOut, Txid};
 

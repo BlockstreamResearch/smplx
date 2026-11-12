@@ -1,9 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
+use bip39::rand::thread_rng;
+
+use simplicityhl::elements::bitcoin::PublicKey;
+use simplicityhl::elements::confidential::{Asset, AssetBlindingFactor, Value, ValueBlindingFactor};
+use simplicityhl::elements::pset::{Input, PartiallySignedTransaction, PsetBlindError};
+use simplicityhl::elements::secp256k1_zkp::{SECP256K1, SecretKey};
 use simplicityhl::elements::{
-    AssetBlindingNonce, AssetId, LockTime, Sequence, TxOutSecrets,
-    confidential::{AssetBlindingFactor, ValueBlindingFactor},
+    AssetBlindingNonce, AssetId, LockTime, RangeProof, RangeProofMessage, Sequence, SurjectionInput, SurjectionProof,
+    TxOutSecrets,
 };
 
 use crate::provider::SimplicityNetwork;
@@ -492,6 +497,43 @@ impl FinalTransaction {
         }
     }
 
+    /// Checks that the signer can blind the outputs with the factors they choose.
+    ///
+    /// # Errors
+    /// - [`FinalTransactionError::ChosenFactorOnExplicitOutput`] if an output without a blinding
+    ///   key chooses a factor.
+    /// - [`FinalTransactionError::SurjectionWithoutShift`] if an output chooses the asset
+    ///   blinding factor an input or an issuance brings the same asset in with.
+    /// - [`FinalTransactionError::NoFreeValueFactor`] if every blinded output chooses its value
+    ///   blinding factor.
+    pub fn check_blinding_factors(&self) -> Result<(), FinalTransactionError> {
+        for (output_index, output) in self.outputs.iter().enumerate() {
+            let chooses = output.asset_blinding_factor.is_some() || output.value_blinding_factor.is_some();
+
+            if chooses && output.blinding_key.is_none() {
+                return Err(FinalTransactionError::ChosenFactorOnExplicitOutput { output_index });
+            }
+
+            if output
+                .asset_blinding_factor
+                .is_some_and(|asset_bf| self.has_input_with_asset_blinding_factor(output.asset, asset_bf))
+            {
+                return Err(FinalTransactionError::SurjectionWithoutShift { output_index });
+            }
+        }
+
+        let free = self
+            .outputs
+            .iter()
+            .any(|output| output.blinding_key.is_some() && output.value_blinding_factor.is_none());
+
+        if self.needs_blinding() && !free {
+            return Err(FinalTransactionError::NoFreeValueFactor);
+        }
+
+        Ok(())
+    }
+
     /// Converts the transaction into an unsigned PSET, and returns it with each input's secrets,
     /// by input index.
     ///
@@ -551,6 +593,76 @@ impl FinalTransaction {
         Ok((pst, input_secrets))
     }
 
+    /// Converts the transaction into a PSET, as [`FinalTransaction::extract_pst`] does, and blinds
+    /// every output that has a blinding key.
+    ///
+    /// Each blinded output uses the blinding factors it chooses and random ones for the rest. The last
+    /// blinded output that doesn't choose its value blinding factor gets the one that balances
+    /// the transaction.
+    ///
+    /// # Errors
+    /// Returns the errors of [`FinalTransaction::extract_pst`] and
+    /// [`FinalTransaction::check_blinding_factors`], and [`FinalTransactionError::Blinding`] if a
+    /// commitment or a proof can't be made.
+    pub fn extract_blinded_pst(&self) -> Result<PartiallySignedTransaction, FinalTransactionError> {
+        self.check_blinding_factors()?;
+
+        let (mut pst, input_secrets) = self.extract_pst()?;
+
+        // The check leaves a free value factor whenever an output is blinded
+        let Some(balancer) = self
+            .outputs
+            .iter()
+            .rposition(|output| output.blinding_key.is_some() && output.value_blinding_factor.is_none())
+        else {
+            return Ok(pst);
+        };
+
+        let surjection_inputs = pst.surjection_inputs(&input_secrets)?;
+        let mut output_factors = Vec::new();
+
+        for (index, output) in self.outputs.iter().enumerate() {
+            if index == balancer {
+                continue;
+            }
+
+            if output.blinding_key.is_none() {
+                output_factors.push((output.amount, AssetBlindingFactor::zero(), ValueBlindingFactor::zero()));
+
+                continue;
+            }
+
+            let asset_bf = output
+                .asset_blinding_factor
+                .unwrap_or_else(|| AssetBlindingFactor::new(&mut thread_rng()));
+            let value_bf = output
+                .value_blinding_factor
+                .unwrap_or_else(|| ValueBlindingFactor::new(&mut thread_rng()));
+
+            self.blind_output(&mut pst, index, asset_bf, value_bf, &surjection_inputs)?;
+            output_factors.push((output.amount, asset_bf, value_bf));
+        }
+
+        let input_factors: Vec<_> = input_secrets
+            .values()
+            .map(|secrets| (secrets.value, secrets.asset_bf, secrets.value_bf))
+            .collect();
+        let asset_bf = self.outputs[balancer]
+            .asset_blinding_factor
+            .unwrap_or_else(|| AssetBlindingFactor::new(&mut thread_rng()));
+        let value_bf = ValueBlindingFactor::last(
+            SECP256K1,
+            self.outputs[balancer].amount,
+            asset_bf,
+            &input_factors,
+            &output_factors,
+        );
+
+        self.blind_output(&mut pst, balancer, asset_bf, value_bf, &surjection_inputs)?;
+
+        Ok(pst)
+    }
+
     /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
     #[allow(
         clippy::cast_possible_truncation,
@@ -563,6 +675,68 @@ impl FinalTransaction {
         (vsize as f32 * fee_rate / 1000.0).ceil() as u64
     }
 
+    /// Blinds output `index` of `pst` with `asset_bf` and `value_bf`, using this transaction's
+    /// output `index` for the asset, amount, script and blinding key.
+    ///
+    /// Sets the output's commitments, range and surjection proofs, and ECDH nonce, as
+    /// `PartiallySignedTransaction::blind_last` does.
+    fn blind_output(
+        &self,
+        pst: &mut PartiallySignedTransaction,
+        index: usize,
+        asset_bf: AssetBlindingFactor,
+        value_bf: ValueBlindingFactor,
+        surjection_inputs: &[SurjectionInput],
+    ) -> Result<(), PsetBlindError> {
+        let rng = &mut thread_rng();
+        let output = &self.outputs[index];
+        let blinding_key = output.blinding_key.expect("a blinded output has a blinding key");
+
+        let (asset_commitment, surjection_proof) = Asset::Explicit(output.asset)
+            .blind(rng, SECP256K1, asset_bf, surjection_inputs)
+            .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
+        let (value_commitment, nonce, rangeproof) = Value::Explicit(output.amount)
+            .blind(
+                SECP256K1,
+                value_bf,
+                blinding_key.inner,
+                SecretKey::new(rng),
+                &output.script_pubkey,
+                &RangeProofMessage::new(output.asset, asset_bf),
+            )
+            .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
+
+        let asset_generator = asset_commitment.commitment().expect("a blinded asset");
+        let value_commitment = value_commitment.commitment().expect("a blinded value");
+        let pst_output = &mut pst.outputs_mut()[index];
+
+        pst_output.asset_comm = Some(asset_generator);
+        pst_output.amount_comm = Some(value_commitment);
+        pst_output.asset_surjection_proof = Some(surjection_proof);
+        pst_output.value_rangeproof = Some(rangeproof);
+        pst_output.ecdh_pubkey = nonce.commitment().map(|inner| PublicKey {
+            inner,
+            compressed: true,
+        });
+        pst_output.blind_asset_proof = Some(
+            SurjectionProof::blind_asset_proof(rng, SECP256K1, output.asset, asset_bf)
+                .map_err(|e| PsetBlindError::BlindingProofsCreationError(index, e))?,
+        );
+        pst_output.blind_value_proof = Some(
+            RangeProof::blind_value_proof(
+                rng,
+                SECP256K1,
+                output.amount,
+                value_commitment,
+                asset_generator,
+                value_bf,
+            )
+            .map_err(|e| PsetBlindError::BlindingProofsCreationError(index, e))?,
+        );
+
+        Ok(())
+    }
+
     /// If the transaction or any of its inputs sets a non-zero locktime.
     fn has_locktime(&self) -> bool {
         self.locktime != LockTime::ZERO
@@ -572,6 +746,23 @@ impl FinalTransaction {
                     .locktime
                     .is_some_and(|locktime| locktime != LockTime::ZERO)
             })
+    }
+
+    /// If an input or an issuance carries `asset` with the asset blinding factor `asset_bf`.
+    /// Explicit inputs and issuances carry their assets with a zero factor.
+    fn has_input_with_asset_blinding_factor(&self, asset: AssetId, asset_bf: AssetBlindingFactor) -> bool {
+        self.inputs.iter().any(|input| {
+            let spent = input.partial_input.asset_and_amount().map(|(spent, _)| spent);
+            let spent_bf = input
+                .partial_input
+                .secrets
+                .map_or(AssetBlindingFactor::zero(), |secrets| secrets.asset_bf);
+            let issues = input
+                .get_issuance_details()
+                .is_some_and(|details| details.asset_id == asset || details.inflation_asset_id == asset);
+
+            (spent == Some(asset) && spent_bf == asset_bf) || (issues && asset_bf == AssetBlindingFactor::zero())
+        })
     }
 }
 
@@ -613,6 +804,52 @@ mod tests {
                 ValueBlindingFactor::zero(),
             )),
         }
+    }
+
+    #[test]
+    fn chosen_blinding_factors_are_checked() {
+        let policy = dummy_asset_id(0xAA);
+        let asset_bf = AssetBlindingFactor::from_slice(&[0x01; 32]).unwrap();
+        let value_bf = ValueBlindingFactor::from_slice(&[0x01; 32]).unwrap();
+        let blinded = || PartialOutput::new(Script::new(), 1000, policy).with_blinding_key(dummy_blinding_key());
+        let check = |outputs: Vec<PartialOutput>| {
+            let mut ft = FinalTransaction::new();
+
+            ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
+            for output in outputs {
+                ft.add_output(output);
+            }
+
+            ft.check_blinding_factors()
+        };
+
+        assert_eq!(
+            check(vec![
+                blinded()
+                    .with_asset_blinding_factor(asset_bf)
+                    .with_value_blinding_factor(value_bf),
+                blinded(),
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            check(vec![
+                PartialOutput::new(Script::new(), 1000, policy).with_value_blinding_factor(value_bf)
+            ]),
+            Err(FinalTransactionError::ChosenFactorOnExplicitOutput { output_index: 0 })
+        );
+        // The explicit input brings the asset in with a zero factor
+        assert_eq!(
+            check(vec![
+                blinded(),
+                blinded().with_asset_blinding_factor(AssetBlindingFactor::zero()),
+            ]),
+            Err(FinalTransactionError::SurjectionWithoutShift { output_index: 1 })
+        );
+        assert_eq!(
+            check(vec![blinded().with_value_blinding_factor(value_bf)]),
+            Err(FinalTransactionError::NoFreeValueFactor)
+        );
     }
 
     #[test]
