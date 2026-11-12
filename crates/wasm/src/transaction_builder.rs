@@ -261,8 +261,8 @@ impl TransactionBuilder {
     /// Adds a native input that spends an output holding the reissuance token and mints
     /// `asset_amount_sats` more units of the asset.
     ///
-    /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance. Like
-    /// `assetEntropy`, it is hex with its bytes reversed, the order Elements prints it in.
+    /// Pass the entropy as `IssuanceDetails.assetEntropy` returns it for the first issuance: hex
+    /// with its bytes reversed, the order Elements prints it in.
     /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
     /// that the claimed asset ID matches the token derived from the entropy. Write `value` as a
     /// decimal string if it exceeds 2^53 - 1.
@@ -311,9 +311,9 @@ impl TransactionBuilder {
     /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
     ///
-    /// `signature_witness` names the witness the signer must fill with a Schnorr signature
-    /// over this transaction.
-    /// Leaving this `None` says the program needs no signature.
+    /// `program_signature` names the witness the signer fills with a Schnorr signature over this
+    /// transaction, such as `SIGNATURE`, or a place inside it, such as `SIGNATURE.Left.1`.
+    /// Leaving it `None` means the program needs no signature.
     ///
     /// `blinding_secrets_json` contains the unblinded details of a confidential output, as in
     /// `addInput`.
@@ -1261,7 +1261,7 @@ mod tests {
             )
             .unwrap();
 
-        // Without the secrets, the confidential spent output has no known asset or amount
+        // The secrets make the asset and amount of the confidential spent output known
         for input in builder.transaction.inputs() {
             assert_eq!(input.partial_input.asset_and_amount(), Some((asset, 1)));
         }

@@ -69,9 +69,9 @@ impl PartialOutput {
 
     /// Blinds this output's asset with `asset_blinding_factor` instead of a random one.
     ///
-    /// The output needs a blinding key, and the factor must differ from the one any input brings
-    /// the same asset in with. A covenant can check the factor, and Elements reads a reissuance
-    /// token's asset factor as the next reissuance's nonce.
+    /// The output needs a blinding key, and the factor must differ from the asset blinding factor
+    /// of every input of the same asset. A covenant can check the factor, and the next reissuance
+    /// from a token must state the token's asset factor as its nonce.
     #[must_use]
     pub fn with_asset_blinding_factor(mut self, asset_blinding_factor: AssetBlindingFactor) -> Self {
         self.asset_blinding_factor = Some(asset_blinding_factor);

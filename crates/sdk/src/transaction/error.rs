@@ -36,8 +36,8 @@ pub enum FinalTransactionError {
         /// The index of the output in the transaction.
         output_index: usize,
     },
-    /// An output chooses the asset blinding factor an input brings the same asset in with. Its
-    /// asset commitment then equals the input's, and no surjection proof can be made.
+    /// An output chooses the asset blinding factor of an input or an issuance of the same asset.
+    /// Its asset commitment then equals the input's, and no surjection proof can be made.
     #[error("Output {output_index} chooses the asset blinding factor of an input with the same asset")]
     SurjectionWithoutShift {
         /// The index of the output in the transaction.

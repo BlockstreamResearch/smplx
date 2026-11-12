@@ -502,7 +502,7 @@ impl FinalTransaction {
     /// - [`FinalTransactionError::ChosenFactorOnExplicitOutput`] if an output without a blinding
     ///   key chooses a factor.
     /// - [`FinalTransactionError::SurjectionWithoutShift`] if an output chooses the asset
-    ///   blinding factor an input or an issuance brings the same asset in with.
+    ///   blinding factor of an input or an issuance of the same asset.
     /// - [`FinalTransactionError::NoFreeValueFactor`] if every blinded output chooses its value
     ///   blinding factor.
     pub fn check_blinding_factors(&self) -> Result<(), FinalTransactionError> {
@@ -595,9 +595,9 @@ impl FinalTransaction {
     /// Converts the transaction into a PSET, as [`FinalTransaction::extract_pst`] does, and blinds
     /// every output that has a blinding key.
     ///
-    /// Each blinded output uses the blinding factors it chooses and random ones for the rest. The last
-    /// blinded output that doesn't choose its value blinding factor gets the one that balances
-    /// the transaction.
+    /// Each blinded output uses the blinding factors it chooses and random ones for the rest. The
+    /// last blinded output that doesn't choose its value blinding factor gets the one that
+    /// balances the transaction.
     ///
     /// # Errors
     /// Returns the errors of [`FinalTransaction::extract_pst`] and
@@ -835,7 +835,7 @@ mod tests {
             ]),
             Err(FinalTransactionError::ChosenFactorOnExplicitOutput { output_index: 0 })
         );
-        // The explicit input brings the asset in with a zero factor
+        // The explicit input carries the asset with a zero factor
         assert_eq!(
             check(vec![
                 blinded(),

@@ -315,7 +315,8 @@ impl Signer {
     /// - `SignerError::PartialInput` if an input is confidential and has no unblinding secrets, or
     ///   its secrets don't open the output it spends.
     /// - `SignerError::FinalTransaction` with `FinalTransactionError::DuplicateInput` if `tx` spends
-    ///   an outpoint twice.
+    ///   an outpoint twice, or with the errors of [`FinalTransaction::extract_blinded_pst`] if its
+    ///   outputs can't be blinded.
     /// - `SignerError::ConfidentialInputWithoutBlindedOutput` if `tx` spends a confidential input,
     ///   has an explicit change target, and doesn't have any blinded output.
     /// - `SignerError::Unbalanced` if an asset other than the policy asset doesn't balance.
@@ -355,7 +356,8 @@ impl Signer {
     /// - `SignerError::PartialInput` if an input is confidential and has no unblinding secrets, or
     ///   its secrets don't open the output it spends.
     /// - `SignerError::FinalTransaction` with `FinalTransactionError::DuplicateInput` if the
-    ///   transaction spends an outpoint twice.
+    ///   transaction spends an outpoint twice, or with the errors of
+    ///   [`FinalTransaction::extract_blinded_pst`] if its outputs can't be blinded.
     /// - `SignerError::DustAmount` if the inputs don't exceed the outputs by at least [`MIN_FEE`] of
     ///   the policy asset.
     /// - `SignerError::NotEnoughFeeAmount` if that surplus can't pay the fee, or the fee and the
@@ -389,7 +391,7 @@ impl Signer {
     /// [`MIN_FEE`] instead: the smallest surplus that pays both the fee and the change.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)`,
+    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction`,
     /// `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`] does,
     /// and `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<u64, SignerError> {
@@ -408,7 +410,7 @@ impl Signer {
     ///
     /// # Errors
     /// - `SignerError::NotEnoughFeeAmount` if the surplus is below the fee at `fee_rate`.
-    /// - `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)`,
+    /// - `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction`,
     ///   `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`]
     ///   does, and the errors of [`Signer::sign_tx`].
     pub fn finalize_strict_fee(&self, tx: &FinalTransaction, fee_rate: f32) -> Result<(Transaction, u64), SignerError> {
@@ -438,7 +440,7 @@ impl Signer {
     /// signed transaction needs.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction(DuplicateInput)` or
+    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction` or
     /// `ConfidentialInputWithoutBlindedOutput` as [`Signer::finalize_strict`] does, and
     /// `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict_fee(
@@ -492,8 +494,9 @@ impl Signer {
     /// checks the program with its real signature without finalizing anything.
     ///
     /// # Errors
-    /// Returns `SignerError::PartialInput` as [`Signer::finalize_strict`] does, and
-    /// a `SignerError` if blinding, signing or injecting a signature into a program witness fails.
+    /// Returns `SignerError::PartialInput` as [`Signer::finalize_strict`] does, the errors of
+    /// [`FinalTransaction::extract_blinded_pst`] as `SignerError::FinalTransaction`, and another
+    /// `SignerError` if signing or injecting a signature into a program witness fails.
     pub fn sign_witnesses(
         &self,
         tx: &FinalTransaction,

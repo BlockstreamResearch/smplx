@@ -78,7 +78,8 @@ fn spend_at_strict_fee(
     Ok(())
 }
 
-/// Locks `LOCKED` to `script`, `blinded` or not, and returns the locked output with its secrets.
+/// Locks `LOCKED` to `script`, `blinded` or not, and returns the locked output, with its secrets
+/// when blinded.
 fn lock(context: &simplex::TestContext, script: &Script, blinded: bool) -> anyhow::Result<UTXO> {
     let signer = context.get_default_signer();
     let output = PartialOutput::new(script.clone(), LOCKED, context.get_network().policy_asset());
