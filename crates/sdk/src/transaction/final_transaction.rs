@@ -3,12 +3,11 @@ use std::collections::{HashMap, HashSet};
 use bip39::rand::thread_rng;
 
 use simplicityhl::elements::bitcoin::PublicKey;
-use simplicityhl::elements::confidential::{Asset, AssetBlindingFactor, Value, ValueBlindingFactor};
+use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
 use simplicityhl::elements::pset::{Input, PartiallySignedTransaction, PsetBlindError};
 use simplicityhl::elements::secp256k1_zkp::{SECP256K1, SecretKey};
 use simplicityhl::elements::{
-    AssetBlindingNonce, AssetId, LockTime, RangeProof, RangeProofMessage, Sequence, SurjectionInput, SurjectionProof,
-    TxOutSecrets,
+    AssetBlindingNonce, AssetId, LockTime, RangeProof, Sequence, SurjectionInput, SurjectionProof, TxOut, TxOutSecrets,
 };
 
 use crate::provider::SimplicityNetwork;
@@ -691,30 +690,28 @@ impl FinalTransaction {
         let rng = &mut thread_rng();
         let output = &self.outputs[index];
         let blinding_key = output.blinding_key.expect("a blinded output has a blinding key");
+        let ephemeral_key = SecretKey::new(rng);
 
-        let (asset_commitment, surjection_proof) = Asset::Explicit(output.asset)
-            .blind(rng, SECP256K1, asset_bf, surjection_inputs)
-            .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
-        let (value_commitment, nonce, rangeproof) = Value::Explicit(output.amount)
-            .blind(
-                SECP256K1,
-                value_bf,
-                blinding_key.inner,
-                SecretKey::new(rng),
-                &output.script_pubkey,
-                &RangeProofMessage::new(output.asset, asset_bf),
-            )
-            .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
+        let blinded = TxOut::with_txout_secrets(
+            rng,
+            SECP256K1,
+            output.script_pubkey.clone(),
+            blinding_key.inner,
+            ephemeral_key,
+            TxOutSecrets::new(output.asset, asset_bf, output.amount, value_bf),
+            surjection_inputs,
+        )
+        .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
 
-        let asset_generator = asset_commitment.commitment().expect("a blinded asset");
-        let value_commitment = value_commitment.commitment().expect("a blinded value");
+        let asset_generator = blinded.asset.commitment().expect("a blinded asset");
+        let value_commitment = blinded.value.commitment().expect("a blinded value");
         let pst_output = &mut pst.outputs_mut()[index];
 
         pst_output.asset_comm = Some(asset_generator);
         pst_output.amount_comm = Some(value_commitment);
-        pst_output.asset_surjection_proof = Some(surjection_proof);
-        pst_output.value_rangeproof = Some(rangeproof);
-        pst_output.ecdh_pubkey = nonce.commitment().map(|inner| PublicKey {
+        pst_output.asset_surjection_proof = Some(blinded.witness.surjection_proof);
+        pst_output.value_rangeproof = Some(blinded.witness.rangeproof);
+        pst_output.ecdh_pubkey = blinded.nonce.commitment().map(|inner| PublicKey {
             inner,
             compressed: true,
         });
