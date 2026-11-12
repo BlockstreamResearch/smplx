@@ -1,7 +1,7 @@
 // Narrated Simplex demo for `last_will.simf`, a recursive covenant.
 //
 // These tests exercise various failure conditions in addition to the
-// happy paths, showing how the contract logic and network consensus
+// happy paths. They show how the contract logic and network consensus
 // enforce spending rules.
 
 use last_will_example::artifacts::last_will::LastWillProgram;
@@ -42,8 +42,7 @@ const INHERITANCE_DISTANCE: u16 = 1440;
 // fee is worked out by Simplex rather than fixed here.
 const FUNDING_AMOUNT: u64 = 100_000;
 
-/// The inheritor, the cold key holder and the hot key holder, as three
-/// independent Simplex wallets, together with the covenant they are bound to.
+/// The three parties and the covenant they're bound to.
 struct Parties {
     inheritor: Signer,
     cold: Signer,
@@ -88,8 +87,8 @@ impl Parties {
     }
 
     /// The same contract and the same three parties, but with a doubled
-    /// inheritance distance. Changing a `param::` changes the script, so this
-    /// is a valid last will covenant sitting at a different address.
+    /// inheritance distance, so it's a valid last will covenant at a
+    /// different address.
     fn other_covenant_script(&self, context: &simplex::TestContext) -> Script {
         let mut arguments = self.arguments.clone();
         arguments.inheritance_distance = INHERITANCE_DISTANCE * 2;
@@ -104,7 +103,7 @@ impl Parties {
 /// Signature>>`, so each spending path is a position in that nested type.
 /// `witness()` puts a placeholder signature at that position, and
 /// `signature()` names the same position for the signer, which replaces it.
-/// An `enum` would read better in the contract, but Simplex does not support
+/// An `enum` would read better in the contract, but Simplex doesn't support
 /// contracts that use one.
 #[derive(Clone, Copy)]
 enum SpendPath {
@@ -188,9 +187,9 @@ fn spend_action(
 
     println!("Submitting {description}...");
 
-    // One call: coin selection, fee rate, the change and fee outputs, local
-    // execution, signing, witness satisfaction and broadcast. A test that needs
-    // to control those steps uses `spend_with_exact_outputs` instead.
+    // One call: coin selection, the change and fee outputs, local execution,
+    // signing and broadcast. A test that needs to control those steps uses
+    // `spend_with_exact_outputs` instead.
     let receipt = signer.broadcast(&ft)?;
     println!("  -> accepted: {receipt}");
     Ok(receipt.txid())
@@ -225,8 +224,10 @@ fn covenant_spend(
 /// Funds a fresh instance of the covenant at `script` and returns its UTXO,
 /// once the funding transaction has confirmed.
 ///
-/// Without the `TxReceipt::wait` the UTXO comes back out of the mempool, which
-/// works, but leaves each test depending on relay timing rather than a block.
+/// The built-in regtest mines a block on every broadcast, so there the
+/// `TxReceipt::wait` returns at once. With an external Esplora provider
+/// (`[test.esplora]`), it makes each test wait for a block instead of reading
+/// the UTXO from the mempool.
 fn fund_covenant(context: &simplex::TestContext, script: &Script) -> anyhow::Result<UTXO> {
     let receipt = context.get_default_signer().send(script.clone(), FUNDING_AMOUNT)?;
     let txid = receipt.txid();
@@ -257,11 +258,11 @@ fn covenant_utxo(context: &simplex::TestContext, script: &Script, txid: Txid) ->
 ///
 /// The output-shape tests below violate `recursive_covenant()` on purpose: one
 /// output instead of two, a non-fee output at index 1, and the fee and
-/// continuation outputs swapped. `spend_action` cannot express those, because
+/// continuation outputs swapped. `spend_action` can't express those, because
 /// `Signer::broadcast` would append its own change and fee outputs on top and
-/// trip the `num_outputs() == 2` check instead of the one under test.
-/// `Signer::sign_tx` appends nothing, so these transactions are balanced by
-/// hand.
+/// fail the `num_outputs() == 2` check instead of the one under test.
+/// `Signer::sign_tx` doesn't append any outputs, so these transactions are
+/// balanced by hand.
 fn spend_with_exact_outputs(
     context: &simplex::TestContext,
     parties: &Parties,
@@ -288,10 +289,6 @@ fn spend_with_exact_outputs(
 
     println!("Submitting {description}...");
 
-    // Signing and broadcast are kept apart deliberately: `sign_tx` runs the
-    // Simplicity program, where a failed `assert!` surfaces, before the
-    // transaction reaches the network and its consensus rules, such as relative
-    // locktimes. Several tests depend on telling those two apart.
     let tx = signer.sign_tx(&ft)?.extract_tx()?;
     let receipt = context.get_default_provider().broadcast_transaction(&tx)?;
     println!("  -> accepted: {receipt}");
@@ -359,10 +356,8 @@ fn hot_spend_refreshes_the_covenant(context: simplex::TestContext) -> anyhow::Re
          `refresh_spend` checks a signature and then calls `recursive_covenant()`,\n\
          which requires the transaction to have two outputs. Output 0 must be a new\n\
          UTXO paying back to the same covenant script, verified by comparing\n\
-         commitment hashes rather than by trusting the witness. Output 1 must be a\n\
-         fee output. These two checks carry the covenant across transactions.\n\
-         Bitcoin Script has no equivalent, because it cannot inspect or constrain\n\
-         transaction outputs.\n\n\
+         script hashes rather than by trusting the witness. Output 1 must be a\n\
+         fee output. These two checks carry the covenant across transactions.\n\n\
          The test doesn't assemble those two outputs itself: it hands Simplex the\n\
          covenant's own script as the change target, and Simplex emits the change\n\
          output followed by the fee output, working out both amounts.\n"
@@ -379,8 +374,8 @@ fn hot_spend_refreshes_the_covenant(context: simplex::TestContext) -> anyhow::Re
     )?;
 
     println!(
-        "The covenant's {INHERITANCE_DISTANCE}-block inheritance clock has effectively\n\
-         been reset. The new UTXO this transaction creates is a fresh instance of the\n\
+        "The covenant's {INHERITANCE_DISTANCE}-block inheritance clock has been\n\
+         reset. The new UTXO this transaction creates is a fresh instance of the\n\
          same covenant, carrying the same rules as the original.\n"
     );
     Ok(())
@@ -434,8 +429,8 @@ fn inherit_too_early_is_rejected(context: simplex::TestContext) -> anyhow::Resul
             );
             println!("  -> rejected by the node: {message}\n");
             println!(
-                "The `non-BIP68-final` message is triggered by the node's mempool policy,\n\
-                 showing how the timelock guarantee is enforced by the network.\n"
+                "`non-BIP68-final` means the input's relative timelock (a BIP 68\n\
+                 consensus rule) hasn't expired yet, so the node refuses the transaction.\n"
             );
         }
     }
@@ -448,12 +443,10 @@ fn inherit_after_wait_succeeds(context: simplex::TestContext) -> anyhow::Result<
 
     println!(
         "\n=== Inherit successfully: fast-forwarding {INHERITANCE_DISTANCE} blocks ===\n\n\
-         At Liquid's 1-minute block time, {INHERITANCE_DISTANCE} blocks is about a day,\n\
-         against the 25920 blocks (~18 days) the upstream contract asks for. In a\n\
-         real deployment, the inheritor has to wait the correct amount of time\n\
-         before inheriting. For demonstration purposes, we can fast-forward the\n\
-         network by asking the regtest to mine the required number of blocks\n\
-         immediately, ignoring its default blocktime delay.\n"
+         At Liquid's 1-minute block time, {INHERITANCE_DISTANCE} blocks is about a day.\n\
+         In a real deployment, the inheritor has to wait the correct amount of time\n\
+         before inheriting. For demonstration purposes, this test asks the regtest\n\
+         node to mine the required number of blocks immediately.\n"
     );
 
     let prog = parties.program();
@@ -539,7 +532,7 @@ fn cold_spend_with_hot_key_fails(context: simplex::TestContext) -> anyhow::Resul
         "\n=== ColdSpend, signed with the hot key instead of the cold key ===\n\n\
          Even though the two owner-held keys (hot and cold) belong to the same person\n\
          in practice, they aren't interchangeable and have different abilities.\n\
-         Here we demonstrate this by trying to sign a ColdSpend with the hot key.\n"
+         This test signs a ColdSpend with the hot key.\n"
     );
     let result = spend_action(
         &context,
@@ -612,8 +605,8 @@ fn inherit_with_cold_key_after_wait_fails(context: simplex::TestContext) -> anyh
 }
 
 // =====================================================================
-// `recursive_covenant()` violations. Each condition enforcing the
-// structure of the covenant is broken on purpose by one of these tests.
+// `recursive_covenant()` violations. Each of these tests breaks one of the
+// covenant's structural conditions on purpose.
 // =====================================================================
 
 #[simplex::test]
@@ -709,8 +702,8 @@ fn hot_spend_swapped_outputs_fails(context: simplex::TestContext) -> anyhow::Res
         "\n=== HotSpend with the fee and continuation outputs swapped ===\n\n\
          A real continuation output and a real fee output are both present, but at the\n\
          wrong indices. Both of `recursive_covenant()`'s checks are position-specific\n\
-         (`output_script_hash(0)`, `output_is_fee(1)`), not \"does some output satisfy\n\
-         this somewhere,\" so swapping them fails.\n"
+         (`output_script_hash(0)`, `output_is_fee(1)`), so swapping the outputs\n\
+         fails.\n"
     );
     let script = parties.script(&context);
     let result = spend_with_exact_outputs(
@@ -729,8 +722,8 @@ fn hot_spend_swapped_outputs_fails(context: simplex::TestContext) -> anyhow::Res
 }
 
 // =====================================================================
-// A realistic multi-hop spending chain: the covenant is refreshed twice by
-// the owner and then gets broken out of with ColdSpend.
+// Spending chain: the owner refreshes the covenant twice, then exits with
+// ColdSpend.
 // =====================================================================
 
 #[simplex::test]
@@ -764,7 +757,8 @@ fn covenant_survives_two_refreshes_then_breaks_out(context: simplex::TestContext
         let receipt = parties.hot.broadcast(&ft)?;
         let txid = receipt.txid();
 
-        // Each hop must confirm before the next one can spend its output.
+        // Confirm each hop before the next one spends its output, as
+        // `fund_covenant` does.
         receipt.wait()?;
         println!("  -> accepted and confirmed: {receipt}\n");
 
