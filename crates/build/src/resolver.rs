@@ -44,7 +44,12 @@ impl ArtifactsResolver {
             match parse::Program::parse_from_str(&content) {
                 Ok(program) if Self::rec_main_checker(program.items(), &FunctionName::main()) => paths.push(path),
                 Ok(_) => {}
-                Err(error) => eprintln!("warning: skipping '{}' as it doesn't parse: {error}", path.display()),
+                Err(error) => {
+                    return Err(BuildError::SourceParse {
+                        path,
+                        error: error.to_string(),
+                    });
+                }
             }
         }
 
@@ -184,7 +189,7 @@ impl ArtifactsResolver {
         let repo_name = clean_url.split('/').next_back()?;
 
         // Only fields that are actually set take part in the key, so adding a new
-        // optional field never changes the directory of dependencies that don't use it.
+        // optional field never changes the directory of dependencies that don't set the field.
         let reference = reference.map(|reference| match reference {
             GitRef::Rev(rev) => format!("rev={rev}"),
             GitRef::Tag(tag) => format!("tag={tag}"),

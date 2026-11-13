@@ -1,7 +1,10 @@
-/// Dummy signature, which is used for fee estimation
+/// A placeholder for a witness signature that the signer replaces, for example at the end of a
+/// [`ProgramSignature::at_path`](crate::transaction::ProgramSignature::at_path) path.
 pub const DUMMY_SIGNATURE: [u8; 64] = [1; 64];
 
-/// Minimal acceptable fee for nodes to relay a transaction
+/// The smallest policy-asset surplus `Signer::finalize_strict` accepts, and the smallest blinded
+/// change output the signer creates. It isn't a minimum fee: the fee follows the fee rate and can
+/// be smaller.
 pub const MIN_FEE: u64 = 10;
 
 /// The smallest explicit output Elements relays by default for any standard script.

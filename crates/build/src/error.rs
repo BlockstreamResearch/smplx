@@ -95,6 +95,9 @@ pub enum BuildError {
     #[error("Failed to extract content from path, err: '{0}'")]
     FailedToExtractContent(io::Error),
 
+    #[error("Failed to parse source '{path}': {error}")]
+    SourceParse { path: PathBuf, error: String },
+
     #[error("Failed to generate file: {0}")]
     GenerationFailed(String),
 

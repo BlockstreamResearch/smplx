@@ -1,7 +1,32 @@
+use simplicityhl::elements::pset::PartiallySignedTransaction;
+use simplicityhl::elements::{LockTime, Sequence};
+
 /// Errors that can occur when compiling, preparing, and executing Simplicity programs.
 #[derive(Debug, thiserror::Error)]
 pub enum ProgramError {
-    /// The serialized witness stack does not buy enough budget to cover the program's execution cost.
+    /// Running the program of a transaction input failed, so the transaction wasn't measured or
+    /// finalized.
+    ///
+    /// Raised before broadcast. `source` says why: `ProgramError::Pruning` when the contract
+    /// rejects the spend, and other variants, such as `ProgramError::WitnessSatisfaction`,
+    /// `ProgramError::ScriptPubkeyMismatch` or `ProgramError::InsufficientBudget`, when the
+    /// program can't run on this input or its witness stack doesn't cover the execution cost. The
+    /// locktime and sequence identify most timelock failures.
+    #[error(
+        "Program input {input_index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
+    )]
+    ProgramExecution {
+        /// The index of the input whose program failed.
+        input_index: usize,
+        /// The locktime the transaction being satisfied carries.
+        locktime: u32,
+        /// The sequence of the failing input.
+        sequence: u32,
+        /// The underlying program failure.
+        source: Box<ProgramError>,
+    },
+
+    /// The witness budget, set by the serialized witness stack size, doesn't cover the program's execution cost.
     ///
     /// Consensus requires `cost <= 1000 * (serialized witness stack size + 50)` milli weight units.
     /// The 50 is Elements' `VALIDATION_WEIGHT_OFFSET`
@@ -15,7 +40,7 @@ pub enum ProgramError {
     InsufficientBudget {
         /// Static execution cost of the pruned program, rounded up to whole weight units.
         cost_wu: u64,
-        /// Budget bought by the witness stack: its serialized size plus 50 weight units.
+        /// Witness budget: the serialized witness stack size plus 50 weight units.
         budget_wu: u64,
         /// Serialized size of the witness stack in bytes.
         stack_bytes: usize,
@@ -31,22 +56,16 @@ pub enum ProgramError {
     #[error("Failed to satisfy witness: {0}")]
     WitnessSatisfaction(String),
 
-    /// Error indicating pruning the node tree during execution failed safely.
+    /// The program failed. `ExecutionError::JetFailed` is a failed `assert!` or jet,
+    /// `ExecutionError::ReachedPrunedBranch` is, for example, `unwrap(None)`, and
+    /// `ExecutionError::LimitExceeded` is a program beyond the Bit Machine's limits.
     #[error("Failed to prune program: {0}")]
     Pruning(#[from] simplicityhl::simplicity::bit_machine::ExecutionError),
-
-    /// Error thrown when the bit machine cannot be initialized due to complexity or limit restrictions.
-    #[error("Failed to construct a Bit Machine with enough space: {0}")]
-    BitMachineCreation(#[from] simplicityhl::simplicity::bit_machine::LimitError),
-
-    /// Error thrown during bit machine execution due to underlying logical or environment validation errors.
-    #[error("Failed to execute program on the Bit Machine: {0}")]
-    Execution(simplicityhl::simplicity::bit_machine::ExecutionError),
 
     /// Error indicating an input that doesn't carry the output it spends.
     #[error("Input {input_index} has no witness UTXO")]
     MissingWitnessUtxo {
-        /// The index of the input without one.
+        /// The index of the input without a witness UTXO.
         input_index: usize,
     },
 
@@ -59,12 +78,13 @@ pub enum ProgramError {
         utxo_count: usize,
     },
 
-    /// Error indicating the script pubkey present on the targeted UTXO differs from the expectation.
+    /// The input spends an output whose script isn't the program's.
     #[error("Script pubkey mismatch: expected hash {expected_hash}, got {actual_hash}")]
     ScriptPubkeyMismatch {
-        /// The expected CMR (Commitment Merkle Root) hash.
+        /// The HASH160 of the script of the program's address, not the SHA-256 that
+        /// [`Program::get_script_hash`](super::Program::get_script_hash) returns.
         expected_hash: String,
-        /// The actual CMR hash present in the script pubkey.
+        /// The HASH160 of the script of the spent output.
         actual_hash: String,
     },
 
@@ -79,4 +99,18 @@ pub enum ProgramError {
     /// Error thrown if the compiled program fails to export or generate valid ABI metadata.
     #[error("Failed to obtain program witness types: {0}")]
     ProgramGenAbiMeta(String),
+}
+
+impl ProgramError {
+    /// Input `input_index` of `pst` failing to run, with the locktime and sequence it ran with.
+    pub(crate) fn program_execution(pst: &PartiallySignedTransaction, input_index: usize, source: Self) -> Self {
+        Self::ProgramExecution {
+            input_index,
+            locktime: pst.locktime().map_or(0, LockTime::to_consensus_u32),
+            sequence: pst.inputs()[input_index]
+                .sequence
+                .map_or(u32::MAX, Sequence::to_consensus_u32),
+            source: Box::new(source),
+        }
+    }
 }

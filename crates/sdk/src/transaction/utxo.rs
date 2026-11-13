@@ -2,14 +2,20 @@ use simplicityhl::elements::{AssetId, OutPoint, Script, TxOut, TxOutSecrets};
 
 use super::error::UtxoError;
 
-/// Represents an Unspent Transaction Output (UTXO).
+/// An unspent output: its outpoint, the output itself, and its unblinded secrets if it is
+/// confidential.
+///
+/// `UTXO::default()` is a zero-value explicit output of the all-zero asset, locked by an empty
+/// script, at the null outpoint.
 #[derive(Debug, Clone)]
 pub struct UTXO {
-    /// Bounded outpoint for this object
+    /// Where the output is: the transaction that created it and its index there.
     pub outpoint: OutPoint,
-    /// Transaction output characteristics
+    /// The output.
     pub txout: TxOut,
-    /// Already unblinded transaction output secrets
+    /// The unblinded asset, amount and blinding factors, for a confidential output that has been
+    /// unblinded. `None` for an explicit output and for a confidential one that hasn't been
+    /// unblinded.
     pub secrets: Option<TxOutSecrets>,
 }
 
@@ -39,7 +45,8 @@ impl UTXO {
         self.txout.asset.is_explicit() && self.txout.value.is_explicit()
     }
 
-    /// Checks if the asset or the amount is blinded.
+    /// Checks if the asset or the amount is blinded. This is still true once the UTXO has
+    /// `secrets`.
     #[must_use]
     pub fn is_confidential(&self) -> bool {
         self.txout.asset.is_confidential() || self.txout.value.is_confidential()
@@ -63,21 +70,21 @@ impl UTXO {
         self.txout.value.explicit().expect("The UTXO's amount is not explicit")
     }
 
-    /// Retrieves the unblinded `AssetId` of the current UTXO.
+    /// Retrieves the unblinded `AssetId` from `secrets`.
     ///
     /// # Panics
-    ///
-    /// This function will panic if the UTXO is not blinded. The panic occurs when
-    /// `self.secrets` is `None`, as it expects the UTXO to be in an unblinded state to retrieve the `AssetId`.
+    /// Panics if `secrets` is `None`, which is the case for an explicit UTXO and for a
+    /// confidential one that hasn't been unblinded.
     #[must_use]
     pub fn unblinded_asset(&self) -> AssetId {
         self.secrets.expect("The UTXO is not unblinded").asset
     }
 
-    /// Retrieves the unblinded amount from the UTXO.
+    /// Retrieves the unblinded amount from `secrets`.
     ///
     /// # Panics
-    /// This function will panic if the UTXO is not confidential.
+    /// Panics if `secrets` is `None`, which is the case for an explicit UTXO and for a
+    /// confidential one that hasn't been unblinded.
     #[must_use]
     pub fn unblinded_amount(&self) -> u64 {
         self.secrets.expect("The UTXO is not unblinded").value

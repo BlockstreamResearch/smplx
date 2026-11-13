@@ -16,16 +16,23 @@ use crate::utils::hash_script;
 use super::core::{DEFAULT_CONFIRMATION_ATTEMPTS, DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
 
-/// A provider implementation that interacts with the Esplora REST API backend.
+/// A provider that talks to an Esplora REST API, such as
+/// `https://blockstream.info/liquidtestnet/api`.
+///
+/// Each request times out after `timeout`. The provider doesn't retry a failed request.
 #[derive(Debug)]
 pub struct EsploraProvider {
-    /// The base URL of the Esplora REST API.
+    /// The base URL of the Esplora REST API, without a trailing slash.
     pub esplora_url: String,
-    /// The currently configured Simplicity network (e.g. Liquid, Testnet, Regtest).
+    /// The network the API serves.
     pub network: SimplicityNetwork,
-    /// Timeout duration used in underlying HTTP requests.
+    /// The timeout of each request, in whole seconds. Default: [`DEFAULT_ESPLORA_TIMEOUT_SECS`].
     pub timeout: Duration,
-    /// How many times `wait` polls for a confirmation before giving up.
+    /// How many times `wait` polls for a confirmation before giving up. Default:
+    /// [`DEFAULT_CONFIRMATION_ATTEMPTS`].
+    ///
+    /// `wait` polls every 100 ms on [`SimplicityNetwork::ElementsRegtest`] and every 10 seconds on
+    /// other networks, so by default it gives up after about 1 second or about 90 seconds.
     pub confirmation_attempts: u32,
 }
 
@@ -48,7 +55,8 @@ struct EsploraUtxo {
 }
 
 impl EsploraProvider {
-    /// Creates a new `EsploraProvider` connected to the provided endpoint targeting the specific network.
+    /// Creates a provider for the Esplora API at `url`, which serves `network`, with the default
+    /// timeout and confirmation attempts.
     #[must_use]
     pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
@@ -59,7 +67,7 @@ impl EsploraProvider {
         }
     }
 
-    /// Sends a GET to `path` under the Esplora URL, whatever the status it answers with.
+    /// Sends a GET to `path` under the Esplora URL, whatever the response status.
     fn request(&self, path: &str) -> Result<minreq::Response, ProviderError> {
         minreq::get(format!("{}{path}", self.esplora_url))
             .with_timeout(self.timeout.as_secs())
@@ -67,7 +75,7 @@ impl EsploraProvider {
             .map_err(|e| ProviderError::Request(e.to_string()))
     }
 
-    /// Sends a GET to `path`, failing unless it answers 200.
+    /// Sends a GET to `path`, failing unless the response status is 200.
     fn get(&self, path: &str) -> Result<minreq::Response, ProviderError> {
         let response = self.request(path)?;
 
@@ -187,7 +195,7 @@ impl ProviderTrait for EsploraProvider {
         for _ in 0..self.confirmation_attempts {
             let response = self.request(&path)?;
 
-            // an unknown transaction answers 404 until Esplora indexes it
+            // Esplora answers 404 for a transaction it hasn't indexed yet
             if response.status_code == 200 {
                 let status: TxStatus = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 

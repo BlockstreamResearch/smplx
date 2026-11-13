@@ -1,34 +1,45 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use simplicityhl::elements::pset::{Input, PartiallySignedTransaction};
+use bip39::rand::thread_rng;
+
+use simplicityhl::elements::bitcoin::PublicKey;
+use simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
+use simplicityhl::elements::pset::{Input, PartiallySignedTransaction, PsetBlindError};
+use simplicityhl::elements::secp256k1_zkp::{SECP256K1, SecretKey};
 use simplicityhl::elements::{
-    AssetBlindingNonce, AssetId, LockTime, Sequence, TxOutSecrets,
-    confidential::{AssetBlindingFactor, ValueBlindingFactor},
+    AssetBlindingNonce, AssetId, LockTime, RangeProof, Sequence, SurjectionInput, SurjectionProof, TxOut, TxOutSecrets,
 };
 
 use crate::provider::SimplicityNetwork;
 
 use super::change_output::ChangeOutput;
-use super::error::FinalTransactionError;
+use super::error::{FinalTransactionError, PartialInputError};
 use super::partial_input::{IssuanceDetails, IssuanceInput, PartialInput, ProgramInput};
 use super::partial_output::PartialOutput;
 use super::required_signature::{NativeSignature, ProgramSignature, RequiredSignature};
 
-/// Represents the final input structure put into a `FinalTransaction` for processing.
+/// Weight units per virtual byte.
+const WITNESS_SCALE_FACTOR: usize = 4;
+
+/// One input of a [`FinalTransaction`]: the output it spends, and optionally the program that
+/// locks that output and an asset issuance, together with the signature the signer adds.
+///
+/// [`FinalTransaction::inputs`] returns these. All fields are public, so they can be changed
+/// through [`FinalTransaction::inputs_mut`].
 #[derive(Clone, Debug)]
 pub struct FinalInput {
-    /// Holds the base input data required for the operation.
+    /// The output this input spends.
     pub partial_input: PartialInput,
-    /// Holds program inputs, which are used for program witness finalization.
+    /// The program that locks the spent output and its witness, for a program input.
     pub program_input: Option<ProgramInput>,
-    /// Contains optional issuance-related information.
+    /// The asset this input issues or reissues, if any.
     pub issuance_input: Option<IssuanceInput>,
-    /// Required signature for finalizing the transaction.
+    /// The signature the signer adds to this input.
     pub required_sig: RequiredSignature,
 }
 
 impl FinalInput {
-    /// Creates a new instance of the type with the specified `partial_input` and `required_sig`.
+    /// Creates an input without a program or an issuance.
     #[must_use]
     pub fn new(partial_input: PartialInput, required_sig: RequiredSignature) -> Self {
         Self {
@@ -39,7 +50,7 @@ impl FinalInput {
         }
     }
 
-    /// Sets the `program_input` field with the given `ProgramInput` and returns the modified `FinalInput`.
+    /// Sets the program that locks the spent output.
     #[must_use]
     pub fn with_program(mut self, program_input: ProgramInput) -> Self {
         self.program_input = Some(program_input);
@@ -47,7 +58,7 @@ impl FinalInput {
         self
     }
 
-    /// Sets the `issuance_input` field of the current instance and returns the updated `FinalInput`.
+    /// Sets the asset this input issues or reissues.
     #[must_use]
     pub fn with_issuance(mut self, issuance_input: IssuanceInput) -> Self {
         self.issuance_input = Some(issuance_input);
@@ -55,12 +66,8 @@ impl FinalInput {
         self
     }
 
-    /// Retrieves the issuance details associated with the current instance.
-    ///
-    /// # Errors
-    ///
-    /// This method does not explicitly return errors but returns `None` if no issuance
-    /// input is available.
+    /// The asset IDs and entropy of this input's issuance or reissuance, or `None` if it doesn't
+    /// issue anything.
     #[must_use]
     pub fn get_issuance_details(&self) -> Option<IssuanceDetails> {
         self.issuance_input
@@ -77,14 +84,14 @@ impl FinalInput {
         self.partial_input.asset_and_amount()
     }
 
-    /// Converts the current object into an `Input` representation, including any
-    /// issuance input and partial input details.
+    /// Converts this input, with its issuance, into a PSET input.
+    ///
+    /// The input's own sequence and locktime are used as they are. [`FinalTransaction::extract_pst`]
+    /// fills in the transaction-wide ones first and checks the issuance, so prefer `extract_pst`.
     ///
     /// # Panics
-    ///
-    /// This function will panic if the `issuance_input` is of type `Reissuance`
-    /// and the `partial_input.secrets` field is `None` or does not contain the necessary
-    /// confidential information. Specifically, a panic occurs when attempting to unwrap the `asset_bf` value.
+    /// Panics if the input reissues an asset and `partial_input.secrets` is `None`, because the
+    /// reissuance needs the asset blinding factor of the token it spends.
     #[must_use]
     pub fn to_input(&self) -> Input {
         let mut pst_input = self.partial_input.to_input();
@@ -136,7 +143,17 @@ impl FinalInput {
     }
 }
 
-/// A struct representing a final (but not yet signed) transaction.
+/// A transaction under construction: inputs, outputs, an optional change target, and the
+/// transaction-wide sequence and locktime.
+///
+/// Build one with [`FinalTransaction::new`] and the `add_*` methods, then hand it to a
+/// [`Signer`](crate::signer::Signer). The signer can add wallet inputs to pay the fee, appends a
+/// fee output and, unless the change is too small to keep, a change output before it, then
+/// blinds, signs, and runs every program input. Inputs and outputs keep the order in which they
+/// were added, and anything the signer adds comes after them.
+///
+/// The policy-asset amounts are what pay the fee. Every other asset must already balance: add an
+/// output for every non-policy asset the inputs bring in.
 #[derive(Clone, Debug)]
 pub struct FinalTransaction {
     inputs: Vec<FinalInput>,
@@ -147,7 +164,8 @@ pub struct FinalTransaction {
 }
 
 impl FinalTransaction {
-    /// Creates a new instance of the final transaction with default values.
+    /// Creates an empty transaction with no change target, no transaction-wide sequence, and a
+    /// zero locktime.
     #[must_use]
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
@@ -160,22 +178,27 @@ impl FinalTransaction {
         }
     }
 
-    /// Sets a specific `Sequence` for the transaction.
-    ///
-    /// Injects this value into the inputs that don't declare their own sequence.
+    /// Sets the sequence of every input that doesn't set its own with
+    /// [`PartialInput::with_sequence`].
     pub fn set_sequence(&mut self, sequence: Sequence) {
         self.sequence = Some(sequence);
     }
 
-    /// Sets a specific `LockTime` for the transaction.
+    /// Sets the locktime of every input that doesn't set its own with
+    /// [`PartialInput::with_locktime`].
     ///
-    /// Injects this value into the inputs that don't declare their own locktime.
+    /// A non-zero locktime also makes [`FinalTransaction::sequence`] default to
+    /// `Sequence::ENABLE_LOCKTIME_NO_RBF`, because nodes ignore the locktime of a transaction whose
+    /// inputs all have the final sequence.
     pub fn set_locktime(&mut self, locktime: LockTime) {
         self.locktime = locktime;
     }
 
-    /// The sequence of the inputs that don't declare their own. The one set with `set_sequence`,
-    /// or `ENABLE_LOCKTIME_NO_RBF` when a locktime is set to be enforced, and `MAX` otherwise.
+    /// The sequence of the inputs that don't set their own.
+    ///
+    /// This is the value given to [`FinalTransaction::set_sequence`]. Without one, it is
+    /// `Sequence::ENABLE_LOCKTIME_NO_RBF` if the transaction or any input sets a non-zero locktime,
+    /// so that the locktime is enforced, and `Sequence::MAX` otherwise.
     #[must_use]
     pub fn sequence(&self) -> Sequence {
         self.sequence.unwrap_or(if self.has_locktime() {
@@ -185,15 +208,18 @@ impl FinalTransaction {
         })
     }
 
-    /// The locktime of the the transaction, e.g. inputs that don't declare their own.
+    /// The locktime of the inputs that don't set their own, as given to
+    /// [`FinalTransaction::set_locktime`].
     #[must_use]
     pub fn locktime(&self) -> LockTime {
         self.locktime
     }
 
-    /// Sets where this transaction's change should go.
+    /// Sets where the signer sends this transaction's change.
     ///
-    /// Left unset, the signer sends change to the single address it derives internally.
+    /// Without a change target, change goes to the signer's own address, blinded with the
+    /// signer's blinding key. An explicit target works only if the transaction has another
+    /// blinded output or doesn't spend any confidential input.
     pub fn add_change(&mut self, change: ChangeOutput) {
         self.change = Some(change);
     }
@@ -203,12 +229,22 @@ impl FinalTransaction {
         self.change = None;
     }
 
-    /// Adds a native input to the transaction.
+    /// Adds an input that spends an output not locked by a Simplicity program, such as a wallet
+    /// UTXO.
+    ///
+    /// With `Some(NativeSignature::Ecdsa)`, the signer signs it as a P2WPKH input with the key at
+    /// the input's derivation path. With `None`, the signer leaves it unsigned, for its owner to
+    /// sign.
     pub fn add_input(&mut self, partial_input: PartialInput, signature: Option<NativeSignature>) {
         self.inputs.push(FinalInput::new(partial_input, signature.into()));
     }
 
-    /// Adds a program input to the transaction, with the signature the signer injects into its witness, if any.
+    /// Adds an input that spends an output locked by a Simplicity program.
+    ///
+    /// With `Some(signature)`, the signer signs the input and puts the signature into the witness
+    /// field that `signature` names. It replaces the field's value supplied in `program_input`,
+    /// or only the value at the end of the path given to [`ProgramSignature::at_path`]. With
+    /// `None`, the witness is used as supplied.
     pub fn add_program_input(
         &mut self,
         partial_input: PartialInput,
@@ -219,7 +255,11 @@ impl FinalTransaction {
             .push(FinalInput::new(partial_input, signature.into()).with_program(program_input));
     }
 
-    /// Adds a native issuance (or reissuance) input to the transaction.
+    /// Adds a native input, as [`FinalTransaction::add_input`] does, that also issues or reissues
+    /// an asset.
+    ///
+    /// Returns the IDs of the issued asset and its reissuance token, and the asset entropy that a
+    /// later reissuance needs.
     pub fn add_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -234,7 +274,11 @@ impl FinalTransaction {
         details
     }
 
-    /// Adds a program issuance (or reissuance) input to the transaction.
+    /// Adds a program input, as [`FinalTransaction::add_program_input`] does, that also issues or
+    /// reissues an asset.
+    ///
+    /// Returns the IDs of the issued asset and its reissuance token, and the asset entropy that a
+    /// later reissuance needs.
     pub fn add_program_issuance_input(
         &mut self,
         partial_input: PartialInput,
@@ -258,7 +302,7 @@ impl FinalTransaction {
         (index < self.inputs.len()).then(|| self.inputs.remove(index))
     }
 
-    /// Adds a partial output to the list of outputs.
+    /// Appends an output.
     pub fn add_output(&mut self, partial_output: PartialOutput) {
         self.outputs.push(partial_output);
     }
@@ -268,56 +312,54 @@ impl FinalTransaction {
         (index < self.outputs.len()).then(|| self.outputs.remove(index))
     }
 
-    /// Where this transaction's change should go, when the caller said.
+    /// The change target set with [`FinalTransaction::add_change`], if any.
     #[must_use]
     pub fn change(&self) -> Option<&ChangeOutput> {
         self.change.as_ref()
     }
 
-    /// Where this transaction's change should go, for a caller that needs to amend it.
+    /// The change target set with [`FinalTransaction::add_change`], if any, for changing the target
+    /// in place.
     #[must_use]
     pub fn change_mut(&mut self) -> Option<&mut ChangeOutput> {
         self.change.as_mut()
     }
 
-    /// Provides a slice reference to the collection of `FinalInput` elements.
+    /// The inputs, in the order they were added.
     #[must_use]
     pub fn inputs(&self) -> &[FinalInput] {
         &self.inputs
     }
 
-    /// Provides mutable access to the `inputs` field.
-    ///
-    /// This method returns a mutable slice of `FinalInput` elements,
-    /// allowing the caller to modify the elements in the `inputs` field.
+    /// The inputs, for changing them in place.
     pub fn inputs_mut(&mut self) -> &mut [FinalInput] {
         &mut self.inputs
     }
 
-    /// Returns a reference to the slice of `PartialOutput` elements contained within the struct.
+    /// The outputs, in the order they were added.
     #[must_use]
     pub fn outputs(&self) -> &[PartialOutput] {
         &self.outputs
     }
 
-    /// Provides mutable access to the `outputs` field of the current struct.
+    /// The outputs, for changing them in place.
     pub fn outputs_mut(&mut self) -> &mut [PartialOutput] {
         &mut self.outputs
     }
 
-    /// Returns the number of inputs associated with the current instance.
+    /// The number of inputs.
     #[must_use]
     pub fn n_inputs(&self) -> usize {
         self.inputs.len()
     }
 
-    /// Returns the number of outputs associated with the object.
+    /// The number of outputs.
     #[must_use]
     pub fn n_outputs(&self) -> usize {
         self.outputs.len()
     }
 
-    /// Checks if any of the outputs require blinding, determines if at least one of them has a `blinding_key` specified.
+    /// Whether any output has a blinding key, so that the signer blinds the transaction.
     #[must_use]
     pub fn needs_blinding(&self) -> bool {
         self.outputs.iter().any(|el| el.blinding_key.is_some())
@@ -336,12 +378,10 @@ impl FinalTransaction {
         })
     }
 
-    /// Calculates the fee delta for a transaction based on the inputs and outputs.
+    /// The amount of `network`'s policy asset that the inputs bring in, minus the amount the
+    /// outputs pay. This is what remains for the fee and change.
     ///
-    /// The fee delta represents the net difference between the available asset amount
-    /// from the transaction's inputs and the consumed asset amount by its outputs.
-    /// The function considers the network's policy asset to determine which inputs
-    /// and outputs contribute to the calculation.
+    /// Only the outputs the inputs spend count. Amounts an input issues don't.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
@@ -369,10 +409,14 @@ impl FinalTransaction {
         i64::try_from(available_amount - consumed_amount).map_err(|_| FinalTransactionError::AmountOverflow)
     }
 
-    /// Checks if the transaction is balanced, meaning all inputs - all outputs = 0 for every asset.
+    /// Whether, for every asset, the inputs bring in exactly what the outputs pay.
     ///
-    /// Issued and reissued amounts are credited to the input that declares them, so a newly created
-    /// asset is balanced against its declared `issuance_amount`/`inflation_amount`.
+    /// Issued and reissued amounts count as inputs, so a newly created asset is balanced against
+    /// its declared `issuance_amount` and `inflation_amount`. Zero-value `OP_RETURN` outputs are
+    /// skipped. An output paying an asset that no input brings in makes the transaction
+    /// unbalanced.
+    ///
+    /// The fee is an output, so a transaction is balanced only once its fee output is present.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
@@ -425,7 +469,79 @@ impl FinalTransaction {
         Ok(transfers.values().all(|&value| value == 0))
     }
 
-    /// Extracts a partially signed transaction (PST) and a mapping of input secrets from the current state.
+    /// Checks every input with [`PartialInput::check_asset_and_amount`].
+    ///
+    /// # Errors
+    /// Returns the error of the first input that fails the check.
+    pub fn check_inputs_assets_and_amounts(&self) -> Result<(), PartialInputError> {
+        self.inputs
+            .iter()
+            .try_for_each(|input| input.partial_input.check_asset_and_amount())
+    }
+
+    /// Checks that no two inputs spend the same outpoint.
+    ///
+    /// # Errors
+    /// Returns [`FinalTransactionError::DuplicateInput`] with the first outpoint spent twice.
+    pub fn check_unique_inputs(&self) -> Result<(), FinalTransactionError> {
+        let mut seen = HashSet::new();
+
+        match self
+            .inputs
+            .iter()
+            .find(|input| !seen.insert(input.partial_input.outpoint))
+        {
+            Some(input) => Err(FinalTransactionError::DuplicateInput(input.partial_input.outpoint)),
+            None => Ok(()),
+        }
+    }
+
+    /// Checks that the signer can blind the outputs with the factors they choose.
+    ///
+    /// # Errors
+    /// - [`FinalTransactionError::ChosenFactorOnExplicitOutput`] if an output without a blinding
+    ///   key chooses a factor.
+    /// - [`FinalTransactionError::SurjectionWithoutShift`] if an output chooses the asset
+    ///   blinding factor of an input or an issuance of the same asset.
+    /// - [`FinalTransactionError::NoFreeValueFactor`] if every blinded output chooses its value
+    ///   blinding factor.
+    pub fn check_blinding_factors(&self) -> Result<(), FinalTransactionError> {
+        for (output_index, output) in self.outputs.iter().enumerate() {
+            let chooses = output.asset_blinding_factor.is_some() || output.value_blinding_factor.is_some();
+
+            if chooses && output.blinding_key.is_none() {
+                return Err(FinalTransactionError::ChosenFactorOnExplicitOutput { output_index });
+            }
+
+            if output
+                .asset_blinding_factor
+                .is_some_and(|asset_bf| self.has_input_with_asset_blinding_factor(output.asset, asset_bf))
+            {
+                return Err(FinalTransactionError::SurjectionWithoutShift { output_index });
+            }
+        }
+
+        let free = self
+            .outputs
+            .iter()
+            .any(|output| output.blinding_key.is_some() && output.value_blinding_factor.is_none());
+
+        if self.needs_blinding() && !free {
+            return Err(FinalTransactionError::NoFreeValueFactor);
+        }
+
+        Ok(())
+    }
+
+    /// Converts the transaction into an unsigned PSET, and returns it with each input's secrets,
+    /// by input index.
+    ///
+    /// Each input without its own sequence or locktime gets [`FinalTransaction::sequence`] and
+    /// [`FinalTransaction::locktime`]. An explicit input gets secrets with zero blinding
+    /// factors, so that blinding can balance against the explicit amount. Outputs are converted
+    /// as they are: this doesn't add any change or fee output.
+    ///
+    /// This is where code that signs outside the [`Signer`](crate::signer::Signer) takes over.
     ///
     /// # Errors
     /// Returns [`FinalTransactionError::MissingInputSecrets`] if an input's asset or
@@ -476,6 +592,148 @@ impl FinalTransaction {
         Ok((pst, input_secrets))
     }
 
+    /// Converts the transaction into a PSET, as [`FinalTransaction::extract_pst`] does, and blinds
+    /// every output that has a blinding key.
+    ///
+    /// Each blinded output uses the blinding factors it chooses and random ones for the rest. The
+    /// last blinded output that doesn't choose its value blinding factor gets the one that
+    /// balances the transaction.
+    ///
+    /// # Errors
+    /// Returns the errors of [`FinalTransaction::extract_pst`] and
+    /// [`FinalTransaction::check_blinding_factors`], and [`FinalTransactionError::Blinding`] if a
+    /// commitment or a proof can't be made.
+    pub fn extract_blinded_pst(&self) -> Result<PartiallySignedTransaction, FinalTransactionError> {
+        self.check_blinding_factors()?;
+
+        let (mut pst, input_secrets) = self.extract_pst()?;
+
+        // The check leaves a free value factor whenever an output is blinded
+        let Some(balancer) = self
+            .outputs
+            .iter()
+            .rposition(|output| output.blinding_key.is_some() && output.value_blinding_factor.is_none())
+        else {
+            return Ok(pst);
+        };
+
+        let surjection_inputs = pst.surjection_inputs(&input_secrets)?;
+        let mut output_factors = Vec::new();
+
+        for (index, output) in self.outputs.iter().enumerate() {
+            if index == balancer {
+                continue;
+            }
+
+            if output.blinding_key.is_none() {
+                output_factors.push((output.amount, AssetBlindingFactor::zero(), ValueBlindingFactor::zero()));
+
+                continue;
+            }
+
+            let asset_bf = output
+                .asset_blinding_factor
+                .unwrap_or_else(|| AssetBlindingFactor::new(&mut thread_rng()));
+            let value_bf = output
+                .value_blinding_factor
+                .unwrap_or_else(|| ValueBlindingFactor::new(&mut thread_rng()));
+
+            self.blind_output(&mut pst, index, asset_bf, value_bf, &surjection_inputs)?;
+            output_factors.push((output.amount, asset_bf, value_bf));
+        }
+
+        let input_factors: Vec<_> = input_secrets
+            .values()
+            .map(|secrets| (secrets.value, secrets.asset_bf, secrets.value_bf))
+            .collect();
+        let asset_bf = self.outputs[balancer]
+            .asset_blinding_factor
+            .unwrap_or_else(|| AssetBlindingFactor::new(&mut thread_rng()));
+        let value_bf = ValueBlindingFactor::last(
+            SECP256K1,
+            self.outputs[balancer].amount,
+            asset_bf,
+            &input_factors,
+            &output_factors,
+        );
+
+        self.blind_output(&mut pst, balancer, asset_bf, value_bf, &surjection_inputs)?;
+
+        Ok(pst)
+    }
+
+    /// The fee in satoshis for `weight` at `fee_rate` sats/kvb, both rounded up.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
+    pub(crate) fn calculate_fee(weight: usize, fee_rate: f32) -> u64 {
+        let vsize = weight.div_ceil(WITNESS_SCALE_FACTOR);
+
+        (vsize as f32 * fee_rate / 1000.0).ceil() as u64
+    }
+
+    /// Blinds output `index` of `pst` with `asset_bf` and `value_bf`, using this transaction's
+    /// output `index` for the asset, amount, script and blinding key.
+    ///
+    /// Sets the output's commitments, range and surjection proofs, and ECDH nonce, as
+    /// `PartiallySignedTransaction::blind_last` does.
+    fn blind_output(
+        &self,
+        pst: &mut PartiallySignedTransaction,
+        index: usize,
+        asset_bf: AssetBlindingFactor,
+        value_bf: ValueBlindingFactor,
+        surjection_inputs: &[SurjectionInput],
+    ) -> Result<(), PsetBlindError> {
+        let rng = &mut thread_rng();
+        let output = &self.outputs[index];
+        let blinding_key = output.blinding_key.expect("a blinded output has a blinding key");
+        let ephemeral_key = SecretKey::new(rng);
+
+        let blinded = TxOut::with_txout_secrets(
+            rng,
+            SECP256K1,
+            output.script_pubkey.clone(),
+            blinding_key.inner,
+            ephemeral_key,
+            TxOutSecrets::new(output.asset, asset_bf, output.amount, value_bf),
+            surjection_inputs,
+        )
+        .map_err(|e| PsetBlindError::ConfidentialTxOutError(index, e))?;
+
+        let asset_generator = blinded.asset.commitment().expect("a blinded asset");
+        let value_commitment = blinded.value.commitment().expect("a blinded value");
+        let pst_output = &mut pst.outputs_mut()[index];
+
+        pst_output.asset_comm = Some(asset_generator);
+        pst_output.amount_comm = Some(value_commitment);
+        pst_output.asset_surjection_proof = Some(blinded.witness.surjection_proof);
+        pst_output.value_rangeproof = Some(blinded.witness.rangeproof);
+        pst_output.ecdh_pubkey = blinded.nonce.commitment().map(|inner| PublicKey {
+            inner,
+            compressed: true,
+        });
+        pst_output.blind_asset_proof = Some(
+            SurjectionProof::blind_asset_proof(rng, SECP256K1, output.asset, asset_bf)
+                .map_err(|e| PsetBlindError::BlindingProofsCreationError(index, e))?,
+        );
+        pst_output.blind_value_proof = Some(
+            RangeProof::blind_value_proof(
+                rng,
+                SECP256K1,
+                output.amount,
+                value_commitment,
+                asset_generator,
+                value_bf,
+            )
+            .map_err(|e| PsetBlindError::BlindingProofsCreationError(index, e))?,
+        );
+
+        Ok(())
+    }
+
     /// If the transaction or any of its inputs sets a non-zero locktime.
     fn has_locktime(&self) -> bool {
         self.locktime != LockTime::ZERO
@@ -485,6 +743,23 @@ impl FinalTransaction {
                     .locktime
                     .is_some_and(|locktime| locktime != LockTime::ZERO)
             })
+    }
+
+    /// If an input or an issuance carries `asset` with the asset blinding factor `asset_bf`.
+    /// Explicit inputs and issuances carry their assets with a zero factor.
+    fn has_input_with_asset_blinding_factor(&self, asset: AssetId, asset_bf: AssetBlindingFactor) -> bool {
+        self.inputs.iter().any(|input| {
+            let spent = input.partial_input.asset_and_amount().map(|(spent, _)| spent);
+            let spent_bf = input
+                .partial_input
+                .secrets
+                .map_or(AssetBlindingFactor::zero(), |secrets| secrets.asset_bf);
+            let issues = input
+                .get_issuance_details()
+                .is_some_and(|details| details.asset_id == asset || details.inflation_asset_id == asset);
+
+            (spent == Some(asset) && spent_bf == asset_bf) || (issues && asset_bf == AssetBlindingFactor::zero())
+        })
     }
 }
 
@@ -529,7 +804,53 @@ mod tests {
     }
 
     #[test]
-    fn explicit_input_is_not_a_confidential_one() {
+    fn chosen_blinding_factors_are_checked() {
+        let policy = dummy_asset_id(0xAA);
+        let asset_bf = AssetBlindingFactor::from_slice(&[0x01; 32]).unwrap();
+        let value_bf = ValueBlindingFactor::from_slice(&[0x01; 32]).unwrap();
+        let blinded = || PartialOutput::new(Script::new(), 1000, policy).with_blinding_key(dummy_blinding_key());
+        let check = |outputs: Vec<PartialOutput>| {
+            let mut ft = FinalTransaction::new();
+
+            ft.add_input(PartialInput::new(explicit_utxo(0x01, 0, 5000, policy)), None);
+            for output in outputs {
+                ft.add_output(output);
+            }
+
+            ft.check_blinding_factors()
+        };
+
+        assert_eq!(
+            check(vec![
+                blinded()
+                    .with_asset_blinding_factor(asset_bf)
+                    .with_value_blinding_factor(value_bf),
+                blinded(),
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            check(vec![
+                PartialOutput::new(Script::new(), 1000, policy).with_value_blinding_factor(value_bf)
+            ]),
+            Err(FinalTransactionError::ChosenFactorOnExplicitOutput { output_index: 0 })
+        );
+        // The explicit input carries the asset with a zero factor
+        assert_eq!(
+            check(vec![
+                blinded(),
+                blinded().with_asset_blinding_factor(AssetBlindingFactor::zero()),
+            ]),
+            Err(FinalTransactionError::SurjectionWithoutShift { output_index: 1 })
+        );
+        assert_eq!(
+            check(vec![blinded().with_value_blinding_factor(value_bf)]),
+            Err(FinalTransactionError::NoFreeValueFactor)
+        );
+    }
+
+    #[test]
+    fn explicit_input_is_not_confidential() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -539,7 +860,7 @@ mod tests {
     }
 
     #[test]
-    fn input_carrying_secrets_is_a_confidential_one() {
+    fn input_with_secrets_is_confidential() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -549,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    fn confidential_input_paying_an_explicit_output_leaves_nothing_blinded() {
+    fn explicit_output_needs_no_blinding() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -561,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn blinded_output_is_what_balances_the_transaction() {
+    fn output_with_blinding_key_needs_blinding() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -572,7 +893,7 @@ mod tests {
         assert!(ft.needs_blinding());
     }
 
-    // Manually construct PST and check extract_pst correctness based on it
+    // Build the expected PST by hand and compare `extract_pst` with the result
     #[test]
     fn extract_pst_single_explicit_input_single_output() {
         let policy = dummy_asset_id(0xAA);
@@ -601,7 +922,7 @@ mod tests {
     }
 
     #[test]
-    fn declared_height_becomes_the_transactions_locktime() {
+    fn locktime_height_applies_to_every_input() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -637,7 +958,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_that_declares_no_height_still_has_none() {
+    fn no_locktime_keeps_final_sequences() {
         let policy = dummy_asset_id(0xAA);
         let mut ft = FinalTransaction::new();
 
@@ -979,7 +1300,7 @@ mod tests {
     }
 
     #[test]
-    fn token_only_issuance_has_a_null_amount_and_an_empty_one_is_rejected() {
+    fn token_only_issuance_is_allowed_and_empty_issuance_is_rejected() {
         let policy = dummy_asset_id(0xAA);
         let issuance = |issuance_amount, inflation_amount| {
             let mut tx = FinalTransaction::new();

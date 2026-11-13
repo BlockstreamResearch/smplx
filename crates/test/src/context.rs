@@ -8,6 +8,7 @@ use electrsd::bitcoind::bitcoincore_rpc::Auth;
 use smplx_regtest::Regtest;
 use smplx_regtest::client::RegtestClient;
 use smplx_sdk::global::GlobalConfig;
+use smplx_sdk::program::logger::ProgramLogger;
 use smplx_sdk::provider::{
     ElementsRpc, EsploraProvider, ProviderInfo, ProviderTrait, SimplexProvider, SimplicityNetwork,
 };
@@ -262,7 +263,7 @@ impl TestContext<FuzzMode> {
         self.create_signer(random_mnemonic().as_str())
     }
 
-    /// Returns the default signer, initiated from the config.
+    /// Returns the default signer, created from the config.
     pub fn get_default_signer(&self) -> &Signer {
         &self.mode.signer
     }
@@ -277,7 +278,8 @@ impl TestContext<FuzzMode> {
         &self.mode.proptest_config
     }
 
-    /// Builds a fuzz engine with a fresh copy of the default signer, so it can be called repeatedly.
+    /// Builds a fuzz engine for `scenario` with this context's proptest configuration and a fresh
+    /// copy of the default signer, so it can be called repeatedly.
     pub fn engine(&self, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine::new(
             self.mode.proptest_config.clone(),
@@ -295,6 +297,8 @@ impl<T: ContextMode> TestContext<T> {
 
 impl Drop for RegularMode {
     fn drop(&mut self) {
+        ProgramLogger::flush_logs();
+
         if let Some(client) = &mut self._client {
             let _ = client.kill();
         }

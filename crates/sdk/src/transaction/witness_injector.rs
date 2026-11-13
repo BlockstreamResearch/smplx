@@ -7,7 +7,7 @@ use simplicityhl::{
     value::{ValueConstructible, ValueInner},
 };
 
-use crate::signer::error::WitnessWrappingError;
+use super::error::WitnessWrappingError;
 
 /// Represents an index-based route for array or tuple witness types.
 #[derive(Clone, Copy, Debug)]

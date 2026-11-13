@@ -20,7 +20,7 @@ Simplex is a Rust-based, comprehensive development framework for [SimplicityHL](
 - Extensive framework configuration.
 
 > [!WARNING]
-> The framework is at the extremely early stage of development, unforeseen breaking changes and critical bugs are expected.
+> The framework is at the early stage of development, unforeseen breaking changes and critical bugs are expected.
 
 ## Installation
 
@@ -47,70 +47,74 @@ simplex init <name>
 
 ## Usage
 
-Simplex is a zero-config framework. However, it requires a `simplex.toml` file to exist in the project root. The default configuration is the following:
+Simplex is a zero-config framework. However, it requires a `Simplex.toml` file to exist in the project root.
+
+The example below keeps the default settings. Dependencies, regtest ports, fuzz options, and external providers are optional, so their examples are commented out.
 
 ```toml
-# Simplex config
+# Simplex config.
 
 [build]
-src_dir = "./simf"
-simf_files = ["*.simf"]
-out_dir = "./src/artifacts"
+src_dir = "simf"
+simf_files = ["**/*.simf"]
+out_dir = "src/artifacts"
 
 [dependencies]
-some_dep = { git = "<git url>", path = "<or relative path>", <tag | rev | branch> = "<tag name | commit | branch name>", package = "<dir path>" } 
+# my_lib = { path = "../my_lib" }
+# std = { git = "https://github.com/BlockstreamResearch/simplicityhl-std.git", tag = "v0.1.0" }
 
 [regtest]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
-rpc_port = 18443
-esplora_port = 3000
-rpc_user = "user"
-rpc_password = "password"
+# Ports are assigned automatically. Authentication uses the node's cookie.
+# rpc_port = 18443
+# esplora_port = 3000
+# rpc_user = "user"
+# rpc_password = "password"
 
 [test]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 bitcoins = 10_000_000
-verbosity = 0 # 0 - none, 1 - debug, 2 - trace
+verbosity = "None" # "None", "Debug", or "Trace"
 
-[test.fuzz]
-cases = 10000
-seed = 12345 # random by default
-network = "<Liquid, LiquidTestnet, ElementsRegtest>"
+# [test.fuzz]
+# cases = 10000
+# seed = 12345 # random by default
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
-[test.esplora]
-url = "<esplora url>"
-network = "<Liquid, LiquidTestnet, ElementsRegtest>"
+# [test.esplora]
+# url = "http://localhost:3000"
+# network = "ElementsRegtest" # "Liquid", "LiquidTestnet", or "ElementsRegtest"
 
-[test.rpc]
-url = "<rpc url>"
-username = "<rpc username>"
-password = "<rpc password>"
+# [test.rpc]
+# url = "http://localhost:18443"
+# username = "user"
+# password = "password"
 ```
 
 Where:
 
 - `build` (`simplex build` config)
   - `src_dir` - The simplicity contracts source directory.
-  - `simf_files` - A glob pattern indicating which contracts are in scope.
+  - `simf_files` - A list of glob patterns indicating which contracts are in scope.
   - `out_dir` - The output directory where contracts artifacts are generated.
 - `dependencies` (`simplex install` config)
-  - The list of SimplicityHL dependencies to install.
+  - The list of SimplicityHL dependencies to install. Each entry uses either `path` or `git` as its source.
+    - A Git dependency can select one `tag`, `rev`, or `branch`. An optional `package` field selects the repository subdirectory containing `Simplex.toml`.
 - `regtest` (`simplex regtest` config)
   - `mnemonic` - The signer's mnemonic regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
-  - `rpc_port` - The port Elements regtest node will listen on.
-  - `esplora_port` - The port Electrs will listen on.
-  - `rpc_user` - Elements regtest RPC username.
-  - `rpc_password` - Elements regtest RPC password.
+  - `rpc_port` - Optional fixed Elements RPC port. A port is assigned automatically when omitted.
+  - `esplora_port` - Optional fixed Electrs HTTP port. A port is assigned automatically when omitted.
+  - `rpc_user` and `rpc_password` - Optional Elements RPC credentials. Set both to use username/password authentication instead of the node's cookie.
 - `test` (`simplex test` config)
   - `mnemonic` - The signer's mnemonic internal regtest will send initial funds to.
   - `bitcoins` - Initial coins available to the signer.
-  - `verbosity` - Simplicity pruning log level.
+  - `verbosity` - Simplicity execution log level (`"None"`, `"Debug"`, or `"Trace"`).
   - `fuzz`
     - `cases` - The number of fuzz iterations to do.
     - `seed` - The fuzzer random seed.
-    - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
+    - `network` - Network type for local fuzz transactions (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
   - `esplora`
     - `url` - Esplora API endpoint url.
     - `network` - Esplora network type (`Liquid`, `LiquidTestnet`, `ElementsRegtest`).
@@ -129,7 +133,7 @@ Simplex CLI provides the following commands:
 - `simplex build` - Generates simplicity artifacts.
 - `simplex regtest` - Spins up local Electrs + Elements nodes.
 - `simplex test` - Runs Simplex tests. Provide a `--fuzz` flag to run Simplex fuzz tests.
-- `simplex clean` - Cleans up generated artifacts and installed dependencies.
+- `simplex clean` - Cleans up generated artifacts. Add `--all` to also remove installed dependencies.
 - `simplex fmt` - Formats SimplicityHL files according to the specified `simfmt.toml` or default [configuration](https://github.com/BlockstreamResearch/simfmt/blob/master/simfmt.toml).  
 
 To view the available options, run the help command:
