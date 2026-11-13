@@ -4,6 +4,10 @@
 
 - Bumped `simplicityhl` to `0.9.0`.
 
+### wasm
+
+- Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.
+
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.

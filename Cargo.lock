@@ -1712,6 +1712,7 @@ version = "0.2.0"
 dependencies = [
  "elements-miniscript",
  "hex",
+ "serde",
  "serde_json",
  "simplicityhl",
  "smplx-sdk",

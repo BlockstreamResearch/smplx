@@ -13,7 +13,7 @@ mod transaction_builder;
 mod version;
 
 pub use issuance_details::IssuanceDetails;
-pub use program::{Program, program_argument_types};
+pub use program::Program;
 pub use signed_transaction::SignedTransaction;
 pub use signer::Signer;
 pub use transaction_builder::TransactionBuilder;

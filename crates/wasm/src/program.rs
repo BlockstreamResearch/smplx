@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use simplicityhl::ast::ElementsJetHinter;
-use simplicityhl::{Arguments, TemplateAst, UnstableFeatures, WitnessValues};
+use simplicityhl::{Arguments, ResolvedType, TemplateAst, TemplateProgramWitness, UnstableFeatures, WitnessValues};
 
 use smplx_sdk::program::Program as SdkProgram;
+
+use serde::Serialize;
 
 use wasm_bindgen::prelude::*;
 
@@ -140,6 +142,20 @@ impl Program {
         Ok(self.program.get_tr_address(&network).to_string())
     }
 
+    /// The parameters and witnesses a program source declares, as JSON of name to type.
+    ///
+    /// Shape: `{"parameters": {"NAME": "u64"}, "witnesses": {"PATH": "Either<(), ()>"}}`.
+    /// Each type reads back as the `type` of argument and witness JSON.
+    ///
+    /// # Errors
+    /// Returns an error if the source does not parse or does not type-check.
+    #[wasm_bindgen(js_name = abi)]
+    pub fn abi(source: &str) -> Result<String, JsError> {
+        let abi = ProgramAbi::from_source(source).map_err(|e| JsError::new(&e))?;
+
+        serde_json::to_string(&abi).map_err(|e| JsError::new(&format!("Cannot report the program's interface: {e}")))
+    }
+
     fn from_source(
         source: &str,
         arguments_json: Option<&str>,
@@ -212,33 +228,59 @@ impl Program {
     }
 }
 
-/// The compile-time parameters a program source declares, as JSON of name to type.
-///
-/// # Errors
-/// Returns an error if the source does not parse or does not type-check.
-#[wasm_bindgen(js_name = programArgumentTypes)]
-pub fn program_argument_types(source: &str) -> Result<String, JsError> {
-    let template = TemplateAst::new_with_unstable(
-        Arc::<str>::from(source),
-        &UnstableFeatures::all(),
-        Box::new(ElementsJetHinter),
-    )
-    .map_err(|e| JsError::new(&format!("Program does not compile: {e}")))?;
+/// The parameter and witness types of a program, each keyed by name.
+#[derive(Serialize)]
+struct ProgramAbi {
+    parameters: BTreeMap<String, String>,
+    witnesses: BTreeMap<String, String>,
+}
 
-    let declared: BTreeMap<String, String> = template
-        .parameters()
-        .iter()
-        .map(|(name, ty)| (name.as_ref().to_string(), ty.to_string()))
-        .collect();
+impl ProgramAbi {
+    fn from_source(source: &str) -> Result<Self, String> {
+        let template = TemplateAst::new_with_unstable(
+            Arc::<str>::from(source),
+            &UnstableFeatures::all(),
+            Box::new(ElementsJetHinter),
+        )
+        .map_err(|e| format!("Program does not compile: {e}"))?;
 
-    serde_json::to_string(&declared).map_err(|e| JsError::new(&format!("Cannot report parameter types: {e}")))
+        Ok(Self {
+            parameters: Self::named(template.parameters().iter()),
+            witnesses: Self::named(template.witness_types().iter()),
+        })
+    }
+
+    fn named<'a>(
+        declared: impl Iterator<Item = (&'a TemplateProgramWitness, &'a ResolvedType)>,
+    ) -> BTreeMap<String, String> {
+        declared
+            .map(|(name, ty)| (name.as_ref().to_string(), ty.to_string()))
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Program;
+    use simplicityhl::ast::ElementsJetHinter;
+    use simplicityhl::{Arguments, CompiledProgram, WitnessValues};
+
+    use super::{Program, ProgramAbi};
 
     const TRIVIAL: &str = "fn main() { }";
+
+    const SIGNED: &str = "fn main() {
+        let key: Pubkey = param::KEY;
+        let signature: Signature = witness::SIGNATURE;
+
+        match witness::PATH {
+            Left(unit: ()) => jet::bip_0340_verify((key, jet::sig_all_hash()), signature),
+            Right(unit: ()) => {},
+        }
+    }";
+
+    fn abi(source: &str) -> serde_json::Value {
+        serde_json::from_str(&Program::abi(source).expect("a program that compiles")).expect("JSON")
+    }
 
     #[test]
     fn short_state_leaf_is_rejected() {
@@ -282,5 +324,48 @@ mod tests {
         // The program is the same, only the address changes.
         assert_eq!(stateful.cmr().unwrap(), moved.cmr().unwrap());
         assert_eq!(stateful.tapleaf_hash().unwrap(), moved.tapleaf_hash().unwrap());
+    }
+
+    #[test]
+    fn abi_reports_parameters_and_witnesses() {
+        let reported = abi(SIGNED);
+
+        assert_eq!(reported["parameters"], serde_json::json!({"KEY": "u256"}));
+        assert_eq!(
+            reported["witnesses"],
+            serde_json::json!({"PATH": "Either<(), ()>", "SIGNATURE": "[u8; 64]"})
+        );
+    }
+
+    #[test]
+    fn abi_types_read_back_as_argument_and_witness_types() {
+        let reported = abi(SIGNED);
+        let (parameters, witnesses) = (&reported["parameters"], &reported["witnesses"]);
+
+        let arguments = serde_json::json!({
+            "KEY": {"type": parameters["KEY"], "value": format!("0x{}", "00".repeat(32))},
+        });
+        let witness = serde_json::json!({
+            "PATH": {"type": witnesses["PATH"], "value": "Right(())"},
+            "SIGNATURE": {"type": witnesses["SIGNATURE"], "value": format!("0x{}", "00".repeat(64))},
+        });
+
+        let arguments: Arguments = serde_json::from_str(&arguments.to_string()).expect("arguments typed as reported");
+        let witness: WitnessValues =
+            serde_json::from_str(&witness.to_string()).expect("witness values typed as reported");
+
+        CompiledProgram::new(SIGNED, arguments, false, Box::new(ElementsJetHinter))
+            .expect("the program compiles")
+            .satisfy(witness)
+            .expect("the witness satisfies the program");
+    }
+
+    #[test]
+    fn abi_of_a_program_that_does_not_parse_is_refused() {
+        let refused = ProgramAbi::from_source("fn main(")
+            .err()
+            .expect("an unparsable program");
+
+        assert!(refused.starts_with("Program does not compile"), "{refused}");
     }
 }

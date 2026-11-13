@@ -18,6 +18,7 @@ smplx-sdk = { workspace = true }
 
 simplicityhl = { workspace = true }
 hex = { workspace = true }
+serde = { workspace = true }
 
 # Pinned exactly: wasm-bindgen refuses to run when the CLI and the crate disagree on the
 # bindgen schema, so this must match the `wasm-bindgen` binary used to generate bindings.
