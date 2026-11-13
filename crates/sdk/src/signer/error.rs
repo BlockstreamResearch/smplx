@@ -3,7 +3,7 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
 use crate::transaction::error::ProgramInputError;
-use crate::transaction::{FinalTransactionError, UtxoError, WitnessWrappingError};
+use crate::transaction::{FinalTransactionError, PartialInputError, UtxoError, WitnessWrappingError};
 
 /// Errors from a [`Signer`](super::Signer).
 ///
@@ -30,6 +30,11 @@ pub enum SignerError {
     /// A UTXO is missing its asset or amount and has no unblinding secrets.
     #[error(transparent)]
     Utxo(#[from] UtxoError),
+
+    /// An input's asset and amount are unknown, or its unblinding secrets don't open the output it
+    /// spends.
+    #[error(transparent)]
+    PartialInput(#[from] PartialInputError),
 
     /// Errors originating from transaction construction or validation.
     #[error(transparent)]
@@ -60,10 +65,6 @@ pub enum SignerError {
     #[error("Failed to unblind txout: {0}")]
     Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
-    /// Error thrown when PSET blinding fails.
-    #[error("Failed to blind a PST: {0}")]
-    PsetBlind(#[from] simplicityhl::elements::pset::PsetBlindError),
-
     /// Error indicating failure to construct sighash for input spending.
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
@@ -83,10 +84,6 @@ pub enum SignerError {
     /// Error indicating a fee rate that is not a finite, non-negative number of sats/kvb.
     #[error("Invalid fee rate: {0} sats/kvb")]
     InvalidFeeRate(f32),
-
-    /// Error indicating the transaction spends the same outpoint more than once.
-    #[error("The transaction spends {0} more than once")]
-    DuplicateInput(simplicityhl::elements::OutPoint),
 
     /// Error indicating that the available UTXO funds are not enough to cover total costs.
     #[error("Not enough funds on account to cover transaction costs: {0}")]
@@ -135,10 +132,6 @@ pub enum SignerError {
     /// Error thrown when WPKH address creation fails.
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
-
-    /// Error indicating an input whose amount the signer cannot know.
-    #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
-    UnknownInputAmount(simplicityhl::elements::OutPoint),
 }
 
 impl From<ProgramInputError> for SignerError {

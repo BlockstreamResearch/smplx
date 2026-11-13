@@ -196,6 +196,8 @@ impl TransactionBuilder {
     /// `blinding_secrets_json` contains the unblinded details of a confidential output.
     /// Write its `value` as a JSON number up to 2^53 - 1. Larger amounts must be
     /// decimal strings because JavaScript may serialize a number with different digits.
+    /// The blinding factors are hex with their bytes reversed, the order Elements prints them in,
+    /// so factor 1 is `01` followed by 31 zero bytes.
     ///
     /// # Errors
     /// Returns an error if the txid or the encoded output cannot be parsed.
@@ -259,11 +261,11 @@ impl TransactionBuilder {
     /// Adds a native input that spends an output holding the reissuance token and mints
     /// `asset_amount_sats` more units of the asset.
     ///
-    /// Pass the entropy returned by `IssuanceDetails.assetEntropy` for the first issuance.
+    /// Pass the entropy as `IssuanceDetails.assetEntropy` returns it for the first issuance: hex
+    /// with its bytes reversed, the order Elements prints it in.
     /// Pass the unblinded token details as `blinding_secrets_json`. The method checks
-    /// that the claimed asset ID matches the token derived from the entropy. The caller
-    /// must ensure the secrets open the output. Write `value` as a decimal string if it
-    /// exceeds 2^53 - 1.
+    /// that the claimed asset ID matches the token derived from the entropy. Write `value` as a
+    /// decimal string if it exceeds 2^53 - 1.
     ///
     /// The token's asset must be confidential. Elements uses its asset blinding
     /// factor as the reissuance nonce. An explicit asset has a zero nonce, which
@@ -309,16 +311,19 @@ impl TransactionBuilder {
     /// `witness_json` carries the witness values in `SimplicityHL` `.wit` shape.
     /// Passing `None` leaves them unset.
     ///
-    /// `signature_witness` names the witness the signer must fill with a Schnorr signature
-    /// over this transaction.
-    /// Leaving this `None` says the program needs no signature.
+    /// `program_signature` names the witness the signer fills with a Schnorr signature over this
+    /// transaction, such as `SIGNATURE`, or a place inside it, such as `SIGNATURE.Left.1`.
+    /// Leaving it `None` means the program needs no signature.
+    ///
+    /// `blinding_secrets_json` contains the unblinded details of a confidential output, as in
+    /// `addInput`.
     ///
     /// `derivation_path` is the path of the key that signature is made with, relative to the
     /// account path. Omitting it keeps the signer's default.
     ///
     /// # Errors
-    /// Returns an error if the txid, the encoded output, the arguments, the witness or the
-    /// derivation path cannot be parsed.
+    /// Returns an error if the txid, the encoded output, the arguments, the witness, the
+    /// blinding secrets or the derivation path cannot be parsed.
     #[wasm_bindgen(js_name = addProgramInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_program_input(
@@ -330,12 +335,19 @@ impl TransactionBuilder {
         arguments_json: Option<String>,
         witness_json: Option<String>,
         program_signature: Option<String>,
+        blinding_secrets_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<(), JsError> {
         self.transaction.add_program_input(
-            Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?,
+            Self::partial_input(
+                txid,
+                vout,
+                tx_out_hex,
+                blinding_secrets_json.as_deref(),
+                derivation_path.as_deref(),
+            )?,
             Self::program_input(
                 source,
                 arguments_json,
@@ -356,8 +368,8 @@ impl TransactionBuilder {
     ///
     /// # Errors
     /// Returns an error if the txid, the encoded output, the arguments, the witness, the
-    /// issuer contract or the derivation path cannot be parsed, if either issuance amount
-    /// exceeds `i64::MAX`, or if both are zero.
+    /// issuer contract, the blinding secrets or the derivation path cannot be parsed, if either
+    /// issuance amount exceeds `i64::MAX`, or if both are zero.
     #[wasm_bindgen(js_name = addProgramIssuanceInput)]
     #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     pub fn add_program_issuance_input(
@@ -372,11 +384,18 @@ impl TransactionBuilder {
         asset_amount_sats: u64,
         inflation_amount_sats: u64,
         issuer_contract_hex: Option<String>,
+        blinding_secrets_json: Option<String>,
         extra_leaves_json: Option<String>,
         include_debug_symbols: Option<bool>,
         derivation_path: Option<String>,
     ) -> Result<IssuanceDetails, JsError> {
-        let input = Self::partial_input(txid, vout, tx_out_hex, None, derivation_path.as_deref())?;
+        let input = Self::partial_input(
+            txid,
+            vout,
+            tx_out_hex,
+            blinding_secrets_json.as_deref(),
+            derivation_path.as_deref(),
+        )?;
         let issuance = Self::issuance(asset_amount_sats, inflation_amount_sats, issuer_contract_hex.as_deref())?;
 
         let details = self.transaction.add_program_issuance_input(
@@ -462,12 +481,17 @@ impl TransactionBuilder {
 
     /// Adds an output paying `amount_sats` of `asset_hex` to `script_pubkey_hex`.
     ///
-    /// A blinding key makes the output confidential. Outputs locked by a program and `OP_RETURN`
-    /// outputs are always unblinded.
+    /// A blinding key makes the output confidential, whatever its script.
+    ///
+    /// `asset_blinding_factor_hex` and `value_blinding_factor_hex` choose the factors the output is
+    /// blinded with, instead of random ones. They are hex with their bytes reversed, the order
+    /// Elements prints them in, so factor 1 is `01` followed by 31 zero bytes. A chosen factor
+    /// needs a blinding key, and at least one blinded output, normally the change, must leave its
+    /// value factor unchosen so that the signer can balance the transaction.
     ///
     /// # Errors
-    /// Returns an error if the script, asset id or blinding key cannot be parsed,
-    /// or if the amount exceeds `i64::MAX`.
+    /// Returns an error if the script, asset id, blinding key or a blinding factor cannot be
+    /// parsed, or if the amount exceeds `i64::MAX`.
     #[wasm_bindgen(js_name = addOutput)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn add_output(
@@ -476,6 +500,8 @@ impl TransactionBuilder {
         amount_sats: u64,
         asset_hex: &str,
         blinding_key_hex: Option<String>,
+        asset_blinding_factor_hex: Option<String>,
+        value_blinding_factor_hex: Option<String>,
     ) -> Result<(), JsError> {
         if i64::try_from(amount_sats).is_err() {
             return Err(JsError::new("output amount must not exceed i64::MAX"));
@@ -492,6 +518,20 @@ impl TransactionBuilder {
                 PublicKey::from_str(blinding_key).map_err(|e| JsError::new(&format!("Invalid blinding key: {e}")))?;
 
             output = output.with_blinding_key(key);
+        }
+
+        if let Some(asset_bf) = asset_blinding_factor_hex.as_deref() {
+            let factor = AssetBlindingFactor::from_str(asset_bf)
+                .map_err(|e| JsError::new(&format!("Invalid asset blinding factor: {e}")))?;
+
+            output = output.with_asset_blinding_factor(factor);
+        }
+
+        if let Some(value_bf) = value_blinding_factor_hex.as_deref() {
+            let factor = ValueBlindingFactor::from_str(value_bf)
+                .map_err(|e| JsError::new(&format!("Invalid value blinding factor: {e}")))?;
+
+            output = output.with_value_blinding_factor(factor);
         }
 
         self.transaction.add_output(output);
@@ -1117,6 +1157,7 @@ mod tests {
             Some("SIGNATURE".to_string()),
             None,
             None,
+            None,
             Some("0/7".to_string()),
         );
 
@@ -1136,6 +1177,7 @@ mod tests {
             None,
             None,
             Some("SIGNATURE".to_string()),
+            None,
             None,
             None,
             None,
@@ -1162,11 +1204,67 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some("0/7".to_string()),
         );
 
         assert!(added.is_ok());
         assert_eq!(path_of(&builder, 0).as_deref(), Some("0/7"));
+    }
+
+    #[test]
+    fn program_inputs_take_blinding_secrets() {
+        let asset = SimplicityNetwork::LiquidTestnet.policy_asset();
+        let spent = holding(asset, Some(blinder(TOKEN_BLINDER)), blinder(TOKEN_BLINDER));
+        let tx_out_hex = hex::encode(simplicityhl::elements::encode::serialize(&spent.witness_utxo));
+        let secrets = serde_json::json!({
+            "asset": asset.to_string(),
+            "assetBlindingFactor": TOKEN_BLINDER,
+            "value": "1",
+            "valueBlindingFactor": VALUE_BLINDER,
+        })
+        .to_string();
+
+        let mut builder = TransactionBuilder::new();
+
+        builder
+            .add_program_input(
+                ON_CHAIN[0].0,
+                0,
+                &tx_out_hex,
+                TRIVIAL,
+                None,
+                None,
+                None,
+                Some(secrets.clone()),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        builder
+            .add_program_issuance_input(
+                ON_CHAIN[0].0,
+                1,
+                &tx_out_hex,
+                TRIVIAL,
+                None,
+                None,
+                None,
+                1_000,
+                0,
+                None,
+                Some(secrets),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // The secrets make the asset and amount of the confidential spent output known
+        for input in builder.transaction.inputs() {
+            assert_eq!(input.partial_input.asset_and_amount(), Some((asset, 1)));
+        }
     }
 
     #[test]
@@ -1218,10 +1316,11 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
         builder
-            .add_output(&script_hex, 49_000, &policy.to_string(), None)
+            .add_output(&script_hex, 49_000, &policy.to_string(), None, None, None)
             .unwrap();
         builder.set_unused_witnesses(0, vec!["B".to_string()]).unwrap();
 
@@ -1239,8 +1338,8 @@ mod tests {
         builder
             .add_input(ON_CHAIN[0].0, 1, &spent_output(), None, None)
             .unwrap();
-        builder.add_output("", 1_000, &policy, None).unwrap();
-        builder.add_output("", 2_000, &policy, None).unwrap();
+        builder.add_output("", 1_000, &policy, None, None, None).unwrap();
+        builder.add_output("", 2_000, &policy, None, None, None).unwrap();
 
         builder.remove_input(0).unwrap();
         builder.remove_output(0).unwrap();
