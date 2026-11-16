@@ -7,5 +7,4 @@ version = "0.1.0"
 [dependencies]
 smplx-std = { path = "../../crates/simplex" }
 
-anyhow = { version = "1.0.101" }
-bitcoin_hashes = { version = "0.14" }
+anyhow = { version = "1.0.104" }
