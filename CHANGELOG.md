@@ -4,6 +4,14 @@
 
 - Bumped `simplicityhl` to `0.9.0`.
 
+### sdk
+
+- Added `ProviderTrait::fetch_block`, which fetches a whole block with its transactions in one request.
+- Added `ProviderError::InvalidBlockHash` and `ProviderError::UnexpectedBlockHash`.
+- Replaced `minreq` with `ureq` in `EsploraProvider`, which now reuses keep-alive connections between requests instead of opening one per request.
+- Made `EsploraProvider::timeout` keep fractions of a second.
+- Gave `EsploraProvider` a private field, so build it with `EsploraProvider::new` rather than a struct literal.
+
 ### wasm
 
 - Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.

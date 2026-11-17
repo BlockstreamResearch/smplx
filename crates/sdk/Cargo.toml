@@ -12,11 +12,11 @@ workspace = true
 
 [features]
 default = ["provider"]
-provider = ["dep:minreq", "dep:bitcoincore-rpc"]
+provider = ["dep:ureq", "dep:bitcoincore-rpc"]
 
 [dependencies]
 thiserror = { workspace = true }
-minreq = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
 simplicityhl = { workspace = true }
 bitcoincore-rpc = { workspace = true, optional = true }
 serde = { workspace = true }

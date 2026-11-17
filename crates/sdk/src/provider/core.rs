@@ -3,7 +3,7 @@ use std::collections::HashMap;
 #[cfg(feature = "provider")]
 use bitcoincore_rpc::Auth;
 
-use simplicityhl::elements::{Address, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, Block, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
 use crate::transaction::{TxReceipt, UTXO};
@@ -88,6 +88,14 @@ pub trait ProviderTrait: Send + Sync {
     /// # Errors
     /// Returns a `ProviderError` if the passed block hash does not exist or the returned data cannot be parsed.
     fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError>;
+
+    /// The block with hex hash `block_hash`, with all its transactions.
+    ///
+    /// # Errors
+    /// Returns `ProviderError::InvalidBlockHash` if `block_hash` isn't a block hash,
+    /// `ProviderError::UnexpectedBlockHash` if the provider answers with another block, and another
+    /// `ProviderError` if the block doesn't exist, the request fails or the block can't be parsed.
+    fn fetch_block(&self, block_hash: &str) -> Result<Block, ProviderError>;
 
     /// The transaction with ID `txid`.
     ///
