@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bitcoincore_rpc::Auth;
 
-use simplicityhl::elements::{Address, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, Block, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
 use crate::transaction::{TxReceipt, UTXO};
@@ -78,6 +78,10 @@ impl ProviderTrait for SimplexProvider {
 
     fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError> {
         self.esplora.fetch_block_txids(block_hash)
+    }
+
+    fn fetch_block(&self, block_hash: &str) -> Result<Block, ProviderError> {
+        self.esplora.fetch_block(block_hash)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {

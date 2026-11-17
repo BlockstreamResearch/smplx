@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, AssetId, Block, BlockHash, OutPoint, Script, Transaction, Txid};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -233,6 +233,23 @@ impl ProviderTrait for EsploraProvider {
 
     fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError> {
         self.get_json(&format!("/block/{block_hash}/txids"))
+    }
+
+    fn fetch_block(&self, block_hash: &str) -> Result<Block, ProviderError> {
+        let expected = BlockHash::from_str(block_hash).map_err(|e| ProviderError::InvalidBlockHash(e.to_string()))?;
+
+        let response = self.get(&format!("/block/{expected}/raw"))?;
+        let block: Block =
+            encode::deserialize(response.as_bytes()).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+        if block.block_hash() != expected {
+            return Err(ProviderError::UnexpectedBlockHash {
+                expected,
+                returned: block.block_hash(),
+            });
+        }
+
+        Ok(block)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {

@@ -1207,6 +1207,10 @@ mod tests {
             unimplemented!()
         }
 
+        fn fetch_block(&self, _: &str) -> Result<simplicityhl::elements::Block, ProviderError> {
+            unimplemented!()
+        }
+
         fn fetch_transaction(&self, _: &Txid) -> Result<Transaction, ProviderError> {
             unimplemented!()
         }

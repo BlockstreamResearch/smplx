@@ -4,6 +4,11 @@
 
 - Bumped `simplicityhl` to `0.9.0`.
 
+### sdk
+
+- Added `ProviderTrait::fetch_block`, which fetches a whole block with its transactions in one request.
+- Added `ProviderError::InvalidBlockHash` and `ProviderError::UnexpectedBlockHash`.
+
 ### wasm
 
 - Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.
