@@ -918,7 +918,6 @@ name = "last_will_example"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bitcoin_hashes 0.14.101",
  "smplx-std",
 ]
 
