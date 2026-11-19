@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+- Bumped `simplicityhl` to `0.9.0`.
+
+### simplexup
+
+- Resolved the latest release without the GitHub API. It's rate limit failed installs on shared CI runners.
+
+### wasm
+
+- Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.
+
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.

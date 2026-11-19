@@ -2,29 +2,26 @@ use elements_miniscript::bitcoin::bip32::DerivationPath;
 
 use crate::program::ProgramError;
 use crate::provider::ProviderError;
-use crate::transaction::{FinalTransactionError, UtxoError};
+use crate::transaction::error::ProgramInputError;
+use crate::transaction::{FinalTransactionError, PartialInputError, UtxoError, WitnessWrappingError};
 
-/// Core error types for the Signer component.
+/// Errors from a [`Signer`](super::Signer).
+///
+/// A contract that rejects a spend fails with `Program(ProgramError::ProgramExecution { .. })`
+/// before anything is broadcast.
+/// A transaction that is broadcast and refused fails with
+/// `Provider(ProviderError::BroadcastRejected { .. })`.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    /// Errors originating from Simplicity program evaluation and state.
+    /// A program failed.
+    ///
+    /// - `ProgramError::ProgramExecution`: a program input failed to run while the transaction was
+    ///   measured or finalized.
+    /// - Any other variant: the program doesn't compile, or the input doesn't spend its address.
+    ///   The signer finds this while signing for a
+    ///   [`ProgramSignature`](crate::transaction::ProgramSignature), before the program runs.
     #[error(transparent)]
     Program(#[from] ProgramError),
-
-    /// Error indicating that a Simplicity program failed to satisfy, prune or execute.
-    #[error(
-        "Covenant input {index} did not execute (transaction locktime {locktime}, input sequence {sequence}): {source}"
-    )]
-    CovenantExecution {
-        /// The index of the input whose program failed.
-        index: usize,
-        /// The locktime the transaction being satisfied carries.
-        locktime: u32,
-        /// The sequence of the failing input.
-        sequence: u32,
-        /// The underlying program failure.
-        source: ProgramError,
-    },
 
     /// Errors originating from provider network interactions.
     #[error(transparent)]
@@ -33,6 +30,11 @@ pub enum SignerError {
     /// A UTXO is missing its asset or amount and has no unblinding secrets.
     #[error(transparent)]
     Utxo(#[from] UtxoError),
+
+    /// An input's asset and amount are unknown, or its unblinding secrets don't open the output it
+    /// spends.
+    #[error(transparent)]
+    PartialInput(#[from] PartialInputError),
 
     /// Errors originating from transaction construction or validation.
     #[error(transparent)]
@@ -63,10 +65,6 @@ pub enum SignerError {
     #[error("Failed to unblind txout: {0}")]
     Unblind(#[source] Box<simplicityhl::elements::UnblindError>),
 
-    /// Error thrown when PSET blinding fails.
-    #[error("Failed to blind a PST: {0}")]
-    PsetBlind(#[from] simplicityhl::elements::pset::PsetBlindError),
-
     /// Error indicating failure to construct sighash for input spending.
     #[error("Failed to construct a message for the input spending: {0}")]
     SighashConstruction(#[from] elements_miniscript::psbt::SighashError),
@@ -87,27 +85,24 @@ pub enum SignerError {
     #[error("Invalid fee rate: {0} sats/kvb")]
     InvalidFeeRate(f32),
 
-    /// Error indicating the transaction spends the same outpoint more than once.
-    #[error("The transaction spends {0} more than once")]
-    DuplicateInput(simplicityhl::elements::OutPoint),
-
     /// Error indicating that the available UTXO funds are not enough to cover total costs.
     #[error("Not enough funds on account to cover transaction costs: {0}")]
     NotEnoughFunds(u64),
 
     /// Error indicating a confidential input was left with no blinded output to balance against.
     ///
-    /// Raised when the caller pins an explicit change target while spending confidential inputs,
-    /// which the node would reject as `bad-txns-in-ne-out`.
-    #[error("A confidential input needs at least one blinded output, but the change target is explicit")]
+    /// Raised when a transaction spending confidential inputs has an explicit change target, or is
+    /// finalized without change, which the node would reject as `bad-txns-in-ne-out`.
+    #[error("A confidential input needs at least one blinded output to balance against")]
     ConfidentialInputWithoutBlindedOutput,
 
-    /// Error indicating a derivation path isn't `m/n`.
-    #[error("The derivation path `{0}` is not of the form m/n")]
+    /// A derivation path doesn't have exactly two unhardened steps, such as `0/5`.
+    #[error("The derivation path `{0}` must have exactly two unhardened steps, such as 0/5")]
     InvalidDerivationPath(DerivationPath),
 
-    /// Error indicating the key an input is signed with doesn't own the output it spends.
-    #[error("Input {0} is locked to another key than its derivation path gives")]
+    /// A native input spends a P2WPKH output locked to a different key than the one at its
+    /// derivation path.
+    #[error("Input {0} is locked to a different key than the one at its derivation path")]
     KeyMismatch(usize),
 
     /// Error indicating an invalid upstream `secp256k1` secret key.
@@ -137,38 +132,15 @@ pub enum SignerError {
     /// Error thrown when WPKH address creation fails.
     #[error("Failed to construct a wpkh address: {0}")]
     WpkhAddressConstruction(#[from] elements_miniscript::Error),
-
-    /// Error indicating an input whose amount the signer cannot know.
-    #[error("The input spending {0} is confidential and has no unblinding secrets, so its amount is unknown")]
-    UnknownInputAmount(simplicityhl::elements::OutPoint),
-
-    /// Error indicating an expected witness field could not be found.
-    #[error("Missing such witness field: {0}")]
-    WitnessFieldNotFound(String),
 }
 
-/// Errors originating from manipulating witness paths and injecting values.
-#[derive(Debug, thiserror::Error)]
-pub enum WitnessWrappingError {
-    /// Error indicating a failure while parsing the provided witness path string.
-    #[error("Failed to parse path")]
-    ParsingError,
-
-    /// Error pointing to the use of a path type that is currently not supported.
-    #[error("Unsupported path type: {0}")]
-    UnsupportedPathType(String),
-
-    /// Error thrown during path traversal when an index exceeds the inner array lengths.
-    #[error("Path index out of bounds: len is {0}, got {1}")]
-    IdxOutOfBounds(usize, usize),
-
-    /// Error indicating that the runtime type at the path root expected one type but encountered another.
-    #[error("Root type mismatch: expected {0}, got {1}")]
-    RootTypeMismatch(String, String),
-
-    /// Error indicating that a path traversal attempted to reach an undefined or mismatched Either branch.
-    #[error("Path reached undefined branch of Either")]
-    EitherBranchMismatch,
+impl From<ProgramInputError> for SignerError {
+    fn from(err: ProgramInputError) -> Self {
+        match err {
+            ProgramInputError::Program(err) => Self::Program(err),
+            ProgramInputError::Injection(err) => Self::WitnessInjectError(err),
+        }
+    }
 }
 
 impl From<simplicityhl::elements::UnblindError> for SignerError {

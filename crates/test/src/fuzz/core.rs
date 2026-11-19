@@ -31,18 +31,32 @@ enum CaseFailure {
     Finding(String),
 }
 
+/// Generates and checks the cases of a [`Scenario`]. Usually created with
+/// `TestContext::<FuzzMode>::engine`.
+///
+/// By default, every spend is expected to be accepted, the transaction isn't mutated, and the
+/// lock and authorization checks run on every accepted case.
 pub struct SimplexFuzzEngine {
+    /// The proptest configuration: the number of cases, the seed, and failure persistence.
     pub config: ProptestConfig,
+    /// The signer that signs every case.
     pub signer: Signer,
+    /// The transaction and programs being fuzzed.
     pub scenario: Scenario,
+    /// What each case is expected to do. See [`SimplexFuzzEngine::spec`].
     pub spec: Box<Spec>,
+    /// The mutations cases draw from, `None` for unmutated cases.
     pub mutations: Option<Mutations>,
+    /// Whether a run passes without any accepted case.
     pub allow_unspendable: bool,
+    /// Whether to run the lock check on accepted cases.
     pub check_lock: bool,
+    /// Whether to run the authorization check on accepted cases.
     pub check_auth: bool,
 }
 
 impl SimplexFuzzEngine {
+    /// Creates an engine for `scenario` with the default settings.
     pub fn new(config: ProptestConfig, signer: Signer, scenario: Scenario) -> SimplexFuzzEngine {
         SimplexFuzzEngine {
             config,
@@ -56,6 +70,7 @@ impl SimplexFuzzEngine {
         }
     }
 
+    /// Replaces the proptest configuration, for example to change the number of cases.
     #[must_use]
     pub fn with_custom_config(mut self, config: ProptestConfig) -> Self {
         self.config = config;
@@ -63,6 +78,10 @@ impl SimplexFuzzEngine {
         self
     }
 
+    /// Replaces the signer.
+    ///
+    /// The signer must not use the attacker's mnemonic, which the smart checks use, or `run`
+    /// panics.
     #[must_use]
     pub fn with_custom_signer(mut self, signer: Signer) -> Self {
         self.signer = signer;
@@ -71,6 +90,10 @@ impl SimplexFuzzEngine {
     }
 
     /// Sets what should happen to each spend. Without a spec, every spend is expected to be accepted.
+    ///
+    /// The spec sees the case before it runs and returns an [`Expect`]. It isn't called for a
+    /// case that violates a witness requirement, which must be rejected. A panic in the spec is
+    /// reported as a broken setup.
     #[must_use]
     pub fn spec(mut self, spec: impl Fn(&FuzzCase<'_>) -> Expect + 'static) -> Self {
         self.spec = Box::new(spec);
@@ -78,7 +101,8 @@ impl SimplexFuzzEngine {
         self
     }
 
-    /// Mutates the transaction in half the cases. The spec judges the mutated transaction.
+    /// Mutates the transaction, using the kinds `mutations` enables, in half of the cases that
+    /// don't violate a witness requirement. The spec judges the mutated transaction.
     #[must_use]
     pub fn mutations(mut self, mutations: Mutations) -> Self {
         self.mutations = Some(mutations);
@@ -110,6 +134,12 @@ impl SimplexFuzzEngine {
         self
     }
 
+    /// Runs the cases and prints a summary to standard error.
+    ///
+    /// # Panics
+    /// Panics on the first finding, with the case's programs, values and mutations; if no case
+    /// was accepted, unless [`SimplexFuzzEngine::allow_unspendable`] was called; if the spec
+    /// returned [`Expect::Any`] for every case; and if the setup is broken.
     pub fn run(self) {
         let strategy = match self
             .scenario

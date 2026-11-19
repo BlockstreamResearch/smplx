@@ -2,8 +2,9 @@
 pub mod core;
 /// Error types and definitions for program compilation, manipulation, and execution failures.
 pub mod error;
-/// Program execution's specific logger
+/// Buffering of the output of program execution.
 pub mod logger;
+mod unverified_env;
 
 pub use core::{Program, ProgramFactory, ProgramSchema, ProgramTrait};
 pub use error::ProgramError;

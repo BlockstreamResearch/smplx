@@ -46,7 +46,11 @@ pub static LIQUID_REGTEST_GENESIS: LazyLock<elements::BlockHash> = LazyLock::new
     ])
 });
 
-/// Represents the target network configuration for Simplicity interactions.
+/// The network a program, signer or provider works on. It determines the policy asset, the
+/// genesis block hash that Simplicity's `sighash_all` commits to, and the address format.
+///
+/// `FromStr` accepts `"Liquid"`, `"LiquidTestnet"` and `"ElementsRegtest"`, which gives
+/// [`SimplicityNetwork::default_regtest`]. Construct `ElementsCustom` directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SimplicityNetwork {
     /// Liquid mainnet.
@@ -58,7 +62,8 @@ pub enum SimplicityNetwork {
         /// Regtest mode `AssetId`, which is used as a default policy asset locally.
         policy_asset: elements::AssetId,
     },
-    /// Custom Elements environment whose genesis is derived from its chain parameters.
+    /// An Elements network with its own policy asset and genesis block hash, such as a regtest
+    /// node started with non-default chain parameters.
     ElementsCustom {
         /// Custom network policy asset.
         policy_asset: elements::AssetId,
@@ -68,7 +73,8 @@ pub enum SimplicityNetwork {
 }
 
 impl SimplicityNetwork {
-    /// Creates a default Elements Regtest configuration.
+    /// Elements regtest with the default policy asset,
+    /// [`LIQUID_DEFAULT_REGTEST_ASSET_STR`].
     #[must_use]
     pub fn default_regtest() -> Self {
         Self::ElementsRegtest {
@@ -86,7 +92,7 @@ impl SimplicityNetwork {
         }
     }
 
-    /// Returns the genesis block hash for the network variant.
+    /// The network's genesis block hash, which Simplicity's `sighash_all` commits to.
     #[must_use]
     pub fn genesis_block_hash(&self) -> elements::BlockHash {
         match self {
@@ -97,13 +103,14 @@ impl SimplicityNetwork {
         }
     }
 
-    /// Determines if the current network is the mainnet (Liquid).
+    /// Whether this is Liquid mainnet. Only `Liquid` is.
     #[must_use]
     pub fn is_mainnet(&self) -> bool {
         self == &Self::Liquid
     }
 
-    /// Returns the address parameters associated with the current enum variant.
+    /// The address parameters: Liquid's, Liquid testnet's, or `AddressParams::ELEMENTS` for
+    /// regtest and custom networks.
     #[must_use]
     pub const fn address_params(&self) -> &'static elements::AddressParams {
         match self {

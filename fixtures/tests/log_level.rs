@@ -15,7 +15,7 @@ fn setup_dummy(context: &simplex::TestContext) -> (DummyPanicProgram, simplex::s
 }
 
 #[simplex::test]
-fn dummy_log_level(context: simplex::TestContext) -> anyhow::Result<()> {
+fn failing_program_reports_its_error(context: simplex::TestContext) -> anyhow::Result<()> {
     let provider = context.get_default_provider();
     let signer = context.get_default_signer();
 

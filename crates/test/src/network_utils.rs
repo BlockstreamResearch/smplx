@@ -32,7 +32,7 @@ impl NetworkUtils {
             }
 
             return Err(NetworkUtilsError::UnsuccessfulSync(format!(
-                "Failed to complete mining until height, got: '{h}', desired height: '{current_height}'",
+                "Esplora reached height {h} instead of {target_height}",
             )));
         }
 

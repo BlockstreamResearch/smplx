@@ -24,7 +24,7 @@ pub(super) fn get_elementsd_bin_args(config: &RegtestConfig) -> Vec<String> {
     ];
 
     if let Some(port) = config.rpc_port {
-        // A lib works with autoassigned rpcport, so we are required to do this woodoo
+        // The node library picks the RPC port itself, so a fixed port needs explicit bind settings
         args.push("-rpcbind=127.0.0.1".to_string());
         args.push(format!("-rpcbind=127.0.0.1:{port}"));
         args.push("-rpcallowip=127.0.0.1/8".to_string());

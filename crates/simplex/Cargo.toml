@@ -17,9 +17,13 @@ name = "simplex"
 [lints]
 workspace = true
 
+[features]
+default = ["test"]
+test = ["dep:smplx-test", "smplx-macros/test"]
+
 [dependencies]
 smplx-macros = { workspace = true }
-smplx-test = { workspace = true }
+smplx-test = { workspace = true, optional = true }
 smplx-sdk = { workspace = true, features = ["provider"] }
 
 serde = { workspace = true }
