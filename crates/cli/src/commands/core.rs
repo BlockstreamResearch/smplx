@@ -2,11 +2,8 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Locates the agent skill shipped with this Simplex version.
-    Skill {
-        #[command(subcommand)]
-        command: super::skill::SkillCommand,
-    },
+    /// Prints the absolute directory of the bundled skill, including references and assets.
+    Skill,
     /// Initializes Simplex project.
     Init {
         /// Name of the new project.

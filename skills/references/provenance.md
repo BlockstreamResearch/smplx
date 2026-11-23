@@ -1,6 +1,6 @@
 # Sources and compatibility
 
-This skill is maintained in the repository's root `skills/` directory and bundled into the CLI at compile time. `simplex skill path` exposes the entire bundle, including references and assets. The content hash in its cache path changes when any packaged file changes.
+This skill is maintained in the repository's root `skills/` directory and bundled into the CLI at compile time. `simplex skill` exposes the entire bundle, including references and assets. The content hash in its cache path changes when any packaged file changes.
 
 Target: Simplex 0.2.0 with SimplicityHL 0.8.0, as declared in the workspace manifests. The source checker and execution fixture use this toolchain. Earlier guidance was developed against Simplex 0.0.12 / SimplicityHL 0.7.2; the original sources below preserve that provenance.
 

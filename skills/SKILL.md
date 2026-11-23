@@ -7,7 +7,7 @@ description: Write, debug, and audit SimplicityHL contracts and Simplex projects
 
 Write `.simf` spending conditions for Liquid using Simplex. SimplicityHL resembles Rust but has different syntax, types, and consensus semantics. Treat a contract as a predicate on a spending transaction: successful completion authorizes the spend; failed assertions reject it.
 
-Run `simplex skill path` to locate this complete skill package. Resolve `references/` and `assets/` relative to the returned directory, not the project directory.
+Run `simplex skill` to locate this complete skill package. Resolve `references/` and `assets/` relative to the returned directory, not the project directory.
 
 Use the user's supplied resources and access restrictions. These references and the local test fixture support development without external research. Use the CLI, compiler, tests, and your own project files when they are available. A restriction on external information does not prohibit these development tools. Do not fetch the source links during a closed-book task.
 

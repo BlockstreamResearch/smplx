@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Added `simplex skill path` to locate the complete agent skill bundled from the root `skills/` directory.
+- Added `simplex skill` to locate the complete agent skill bundled from the root `skills/` directory.
 
 ## [0.2.0]
 

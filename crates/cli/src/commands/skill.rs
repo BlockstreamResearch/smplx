@@ -3,33 +3,22 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use clap::Subcommand;
 use sha2::{Digest, Sha256};
 
 use super::error::CommandError;
 
 include!(concat!(env!("OUT_DIR"), "/skill_bundle.rs"));
 
-#[derive(Debug, Subcommand)]
-pub enum SkillCommand {
-    /// Prints the absolute directory of the bundled skill, including references and assets.
-    Path,
-}
-
 /// Prints the skill location without requiring a Simplex project or network access.
 ///
 /// # Errors
 /// Returns an error if the installation directory cannot be resolved, the bundle
 /// cannot be written, or an existing extracted resource has been changed.
-pub fn run(command: &SkillCommand) -> Result<(), CommandError> {
-    match command {
-        SkillCommand::Path => {
-            let root = simplex_dir()?.join("skills");
-            let path = extract_bundle(&root)?;
-            writeln!(io::stdout().lock(), "{}", path.display())?;
-            Ok(())
-        }
-    }
+pub fn run() -> Result<(), CommandError> {
+    let root = simplex_dir()?.join("skills");
+    let path = extract_bundle(&root)?;
+    writeln!(io::stdout().lock(), "{}", path.display())?;
+    Ok(())
 }
 
 fn simplex_dir() -> io::Result<PathBuf> {
@@ -97,7 +86,7 @@ fn verify_bundle(root: &Path) -> io::Result<()> {
             continue;
         }
         return Err(io::Error::other(format!(
-            "bundled skill resource '{}' is missing or modified; remove '{}' and retry simplex skill path to restore it",
+            "bundled skill resource '{}' is missing or modified; remove '{}' and retry simplex skill to restore it",
             file.display(),
             root.display()
         )));

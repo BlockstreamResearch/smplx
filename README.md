@@ -131,7 +131,7 @@ Simplex CLI provides the following commands:
 - `simplex test` - Runs Simplex tests. Provide a `--fuzz` flag to run Simplex fuzz tests.
 - `simplex clean` - Cleans up generated artifacts and installed dependencies.
 - `simplex fmt` - Formats SimplicityHL files according to the specified `simfmt.toml` or default [configuration](https://github.com/BlockstreamResearch/simfmt/blob/master/simfmt.toml).  
-- `simplex skill path` - Prints the absolute directory of the bundled agent skill, including its references and assets. Works without a Simplex project or network access.
+- `simplex skill` - Prints the absolute directory of the bundled agent skill, including its references and assets. Works without a Simplex project or network access.
 
 To view the available options, run the help command:
 
@@ -141,7 +141,7 @@ simplex -h
 
 ### Agent skill
 
-Ask your coding agent to run `simplex skill path` and read `SKILL.md` in the
+Ask your coding agent to run `simplex skill` and read `SKILL.md` in the
 returned directory. References and assets are relative to that directory.
 
 The CLI embeds the complete root [`skills/`](skills/) directory at build time.
@@ -156,7 +156,7 @@ or installing the skill into an agent's configuration.
 Edit files in the root `skills/` directory and rebuild to update the bundle;
 there is no second source copy to maintain. If an extracted file is missing or
 modified, the command reports the affected bundle directory. Remove that
-directory and rerun `simplex skill path` to restore the packaged files.
+directory and rerun `simplex skill` to restore the packaged files.
 
 ### Example
 

@@ -5,7 +5,7 @@ use std::process::Command;
 fn simplex(work: &Path, home: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_simplex"));
     command
-        .args(["skill", "path"])
+        .arg("skill")
         .current_dir(work)
         .env("SIMPLEX_DIR", home)
         .env_remove("XDG_CONFIG_HOME");
@@ -65,10 +65,7 @@ fn relocated_binary_extracts_the_entire_root_skill_without_a_project() {
     fs::copy(env!("CARGO_BIN_EXE_simplex"), &binary).unwrap();
     let home = temp.path().join("installation with spaces");
     let mut command = Command::new(binary);
-    command
-        .args(["skill", "path"])
-        .current_dir(temp.path())
-        .env("SIMPLEX_DIR", &home);
+    command.arg("skill").current_dir(temp.path()).env("SIMPLEX_DIR", &home);
     let path = skill_path(&mut command);
     assert!(path.starts_with(home.canonicalize().unwrap()));
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skills");
@@ -154,16 +151,20 @@ fn installer_environment_fallbacks_and_relative_override_return_absolute_paths()
 }
 
 #[test]
-fn skill_has_only_the_path_subcommand() {
+fn skill_accepts_no_operands_and_describes_its_output() {
     use clap::Parser;
     use smplx_cli::Cli;
 
-    assert!(Cli::try_parse_from(["simplex", "skill", "path"]).is_ok());
+    assert!(Cli::try_parse_from(["simplex", "skill"]).is_ok());
     for args in [
-        vec!["simplex", "skill"],
+        vec!["simplex", "skill", "path"],
         vec!["simplex", "skill", "show"],
         vec!["simplex", "skill", "path", "extra"],
     ] {
         assert!(Cli::try_parse_from(args).is_err());
     }
+
+    let help = Cli::try_parse_from(["simplex", "skill", "--help"]).unwrap_err();
+    assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
+    assert!(help.to_string().contains("absolute directory"));
 }
