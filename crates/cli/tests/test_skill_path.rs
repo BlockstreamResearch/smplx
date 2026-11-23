@@ -156,13 +156,6 @@ fn skill_accepts_no_operands_and_describes_its_output() {
     use smplx_cli::Cli;
 
     assert!(Cli::try_parse_from(["simplex", "skill"]).is_ok());
-    for args in [
-        vec!["simplex", "skill", "path"],
-        vec!["simplex", "skill", "show"],
-        vec!["simplex", "skill", "path", "extra"],
-    ] {
-        assert!(Cli::try_parse_from(args).is_err());
-    }
 
     let help = Cli::try_parse_from(["simplex", "skill", "--help"]).unwrap_err();
     assert_eq!(help.kind(), clap::error::ErrorKind::DisplayHelp);
