@@ -25,9 +25,15 @@ serde = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
 minreq = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tempfile = "3.27.0"
 
 anyhow = "1.0.104"
 dotenvy = "0.15.7"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 ctrlc = { version = "3.5.2", features = ["termination"] }
 serde_json = { version = "1.0.154" }
+
+[dev-dependencies]
+smplx-std = { workspace = true }
