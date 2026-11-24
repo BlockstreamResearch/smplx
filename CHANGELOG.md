@@ -3,18 +3,41 @@
 ## [Unreleased]
 
 - Bumped `simplicityhl` to `0.9.0`.
-
-### simplexup
-
-- Resolved the latest release without the GitHub API. It's rate limit failed installs on shared CI runners.
+- Put test support in `smplx-std` and `smplx-macros` behind a default `test` feature.
+- Documented the SDK and the fuzz engine in rustdoc.
 
 ### sdk
 
+- Added `PartialOutput::with_asset_blinding_factor` and `with_value_blinding_factor` to blind outputs with chosen factors.
+- Checked that an input's unblinding secrets open the output it spends.
+- Added `Signer::estimate`, `estimate_strict`, `finalize_strict_fee` and `estimate_strict_fee`, and removed `estimate_fee`.
+- Made fee estimates measure program inputs with placeholder signatures, so `estimate_strict_fee` needs no key.
+- Replaced `ProgramTrait::execute` with `finalize_unverified`, which returns the witness stack with every signature check passing.
+- Replaced `SignerError::CovenantExecution` with `ProgramError::ProgramExecution`, which names the input, its sequence and the locktime.
+- Moved input errors to `PartialInputError`, duplicate input and blinding errors to `FinalTransactionError`, and witness path errors to `WitnessWrappingError`.
+- Added `ProviderTrait::fetch_block`.
 - Replaced `minreq` with `ureq` in `EsploraProvider`, which now reuses keep-alive connections between requests instead of opening one per request.
+
+### test
+
+- Fixed regular tests losing the last program execution logs.
+
+### build
+
+- Failed the build on `.simf` files that don't parse, instead of skipping them with a warning.
 
 ### wasm
 
-- Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.
+- Renamed covenants to programs and the wallet to the signer: `Covenant` to `Program`, `WalletSigner` to `Signer`, `IssuanceReport` to `IssuanceDetails`, `addCovenant*Input` to `addProgram*Input` and `addWallet*Input` to `add*Input`.
+- Replaced `finalizeTransaction` and `estimateFee` with `finalizeStrict`, `estimateStrict`, `finalizeStrictFee` and `estimateStrictFee`.
+- Replaced `covenantParameterTypes` with `Program.abi`, which also reports the witness types a program declares.
+- Added program reissuance inputs, blinding secrets for program inputs, and blinding factors for outputs.
+- Added `removeInput`, `removeOutput`, per-input sequence and locktime setters, and `setUnusedWitnesses`.
+- Added `Program.scriptPubkey` and `trAddress`, renamed `commitmentMerkleRoot` to `cmr`, and removed `dryRunCovenantInput`.
+
+### simplexup
+
+- Resolved the latest release without the GitHub API, whose rate limit failed installs on shared CI runners.
 
 ## [0.2.0]
 
