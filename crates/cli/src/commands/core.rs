@@ -2,6 +2,8 @@ use clap::{Args, Subcommand};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Prints the absolute directory of the bundled skill, including references and assets.
+    Skill,
     /// Initializes Simplex project.
     Init {
         /// Name of the new project.

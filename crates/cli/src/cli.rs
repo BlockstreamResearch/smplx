@@ -32,6 +32,7 @@ impl Cli {
     /// or if there are file system I/O errors (for example, attempting to initialize over an existing project directory).
     pub fn run(&self) -> Result<(), CliError> {
         match &self.command {
+            Command::Skill => Ok(crate::commands::skill::run()?),
             Command::Init { name } => {
                 let simplex_conf_path = match name {
                     Some(name) => {

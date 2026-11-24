@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Added `simplex skill` to locate the complete agent skill bundled from the root `skills/` directory.
+
 ## [0.2.0]
 
 - Added `simplex fmt` to format SimplicityHL sources with `simfmt`, which `simplexup` now installs.
