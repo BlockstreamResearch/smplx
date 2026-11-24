@@ -4,6 +4,10 @@
 
 - Bumped `simplicityhl` to `0.9.0`.
 
+### simplexup
+
+- Resolved the latest release without the GitHub API. It's rate limit failed installs on shared CI runners.
+
 ### sdk
 
 - Replaced `minreq` with `ureq` in `EsploraProvider`, which now reuses keep-alive connections between requests instead of opening one per request.

@@ -163,7 +163,7 @@ We are open to any mind-blowing ideas! Please take a look at our [contributing g
 - [ ] Regtest cheat codes.
 - [ ] Comprehensive documentation.
 
-Check out the full roadmap [here](https://github.com/orgs/BlockstreamResearch/projects/3).
+Check out the full [roadmap here](https://github.com/orgs/BlockstreamResearch/projects/3).
 
 ## License
 
