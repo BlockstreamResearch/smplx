@@ -24,7 +24,7 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 toml_edit = { workspace = true }
-minreq = { workspace = true }
+ureq = { workspace = true }
 
 anyhow = "1.0.104"
 dotenvy = "0.15.7"

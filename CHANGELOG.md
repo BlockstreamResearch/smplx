@@ -8,6 +8,10 @@
 
 - Resolved the latest release without the GitHub API. It's rate limit failed installs on shared CI runners.
 
+### sdk
+
+- Replaced `minreq` with `ureq` in `EsploraProvider`, which now reuses keep-alive connections between requests instead of opening one per request.
+
 ### wasm
 
 - Replaced `programArgumentTypes` with `Program.abi`, which also reports the witness types a program declares.

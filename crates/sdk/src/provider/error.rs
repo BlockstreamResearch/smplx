@@ -41,6 +41,15 @@ pub enum ProviderError {
         returned: simplicityhl::elements::Txid,
     },
 
+    /// Error indicating the provider answered with another block.
+    #[error("Expected block {expected}, the provider returned {returned}")]
+    UnexpectedBlockHash {
+        /// The block asked for.
+        expected: simplicityhl::elements::BlockHash,
+        /// The block the provider returned.
+        returned: simplicityhl::elements::BlockHash,
+    },
+
     /// Error indicating the provider listed an output that isn't locked by the queried script.
     #[error("The provider listed {0}, which the queried script doesn't lock")]
     UnexpectedScript(simplicityhl::elements::OutPoint),
@@ -52,6 +61,10 @@ pub enum ProviderError {
     /// Error indicating an incorrectly formatted transaction ID string was encountered.
     #[error("Invalid txid format: {0}")]
     InvalidTxid(String),
+
+    /// Error indicating an incorrectly formatted block hash string was encountered.
+    #[error("Invalid block hash format: {0}")]
+    InvalidBlockHash(String),
 
     /// Error indicating that the rpc returned a malformed response.
     #[error("Couldn't parse the response")]

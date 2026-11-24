@@ -115,17 +115,16 @@ fn main() {
     fn get_smplx_max_version() -> Result<String, InitError> {
         let url = format!("https://crates.io/api/v1/crates/{SIMPLEX_CRATE_NAME}");
 
-        let response = minreq::get(&url)
-            .with_header("User-Agent", "simplex_generator")
-            .send()
-            .map_err(|e| InitError::CratesIoFetch(format!("Failed to fetch crate info: {e}")))?;
-
-        let body = response
-            .as_str()
+        let body = ureq::get(&url)
+            .header("User-Agent", "simplex_generator")
+            .call()
+            .map_err(|e| InitError::CratesIoFetch(format!("Failed to fetch crate info: {e}")))?
+            .body_mut()
+            .read_to_string()
             .map_err(|e| InitError::CratesIoFetch(format!("Invalid response body: {e}")))?;
 
         let json: serde_json::Value =
-            serde_json::from_str(body).map_err(|e| InitError::CratesIoFetch(format!("Failed to parse JSON: {e}")))?;
+            serde_json::from_str(&body).map_err(|e| InitError::CratesIoFetch(format!("Failed to parse JSON: {e}")))?;
 
         let latest_version = json["crate"]["max_stable_version"]
             .as_str()
