@@ -1757,7 +1757,7 @@ checksum = "149309498a5f7334b12ddae0cad8aba81ce785fe91755068867e017cf98fee46"
 
 [[package]]
 name = "smplx-build"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "globwalk",
  "pathdiff",
@@ -1775,7 +1775,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "smplx-build",
  "smplx-test",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-regtest"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "electrsd",
  "hex",
@@ -1818,7 +1818,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-sdk"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bip39",
  "bitcoincore-rpc",
@@ -1834,7 +1834,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-std"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "either",
  "rand 0.10.3",
@@ -1849,7 +1849,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-test"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "electrsd",
  "proc-macro2",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "smplx-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "elements-miniscript",
  "hex",
