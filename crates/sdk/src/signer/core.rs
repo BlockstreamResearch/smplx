@@ -149,9 +149,10 @@ pub trait SignerTrait {
 /// signature does. `finalize_strict_fee` appends only a fee output, which pays the whole surplus.
 ///
 /// Change below [`MIN_FEE`] (blinded) or [`DUST_THRESHOLD`] (explicit) is dropped, and the whole
-/// surplus becomes the fee. Blinded change is kept, and more funds are needed instead, when it is
-/// the only blinded output of a transaction that spends a confidential input, or when the
-/// transaction doesn't spend any confidential input and exactly one other output is blinded.
+/// surplus becomes the fee. Blinded change is kept when it is the only blinded output of a
+/// transaction that spends a confidential input, or when the transaction doesn't spend any
+/// confidential input and exactly one other output is blinded.
+/// `finalize_strict_fee` has no change to keep, so it refuses that second transaction instead.
 ///
 /// Change is paid only in the policy asset. Every other asset must already balance.
 pub struct Signer {
@@ -410,6 +411,8 @@ impl Signer {
     ///
     /// # Errors
     /// - `SignerError::NotEnoughFeeAmount` if the surplus is below the fee at `fee_rate`.
+    /// - `SignerError::SingleBlindedOutput` if `tx` spends no confidential input and blinds
+    ///   exactly one output, whose amount and asset anyone could then compute.
     /// - `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction`,
     ///   `ConfidentialInputWithoutBlindedOutput` or `Unbalanced` as [`Signer::finalize_strict`]
     ///   does, and the errors of [`Signer::sign_tx`].
@@ -440,7 +443,8 @@ impl Signer {
     /// signed transaction needs.
     ///
     /// # Errors
-    /// Returns `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction` or
+    /// Returns `SignerError::SingleBlindedOutput` as [`Signer::finalize_strict_fee`] does,
+    /// `SignerError::InvalidFeeRate`, `PartialInput`, `FinalTransaction` or
     /// `ConfidentialInputWithoutBlindedOutput` as [`Signer::finalize_strict`] does, and
     /// `ProgramError::ProgramExecution` if a program rejects the spend.
     pub fn estimate_strict_fee(
@@ -838,8 +842,18 @@ impl Signer {
         tx.check_unique_inputs()?;
         Self::check_fee_rate(fee_rate)?;
 
-        if tx.has_confidential_input() && !tx.needs_blinding() {
+        let blinded_outputs = tx
+            .outputs()
+            .iter()
+            .filter(|output| output.blinding_key.is_some())
+            .count();
+
+        if tx.has_confidential_input() && blinded_outputs == 0 {
             return Err(SignerError::ConfidentialInputWithoutBlindedOutput);
+        }
+
+        if !tx.has_confidential_input() && blinded_outputs == 1 {
+            return Err(SignerError::SingleBlindedOutput);
         }
 
         let surplus = tx.calculate_fee_delta(network)?.max(0).cast_unsigned();
@@ -1374,6 +1388,33 @@ mod tests {
             signer.estimate_strict(&ft, 1.0),
             Err(SignerError::ConfidentialInputWithoutBlindedOutput)
         ));
+    }
+
+    #[test]
+    fn strict_fee_refuses_a_single_blinded_output_of_explicit_inputs() {
+        let signer = create_signer();
+        let blinded = PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            50_000,
+            signer.network.policy_asset(),
+        )
+        .with_blinding_key(signer.get_blinding_public_key());
+        let mut ft = FinalTransaction::new();
+
+        ft.add_input(
+            PartialInput::new(explicit_coin(&signer, 0, 100_000)),
+            Some(NativeSignature::Ecdsa),
+        );
+        ft.add_output(blinded.clone());
+
+        assert!(matches!(
+            Signer::estimate_strict_fee(&ft, &signer.network, 1.0),
+            Err(SignerError::SingleBlindedOutput)
+        ));
+
+        ft.add_output(blinded);
+
+        assert!(Signer::estimate_strict_fee(&ft, &signer.network, 1.0).is_ok());
     }
 
     #[test]

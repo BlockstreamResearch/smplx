@@ -241,7 +241,7 @@ impl ProgramTrait for Program {
         network: &SimplicityNetwork,
     ) -> Result<Vec<Vec<u8>>, ProgramError> {
         let env = self.get_env(pst, input_index, network)?;
-        let pruned = self.prune(witness, input_index, &UnverifiedEnv(&env))?;
+        let pruned = self.prune(witness, input_index, &UnverifiedEnv::new(&env))?;
 
         self.witness_stack(&pruned)
     }

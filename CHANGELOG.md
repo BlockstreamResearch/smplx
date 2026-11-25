@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0]
 
 - Bumped `simplicityhl` to `0.9.0`.
 - Put test support in `smplx-std` and `smplx-macros` behind a default `test` feature.

@@ -15,30 +15,21 @@ const FEE_RATE: f32 = 1000.0;
 
 const LOCKED: u64 = 50_000;
 
-/// Which outputs are blinded: none, the one spending the program's funds, or also the one the
-/// program locks.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Blinded {
-    Neither,
-    Spend,
-    Both,
-}
-
 /// Funds `program`, then spends the funds back to the signer at the fee the keyless estimate
-/// gives.
+/// gives. With `blinded`, both the locked and the spending outputs are blinded.
 fn spend_at_strict_fee(
     context: &simplex::TestContext,
     program: &Program,
     witness: impl Into<WitnessValues>,
     signature: ProgramSignature,
-    blinded: Blinded,
+    blinded: bool,
 ) -> anyhow::Result<()> {
     let signer = context.get_default_signer();
     let provider = context.get_default_provider();
     let script = program.get_script_pubkey(context.get_network());
     let witness = witness.into();
 
-    let utxo = lock(context, &script, blinded == Blinded::Both)?;
+    let utxo = lock(context, &script, blinded)?;
     let spend = |fee: u64| {
         let mut ft = FinalTransaction::new();
 
@@ -53,10 +44,10 @@ fn spend_at_strict_fee(
             context.get_network().policy_asset(),
         );
 
-        ft.add_output(if blinded == Blinded::Neither {
-            output
-        } else {
+        ft.add_output(if blinded {
             output.with_blinding_key(signer.get_blinding_public_key())
+        } else {
+            output
         });
 
         ft
@@ -112,23 +103,7 @@ fn strict_fee_pays_a_p2pk_spend(context: simplex::TestContext) -> anyhow::Result
         p2pk.as_ref(),
         P2pkWitness::default(),
         ProgramSignature::new("SIGNATURE"),
-        Blinded::Neither,
-    )
-}
-
-#[simplex::test]
-fn strict_fee_pays_a_spend_with_a_blinded_output(context: simplex::TestContext) -> anyhow::Result<()> {
-    let p2pk = P2pkProgram::new(P2pkArguments {
-        public_key: context.get_default_signer().get_schnorr_public_key().serialize(),
-    });
-
-    // Blinding is random, so the measured and the signed proofs differ, but not in size
-    spend_at_strict_fee(
-        &context,
-        p2pk.as_ref(),
-        P2pkWitness::default(),
-        ProgramSignature::new("SIGNATURE"),
-        Blinded::Spend,
+        false,
     )
 }
 
@@ -138,13 +113,14 @@ fn strict_fee_pays_a_spend_of_a_blinded_program_output(context: simplex::TestCon
         public_key: context.get_default_signer().get_schnorr_public_key().serialize(),
     });
 
-    // The program input carries the secrets that open the output it spends
+    // The program input carries the secrets that open the output it spends. Blinding is random, so
+    // the measured and the signed proofs differ, but not in size
     spend_at_strict_fee(
         &context,
         p2pk.as_ref(),
         P2pkWitness::default(),
         ProgramSignature::new("SIGNATURE"),
-        Blinded::Both,
+        true,
     )
 }
 
@@ -162,6 +138,6 @@ fn strict_fee_pays_a_spend_with_pruned_branches(context: simplex::TestContext) -
         nested_sig.as_ref(),
         cold,
         ProgramSignature::new("INHERIT_OR_NOT").at_path(["Right", "Left"]),
-        Blinded::Neither,
+        false,
     )
 }

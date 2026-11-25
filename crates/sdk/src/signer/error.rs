@@ -96,6 +96,10 @@ pub enum SignerError {
     #[error("A confidential input needs at least one blinded output to balance against")]
     ConfidentialInputWithoutBlindedOutput,
 
+    /// Error indicating that a transaction without confidential inputs blinds exactly one output.
+    #[error("The only blinded output of a transaction without confidential inputs can't hide its amount or asset")]
+    SingleBlindedOutput,
+
     /// A derivation path doesn't have exactly two unhardened steps, such as `0/5`.
     #[error("The derivation path `{0}` must have exactly two unhardened steps, such as 0/5")]
     InvalidDerivationPath(DerivationPath),

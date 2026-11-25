@@ -9,3 +9,4 @@ mod unverified_env;
 pub use core::{Program, ProgramFactory, ProgramSchema, ProgramTrait};
 pub use error::ProgramError;
 pub use simplicityhl::tracker::TrackerLogLevel;
+pub use unverified_env::UnverifiedEnv;

@@ -7,9 +7,9 @@ use simplicityhl::simplicity::jet::{Elements, JetEnvironment};
 
 /// An Elements environment in which every signature check passes.
 ///
-/// A signature check either aborts the program or returns nothing, so passing every check keeps
+/// A signature check either aborts the program or doesn't return anything, so passing every check keeps
 /// the branches the spend takes. Used to measure a spend, never to sign one.
-pub(crate) struct UnverifiedEnv<'env>(pub(crate) &'env ElementsEnv<Arc<Transaction>>);
+pub struct UnverifiedEnv<'env>(&'env ElementsEnv<Arc<Transaction>>);
 
 impl JetEnvironment for UnverifiedEnv<'_> {
     type Jet = Elements;
@@ -27,7 +27,13 @@ impl JetEnvironment for UnverifiedEnv<'_> {
     }
 }
 
-impl UnverifiedEnv<'_> {
+impl<'env> UnverifiedEnv<'env> {
+    /// Wraps `env` with every signature checks passing.
+    #[must_use]
+    pub fn new(env: &'env ElementsEnv<Arc<Transaction>>) -> Self {
+        Self(env)
+    }
+
     fn pass(_: &mut CFrameItem, _: CFrameItem, _: &CElementsTxEnv) -> bool {
         true
     }

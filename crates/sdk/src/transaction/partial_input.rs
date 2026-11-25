@@ -272,11 +272,8 @@ impl ProgramInput {
     ///
     /// # Errors
     /// For a signature with a path, returns `ProgramInputError::Program` if the program doesn't
-    /// compile, and `ProgramInputError::Injection` if the program has no field the signature names
-    /// or the path doesn't fit the field.
-    ///
-    /// # Panics
-    /// Panics if the program has the field but the witness doesn't contain the field.
+    /// compile, and `ProgramInputError::Injection` if the program or the witness has no field the
+    /// signature names, or the path doesn't fit the field.
     pub(crate) fn signed_witness(
         &self,
         program_signature: &ProgramSignature,
@@ -295,9 +292,17 @@ impl ProgramInput {
                 .ok_or(WitnessWrappingError::WitnessFieldNotFound(
                     program_signature.name().to_string(),
                 ))?;
-            let local_witness = Arc::new(self.witness.get(&witness_name).expect("checked above").clone());
+            let local_witness = self
+                .witness
+                .get(&witness_name)
+                .ok_or_else(|| WitnessWrappingError::WitnessFieldNotFound(program_signature.name().to_string()))?;
 
-            WitnessInjector::inject_value(&local_witness, witness_type, sig_path, Value::byte_array(signature))?
+            WitnessInjector::inject_value(
+                &Arc::new(local_witness.clone()),
+                witness_type,
+                sig_path,
+                Value::byte_array(signature),
+            )?
         };
 
         let mut hm: HashMap<_, _> = self
@@ -386,6 +391,10 @@ impl IssuanceInput {
 mod tests {
     use bip39::rand::thread_rng;
 
+    use simplicityhl::Arguments;
+
+    use crate::program::Program;
+
     use super::*;
 
     #[test]
@@ -441,5 +450,24 @@ mod tests {
             ),
             Err(PartialInputError::AmountMismatch(OutPoint::default()))
         );
+    }
+
+    #[test]
+    fn signature_into_a_missing_witness_value_is_an_error() {
+        let program = Program::new(
+            "fn main() {
+                match witness::PATH {
+                    Left(signature: Signature) => {},
+                    Right(unit: ()) => {},
+                }
+            }",
+            Arguments::default(),
+        );
+        let input = ProgramInput::new(Box::new(program), WitnessValues::default());
+
+        assert!(matches!(
+            input.signed_witness(&ProgramSignature::new("PATH").at_path(["Left"]), [0; 64]),
+            Err(ProgramInputError::Injection(WitnessWrappingError::WitnessFieldNotFound(name))) if name == "PATH"
+        ));
     }
 }
