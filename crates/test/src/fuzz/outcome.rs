@@ -19,7 +19,7 @@ pub(crate) enum Rejection {
     Panic,
     /// A pruned branch was reached, e.g. `unwrap(None)`.
     Unwrap,
-    /// A Bit Machine limit exceeded.
+    /// A Bit Machine limit was exceeded.
     Resource,
     /// The program costs more than its witness pays for.
     Budget,
@@ -53,8 +53,7 @@ impl Outcome {
 
         let rejection = match &error {
             ProgramError::InsufficientBudget { .. } => Rejection::Budget,
-            ProgramError::BitMachineCreation(_) => Rejection::Resource,
-            ProgramError::Pruning(execution) | ProgramError::Execution(execution) => match execution {
+            ProgramError::Pruning(execution) => match execution {
                 ExecutionError::JetFailed(_) => Rejection::Assertion,
                 ExecutionError::ReachedFailNode(_) => Rejection::Panic,
                 ExecutionError::ReachedPrunedBranch(_) => Rejection::Unwrap,
@@ -67,6 +66,8 @@ impl Outcome {
                 return Err(SetupError::Arguments(error.to_string()));
             }
             ProgramError::WitnessSatisfaction(_) => return Err(SetupError::Witness(error.to_string())),
+            // Only the signer and the fee measurement wrap a program's failure
+            ProgramError::ProgramExecution { .. } => return Err(SetupError::Engine(error.to_string())),
             ProgramError::MissingWitnessUtxo { .. }
             | ProgramError::UtxoIndexOutOfBounds { .. }
             | ProgramError::ScriptPubkeyMismatch { .. }

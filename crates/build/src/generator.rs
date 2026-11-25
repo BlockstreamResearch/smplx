@@ -113,7 +113,7 @@ impl ArtifactsGenerator {
             .map_err(|e| BuildError::DependencyMap(e.to_string()))
     }
 
-    /// Processes a single `.simf` source file and write it to metadata:
+    /// Processes a single `.simf` source file into its metadata:
     /// - Writes its content to the mirrored path under `simf_out_dir`
     /// - Extracts the contract name
     ///

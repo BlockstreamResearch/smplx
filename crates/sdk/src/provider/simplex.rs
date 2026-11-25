@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bitcoincore_rpc::Auth;
 
-use simplicityhl::elements::{Address, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, Block, Script, Transaction, Txid};
 
 use crate::provider::SimplicityNetwork;
 use crate::transaction::{TxReceipt, UTXO};
@@ -11,8 +11,12 @@ use super::core::ProviderTrait;
 use super::error::ProviderError;
 use super::{ElementsRpc, EsploraProvider};
 
-/// A local provider used during Regtest or local development.
-/// It wraps an `EsploraProvider` for REST API queries and an `ElementsRpc` for direct node interactions.
+/// A provider for a regtest node: an [`EsploraProvider`] for queries and an [`ElementsRpc`] that
+/// mines blocks.
+///
+/// Every method forwards to `esplora`, except that `broadcast_transaction` also mines one block
+/// and waits for the transaction to confirm. So each broadcast advances the height by one. Use it
+/// only against a regtest node.
 #[derive(Debug)]
 pub struct SimplexProvider {
     /// The Esplora provider for handling REST API queries.
@@ -22,10 +26,10 @@ pub struct SimplexProvider {
 }
 
 impl SimplexProvider {
-    /// Creates a new `SimplexProvider` with the given URLs, authentication, and network.
+    /// Creates a provider from the Esplora URL, the node's RPC URL and credentials, and the network.
     ///
     /// # Panics
-    /// Panics if the `ElementsRpc` client fails to initialize.
+    /// Panics if the node doesn't answer the RPC client's first request.
     #[must_use]
     pub fn new(esplora_url: String, elements_url: String, auth: Auth, network: SimplicityNetwork) -> Self {
         let elements = ElementsRpc::new(elements_url, auth)
@@ -74,6 +78,10 @@ impl ProviderTrait for SimplexProvider {
 
     fn fetch_block_txids(&self, block_hash: &str) -> Result<Vec<Txid>, ProviderError> {
         self.esplora.fetch_block_txids(block_hash)
+    }
+
+    fn fetch_block(&self, block_hash: &str) -> Result<Block, ProviderError> {
+        self.esplora.fetch_block(block_hash)
     }
 
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {

@@ -1,4 +1,6 @@
 use simplex::simplicityhl::elements::AssetId;
+use simplex::simplicityhl::elements::confidential::{AssetBlindingFactor, ValueBlindingFactor};
+use simplex::simplicityhl::elements::secp256k1_zkp::SECP256K1;
 
 use simplex::signer::Signer;
 use simplex::transaction::partial_input::IssuanceInput;
@@ -60,6 +62,36 @@ fn confidential_test(context: simplex::TestContext) -> anyhow::Result<()> {
     // spend confidential
     let tx_receipt = bob.send(alice.get_address().script_pubkey(), 50)?;
     println!("Broadcast: {}", tx_receipt);
+
+    Ok(())
+}
+
+#[simplex::test]
+fn output_keeps_its_chosen_blinding_factors(context: simplex::TestContext) -> anyhow::Result<()> {
+    let provider = context.get_default_provider();
+    let signer = context.get_default_signer();
+    let asset_bf = AssetBlindingFactor::from_slice(&[0x01; 32])?;
+    let value_bf = ValueBlindingFactor::from_slice(&[0x02; 32])?;
+
+    let mut ft = FinalTransaction::new();
+
+    // The change the signer adds balances the transaction
+    ft.add_output(
+        PartialOutput::new(
+            signer.get_address().script_pubkey(),
+            1000,
+            provider.get_network().policy_asset(),
+        )
+        .with_blinding_key(signer.get_blinding_public_key())
+        .with_asset_blinding_factor(asset_bf)
+        .with_value_blinding_factor(value_bf),
+    );
+
+    let txid = signer.broadcast(&ft)?.txid();
+    let secrets =
+        provider.fetch_transaction(&txid)?.output[0].unblind(SECP256K1, signer.get_blinding_private_key().inner)?;
+
+    assert_eq!((secrets.asset_bf, secrets.value_bf), (asset_bf, value_bf));
 
     Ok(())
 }

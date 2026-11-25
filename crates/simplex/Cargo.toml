@@ -1,6 +1,6 @@
 [package]
 name = "smplx-std"
-version = "0.2.0"
+version = "0.3.0"
 description = "A blazingly-fast, ux-first simplicity development framework"
 rust-version = "1.91.0"
 license.workspace = true
@@ -17,9 +17,13 @@ name = "simplex"
 [lints]
 workspace = true
 
+[features]
+default = ["test"]
+test = ["dep:smplx-test", "smplx-macros/test"]
+
 [dependencies]
 smplx-macros = { workspace = true }
-smplx-test = { workspace = true }
+smplx-test = { workspace = true, optional = true }
 smplx-sdk = { workspace = true, features = ["provider"] }
 
 serde = { workspace = true }

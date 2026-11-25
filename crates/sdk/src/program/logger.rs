@@ -32,10 +32,16 @@ pub struct ProgramInfo {
     pub trace_buffer: Vec<String>,
 }
 
-/// Logger state for buffering execution output.
+/// Buffers program execution output, per input and per thread, until it is printed.
 ///
-/// Buffers are flushed to stderr only on successful transaction finalization,
-/// discarding output from intermediate estimation passes.
+/// With [`Verbosity`](crate::global::Verbosity) `Debug` or `Trace`, every
+/// [`ProgramTrait::finalize`](super::ProgramTrait::finalize) and
+/// [`ProgramTrait::finalize_unverified`](super::ProgramTrait::finalize_unverified) replaces its
+/// input's buffer, so only the last run's output is kept. The signer's `estimate*` methods print the buffers after
+/// measuring, and its `finalize*` methods after signing, or after measuring when that fails.
+/// Measuring runs every program with its signature checks passing. Code that calls
+/// `ProgramTrait::finalize` or `Signer::sign_tx` directly must call [`ProgramLogger::flush_logs`]
+/// to see the output, except in a regular `simplex` test, which flushes when its context drops.
 pub struct ProgramLogger {
     /// A mapping of program ids to program logs
     pub logs: HashMap<usize, ProgramInfo>,
@@ -183,6 +189,21 @@ impl ProgramLogger {
         PROGRAM_LOGGER.with(|logger| {
             logger.borrow_mut().logs.clear();
         });
+    }
+
+    /// A guard that flushes the buffered output when dropped, on every return path.
+    #[must_use]
+    pub(crate) fn flush_on_drop() -> FlushGuard {
+        FlushGuard
+    }
+}
+
+/// Flushes the buffered output when dropped. See [`ProgramLogger::flush_on_drop`].
+pub(crate) struct FlushGuard;
+
+impl Drop for FlushGuard {
+    fn drop(&mut self) {
+        ProgramLogger::flush_logs();
     }
 }
 

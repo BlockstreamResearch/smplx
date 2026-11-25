@@ -21,7 +21,7 @@ pub enum TestError {
     #[error(transparent)]
     BadNetworkName(#[from] NetworkConvertError),
 
-    #[error("Occurred a network utils execution error: '{0}'")]
+    #[error("Network utils failed: '{0}'")]
     NetworkUtilsExecution(#[from] NetworkUtilsError),
 }
 
@@ -30,6 +30,6 @@ pub enum NetworkUtilsError {
     #[error(transparent)]
     Provider(#[from] ProviderError),
 
-    #[error("Unsuccessful action completion, err: '{0}'")]
+    #[error("Network sync failed: '{0}'")]
     UnsuccessfulSync(String),
 }

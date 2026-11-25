@@ -4,10 +4,13 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use simplicityhl::elements::encode;
-use simplicityhl::elements::{Address, AssetId, OutPoint, Script, Transaction, Txid};
+use simplicityhl::elements::{Address, AssetId, Block, BlockHash, OutPoint, Script, Transaction, Txid};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+
+use ureq::http::{Response, StatusCode};
+use ureq::{Agent, Body};
 
 use crate::provider::SimplicityNetwork;
 use crate::transaction::{TxReceipt, UTXO};
@@ -16,17 +19,29 @@ use crate::utils::hash_script;
 use super::core::{DEFAULT_CONFIRMATION_ATTEMPTS, DEFAULT_ESPLORA_TIMEOUT_SECS, ProviderTrait};
 use super::error::ProviderError;
 
-/// A provider implementation that interacts with the Esplora REST API backend.
+/// A provider that talks to an Esplora REST API, such as
+/// `https://blockstream.info/liquidtestnet/api`.
+///
+/// Each request times out after `timeout`. The provider doesn't retry a failed request.
+///
+/// Requests go over pooled keep-alive connections, so consecutive requests to the same Esplora
+/// skip the TCP and TLS handshakes.
 #[derive(Debug)]
 pub struct EsploraProvider {
-    /// The base URL of the Esplora REST API.
+    /// The base URL of the Esplora REST API, without a trailing slash.
     pub esplora_url: String,
-    /// The currently configured Simplicity network (e.g. Liquid, Testnet, Regtest).
+    /// The network the API serves.
     pub network: SimplicityNetwork,
-    /// Timeout duration used in underlying HTTP requests.
+    /// The timeout of each request. Default: [`DEFAULT_ESPLORA_TIMEOUT_SECS`].
     pub timeout: Duration,
-    /// How many times `wait` polls for a confirmation before giving up.
+    /// How many times `wait` polls for a confirmation before giving up. Default:
+    /// [`DEFAULT_CONFIRMATION_ATTEMPTS`].
+    ///
+    /// `wait` polls every 100 ms on [`SimplicityNetwork::ElementsRegtest`] and every 10 seconds on
+    /// other networks, so by default it gives up after about 1 second or about 90 seconds.
     pub confirmation_attempts: u32,
+    /// The HTTP client, which keeps the connection pool.
+    agent: Agent,
 }
 
 #[derive(Deserialize)]
@@ -48,7 +63,8 @@ struct EsploraUtxo {
 }
 
 impl EsploraProvider {
-    /// Creates a new `EsploraProvider` connected to the provided endpoint targeting the specific network.
+    /// Creates a provider for the Esplora API at `url`, which serves `network`, with the default
+    /// timeout and confirmation attempts.
     #[must_use]
     pub fn new(url: String, network: SimplicityNetwork) -> Self {
         Self {
@@ -56,25 +72,39 @@ impl EsploraProvider {
             network,
             timeout: Duration::from_secs(DEFAULT_ESPLORA_TIMEOUT_SECS),
             confirmation_attempts: DEFAULT_CONFIRMATION_ATTEMPTS,
+            agent: Agent::config_builder()
+                // Esplora's error statuses carry information: 404 while a transaction isn't
+                // indexed yet, and the node's reason with a rejected broadcast.
+                .http_status_as_error(false)
+                // ureq would otherwise route requests through `HTTP_PROXY` and the like, even to a
+                // local regtest Esplora unless `NO_PROXY` lists it.
+                .proxy(None)
+                .build()
+                .new_agent(),
         }
     }
 
-    /// Sends a GET to `path` under the Esplora URL, whatever the status it answers with.
-    fn request(&self, path: &str) -> Result<minreq::Response, ProviderError> {
-        minreq::get(format!("{}{path}", self.esplora_url))
-            .with_timeout(self.timeout.as_secs())
-            .send()
+    /// Sends a GET to `path` under the Esplora URL, whatever the response status.
+    fn request(&self, path: &str) -> Result<Response<Body>, ProviderError> {
+        self.agent
+            .get(format!("{}{path}", self.esplora_url))
+            .config()
+            .timeout_global(Some(self.timeout))
+            .build()
+            .call()
             .map_err(|e| ProviderError::Request(e.to_string()))
     }
 
-    /// Sends a GET to `path`, failing unless it answers 200.
-    fn get(&self, path: &str) -> Result<minreq::Response, ProviderError> {
+    /// Sends a GET to `path`, failing unless the response status is 200.
+    fn get(&self, path: &str) -> Result<Response<Body>, ProviderError> {
         let response = self.request(path)?;
+        let status = response.status();
 
-        if response.status_code != 200 {
+        if status != StatusCode::OK {
             return Err(ProviderError::Request(format!(
                 "HTTP {}: {}",
-                response.status_code, response.reason_phrase
+                status.as_u16(),
+                status.canonical_reason().unwrap_or_default()
             )));
         }
 
@@ -82,9 +112,10 @@ impl EsploraProvider {
     }
 
     fn get_text(&self, path: &str) -> Result<String, ProviderError> {
-        let response = self.get(path)?;
-        let text = response
-            .as_str()
+        let text = self
+            .get(path)?
+            .body_mut()
+            .read_to_string()
             .map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
         Ok(text.trim().to_owned())
@@ -92,7 +123,16 @@ impl EsploraProvider {
 
     fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, ProviderError> {
         self.get(path)?
-            .json()
+            .body_mut()
+            .read_json()
+            .map_err(|e| ProviderError::Deserialize(e.to_string()))
+    }
+
+    /// The body of a 200 response to a GET of `path`, up to 10 MiB, which holds any Liquid block.
+    fn get_bytes(&self, path: &str) -> Result<Vec<u8>, ProviderError> {
+        self.get(path)?
+            .body_mut()
+            .read_to_vec()
             .map_err(|e| ProviderError::Deserialize(e.to_string()))
     }
 
@@ -141,24 +181,30 @@ impl ProviderTrait for EsploraProvider {
         &self.network
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn broadcast_transaction(&self, tx: &Transaction) -> Result<TxReceipt<'_>, ProviderError> {
         let tx_hex = encode::serialize_hex(tx);
         let url = format!("{}/tx", self.esplora_url);
-        let timeout_secs = self.timeout.as_secs();
 
-        let response = minreq::post(&url)
-            .with_timeout(timeout_secs)
-            .with_body(tx_hex)
-            .send()
+        let mut response = self
+            .agent
+            .post(&url)
+            .config()
+            .timeout_global(Some(self.timeout))
+            .build()
+            .send(tx_hex)
             .map_err(|e| ProviderError::Request(e.to_string()))?;
 
-        let status = response.status_code;
-        let body = response.as_str().unwrap_or("").trim().to_owned();
+        let status = response.status();
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
 
-        if !(200..300).contains(&status) {
+        if !status.is_success() {
             return Err(ProviderError::BroadcastRejected {
-                status: status as u16,
+                status: status.as_u16(),
                 url,
                 message: body,
             });
@@ -185,15 +231,21 @@ impl ProviderTrait for EsploraProvider {
         };
 
         for _ in 0..self.confirmation_attempts {
-            let response = self.request(&path)?;
+            let mut response = self.request(&path)?;
 
-            // an unknown transaction answers 404 until Esplora indexes it
-            if response.status_code == 200 {
-                let status: TxStatus = response.json().map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+            // Esplora answers 404 for a transaction it hasn't indexed yet
+            if response.status() == StatusCode::OK {
+                let status: TxStatus = response
+                    .body_mut()
+                    .read_json()
+                    .map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
                 if status.confirmed {
                     return Ok(());
                 }
+            } else {
+                // Read the error body to the end, so that the connection goes back to the pool.
+                let _ = response.body_mut().read_to_vec();
             }
 
             std::thread::sleep(confirmation_poll);
@@ -227,10 +279,26 @@ impl ProviderTrait for EsploraProvider {
         self.get_json(&format!("/block/{block_hash}/txids"))
     }
 
+    fn fetch_block(&self, block_hash: &str) -> Result<Block, ProviderError> {
+        let expected = BlockHash::from_str(block_hash).map_err(|e| ProviderError::InvalidBlockHash(e.to_string()))?;
+
+        let raw = self.get_bytes(&format!("/block/{expected}/raw"))?;
+        let block: Block = encode::deserialize(&raw).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+
+        if block.block_hash() != expected {
+            return Err(ProviderError::UnexpectedBlockHash {
+                expected,
+                returned: block.block_hash(),
+            });
+        }
+
+        Ok(block)
+    }
+
     fn fetch_transaction(&self, txid: &Txid) -> Result<Transaction, ProviderError> {
-        let response = self.get(&format!("/tx/{txid}/raw"))?;
+        let raw = self.get_bytes(&format!("/tx/{txid}/raw"))?;
         let transaction: Transaction =
-            encode::deserialize(response.as_bytes()).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
+            encode::deserialize(&raw).map_err(|e| ProviderError::Deserialize(e.to_string()))?;
 
         if transaction.txid() != *txid {
             return Err(ProviderError::UnexpectedTxid {

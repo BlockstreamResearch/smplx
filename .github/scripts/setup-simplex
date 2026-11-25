@@ -41,7 +41,7 @@ main() {
   SIMPLEX_BIN_DIR="$SIMPLEX_DIR/bin"
   BIN_PATH="$SIMPLEX_BIN_DIR/simplexup"
 
-  # Ensure bin directory exists and download simplexup into it
+  # Create the bin directory and download simplexup there
   mkdir -p "$SIMPLEX_BIN_DIR"
   say "Fetching ${FILE_PATH} from ${RAW_URL}"
 

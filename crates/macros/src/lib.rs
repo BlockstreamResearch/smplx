@@ -12,6 +12,7 @@ pub fn include_simf(tokenstream: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "test")]
 #[proc_macro_attribute]
 pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::ItemFn);
@@ -22,6 +23,7 @@ pub fn test(args: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "test")]
 #[proc_macro_attribute]
 pub fn fuzz(args: TokenStream, input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::ItemFn);

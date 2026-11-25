@@ -6,9 +6,9 @@ fn checksig(sig: Signature) {
 /// Pruning drops the branch that is not taken, so each branch is costed on its own.
 fn main() {
     match witness::SIGNATURE {
-        // One check fits the budget the witness stack buys.
+        // One check fits within the witness budget.
         Left(light: Signature) => checksig(light),
-        // Eight checks of the same signature exceed it.
+        // Eight checks of the same signature exceed the witness budget.
         Right(heavy: Signature) => {
             checksig(heavy);
             checksig(heavy);

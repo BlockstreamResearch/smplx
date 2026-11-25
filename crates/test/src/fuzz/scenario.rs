@@ -18,6 +18,13 @@ use crate::fuzz::requirement::{RequiredValue, Requirements};
 use crate::fuzz::scenario_strategy::{CaseChange, CaseValues, CombinedStrategy};
 
 /// A transaction and the programs being fuzzed.
+///
+/// Assemble the transaction as for a real spend, with placeholder UTXOs such as
+/// `PartialInput::default()`, then [`add`](Scenario::add) each program and say which inputs it
+/// spends and which outputs it locks. Each case replaces those inputs' and outputs' scripts with
+/// the program's, and those inputs' witnesses with generated ones.
+///
+/// `Scenario::default()` is a transaction with one default input.
 pub struct Scenario {
     transaction: FinalTransaction,
     program_scenarios: Vec<FuzzProgramScenario>,
@@ -32,6 +39,10 @@ impl Scenario {
         }
     }
 
+    /// Adds a program of type `P`, named `name`, and returns a builder for that program.
+    ///
+    /// Names must be unique. At least one program must spend an input, and an input or output
+    /// can belong to only one program.
     pub fn add<P: FuzzProgramTrait>(&mut self, name: impl Into<String>) -> FuzzProgramScenarioBuilder<'_, P> {
         self.program_scenarios.push(FuzzProgramScenario::new::<P>(name.into()));
 
@@ -368,7 +379,7 @@ impl<'a, 's> CaseBuilder<'a, 's> {
         Ok(())
     }
 
-    /// Sets the required witness values, then violates one of them when the case picks it.
+    /// Sets the required witness values, then violates the one the case picks, if any.
     fn require_witnesses(&mut self) -> Result<Option<RequiredValue<'a>>, SetupError> {
         let scenario = self.scenario;
         let mut requirements = Requirements::new();

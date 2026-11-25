@@ -82,10 +82,12 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
         }
     }
 
+    /// The name the program was added with.
     pub fn name(&self) -> &str {
         self.program_scenario.name()
     }
 
+    /// The program's arguments, as generated and bound.
     pub fn arguments(&self) -> &P::Arguments {
         &self.arguments
     }
@@ -100,10 +102,13 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
             .unwrap_or_else(|| panic!("`{}` spends no input, so it has no witness", self.name()))
     }
 
+    /// The program's arguments, as [`Arguments`].
     pub fn raw_arguments(&self) -> &Arguments {
         self.program.get_arguments()
     }
 
+    /// The witness, as [`WitnessValues`].
+    ///
     /// # Panics
     /// Panics when the program spends no input.
     pub fn raw_witness(&self) -> &WitnessValues {
@@ -111,6 +116,7 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
             .unwrap_or_else(|| panic!("`{}` spends no input, so it has no witness", self.name()))
     }
 
+    /// The compiled program.
     pub fn program(&self) -> &Program {
         self.program
     }
@@ -124,14 +130,17 @@ impl<'a, P: FuzzProgramTrait> FuzzProgram<'a, P> {
             .collect()
     }
 
+    /// The script of the program's address on the case's network.
     pub fn script_pubkey(&self) -> Script {
         self.program.get_script_pubkey(self.network)
     }
 
+    /// The SHA-256 hash of [`FuzzProgram::script_pubkey`].
     pub fn script_hash(&self) -> [u8; 32] {
         self.program.get_script_hash(self.network)
     }
 
+    /// The program's CMR.
     pub fn cmr(&self) -> [u8; 32] {
         self.program.get_cmr()
     }
